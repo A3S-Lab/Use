@@ -42,7 +42,7 @@ package trust, immutable generations, receipts, dependency ordering, lifecycle
 journals, and capability evidence. Runtime, Gateway, Flow, Knowledge, and UI
 hosts keep ownership of execution and presentation.
 
-The current architecture has four non-negotiable properties:
+The current architecture has five non-negotiable properties:
 
 - **One installation graph:** each explicit User or Workspace installation has
   one monotonically generated `InstallationSnapshot`. Root locks are derived
@@ -56,6 +56,10 @@ The current architecture has four non-negotiable properties:
   disable, and exact recovery share a cross-process writer fence. Every
   reviewed cutover is bound to the expected capability generation; a losing
   concurrent plan fails before provider or package-publication effects.
+- **One immutable content identity:** expanded package bytes are keyed only by
+  digest in the global Artifact Store. Installations own selections and
+  lifecycle generations, never private copies of identical content; uninstall
+  therefore retires scoped authority without deleting shared bytes.
 - **One current protocol baseline:** pre-release formats are rejected rather
   than decoded, migrated, or silently defaulted.
 
@@ -75,6 +79,10 @@ The implementation and fixtures exercise the product model directly:
 - [`RegistrySourceStore`](crates/extension/src/registry_sources/mod.rs) persists
   canonical revision-addressed ACL source configuration, imports digest-bound
   trusted roots, and isolates TUF metadata and caches by source identity.
+- [`ArtifactStore`](crates/extension/src/artifact_store.rs) stores expanded
+  packages at one sharded global SHA-256 path, serializes concurrent commits by
+  digest, rejects linked/reparse-point ancestors, and carries no installation
+  or activation authority.
 - [`RegistryNetworkPolicy`](crates/extension/src/remote/network.rs) lets an
   embedding host select the strict public-Internet boundary for untrusted
   Registry endpoints. That mode requires HTTPS, pins checked DNS answers,
@@ -84,7 +92,7 @@ The implementation and fixtures exercise the product model directly:
 - [`CognitivePackageManager`](src/cognitive_package/) binds signed catalog
   evidence, exact locks, reviewed plans, authorization, and crash replay.
 - [`CognitivePackageHostManager`](src/cognitive_package/host_manager.rs)
-  implements the typed host-protocol-v4 port for one exact managed-scope
+  implements the typed host-protocol-v6 port for one exact managed-scope
   fence. It durably binds request IDs to Use-owned plans and terminal results,
   while delegating Registry resolution, admission, lifecycle, Grants, and
   observation to the same `CognitivePackageManager` used by other hosts.
@@ -134,19 +142,20 @@ removed-dependency cleanup after upgrade cutover, and an uninstall killed after 
 Registry hide but before the package hide receipt. The install replays the
 exact cutover offline without another generation or network request. The
 uninstall restarts from the same plan, blocks on the accepted-call generation
-lease, then drains and removes the generation without another Registry
-generation; missing package state without the exact cutover still fails closed.
+lease, then drains and retires scoped generation authority without another
+Registry generation; missing package state without the exact cutover still
+fails closed.
 Lifecycle commit and cleanup retry Windows access, sharing, and lock violations
 for at most two seconds per blocking mutation. Transient scanner handles over
-an active package staging directory, selected upgrade receipt, removal receipt,
-or nested abandoned staging file let the same commit or removal continue. A
-persistent active-staging handle fails before receipt or Registry-snapshot
-mutation, preserves the residual tree, and lets commit replay exactly after
-release. A persistent selected-receipt lock rolls back the candidate root and
-retained receipt while preserving the byte-exact prior receipt and published
-generation; upgrade replay succeeds after release. A persistent handle over a
-drained generation likewise leaves the exact residual tree and lets removal
-replay finish without advancing the Registry generation.
+an active artifact staging directory, selected upgrade receipt, removal
+receipt, or nested abandoned staging file let the same commit or authority
+retirement continue. A persistent active-staging handle fails before receipt
+or Registry-snapshot mutation, preserves the residual tree, and lets commit
+replay exactly after release. A persistent selected-receipt lock retains the
+valid global candidate artifact and rolls back retained-receipt state while
+preserving the byte-exact prior receipt and published generation; upgrade
+replay succeeds after release. A persistent reader over a complete global
+artifact does not block uninstall, and the shared bytes remain available.
 A test-binary subprocess matrix also exits after each durable host effect but
 before its receipt for every canonical install, upgrade, enable, disable, and
 uninstall checkpoint; recovery reuses the exact idempotency key without
@@ -394,15 +403,27 @@ or lifecycle intent for another installation fails with
 store lock, creates a database, or writes evidence. Separate installations use
 separate stores while immutable Registry and artifact inputs remain shareable.
 
-The scoped layout is an intentional pre-release clean cutover, not a migration.
-If `use.installation.legacy_state_unsupported` is reported, stop old Use hosts,
-preserve the prior roots for incident review, and remove only the proven
-unscoped installation entries before reinstalling with explicit scope flags.
-These entries include `data/extensions` and the old state-level `extensions`,
+The scoped layout and global Artifact Store are intentional pre-release clean
+cutovers, not migrations. If `use.installation.legacy_state_unsupported` or
+`use.artifact_store.legacy_state_unsupported` is reported, stop old Use hosts,
+preserve the prior roots for incident review, and remove only the proven legacy
+entries before reinstalling with explicit scope flags. These entries include
+the old global `data/extensions`, installation-scoped
+`data/installations/<kind>/<key>/extensions`, and old state-level `extensions`,
 `registry.json`, generation, Grant, binding, lifecycle, Knowledge, graph,
 enablement, Host Manager, route-lock, and mutation-lock paths. Preserve global
-`registries.acl`, Registry trust roots, TUF metadata/targets, and global
-artifacts; they are inputs shared by the new installations.
+`registries.acl`, Registry trust roots, TUF metadata/targets, and
+`data/artifacts`; they are inputs shared by installations.
+
+Expanded content lives at
+`data/artifacts/expanded-packages/sha256/<prefix>/<digest>/content`. Different
+installations may point to the same exact tree while retaining independent
+receipts, generations, enablement, Grants, bindings, and leases. Use rehashes
+content before publication and use, but it does not yet garbage-collect
+unreferenced expanded trees. Safe deletion requires a future global
+reachability model across every installation and durable operation. Verified
+archive, planning, and media caches remain content-addressed per Registry source
+until that global policy exists.
 
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
@@ -444,17 +465,19 @@ Every installation-scoped operation requires explicit `--scope-kind` and
 [OKF Knowledge operations](docs/okf-knowledge-operations.md).
 
 For a quiescent whole-installation inventory, `state backup` takes that
-installation's exclusive maintenance fence and snapshots installed package roots together
-with Registry, retained-generation, Grant, binding, lifecycle/package-operation,
-Knowledge, enablement, and Host Manager state. Its
+installation's exclusive maintenance fence and snapshots Registry,
+installation-snapshot, retained-generation, Grant, binding,
+lifecycle/package-operation, Knowledge, enablement, and Host Manager control
+state. Expanded package bytes are global immutable inputs and are not copied.
+Its
 `a3s.use.state-backup.v2` manifest binds the exact installation and contains
 only portable relative paths,
 per-file length/SHA-256/mode evidence, family accounting, the Registry
 generation/digest, and sorted installed-receipt digests. Creation scans, copies
 with exact hashing, then rescans before non-overwriting publication. Locks are
-excluded; an active restore, pending cutover/operation, resumable partial,
-lifecycle staging tree, link/reparse point, special file, unknown state family,
-or non-portable path fails closed. `state verify-backup` validates canonical
+excluded; an active restore, pending cutover/operation, link/reparse point,
+special file, unknown state family, installation data payload, or non-portable
+path fails closed. `state verify-backup` validates canonical
 manifest bytes, complete archive length, and every payload digest offline
 without extraction or local Use state. The archive contains raw state and must
 be protected as sensitive data. `state backup-retention` takes a separate
@@ -463,8 +486,9 @@ path-free oldest-first plan that binds the exact file name, modification time,
 length, manifest digest, inventory digest, and Registry evidence. Confirmed
 apply accepts only the unchanged canonical `planDigest`, synchronizes each
 deletion, filters archives by exact installation, and always retains at least
-the newest two verified archives. Global Registry source/trust/TUF state and
-derivable Flow compiled artifacts are deliberately outside this backup.
+the newest two verified archives. Global Registry source/trust/TUF state, the
+Artifact Store, and derivable Flow compiled artifacts are deliberately outside
+this backup.
 `state plan-restore` builds a path-free Add/Replace/Remove/Retain review only
 when the backup exactly matches the current Use version, OS, architecture, and
 independently retained Registry/receipt/Grant authority. Confirmed `state
@@ -742,8 +766,9 @@ Confirmed prune may use a stricter one-command override; it does not rewrite
 the source configuration. Embedding hosts use the same typed
 `VerifiedTargetCachePolicy`. Cache usage and pruning are zero-network
 operations and validate any retained catalog-cache source identity before
-inspecting or deleting targets. GC never changes installed package roots,
-receipts, capability generations, or lifecycle journals. See [Registry cache
+inspecting or deleting targets. This source-cache GC never changes global
+expanded package artifacts, receipts, capability generations, or lifecycle
+journals. See [Registry cache
 operations](docs/registry-cache-operations.md).
 
 ## Cognitive-package format
@@ -976,11 +1001,11 @@ Current Registry rules:
   zero-network retry from the revalidated cache.
 - The following real-process package-copy interruption retains its exact
   pending plan and applying journal but no receipt, installation snapshot, or
-  route. Offline replay reclaims the physical `.lifecycle-staging-*` residue
+  route. Offline replay reclaims the physical `.artifact-staging-*` residue
   and publishes the reviewed generation exactly once.
-- Real-process uninstall interruption during partial directory removal also
-  replays the exact lifecycle identity, finishes cleanup after receipt removal,
-  and does not advance the Registry generation a second time.
+- Real-process uninstall interruption replays the exact lifecycle identity,
+  finishes scoped receipt and authority retirement, preserves global artifact
+  bytes, and does not advance the Registry generation a second time.
 - Real-process multi-node install interruption after the atomic Registry graph
   publication retains one complete visible closure and its durable cutover but
   no installation snapshot. Offline replay completes every package journal,
@@ -1185,6 +1210,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
+| Global expanded-package Artifact Store | Expanded package trees are sharded by SHA-256 under one global root, committed under a cross-process digest lock, link/reparse checked, shared by independent installations, retained across scoped uninstall, and excluded from installation backup. Raw verified targets remain source-scoped; global reachability, quota, audit/repair, and GC are still open |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |
@@ -1192,7 +1218,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Package-host side-effect/receipt ambiguity recovery | Every canonical install, upgrade, enable, disable, and uninstall checkpoint passes subprocess-exit, exact-key recovery, single-effect, and terminal-replay tests. A real CLI multi-node install also passes durable-publish-before-journal kill, zero-network exact replay, and no-generation-inflation checks; uninstall passes the equivalent hide, restart, accepted-call drain, and removal boundary. Product-host and platform checkpoints stay open |
 | Grant-bearing graph cutover effect/receipt ambiguity recovery | Install, upgrade, and uninstall atomic publish/hide boundaries pass subprocess-exit, exact-key recovery, single-effect, completed-journal, and no-republication tests. Externally killed managed-scope manager processes prove those three five-node graph cutovers recover without reauthorization, network access, or generation inflation while preserving the candidate Grant and retiring only the exact prior Grant. Real Host protocol processes additionally prove disable hide/drain/exact-revocation and enable publication/exact-regrant recovery, covering all five reviewed mutations. Actual Code/Runtime product-host and cross-platform qualification remain open |
 | Grant Store journal/receipt crash recovery | All 14 durable checkpoints in the canonical two-candidate/two-retirement lifecycle pass subprocess-exit convergence and exact terminal replay across prepare, cutover/retirement, and pre-cutover rollback; real CLI and cross-platform product qualification remain open |
-| Windows atomic state publication contention | Registry source/trusted-root/catalog/target-cache, extension receipt/snapshot, Workspace Grant, package graph, Host plan/outcome, lifecycle, Runtime binding/provisioning, Flow, Knowledge binding/recovery/backup, enablement, whole-state backup, restore evidence, and diagnostic-history publication now share bounded blocking primitives for replace, no-clobber, and transactional directory-move semantics. Windows retries only transient access, sharing, and lock violations for at most two seconds; released file or directory locks converge atomically, persistent replacement locks preserve the prior target, and failed recovery moves retain their replay source. Native lifecycle tests also bind active package-staging rename and selected upgrade-receipt replacement contention to pre-publication rollback and replay. Externally raced targets, reboot recovery, and external product-host contention remain open |
+| Windows atomic state publication contention | Registry source/trusted-root/catalog/target-cache, extension receipt/snapshot, Workspace Grant, package graph, Host plan/outcome, lifecycle, Runtime binding/provisioning, Flow, Knowledge binding/recovery/backup, enablement, whole-state backup, restore evidence, and diagnostic-history publication now share bounded blocking primitives for replace, no-clobber, and transactional directory-move semantics. Windows retries only transient access, sharing, and lock violations for at most two seconds; released file or directory locks converge atomically, persistent replacement locks preserve the prior target, and failed recovery moves retain their replay source. Native lifecycle tests also bind active artifact-staging rename and selected upgrade-receipt replacement contention to pre-publication rollback and replay, while uninstall never waits on a reader of global artifact bytes. Externally raced targets, reboot recovery, and external product-host contention remain open |
 | Secret-free operation diagnostics | Implemented. Latest/previous package checkpoints are exposed through `extension inspect --json`; `extension diagnose --json` projects one exact retained planned/admitted/cancelled install/upgrade/uninstall graph, active admitted enable/disable operation, or newest Host-reviewed pre-admission enable/disable plan/cancellation with Registry/TUF, provider, Grant, cutover, publication, drain, rollback, and recovery evidence. `extension diagnose --history --json` retains the newest 16 completed or rolled-back operations and cancelled graph plans within 8 MiB per scope/package, survives uninstall, deduplicates exact replay, and fails closed on damaged or linked state. Pre-lock Registry/TUF attempts expose refreshed/cached per-Registry verification progress, trust/source digests, role versions, bounded failures, and terminal lock evidence. Retained graphs and pre-plan attempts expose zero-network expected/retained archive and executable-planning-target bytes plus exact-target `missing`/`partial`/`complete` state from historical provenance. Real killed-process and Host-process tests cover every handoff, partial observation, exact resume, zero-side-effect planned/cancelled enablement diagnosis, and completed-Use outcome suppression. Path-free active/history/capacity restore evidence is exposed through `knowledge restore-status --json` |
 | Watcher-safe bounded Registry mutation locking | Implemented and real-process tested |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
@@ -1204,7 +1230,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Managed Runtime receipt lifecycle | Self-contained release-backed Task templates support restart-safe exact-generation dispatch, receipt-owned provider reconnection, stale-generation rejection, and accepted-call drain. Capability snapshot v3 publishes only exact installation/package/generation-matched Task bindings with stable host tool identities. Service preparation now syncs a v1 provisioning receipt before Runtime apply, advances it through exact Runtime and Gateway evidence, and commits the v3 binding before deleting pending recovery authority. Tool and HTTP MCP bind failures, pre-apply rollback, candidate cleanup, and the final-binding/pending-receipt crash window replay without a second Runtime effect or residue. A test-binary subprocess matrix exits at all six nested provisioning windows for both Tool and HTTP MCP, then proves exact replay, terminal idempotence, and residue-free Gateway/Runtime removal. Typed endpoints, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are contract-tested. A3S CLI `main` commit `563e7e139740e845369f9102a2d47026733797a8` qualifies four real Linux Tool and MCP processes through production Box mapping, retained N/N+1 routing, standard MCP initialize, Gateway and lifecycle-host restart, drain, exact removal, and zero-residue checks. Confirmed same-generation provider loss now retires only the stale Gateway route and old binding receipt before exact Runtime reapply and publication of a newly allocated Gateway endpoint; interrupted route removal retains replay authority without stopping or removing the Runtime unit. Scoped Code Exec Task discovery and leased invocation are qualified at A3S CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7` and CI run [32797862154](https://github.com/A3S-Lab/CLI/actions/runs/32797862154). Real provider-process kill qualification, non-Linux providers, and cross-platform product-host recovery remain open |
 | Scope-bounded OKF quota, retention, tombstone GC, SQLite compaction, and usage diagnostics | Implemented in the standalone Knowledge backend |
 | Scope-local OKF integrity audit, verified database backup and rotation, derived FTS repair, and authority-bound database/binding restore | Verified backups now use exact-scope, bounded oldest-first retention with canonical plan-digest confirmation, last-backup preservation, directory locking, stale-plan rejection, and fail-closed candidate validation. Restore is real-process tested, including missing database and missing exact-subset binding recovery, conflict rejection, main/WAL/SHM retention, binding-file and filesystem/journal process-exit windows, durable maintenance blocking, path-free restore-status diagnostics at every window, and terminal read-only replay. Missing Registry/package/lifecycle/Grant authority, clean-machine, coordinated cross-family, and whole-product recovery remain open |
-| Coordinated whole-installation backup, retention, and reviewed restore | Backup and retention are implemented under the exclusive maintenance fence with deterministic path-free manifests, exact Registry/receipt authority digests, allowlisted state families, scan/copy/rescan consistency, full payload verification, exact-plan retention, and two-generation preservation. Same-version/OS/architecture restore now requires exact independently retained Registry and Grant authority, an explicit verified rollback archive, path-free digest confirmation, link/reparse-safe candidate staging, seven durable journal phases, 15 subprocess-exit recovery boundaries, terminal replay, read-only status, and bounded crash-recoverable history. Missing-authority and clean-machine recovery plus cross-platform operational disaster-recovery drills remain open |
+| Coordinated whole-installation backup, retention, and reviewed restore | Backup and retention are implemented under the exclusive maintenance fence with deterministic path-free manifests, exact Registry/receipt authority digests, allowlisted control-state families, explicit global Artifact Store exclusion, scan/copy/rescan consistency, full payload verification, exact-plan retention, and two-generation preservation. Same-version/OS/architecture restore now requires exact independently retained Registry, Artifact, and Grant authority, an explicit verified rollback archive, path-free digest confirmation, link/reparse-safe candidate staging, seven durable journal phases, 15 subprocess-exit recovery boundaries, terminal replay, read-only status, and bounded crash-recoverable history. Missing-authority and clean-machine recovery plus cross-platform operational disaster-recovery drills remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |
 | A3S Code CLI/TUI integration | Reviewed Runtime Task install, offline restart disable/re-enable, apply-time build drift rejection, watcher hot-plug, Host status-revision resumption across killed-process offline recovery with one effect and path-free history, scoped Code Exec agent discovery/invocation with frozen Task-catalog evidence, context review, and TUI `/packages` review are tested. The shared Host Manager now also qualifies signed six-surface Tool/MCP/Flow/Skill/UI/OKF install, invocation evidence, exact-generation upgrade, uninstall, replay, and User/Workspace scope fences; six-surface Code product-host E2E and release qualification remain open |
 | Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and pinned Actions/tools are implemented. Non-publishing qualification run [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148) passed isolated archive execution and cache-free byte-for-byte rebuilds on all five targets from exact `main` commit `e3d5f955a63cc136dbb07e9419a32760328df320`; an externally operated full-archive witness and off-Release evidence retention remain open |
@@ -1247,7 +1273,7 @@ Registry contract as any third-party capability. Test packages named
 ```text
 Use/
 ├── crates/core/             canonical contracts, resolver, plans, grants
-├── crates/extension/        ACL packages, TUF Registry, receipts, package store
+├── crates/extension/        ACL packages, TUF Registry, receipts, Artifact Store
 ├── src/cognitive_package/   reviewed package-graph application service
 ├── src/plugin_manager/      shared typed service and standard manager MCP
 ├── src/plugin_lifecycle/    durable six-surface lifecycle and host boundaries

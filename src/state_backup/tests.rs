@@ -8,12 +8,14 @@ use super::*;
 async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() {
     let temporary = tempfile::tempdir().unwrap();
     let paths = fixture_paths(temporary.path());
-    std::fs::create_dir_all(paths.data_root().join("extensions/acme/tool/package/bin")).unwrap();
+    let global_artifact = paths
+        .artifact_store()
+        .expanded_package_path(&format!("sha256:{}", "a".repeat(64)))
+        .unwrap();
+    std::fs::create_dir_all(&global_artifact).unwrap();
     std::fs::write(
-        paths
-            .data_root()
-            .join("extensions/acme/tool/package/bin/tool"),
-        b"portable tool bytes",
+        global_artifact.join("tool"),
+        b"global immutable artifact bytes",
     )
     .unwrap();
     std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
@@ -33,9 +35,9 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
     let manager = StateBackupManager::new(paths.clone());
     let manifest = manager.backup(&first).await.unwrap();
     assert_eq!(manifest.schema, A3S_USE_STATE_BACKUP_SCHEMA);
-    assert_eq!(manifest.file_count, 3);
-    assert_eq!(manifest.entries.len(), 3);
-    assert_eq!(manifest.families.len(), 3);
+    assert_eq!(manifest.file_count, 2);
+    assert_eq!(manifest.entries.len(), 2);
+    assert_eq!(manifest.families.len(), 2);
     assert!(manifest.inventory_digest.starts_with("sha256:"));
     assert_eq!(manifest.authority.registry_generation, 0);
     assert!(manifest.authority.packages.is_empty());
@@ -51,6 +53,7 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
     assert!(!encoded.contains(temporary.path().to_str().unwrap()));
     assert!(!encoded.contains(".installation-mutation.lock"));
     assert!(!encoded.contains(".maintenance.lock"));
+    assert!(!encoded.contains("global immutable artifact bytes"));
 
     let verified = StateBackupManager::verify_backup(&first).await.unwrap();
     assert_eq!(verified, manifest);
@@ -112,6 +115,30 @@ async fn coordinated_backup_rejects_nonterminal_and_unknown_state() {
     assert_eq!(error.code, "use.state_backup_layout_unsupported");
 
     std::fs::remove_dir_all(paths.state_root().join("remote-registries")).unwrap();
+    std::fs::create_dir_all(paths.data_root().join("unexpected")).unwrap();
+    std::fs::write(
+        paths.data_root().join("unexpected/payload"),
+        b"installation data is not portable authority",
+    )
+    .unwrap();
+    let error = StateBackupManager::new(paths.clone())
+        .backup(temporary.path().join("data-payload.a3s-use-state-backup"))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_layout_unsupported");
+
+    std::fs::remove_dir_all(paths.data_root()).unwrap();
+    let artifact_staging = paths
+        .state_root()
+        .join("bindings/runtime/.artifact-staging-incomplete");
+    std::fs::create_dir_all(&artifact_staging).unwrap();
+    let error = StateBackupManager::new(paths.clone())
+        .backup(temporary.path().join("staging.a3s-use-state-backup"))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_nonterminal");
+
+    std::fs::remove_dir_all(&artifact_staging).unwrap();
     std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
     std::fs::write(
         paths.state_root().join("bindings/runtime/.binding.tmp"),
@@ -219,6 +246,14 @@ async fn coordinated_backup_rejects_a_destination_inside_owned_state() {
     std::fs::create_dir_all(paths.state_root()).unwrap();
     let error = StateBackupManager::new(paths.clone())
         .backup(paths.state_root().join("recursive.a3s-use-state-backup"))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_path_invalid");
+
+    let artifact_root = paths.artifact_store().root().to_path_buf();
+    std::fs::create_dir_all(&artifact_root).unwrap();
+    let error = StateBackupManager::new(paths)
+        .backup(artifact_root.join("recursive.a3s-use-state-backup"))
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.state_backup_path_invalid");

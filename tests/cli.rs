@@ -234,11 +234,17 @@ fn knowledge_search_fails_closed_without_an_active_projection() {
 fn coordinated_state_backup_cli_creates_and_verifies_offline() {
     let temporary = tempfile::tempdir().unwrap();
     let home = temporary.path().join("home");
-    let package_file = test_extension_paths(&home)
-        .data_root()
-        .join("extensions/acme/tool/package/bin/tool");
-    std::fs::create_dir_all(package_file.parent().unwrap()).unwrap();
-    std::fs::write(&package_file, b"portable CLI backup fixture").unwrap();
+    let paths = test_extension_paths(&home);
+    let artifact_file = paths
+        .artifact_store()
+        .expanded_package_path(&format!("sha256:{}", "a".repeat(64)))
+        .unwrap()
+        .join("tool");
+    std::fs::create_dir_all(artifact_file.parent().unwrap()).unwrap();
+    std::fs::write(&artifact_file, b"global artifact excluded from backup").unwrap();
+    let state_file = paths.state_root().join("bindings/runtime/fixture.json");
+    std::fs::create_dir_all(state_file.parent().unwrap()).unwrap();
+    std::fs::write(&state_file, b"portable CLI backup fixture").unwrap();
     let backup_path = temporary.path().join("state.a3s-use-state-backup");
 
     let backup = Command::new(binary())
@@ -252,12 +258,16 @@ fn coordinated_state_backup_cli_creates_and_verifies_offline() {
     let backup_json: serde_json::Value = serde_json::from_slice(&backup.stdout).unwrap();
     assert_eq!(backup_json["data"]["schema"], "a3s.use.state-backup.v2");
     assert_eq!(backup_json["data"]["fileCount"], 1);
-    assert_eq!(backup_json["data"]["entries"][0]["root"], "data");
+    assert_eq!(backup_json["data"]["entries"][0]["root"], "state");
     assert_eq!(
         backup_json["data"]["entries"][0]["path"],
-        "extensions/acme/tool/package/bin/tool"
+        "bindings/runtime/fixture.json"
     );
     assert!(backup_path.is_file());
+    assert!(!std::fs::read(&backup_path)
+        .unwrap()
+        .windows(b"global artifact excluded from backup".len())
+        .any(|window| window == b"global artifact excluded from backup"));
 
     let offline_home = temporary.path().join("unrelated-empty-home");
     let verified = Command::new(binary())

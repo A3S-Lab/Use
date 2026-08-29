@@ -3,6 +3,22 @@ use std::path::Path;
 use super::*;
 
 #[tokio::test]
+async fn retention_rejects_a_directory_inside_the_global_artifact_store() {
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = fixture_paths(temporary.path());
+    let artifact_root = paths.artifact_store().root().to_path_buf();
+    std::fs::create_dir_all(&artifact_root).unwrap();
+    let error = StateBackupManager::new(paths)
+        .plan_backup_retention(
+            &artifact_root,
+            StateBackupRetentionPolicy::new(2, 1024 * 1024).unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_retention_directory_invalid");
+}
+
+#[tokio::test]
 async fn retention_removes_oldest_only_after_exact_plan_confirmation() {
     let temporary = tempfile::tempdir().unwrap();
     let paths = fixture_paths(temporary.path());

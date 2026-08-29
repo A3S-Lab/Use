@@ -20,7 +20,7 @@ use cutover::{
 use generations::{binding_matches_identity, identity_from_receipt};
 use model::{
     exact_receipt, lifecycle_graph_error, lifecycle_identity_error, lifecycle_root,
-    lifecycle_state_error, remove_exact_root, validate_locked_extension, RemovedLifecyclePackage,
+    lifecycle_state_error, validate_locked_extension, RemovedLifecyclePackage,
 };
 pub use model::{
     ExtensionLifecycleGraphPublication, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
@@ -200,20 +200,20 @@ impl ExtensionRegistry {
 
         validate_candidate_source(candidate).await?;
         let target = self.lifecycle_package_root(identity);
-        let target_created =
-            commit_candidate_root(candidate, &target, &self.paths.installation_data_root()).await?;
+        commit_candidate_root(
+            candidate,
+            &target,
+            &self.paths.artifact_store(),
+            identity.package_sha256(),
+        )
+        .await?;
         if let Some((retained_identity, receipt)) = retained_candidate {
             let retained = self
                 .retain_lifecycle_receipt(&retained_identity, &receipt)
                 .await;
             let created = match retained {
                 Ok(retained) => retained,
-                Err(error) => {
-                    if target_created {
-                        let _ = remove_exact_root(&target).await;
-                    }
-                    return Err(error);
-                }
+                Err(error) => return Err(error),
             };
             if created {
                 retained_created = Some(retained_identity);
@@ -247,9 +247,6 @@ impl ExtensionRegistry {
                 .flatten()
                 .is_some_and(|extension| extension.receipt == receipt);
             if !committed {
-                if target_created {
-                    let _ = remove_exact_root(&target).await;
-                }
                 if let Some(identity) = retained_created {
                     let _ = self.remove_retained_receipt(&identity).await;
                 }
@@ -469,7 +466,6 @@ impl ExtensionRegistry {
     ) -> UseResult<UninstallResult> {
         crate::route_lock::deadline_after(timeout)?;
         let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
-        let target = self.lifecycle_package_root(identity);
         let selected = self.get(identity.package_id()).await?;
         let selected_is_exact = selected
             .as_ref()
@@ -533,9 +529,6 @@ impl ExtensionRegistry {
                 self.remove_retained_receipt(identity).await?;
                 changed = true;
             }
-            if remove_exact_root(&target).await? {
-                changed = true;
-            }
             return Ok(UninstallResult {
                 package_id: identity.package_id.clone(),
                 changed,
@@ -575,7 +568,6 @@ impl ExtensionRegistry {
             .await?;
         let installed = self.list().await?;
         self.publish_snapshot_locked(&installed).await?;
-        remove_exact_root(&target).await?;
         Ok(UninstallResult {
             package_id: identity.package_id.clone(),
             changed: true,

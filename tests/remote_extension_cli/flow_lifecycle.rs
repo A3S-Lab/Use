@@ -36,7 +36,7 @@ fn standalone_cli_installs_upgrades_observes_and_uninstalls_a3s_flow() {
     let next_generation = next_receipt["lifecycleGeneration"].as_u64().unwrap();
     let next_package_root = PathBuf::from(next_receipt["packageRoot"].as_str().unwrap());
     assert!(next_generation > first_generation);
-    assert!(!first_package_root.exists());
+    assert!(first_package_root.is_dir());
     assert!(next_package_root.is_dir());
     let next_bindings = flow_bindings(&home);
     assert_eq!(next_bindings.len(), 1, "{next_bindings:#?}");
@@ -58,7 +58,7 @@ fn standalone_cli_installs_upgrades_observes_and_uninstalls_a3s_flow() {
     assert!(removed.status.success(), "{removed:?}");
     assert_eq!(json(&removed)["data"]["changed"], true);
     assert!(!receipt_path(&home).exists());
-    assert!(!next_package_root.exists());
+    assert!(next_package_root.is_dir());
     assert!(flow_bindings(&home).is_empty());
     assert!(flow_capability(&home).is_none());
 }

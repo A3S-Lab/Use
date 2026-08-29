@@ -295,10 +295,11 @@ state families, and whole-product disaster recovery remain release gates.
 `restore-status` reports the global active phase and bounded path-free history
 and capacity for the requested scope without rotating or rewriting evidence.
 
-The separate `state backup` command captures installed package roots and every
-allowlisted Registry, generation, Grant, binding, lifecycle/package-operation,
-Knowledge, enablement, Host Manager, and Flow Runtime state family under one
-exclusive maintenance fence. Its deterministic `a3s.use.state-backup.v2`
+The separate `state backup` command captures every allowlisted Registry,
+generation, Grant, binding, lifecycle/package-operation, Knowledge, enablement,
+Host Manager, and Flow Runtime control-state family under one exclusive
+maintenance fence. Global expanded-package artifacts are not copied. Its
+deterministic `a3s.use.state-backup.v2`
 manifest uses only portable relative paths and exact length/SHA-256/mode,
 family-accounting, Registry, and installed-receipt evidence. Creation rejects
 active or partial work, links/reparse points, special files, unknown families,

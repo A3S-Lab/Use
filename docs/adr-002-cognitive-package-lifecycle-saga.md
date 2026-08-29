@@ -173,7 +173,7 @@ Implemented in Use:
 
 - manifest-v3 six-surface inventory and dependency schedule;
 - lifecycle intent/operation v2 journals;
-- immutable N/N+1 package roots and exact route leases;
+- immutable content-addressed package artifacts and exact-generation route leases;
 - dependency-forward graph install and reverse uninstall;
 - prior/candidate lock-bound upgrade with Add/Replace/Remove/Retain;
 - durable Registry cutover request/evidence/replay/acknowledgement;

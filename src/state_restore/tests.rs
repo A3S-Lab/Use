@@ -278,6 +278,22 @@ async fn apply_rejects_archive_tampering_and_rollback_inside_owned_state() {
     assert!(!rollback_path.exists());
     std::fs::write(&backup_path, original).unwrap();
 
+    let artifact_root = paths.artifact_store().root().to_path_buf();
+    std::fs::create_dir_all(&artifact_root).unwrap();
+    let artifact_backup = artifact_root.join("candidate.a3s-use-state-backup");
+    std::fs::copy(&backup_path, &artifact_backup).unwrap();
+    let error = manager.plan_restore(&artifact_backup).await.unwrap_err();
+    assert_eq!(error.code, "use.state_restore_path_invalid");
+    let error = manager
+        .apply_restore(
+            &backup_path,
+            artifact_root.join("rollback.a3s-use-state-backup"),
+            &plan_digest,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_restore_path_invalid");
+
     let error = manager
         .apply_restore(
             &backup_path,

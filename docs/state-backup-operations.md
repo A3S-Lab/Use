@@ -3,17 +3,19 @@
 ## Purpose
 
 The coordinated backup captures one integrity-verifiable inventory of all
-currently supported A3S Use-owned package and state families for one explicit
-User or Workspace installation. It supports corruption detection, retention by
-an external backup system, and reviewed same-version/OS/architecture recovery
-of that exact installation.
+currently supported A3S Use-owned control-state families for one explicit User
+or Workspace installation. It supports corruption detection, retention by an
+external backup system, and reviewed same-version/OS/architecture recovery of
+that exact installation.
 
 It does not migrate, sign, encrypt, or upload state. A backup never authorizes
 its own restore and cannot recreate missing Registry projection, installed
 receipt, package, lifecycle, or Grant authority. Restore requires that exact
 installation authority to remain live and equal to the evidence captured by
 the archive. Global Registry source configuration, trust roots, TUF state, and
-derivable artifact caches are outside this backup boundary.
+the global Artifact Store, and derivable caches are outside this backup
+boundary. Consequently the archive is not a self-contained package backup:
+restore requires every receipt-referenced artifact to remain present and exact.
 
 ## Commands
 
@@ -121,7 +123,6 @@ winner.
 
 | Family | Owned paths |
 | --- | --- |
-| Package content | `data/extensions/` |
 | Registry | installation receipts and `registry.json` |
 | Retained generations | `state/extension-generations/` |
 | Grants | active/revoked receipts, snapshots, and terminal Grant journals |
@@ -137,9 +138,11 @@ Cross-process lock files and route lease files are excluded. Empty directories
 do not create manifest entries.
 
 Global `registries.acl`, Registry trust roots, TUF metadata, verified target and
-planning caches, and the Flow compiled-artifact cache are deliberately excluded.
-They are shared or derivable inputs, not mutable authority owned by one
-installation.
+planning caches, expanded packages under `data/artifacts`, and the Flow
+compiled-artifact cache are deliberately excluded. They are shared or
+derivable inputs, not mutable authority owned by one installation. Unreferenced
+expanded artifacts are retained until a future global collector can prove
+reachability across every installation and durable operation.
 
 ## Archive format
 
@@ -159,7 +162,7 @@ The fixed `V1` header is the binary framing version. The current
 
 - the exact installation kind and ID;
 - the producing Use version, OS, and architecture;
-- a data/state root discriminator plus a portable relative path for every file;
+- the state-root discriminator plus a portable relative path for every file;
 - exact length, SHA-256, read-only bit, and Unix mode where available;
 - total and per-family file/byte accounting and inventory digests;
 - the published Registry generation and projection digest; and
@@ -178,8 +181,8 @@ Creation rejects:
 - applying/rolling-back lifecycle or Grant journals;
 - pending package graph/download/resolution work, active enablement, or Runtime
   Service provisioning evidence;
-- resumable `.part`, atomic `.tmp`, `.partial`, or lifecycle-staging entries;
-- unknown data/state families;
+- atomic `.tmp`, `.partial`, and other nonterminal state entries;
+- any installation data payload or unknown state family;
 - absolute, parent-traversing, non-UTF-8, Windows-reserved, case-colliding, or
   otherwise non-portable paths;
 - symbolic links, Windows reparse points, sockets, devices, and other special

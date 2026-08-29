@@ -13,6 +13,7 @@ extern crate self as a3s_use_extension;
 #[cfg(all(test, any(unix, windows)))]
 mod test_filesystem;
 
+mod artifact_store;
 mod atomic_file;
 mod digest;
 mod package;
@@ -42,6 +43,7 @@ mod workspace_grant_snapshot;
 #[cfg(test)]
 mod workspace_grant_tests;
 
+pub use artifact_store::ArtifactStore;
 #[doc(hidden)]
 pub use atomic_file::{
     persist_named_temporary_noclobber_blocking, persist_temporary_noclobber_blocking,

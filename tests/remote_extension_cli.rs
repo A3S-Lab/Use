@@ -61,11 +61,19 @@ fn scoped_state(
     extension_paths(home).state_root().join(relative)
 }
 
-fn scoped_data(
-    home: &std::path::Path,
-    relative: impl AsRef<std::path::Path>,
-) -> std::path::PathBuf {
-    extension_paths(home).data_root().join(relative)
+fn expanded_package_artifact(home: &std::path::Path, package_digest: &str) -> std::path::PathBuf {
+    use_paths(home)
+        .artifact_store()
+        .expanded_package_path(package_digest)
+        .unwrap()
+}
+
+fn target_package_digest(target: &TestTarget) -> String {
+    serde_json::from_value::<PluginCatalogRecord>(target.custom.clone().unwrap())
+        .unwrap()
+        .package
+        .sha256
+        .unwrap()
 }
 
 fn append_test_installation_args(command: &mut Command) {

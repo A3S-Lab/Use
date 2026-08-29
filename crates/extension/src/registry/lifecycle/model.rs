@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use a3s_use_core::{
     LockedPluginPackage, PluginPlanningBundle, UseError, UseResult, VerifiedPluginCatalogRecord,
@@ -6,13 +6,11 @@ use a3s_use_core::{
 use olpc_cjson::CanonicalFormatter;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use tokio::fs;
 
 use super::super::{
     normalize_package_id, ExtensionReceipt, ExtensionTrust, InstalledExtension,
     EXTENSION_RECEIPT_SCHEMA_VERSION,
 };
-use crate::package::{io_error, remove_dir_all_with_windows_retry};
 use crate::remote::ResolvedRemotePackage;
 use crate::source::PreparedPackageSource;
 use crate::{ExtensionManifest, ExtensionPaths};
@@ -154,11 +152,9 @@ pub(super) fn lifecycle_root(
     paths: &ExtensionPaths,
     identity: &ExtensionLifecycleIdentity,
 ) -> PathBuf {
-    paths.lifecycle_package_root(
-        identity.package_id(),
-        identity.generation(),
-        identity.package_sha256(),
-    )
+    paths
+        .artifact_store()
+        .expanded_package_path_from_sha256(identity.package_sha256())
 }
 
 pub(super) fn exact_receipt(
@@ -176,26 +172,6 @@ pub(super) fn exact_receipt(
         ));
     }
     Ok(())
-}
-
-pub(super) async fn remove_exact_root(path: &Path) -> UseResult<bool> {
-    let metadata = match fs::symlink_metadata(path).await {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(io_error("inspect lifecycle package", path, error)),
-    };
-    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
-        return Err(UseError::new(
-            "use.extension.ownership_invalid",
-            format!(
-                "Refusing to remove invalid lifecycle package root '{}'.",
-                path.display()
-            ),
-        ));
-    }
-    remove_dir_all_with_windows_retry(path.to_path_buf(), "remove lifecycle package generation")
-        .await?;
-    Ok(true)
 }
 
 pub(super) fn validate_locked_extension(

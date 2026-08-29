@@ -215,16 +215,27 @@ Implementation evidence (2026-08-28):
   increasing generation.
   It contains the desired root set and one resolved graph, rather than one
   authoritative graph file per root package.
-- [ ] Keep verified archives in a global content-addressed Artifact Store, but
-  move selections, receipts, routes, enablement, Grants, provider bindings,
-  and capability publication under an `InstallationId`.
+- [x] Move expanded package directories into a global content-addressed
+  Artifact Store while keeping selections, receipts, routes, enablement,
+  Grants, provider bindings, and capability publication under an
+  `InstallationId`.
+- [ ] Move source-scoped verified archive, executable-planning, and
+  presentation-media bytes behind the global Artifact Store. Keep signed
+  source observations as source-scoped metadata and introduce one global
+  reachability, quota, and garbage-collection policy before deleting bytes.
+- [ ] Add explicit global artifact audit, quarantine, and verified
+  rehydration. Corruption must fail closed and preserve forensic evidence; it
+  must not silently replace bytes underneath an admitted generation.
+- [ ] Bind enablement and capability-publication intent to the exact
+  `InstallationSnapshot` generation instead of reconciling separate mutable
+  authorities.
 - [x] Require scope in extension paths, receipts, routes, snapshots, and every
   `CapabilityRegistry` constructor. Remove implicit `User/current` projection.
 - [x] Bind Runtime, Flow, OKF binding/SQLite, and lifecycle journal stores to
   one constructor-supplied `InstallationId`. Reject a different or invalid
   identity before path derivation, lock acquisition, database creation, or
   evidence mutation.
-- [ ] Make the same package independently selectable at different versions in
+- [x] Make the same package independently selectable at different versions in
   User and Workspace installations while safely sharing identical artifact
   bytes.
 - [ ] Replace route strings as identity with the canonical keys above. Routes
@@ -273,11 +284,25 @@ open):
   `state/installation-snapshot.json` file. The former per-root
   `state/package-graphs/<publisher>/<package>.json` layout is rejected rather
   than migrated, and backup/restore inventories accept only the new snapshot.
+- Expanded package content is stored once at
+  `data/artifacts/expanded-packages/sha256/<prefix>/<digest>/content`, guarded
+  by a cross-process per-digest mutation lock. Two installation registries can
+  commit the same digest concurrently and converge on that one complete tree,
+  while their receipt, generation, visibility, and lease authority remain
+  independent.
+- Artifact reads validate the complete owned directory chain and exact digest
+  path before package integrity is rechecked. Link/reparse substitution fails
+  closed. Interrupted writes use bounded `.artifact-staging-*` trees and are
+  reclaimed only while holding the digest lock.
+- Upgrade, rollback, and uninstall retire installation-scoped authority but do
+  not delete global content. Installation backup excludes global artifacts.
+  Unreferenced expanded trees are retained until a global collector can prove
+  reachability across every installation and durable operation.
 - The remaining A1 work is structural, not a hidden compatibility layer:
-  immutable installed bytes must move behind the global Artifact Store,
-  enablement and publication intent must join the installation generation,
-  route strings must cease carrying identity, and the complete
-  two-installation lifecycle/lease matrix must pass.
+  source-scoped verified target bytes still need a global blob tier and one
+  safe quota/reference/audit/repair/GC model; enablement and publication intent
+  must join the installation generation; route strings must cease carrying
+  identity; and the complete two-installation lifecycle/lease matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store
 
@@ -839,21 +864,21 @@ Status: in progress
   Native tests prove transient scanner release converges for each cleanup path;
   a persistent selected-target lock stops at two seconds, preserves that entry,
   and a later prune rescans and finishes after any earlier durable deletions.
-  Recursive cleanup of bounded abandoned lifecycle staging and drained package
-  generations plus lifecycle receipt deletion now use the same retry without
-  blocking Tokio. Native tests prove transient receipt and nested-staging
-  contention lets the same removal or commit finish; a persistent generation
-  lock stops at two seconds after durable hide and receipt removal, retains the
-  residual tree, and permits exact removal replay without another Registry
-  generation. Native tests also hold the active package-staging directory at
-  its atomic generation rename: transient contention lets the same commit
-  finish, while persistent contention fails before receipt or Registry-snapshot
-  mutation, retains residual staging, and permits exact commit replay after
-  release. Selected upgrade-receipt replacement has the same native scanner
-  qualification. Transient contention completes the same upgrade; persistent
-  contention stops at the bound, removes the candidate root and retained
-  receipt, preserves the byte-exact prior receipt and published generation,
-  leaves no temporary receipt, and permits exact replay after release. Reboot
+  Recursive cleanup of bounded abandoned `.artifact-staging-*` trees plus
+  lifecycle receipt deletion uses the same retry without blocking Tokio.
+  Native tests prove transient receipt and nested-staging contention lets the
+  same authority retirement or artifact commit finish. A persistent reader of
+  a complete global artifact never delays uninstall because scoped retirement
+  does not delete shared bytes. Native tests also hold the active
+  artifact-staging directory at its atomic content rename: transient contention
+  lets the same commit finish, while persistent contention fails before receipt
+  or Registry-snapshot mutation, retains residual staging, and permits exact
+  commit replay after release. Selected upgrade-receipt replacement has the
+  same native scanner qualification. Transient contention completes the same
+  upgrade; persistent contention stops at the bound, retains the valid global
+  candidate artifact, removes its retained-receipt candidate, preserves the
+  byte-exact prior receipt and published generation, leaves no temporary
+  receipt, and permits exact replay after release. Reboot
   recovery, antivirus contention beyond these exact target promotion,
   cache-removal, active package-commit, upgrade-receipt replacement, and
   lifecycle-removal boundaries, product-host contention, and the remaining
@@ -873,12 +898,11 @@ Status: in progress
   zero-network retry from
   the verified cache. A third real-process test kills the following immutable
   package copy after its pending plan and applying journal are durable, then
-  proves retry reclaims the actual bounded crash-staging tree, publishes only
-  the exact generation once, and removes the pending operation. Package commit
-  also rejects staging or package-parent links/reparse points. A fourth
-  real-process test kills uninstall during physical generation deletion after
-  route hiding and receipt removal; exact replay finishes the partial directory,
-  completes the journal, and does not inflate the Registry generation. A fifth
+  proves retry reclaims the actual bounded artifact-staging tree, publishes
+  only the exact generation once, and removes the pending operation. Package
+  commit also rejects staging or Artifact Store ancestor links/reparse points.
+  A fourth integration test proves uninstall retires scoped receipt and route
+  authority without deleting or waiting on global artifact bytes. A fifth
   real-process test kills a nine-node install after the complete atomic graph
   is visible but before one dependency journal and the installation snapshot
   complete; offline replay uses the retained cutover, performs no network

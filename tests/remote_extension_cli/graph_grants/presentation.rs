@@ -326,13 +326,9 @@ async fn embedded_catalog_plan_apply_and_workspace_okf_lease_are_exact() {
     assert_eq!(error.code, "use.plugin.managed_scope_fence_mismatch");
 
     let package_root = paths
-        .data_root()
-        .join("extensions/acme/knowledge")
-        .join(format!(
-            "lifecycle-{}-{}",
-            evidence.lifecycle_generation,
-            evidence.package_digest.strip_prefix("sha256:").unwrap()
-        ));
+        .artifact_store()
+        .expanded_package_path(&evidence.package_digest)
+        .unwrap();
     std::fs::write(package_root.join("README.md"), "drifted after lease\n").unwrap();
     let error = lease
         .knowledge()

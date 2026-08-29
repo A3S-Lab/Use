@@ -570,10 +570,14 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
         .starts_with("sha256:"));
     let state_entries = state_manifest["entries"].as_array().unwrap();
     assert!(state_entries.iter().any(|entry| {
-        entry["root"] == "data"
-            && entry["path"]
-                .as_str()
-                .is_some_and(|path| path.starts_with("extensions/acme/knowledge/"))
+        entry["root"] == "state"
+            && entry["family"] == "registry"
+            && entry["path"] == "extensions/acme/knowledge.json"
+    }));
+    assert!(!state_entries.iter().any(|entry| {
+        entry["path"]
+            .as_str()
+            .is_some_and(|path| path.starts_with("artifacts/"))
     }));
     assert!(state_entries.iter().any(|entry| {
         entry["root"] == "state"

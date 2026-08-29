@@ -276,8 +276,8 @@ evidence，并只接受已审查 digest 的确认执行。它只能创建缺失�
 `restore-status` 会报告 global active phase，以及 requested scope 的有界、无路径
 history 与剩余容量，不会轮换或改写 evidence。
 
-独立的 `state backup` 命令会在同一个独占 maintenance fence 内捕获已安装
-package root，以及所有 allowlisted Registry、generation、Grant、binding、
+独立的 `state backup` 命令会在同一个独占 maintenance fence 内捕获所有
+allowlisted Registry、generation、Grant、binding、
 lifecycle/package operation、Knowledge、enablement、Host Manager 与 Flow Runtime
 state family。确定性的 `a3s.use.state-backup.v2` manifest 只记录可移植相对路径、
 精确 length/SHA-256/mode、family accounting、Registry 和 installed receipt

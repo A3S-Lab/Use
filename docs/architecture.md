@@ -23,6 +23,48 @@ Runtime, Gateway, Flow, Knowledge, Skill, Code, and operating-system hosts
 own execution and presentation. Package content describes requirements but
 cannot select a provider or authorize itself.
 
+## First-principles review
+
+An AI-native package manager has one essential job: turn reviewed intent into
+one authorized, observable capability generation. Everything else follows from
+that constraint:
+
+1. Each mutable fact must have one authority and one commit order.
+2. Immutable content identity must not depend on an installation, version,
+   route, source, or local path.
+3. Installation identity and capability identity must be explicit stable keys;
+   human-facing aliases are not ownership.
+4. External agents receive portable protocols and opaque references, while the
+   host retains local paths, credentials, providers, and generation leases.
+5. Provider and device effects cannot join a local transaction, so durable
+   checkpoints must distinguish rejected, applied, and unknown outcomes.
+6. Steady-state discovery and watch work must scale with changed generations,
+   not with the total installed filesystem.
+
+Against those invariants, the current architecture is directionally sound but
+not yet internally complete. It should be evolved in place through ROADMAP A1
+to A4, not replaced wholesale and not split into more repositories before the
+ownership boundaries stabilize.
+
+| Area | Current evidence | Verdict |
+| --- | --- | --- |
+| Package aggregate | One manifest generation owns Tool, MCP, OKF, Flow, Skill, and UI surfaces; dependency preparation and retirement are ordered around one cutover. | Correct foundation. A surface must not become an independently installed mini-package. |
+| Trust and planning | TUF provenance, exact SemVer locks, read-only planning, explicit confirmation, generation compare-and-swap, and crash replay are enforced. | Correct foundation. Keep source transport, trust evidence, and package identity separate. |
+| Immutable bytes | Expanded packages now use the global content-addressed Artifact Store and are shared across installations. Verified archive, planning, and media targets are still retained inside each Registry-source datastore, and corrupted shared content has no automated quarantine/rehydration path. | Partially correct. Move raw blobs behind one global digest tier only with a global reachability, quota, audit, repair, and garbage-collection model; source observations remain source-scoped metadata. |
+| Installation authority | `InstallationSnapshot` owns desired roots and the unified resolved graph, but receipts, routes, enablement, Grants, provider bindings, operations, and publication metadata still live in separate mutable stores. | Critical debt. A2 must make these facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
+| Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
+| Identity | Package and generation keys exist, but route strings still select, lock, conflict-check, and dispatch capabilities. | High debt. Route becomes an optional alias indexed to a canonical package/surface/generation identity. |
+| Observation cost | Registry watch polls at a fixed interval, and normal snapshot projection can reopen and rehash package assets. | High scalability debt. Materialize one immutable Capability Index at cutover, publish generation notifications, and reserve full hashing for admission, audit, or detected drift. |
+| Built-ins and providers | Browser, OCR, Box, Runtime, Flow, and UI are still named directly by the facade and capability projection. | High coupling. A4 must classify true bootstrap providers explicitly and move ordinary domains to injected providers or first-party packages. |
+| Code structure and language | `Plugin`, `Extension`, and `CognitivePackage` overlap; several production modules exceed 1,000 lines because persistence, orchestration, projection, and protocol concerns still meet in one file. | Medium structural debt. Rename once at a coordinated contract cutover and split files when A2/A4 move ownership; do not add forwarding facades or parallel registries. |
+| MHS | The fixture composes standard MCP, Flow, Skill, and UI surfaces and depends on an exact managed gateway binding. | Correct boundary. MHS is a signed reference package and safety adapter, not a new package surface; the virtual laboratory remains a separate repository. |
+
+The release-critical sequence is therefore A0 mutation correctness, A1 scoped
+installation and global artifacts, A2 transactional mutable authority, and A3
+portable agent consumption. A4 provider cleanup can then follow those stable
+ports. Naming cleanup, crate splitting, extra package types, and MHS-specific
+features must not bypass that order.
+
 ## Repository layers
 
 ```text
@@ -40,7 +82,7 @@ PackageGraphLifecycle         prepare forward · cut over once · retire reverse
  hosts   hosts      host     host    host       host
             │
             ▼
-Immutable package store · receipts · journals · capability snapshots
+Global Artifact Store · scoped control state · immutable capability index
 ```
 
 `InstallationId(kind, id)` is the authority boundary. Every mutable selection,
@@ -48,8 +90,26 @@ receipt, route, enablement record, Grant, provider binding, and capability
 projection belongs to that exact User or Workspace installation. Host
 projections and deployed units are receipt-owned derived state; packages do not
 scatter authoritative files across host directories. The current preview still
-materializes this authority across multiple scoped stores; ROADMAP A1 tracks
-their consolidation into one `InstallationSnapshot`.
+materializes mutable authority across multiple scoped stores.
+`InstallationSnapshot` is already the sole installed-selection graph; ROADMAP
+A2 tracks transactional consolidation of the remaining control facts.
+
+Expanded package bytes are not installation authority. They live at
+`<data-root>/artifacts/expanded-packages/sha256/<prefix>/<digest>/content` and
+are serialized by one digest mutation lock across installations. User and
+Workspace receipts may reference the same directory while retaining independent
+lifecycle generations and publication state. Uninstall retires only scoped
+authority and never deletes shared bytes. Installation backup excludes the
+global store. Until a future global garbage collector can prove reachability
+across every installation and durable operation, unreferenced expanded content
+is retained deliberately.
+
+This is not yet the complete Artifact Store. Verified archives, executable
+planning targets, and presentation media remain content-addressed within their
+Registry-source datastores, so identical bytes from different sources can still
+be duplicated and governed by conflicting per-source cache policies. Their
+future blob bytes belong in the global store; signed TUF/source observations,
+freshness, and provenance do not.
 
 Every Runtime, Flow, OKF binding/SQLite, and lifecycle journal store captures
 one `InstallationId` at construction. Scope fields retained in receipts and
@@ -217,10 +277,13 @@ for an admitted Run; a later hot-plug affects only a later admission. `Drop`
 performs synchronous lock release only. Use lifecycle coordinators continue to
 own bounded asynchronous drain and retirement.
 
-The Registry projection exposes identities and content-bound host targets, not
-arbitrary package paths or a universal action protocol. Tool contracts remain
-native CLI/HTTP, MCP remains standard MCP, and Flow execution remains owned by
-`a3s-flow`.
+The current Registry projection is host-internal in practice and still exposes
+local package, executable, Skill, and asset paths in serializable bindings. It
+must not be treated as the arbitrary-agent contract. The A3 Capability MCP
+Gateway will expose identities, schemas, content evidence, and opaque host
+references while retaining exact-generation leases server-side. Tool contracts
+remain native CLI/HTTP behind that host boundary, MCP remains standard MCP, and
+Flow execution remains owned by `a3s-flow`.
 
 ## Built-in capabilities
 

@@ -136,3 +136,177 @@ async fn equal_textual_ids_in_different_kinds_select_independent_generations() {
     assert_eq!(workspace_after.cursor().unwrap(), workspace_cursor);
     assert!(workspace_after.routes[0].enabled);
 }
+
+#[tokio::test]
+async fn installations_share_identical_artifacts_without_sharing_lifecycle_authority() {
+    let temporary = tempfile::tempdir().unwrap();
+    let source = temporary.path().join("shared-source");
+    compatible_cognitive_package(&source).await;
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let user_registry = ExtensionRegistry::new(
+        roots
+            .for_installation(
+                a3s_use_core::InstallationId::new(
+                    a3s_use_core::InstallationKind::User,
+                    "shared/artifact",
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+    );
+    let workspace_registry = ExtensionRegistry::new(
+        roots
+            .for_installation(
+                a3s_use_core::InstallationId::new(
+                    a3s_use_core::InstallationKind::Workspace,
+                    "shared/artifact",
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+    );
+    let user_candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let workspace_candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let user_identity = lifecycle_identity(&user_candidate, 1);
+    let workspace_identity = lifecycle_identity(&workspace_candidate, 9);
+
+    let user = user_registry
+        .commit_lifecycle_package(&user_identity, &user_candidate)
+        .await
+        .unwrap();
+    user_registry
+        .publish_lifecycle_package(&user_identity)
+        .await
+        .unwrap();
+    let workspace = workspace_registry
+        .commit_lifecycle_package(&workspace_identity, &workspace_candidate)
+        .await
+        .unwrap();
+    workspace_registry
+        .publish_lifecycle_package(&workspace_identity)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        user.extension.receipt.package_root,
+        workspace.extension.receipt.package_root
+    );
+    assert_eq!(user.extension.receipt.lifecycle_generation, Some(1));
+    assert_eq!(workspace.extension.receipt.lifecycle_generation, Some(9));
+
+    user_registry
+        .hide_lifecycle_package(&user_identity)
+        .await
+        .unwrap();
+    user_registry
+        .remove_lifecycle_package(&user_identity, std::time::Duration::from_secs(1))
+        .await
+        .unwrap();
+
+    assert!(workspace.extension.receipt.package_root.is_dir());
+    workspace_registry
+        .get("acme/cognitive")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(workspace_registry
+        .snapshot()
+        .await
+        .unwrap()
+        .routes
+        .iter()
+        .any(|route| route.enabled && route.lifecycle_generation == Some(9)));
+}
+
+#[tokio::test]
+async fn concurrent_installations_commit_one_complete_identical_artifact() {
+    let temporary = tempfile::tempdir().unwrap();
+    let source = temporary.path().join("shared-source");
+    compatible_cognitive_package(&source).await;
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let user_registry = ExtensionRegistry::new(
+        roots
+            .for_installation(
+                a3s_use_core::InstallationId::new(
+                    a3s_use_core::InstallationKind::User,
+                    "concurrent/artifact",
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+    );
+    let workspace_registry = ExtensionRegistry::new(
+        roots
+            .for_installation(
+                a3s_use_core::InstallationId::new(
+                    a3s_use_core::InstallationKind::Workspace,
+                    "concurrent/artifact",
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+    );
+    let user_candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let workspace_candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let user_identity = lifecycle_identity(&user_candidate, 1);
+    let workspace_identity = lifecycle_identity(&workspace_candidate, 1);
+
+    let (user, workspace) = tokio::join!(
+        user_registry.commit_lifecycle_package(&user_identity, &user_candidate),
+        workspace_registry.commit_lifecycle_package(&workspace_identity, &workspace_candidate)
+    );
+    let user = user.unwrap();
+    let workspace = workspace.unwrap();
+
+    assert_eq!(
+        user.extension.receipt.package_root,
+        workspace.extension.receipt.package_root
+    );
+    let artifact_parent = user.extension.receipt.package_root.parent().unwrap();
+    let mut entries = fs::read_dir(artifact_parent).await.unwrap();
+    let mut content_directories = 0;
+    while let Some(entry) = entries.next_entry().await.unwrap() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        assert!(!name.starts_with(".artifact-staging-"));
+        if name == "content" {
+            assert!(entry.file_type().await.unwrap().is_dir());
+            content_directories += 1;
+        }
+    }
+    assert_eq!(content_directories, 1);
+}

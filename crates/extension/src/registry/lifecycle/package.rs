@@ -3,7 +3,7 @@ use std::path::Path;
 use a3s_use_core::{PluginPlanningBundle, UseError, UseResult, VerifiedPluginCatalogRecord};
 use tokio::fs;
 
-use super::staging::{prepare_lifecycle_package_parent, LIFECYCLE_STAGING_PREFIX};
+use super::staging::{reclaim_abandoned_artifact_staging, ARTIFACT_STAGING_PREFIX};
 use super::{
     lifecycle_identity_error, lifecycle_state_error, ExtensionLifecycleIdentity,
     ExtensionLifecyclePackage,
@@ -15,7 +15,7 @@ use crate::registry::{
 use crate::remote::{DownloadedRemotePackage, ResolvedRemotePackage};
 use crate::source::{prepare_package_source, PreparedPackageSource};
 use crate::surface_files::validate_planning_bundle_package_binding;
-use crate::ExtensionManifest;
+use crate::{ArtifactStore, ExtensionManifest};
 
 #[cfg(all(test, windows))]
 pub(crate) type BeforeCandidateCommitHook = Box<dyn FnOnce(&Path) + Send>;
@@ -300,24 +300,33 @@ pub(super) async fn validate_candidate_source(
 pub(super) async fn commit_candidate_root(
     candidate: &ExtensionLifecyclePackage,
     target: &Path,
-    data_root: &Path,
-) -> UseResult<bool> {
+    artifact_store: &ArtifactStore,
+    package_sha256: &str,
+) -> UseResult<()> {
+    if target != artifact_store.expanded_package_path_from_sha256(package_sha256) {
+        return Err(lifecycle_state_error(
+            "The expanded-package target does not match its Artifact Store digest.",
+        ));
+    }
+    let _artifact_lock = artifact_store
+        .acquire_expanded_package_mutation(package_sha256)
+        .await?;
     let parent = target.parent().ok_or_else(|| {
         lifecycle_state_error("The lifecycle package root has no owned parent directory.")
     })?;
-    prepare_lifecycle_package_parent(data_root, parent).await?;
+    reclaim_abandoned_artifact_staging(parent).await?;
     match fs::symlink_metadata(target).await {
         Ok(_) => {
             validate_committed_root(candidate, target).await?;
-            return Ok(false);
+            return Ok(());
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(io_error("inspect lifecycle package", target, error)),
     }
     let staging = tempfile::Builder::new()
-        .prefix(LIFECYCLE_STAGING_PREFIX)
+        .prefix(ARTIFACT_STAGING_PREFIX)
         .tempdir_in(parent)
-        .map_err(|error| io_error("create lifecycle package staging", parent, error))?;
+        .map_err(|error| io_error("create expanded-package artifact staging", parent, error))?;
     copy_package(candidate.source.root(), staging.path()).await?;
     validate_committed_root(candidate, staging.path()).await?;
     let staging = staging.keep();
@@ -336,16 +345,13 @@ pub(super) async fn commit_candidate_root(
     if let Err(error) = renamed {
         let _ = crate::package::remove_dir_all_with_windows_retry(
             staging,
-            "remove failed lifecycle package staging",
+            "remove failed expanded-package artifact staging",
         )
         .await;
-        return Err(io_error(
-            "commit lifecycle package generation",
-            target,
-            error,
-        ));
+        return Err(io_error("commit expanded-package artifact", target, error));
     }
-    Ok(true)
+    crate::package::sync_parent_directory(parent, "expanded-package artifact").await?;
+    Ok(())
 }
 
 async fn validate_committed_root(

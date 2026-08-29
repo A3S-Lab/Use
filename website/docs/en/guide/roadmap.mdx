@@ -189,19 +189,20 @@ package, and only a durable Host outcome reports `Completed`.
   promotion, and staging retry. Invalid-partial cleanup and stale, partial, and
   verified-target cache deletion use the same bounded blocking retry. Native
   tests prove transient convergence and persistent selected-target preservation
-  followed by a residual-inventory rescan. Recursive removal of bounded
-  lifecycle receipts, abandoned staging, and drained package generations now
-  uses the same retry. Native tests prove transient receipt/nested-staging
-  convergence and persistent generation preservation followed by exact removal
-  replay without Registry generation inflation. Native tests also bind active
-  package-staging rename contention to the commit state machine: a transient
-  lock lets the same commit finish, while a persistent lock leaves receipt and
+  followed by a residual-inventory rescan. Bounded deletion of lifecycle
+  receipts and abandoned artifact staging uses the same retry. Native tests
+  prove transient receipt/nested-staging convergence. A persistent reader of a
+  complete global artifact never delays
+  scoped uninstall because shared bytes are retained. Native tests also bind
+  active artifact-staging rename contention to the commit state machine: a
+  transient lock lets the same commit finish, while a persistent lock leaves receipt and
   Registry snapshot untouched, preserves residual staging, and permits exact
   replay after release. Selected upgrade-receipt replacement now has the same
   native qualification. A transient lock completes the same upgrade; a
-  persistent lock removes candidate and retained state, preserves the exact
-  prior receipt and published generation, leaves no temporary receipt, and
-  permits exact replay after release. Reboot recovery and antivirus contention
+  persistent lock retains the valid global candidate artifact, removes its
+  retained-receipt candidate state, preserves the exact prior receipt and
+  published generation, leaves no temporary receipt, and permits exact replay
+  after release. Reboot recovery and antivirus contention
   beyond these exact promotion, cache-removal, active package-commit,
   upgrade-receipt replacement, and lifecycle-removal boundaries remain open.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
@@ -212,10 +213,10 @@ package, and only a durable Host outcome reports `Completed`.
   explicit offline mode and no network request.
 - A real-process package-copy interruption also proves the durable pending plan
   and applying journal replay the same generation, reclaim the physical
-  lifecycle staging residue, and publish only once without network access.
-- A real-process uninstall interruption during partial package-directory
-  removal now proves restart finishes cleanup from the exact lifecycle identity
-  without republishing or advancing the Registry generation again.
+  artifact-staging residue, and publish only once without network access.
+- Uninstall retires exact scoped lifecycle authority without deleting or
+  waiting on global expanded-package bytes and without advancing the Registry
+  generation again.
 - A real-process nine-node install is now killed after its complete Registry
   graph and durable cutover are visible but before one dependency journal and
   the parent graph record complete. Explicit offline replay makes no network

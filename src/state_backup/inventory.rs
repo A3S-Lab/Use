@@ -211,7 +211,7 @@ fn scan_root(
             validate_layout(kind, &relative, metadata.is_dir())?;
             if is_nonterminal(kind, &relative, &absolute, &metadata)? {
                 return Err(state_backup_nonterminal(
-                    "Use-owned state contains temporary, partial, active, or lifecycle-staging evidence.",
+                    "Use-owned state contains temporary, partial, active, or artifact-staging evidence.",
                 ));
             }
             if metadata.is_dir() {
@@ -303,52 +303,46 @@ fn excluded_active_restore_entry(
 }
 
 fn validate_layout(root: StateBackupRoot, relative: &Path, directory: bool) -> UseResult<()> {
+    if root == StateBackupRoot::Data {
+        return Err(state_backup_layout_unsupported(
+            "Installation data payloads are not portable authority; immutable package bytes belong to the global Artifact Store.",
+        ));
+    }
     let mut components = relative.components();
     let first = normal_component(components.next())?;
-    match root {
-        StateBackupRoot::Data => {
-            if first != "extensions" || (!directory && components.next().is_none()) {
-                return Err(state_backup_layout_unsupported(
-                    "The Use data root contains an unknown top-level state family.",
-                ));
-            }
+    if components.next().is_none() {
+        let supported = if directory {
+            STATE_DIRECTORIES.binary_search(&first).is_ok()
+        } else {
+            STATE_FILES.binary_search(&first).is_ok()
+                || STATE_ROOT_LOCKS.binary_search(&first).is_ok()
+                || first == ACTIVE_STATE_RESTORE_MARKER
+        };
+        if !supported {
+            return Err(state_backup_layout_unsupported(
+                "The Use state root contains an unknown top-level state family.",
+            ));
         }
-        StateBackupRoot::State => {
-            if components.next().is_none() {
-                let supported = if directory {
-                    STATE_DIRECTORIES.binary_search(&first).is_ok()
-                } else {
-                    STATE_FILES.binary_search(&first).is_ok()
-                        || STATE_ROOT_LOCKS.binary_search(&first).is_ok()
-                        || first == ACTIVE_STATE_RESTORE_MARKER
-                };
-                if !supported {
-                    return Err(state_backup_layout_unsupported(
-                        "The Use state root contains an unknown top-level state family.",
-                    ));
-                }
-            }
-            let parts = relative
-                .components()
-                .map(|component| normal_component(Some(component)))
-                .collect::<UseResult<Vec<_>>>()?;
-            if parts.first() == Some(&"operations")
-                && parts.len() >= 2
-                && OPERATION_DIRECTORIES.binary_search(&parts[1]).is_err()
-            {
-                return Err(state_backup_layout_unsupported(
-                    "The Use operations root contains an unknown state family.",
-                ));
-            }
-            if parts.first() == Some(&"bindings")
-                && parts.len() >= 2
-                && !matches!(parts[1], "flow" | "knowledge" | "runtime")
-            {
-                return Err(state_backup_layout_unsupported(
-                    "The Use binding root contains an unknown state family.",
-                ));
-            }
-        }
+    }
+    let parts = relative
+        .components()
+        .map(|component| normal_component(Some(component)))
+        .collect::<UseResult<Vec<_>>>()?;
+    if parts.first() == Some(&"operations")
+        && parts.len() >= 2
+        && OPERATION_DIRECTORIES.binary_search(&parts[1]).is_err()
+    {
+        return Err(state_backup_layout_unsupported(
+            "The Use operations root contains an unknown state family.",
+        ));
+    }
+    if parts.first() == Some(&"bindings")
+        && parts.len() >= 2
+        && !matches!(parts[1], "flow" | "knowledge" | "runtime")
+    {
+        return Err(state_backup_layout_unsupported(
+            "The Use binding root contains an unknown state family.",
+        ));
     }
     Ok(())
 }
@@ -390,9 +384,9 @@ fn is_nonterminal(
         || name.contains(".tmp-")
         || name.ends_with(".part")
         || name.ends_with(".partial")
-        || name.starts_with(".lifecycle-staging-");
+        || is_artifact_staging_name(name);
     match root {
-        StateBackupRoot::Data => Ok(name.starts_with(".lifecycle-staging-")),
+        StateBackupRoot::Data => Ok(true),
         StateBackupRoot::State => {
             if name == ACTIVE_STATE_RESTORE_MARKER || temporary {
                 return Ok(true);
@@ -475,9 +469,8 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
     let mut parts = path.split('/');
     let first = parts.next().unwrap_or_default();
     match root {
-        StateBackupRoot::Data if first == "extensions" => Ok(StateBackupFamily::PackageContent),
         StateBackupRoot::Data => Err(state_backup_layout_unsupported(
-            "The backup manifest contains an unknown data family.",
+            "The backup manifest cannot contain installation data payloads or global artifacts.",
         )),
         StateBackupRoot::State => match first {
             "extensions" | "registry.json" => Ok(StateBackupFamily::Registry),
@@ -646,10 +639,10 @@ pub(super) fn validate_archived_path(root: StateBackupRoot, path: &str) -> UseRe
     let parts = path.split('/').collect::<Vec<_>>();
     if parts
         .iter()
-        .any(|segment| segment.starts_with(".lifecycle-staging-"))
+        .any(|segment| is_artifact_staging_name(segment))
     {
         return Err(state_backup_invalid(
-            "A backup manifest contains lifecycle-staging evidence.",
+            "A backup manifest contains artifact-staging evidence.",
         ));
     }
     if root == StateBackupRoot::State {
@@ -670,6 +663,10 @@ pub(super) fn validate_archived_path(root: StateBackupRoot, path: &str) -> UseRe
         }
     }
     Ok(())
+}
+
+fn is_artifact_staging_name(name: &str) -> bool {
+    name.starts_with(".artifact-staging-") || name.starts_with(".lifecycle-staging-")
 }
 
 pub(super) fn validate_inventory_bounds<'a>(

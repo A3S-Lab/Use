@@ -391,7 +391,7 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
         .await
         .unwrap()
         .is_none());
-    assert!(!registry.lifecycle_package_root(&base_identity).exists());
+    assert!(registry.lifecycle_package_root(&base_identity).is_dir());
     let removal_replay = registry
         .remove_lifecycle_package(&base_identity, Duration::from_secs(1))
         .await

@@ -191,10 +191,12 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
     let target = host_target();
     let package = cognitive_skill_target(temp.path(), "acme/root", "root", Vec::new(), &target);
     let archive_bytes = package.archive.len() as u64;
+    let package_digest = target_package_digest(&package);
     let repository = TestRepository::with_targets(vec![package], 79, FUTURE);
     let target_path = format!("/targets/{}", repository.target_name);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
+    let artifact = expanded_package_artifact(&home, &package_digest);
 
     configure_registry(&server, &repository, &home, &[]);
     let source = registry_source_snapshot(&home)["sources"][0].clone();
@@ -285,7 +287,7 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
     assert!(!scoped_state(&home, "extensions/acme/root.json").exists());
     assert!(!scoped_state(&home, "installation-snapshot.json").exists());
     assert!(!scoped_state(&home, "operations/package-graphs/install/acme/root.json").exists());
-    assert!(!scoped_data(&home, "extensions/acme/root").exists());
+    assert!(!artifact.exists());
 
     let attempt_path = scoped_state(&home, "operations/package-downloads/install/acme/root.json");
     let retained_attempt = std::fs::read(&attempt_path).unwrap();
