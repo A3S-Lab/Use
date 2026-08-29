@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
-    OkfCapabilityProjection, OkfKnowledgeObservedState, OkfSelectedGeneration,
+    InstallationId, OkfCapabilityProjection, OkfKnowledgeObservedState, OkfSelectedGeneration,
     PlanQualifiedSurfaceRef, PlanScope, PluginPackageId, PluginSurfaceKind, UseError, UseResult,
 };
 use a3s_use_extension::ExtensionPaths;
@@ -29,24 +29,39 @@ pub struct OkfKnowledgeBindingSnapshot {
     pub projection: Option<OkfCapabilityProjection>,
 }
 
-/// Durable store for receipt/observation pairs across Knowledge generations.
+/// Durable store for receipt/observation pairs across Knowledge generations
+/// owned by one exact installation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OkfKnowledgeBindingStore {
+    installation: InstallationId,
     state_root: PathBuf,
     root: PathBuf,
 }
 
 impl OkfKnowledgeBindingStore {
-    pub fn new(state_root: impl Into<PathBuf>) -> Self {
-        let state_root = state_root.into();
+    /// Construct a store over an already installation-scoped state root.
+    pub fn new(state_root: impl Into<PathBuf>, installation: InstallationId) -> UseResult<Self> {
+        installation.validate()?;
+        Ok(Self::from_parts(state_root.into(), installation))
+    }
+
+    fn from_parts(state_root: PathBuf, installation: InstallationId) -> Self {
         Self {
+            installation,
             root: state_root.join("bindings").join("knowledge"),
             state_root,
         }
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.installation_state_root())
+        Self::from_parts(
+            paths.installation_state_root(),
+            paths.installation().clone(),
+        )
+    }
+
+    pub fn installation(&self) -> &InstallationId {
+        &self.installation
     }
 
     pub fn root(&self) -> &Path {
@@ -168,6 +183,7 @@ impl OkfKnowledgeBindingStore {
         &self,
         scope: &PlanScope,
     ) -> UseResult<Vec<OkfKnowledgeBinding>> {
+        self.installation.ensure_same(scope)?;
         if scope.validate().is_err() {
             return Err(invalid_path_identity());
         }
@@ -208,6 +224,7 @@ impl OkfKnowledgeBindingStore {
     }
 
     async fn list_scope_unlocked(&self, scope: &PlanScope) -> UseResult<Vec<OkfKnowledgeBinding>> {
+        self.installation.ensure_same(scope)?;
         let scope_digest = scope.storage_key().map_err(|_| invalid_path_identity())?;
         let scope_root = self.root.join(scope.kind.as_str()).join(scope_digest);
         if !validate_existing_directory_chain(&self.state_root, Some(&scope_root)).await? {
@@ -274,6 +291,7 @@ impl OkfKnowledgeBindingStore {
         scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
     ) -> UseResult<PathBuf> {
+        self.installation.ensure_same(scope)?;
         validate_path_identity(scope, surface)?;
         let package_id = PluginPackageId::parse(surface.package_id.clone())?;
         let (publisher, package) = package_id

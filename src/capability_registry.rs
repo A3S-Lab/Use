@@ -2132,7 +2132,9 @@ extension "acme/workflow" {
             })
             .unwrap()
             .idempotency_key;
-        let store = FlowRuntimeBindingStore::new(temp.path().join("state"));
+        let store =
+            FlowRuntimeBindingStore::new(temp.path().join("state"), crate::test_installation())
+                .unwrap();
         let host = A3sFlowLifecycleHost::new(
             &package_root,
             &compiler,

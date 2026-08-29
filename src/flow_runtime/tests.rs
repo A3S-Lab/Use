@@ -50,7 +50,7 @@ async fn a3s_flow_preflight_is_retained_per_exact_package_generation() {
     let compiler = fake_flow_compiler(temporary.path());
 
     let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
-    let store = FlowRuntimeBindingStore::new(temporary.path().join("state"));
+    let store = FlowRuntimeBindingStore::new(temporary.path().join("state"), user_scope()).unwrap();
     let host = A3sFlowLifecycleHost::new(
         &package_root,
         &compiler,
@@ -127,7 +127,7 @@ async fn retained_flow_binding_rejects_artifact_substitution() {
     let compiler = fake_flow_compiler(temporary.path());
 
     let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
-    let store = FlowRuntimeBindingStore::new(temporary.path().join("state"));
+    let store = FlowRuntimeBindingStore::new(temporary.path().join("state"), user_scope()).unwrap();
     let host = A3sFlowLifecycleHost::new(
         &package_root,
         &compiler,
@@ -175,20 +175,21 @@ async fn binding_store_rejects_tampered_and_moved_records() {
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.flow_binding_ownership_mismatch");
 
-    let moved_scope = binding_record_path(&store, &workspace_scope(), 10);
-    std::fs::create_dir_all(moved_scope.parent().unwrap()).unwrap();
-    std::fs::write(&moved_scope, &original).unwrap();
+    let mut moved_scope = serde_json::from_slice::<serde_json::Value>(&original).unwrap();
+    moved_scope["scope"]["kind"] = serde_json::Value::String("workspace".to_owned());
+    std::fs::write(&record, serde_json::to_vec(&moved_scope).unwrap()).unwrap();
     let error = store
-        .get(&workspace_scope(), &qualified_surface(), 10)
+        .get(&user_scope(), &qualified_surface(), 10)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.flow_binding_ownership_mismatch");
+    std::fs::write(&record, &original).unwrap();
 
     drop(temporary);
 }
 
 #[tokio::test]
-async fn identical_scope_ids_are_isolated_by_scope_kind() {
+async fn installation_bound_store_rejects_another_scope_kind() {
     let (_temporary, _package_root, _manifest, store) = prepared_fixture(11).await;
     let user = store
         .get(&user_scope(), &qualified_surface(), 11)
@@ -199,11 +200,9 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
     value["scope"]["kind"] = serde_json::Value::String("workspace".to_owned());
     let workspace = serde_json::from_value::<super::FlowRuntimeBinding>(value).unwrap();
 
-    assert!(store.put(&workspace).await.unwrap());
-    assert_ne!(
-        binding_record_path(&store, &user_scope(), 11),
-        binding_record_path(&store, &workspace_scope(), 11)
-    );
+    let error = store.put(&workspace).await.unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
+    assert!(!binding_record_path(&store, &workspace_scope(), 11).exists());
     assert_eq!(
         store
             .get(&user_scope(), &qualified_surface(), 11)
@@ -211,13 +210,11 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
             .unwrap(),
         Some(user)
     );
-    assert_eq!(
-        store
-            .get(&workspace_scope(), &qualified_surface(), 11)
-            .await
-            .unwrap(),
-        Some(workspace)
-    );
+    let error = store
+        .get(&workspace_scope(), &qualified_surface(), 11)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
 }
 
 #[tokio::test]
@@ -259,7 +256,13 @@ async fn prepared_fixture(
     let compiler = fake_flow_compiler(temporary.path());
 
     let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
-    let store = FlowRuntimeBindingStore::new(temporary.path().join("state"));
+    let paths = a3s_use_extension::ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        user_scope(),
+    )
+    .unwrap();
+    let store = FlowRuntimeBindingStore::from_extension_paths(&paths);
     let host = A3sFlowLifecycleHost::new(
         &package_root,
         &compiler,

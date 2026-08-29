@@ -53,7 +53,7 @@ async fn native_tool_and_stdio_mcp_remain_static_launchers() {
         package_root(),
         RuntimeProviderSelection::default(),
         Arc::new(RuntimeClientRegistry::new()),
-        RuntimeBindingStore::new(temporary.path()),
+        RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap(),
         readiness.clone(),
     );
     let tool = manifest
@@ -137,7 +137,7 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
     .await;
     let readiness = Arc::new(RecordingReadiness::default());
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         selection,
@@ -269,7 +269,7 @@ async fn runtime_lifecycle_prepares_next_generation_and_retires_only_the_prior_g
     )
     .await;
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let readiness = Arc::new(RecordingReadiness::default());
     let prior_host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
@@ -374,7 +374,7 @@ async fn runtime_reenable_replaces_a_stopped_binding_with_new_authorization_sema
     let (next_selection, next_registry) =
         selection(vec![next_plan.clone()], runtime.clone(), next_unused_mcp).await;
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let readiness = Arc::new(RecordingReadiness::default());
     let prior_host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
@@ -450,7 +450,7 @@ async fn runtime_retirement_resolves_the_exact_provider_from_the_binding_receipt
     let unused_mcp = Arc::new(FakeRuntime::new(capabilities(&plan, "mcp-runtime")));
     let (selection, registry) = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let readiness = Arc::new(RecordingReadiness::default());
     let activation = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
@@ -509,7 +509,7 @@ async fn gateway_drain_failure_preserves_runtime_and_binding_for_replay() {
         ..RecordingReadiness::default()
     });
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         selection,
@@ -787,6 +787,11 @@ fn capabilities(plan: &RuntimeSurfacePlan, provider: &str) -> RuntimeCapabilitie
 fn package_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("crates/extension/fixtures/packages/plugin-v3/package")
+}
+
+fn runtime_installation() -> a3s_use_core::InstallationId {
+    a3s_use_core::InstallationId::new(a3s_use_core::InstallationKind::Workspace, "research")
+        .unwrap()
 }
 
 fn intent(manifest: &ExtensionManifest) -> PluginLifecycleIntent {

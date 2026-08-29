@@ -2,7 +2,9 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use a3s_use_core::{OkfKnowledgeObservation, OkfProjectionReceipt, PlanScope, UseError, UseResult};
+use a3s_use_core::{
+    InstallationId, OkfKnowledgeObservation, OkfProjectionReceipt, PlanScope, UseError, UseResult,
+};
 use a3s_use_extension::ExtensionPaths;
 use async_trait::async_trait;
 
@@ -52,25 +54,46 @@ pub use storage::OkfKnowledgeStorageUsage;
 
 /// Cross-platform production Knowledge backend for standalone A3S Use.
 ///
-/// Each complete User/Workspace scope owns a separate SQLite/FTS5 database.
+/// Each adapter is bound to one complete User/Workspace installation and owns
+/// its separate SQLite/FTS5 database.
 /// Stage, promotion, selection, and receipt-owned removal are transactional;
 /// search accepts only exact retained projections supplied by a reviewed
-/// capability snapshot or an already-open session.
+/// capability snapshot or an already-open session. Another installation is
+/// rejected before a database directory, lock, or SQLite connection exists.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SqliteOkfKnowledgeAdapter {
+    installation: InstallationId,
     state_root: PathBuf,
     root: PathBuf,
     policy: OkfKnowledgeStoragePolicy,
 }
 
 impl SqliteOkfKnowledgeAdapter {
-    pub fn new(state_root: impl Into<PathBuf>) -> Self {
-        Self::with_policy(state_root, OkfKnowledgeStoragePolicy::default())
+    /// Construct an adapter over an already installation-scoped state root.
+    pub fn new(state_root: impl Into<PathBuf>, installation: InstallationId) -> UseResult<Self> {
+        Self::with_policy(
+            state_root,
+            installation,
+            OkfKnowledgeStoragePolicy::default(),
+        )
     }
 
-    pub fn with_policy(state_root: impl Into<PathBuf>, policy: OkfKnowledgeStoragePolicy) -> Self {
-        let state_root = state_root.into();
+    pub fn with_policy(
+        state_root: impl Into<PathBuf>,
+        installation: InstallationId,
+        policy: OkfKnowledgeStoragePolicy,
+    ) -> UseResult<Self> {
+        installation.validate()?;
+        Ok(Self::from_parts(state_root.into(), installation, policy))
+    }
+
+    fn from_parts(
+        state_root: PathBuf,
+        installation: InstallationId,
+        policy: OkfKnowledgeStoragePolicy,
+    ) -> Self {
         Self {
+            installation,
             root: state_root.join("knowledge").join("sqlite"),
             state_root,
             policy,
@@ -78,18 +101,30 @@ impl SqliteOkfKnowledgeAdapter {
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.installation_state_root())
+        Self::from_parts(
+            paths.installation_state_root(),
+            paths.installation().clone(),
+            OkfKnowledgeStoragePolicy::default(),
+        )
     }
 
     pub fn from_extension_paths_with_policy(
         paths: &ExtensionPaths,
         policy: OkfKnowledgeStoragePolicy,
     ) -> Self {
-        Self::with_policy(paths.installation_state_root(), policy)
+        Self::from_parts(
+            paths.installation_state_root(),
+            paths.installation().clone(),
+            policy,
+        )
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn installation(&self) -> &InstallationId {
+        &self.installation
     }
 
     pub const fn policy(&self) -> &OkfKnowledgeStoragePolicy {
@@ -327,6 +362,7 @@ impl SqliteOkfKnowledgeAdapter {
     }
 
     pub(crate) fn scope_directory(&self, scope: &PlanScope) -> UseResult<PathBuf> {
+        self.installation.ensure_same(scope)?;
         if scope.validate().is_err() {
             return Err(UseError::new(
                 "use.okf.knowledge_database_scope_invalid",

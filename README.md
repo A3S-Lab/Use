@@ -383,6 +383,13 @@ explicit User or Workspace installation. The selected `InstallationId` owns the
 manager and all mutable state; User and Workspace installations with the same
 textual ID remain distinct authority domains.
 
+Runtime, Flow, Knowledge, and lifecycle evidence stores capture that exact
+`InstallationId` when they are constructed. A receipt, query, recovery item,
+or lifecycle intent for another installation fails with
+`use.installation.identity_mismatch` before Use derives a path, acquires a
+store lock, creates a database, or writes evidence. Separate installations use
+separate stores while immutable Registry and artifact inputs remain shareable.
+
 The scoped layout is an intentional pre-release clean cutover, not a migration.
 If `use.installation.legacy_state_unsupported` is reported, stop old Use hosts,
 preserve the prior roots for incident review, and remove only the proven

@@ -191,7 +191,11 @@ fn grant_enablement_fixture() -> GrantEnablementFixture {
     let grant_root = temp.path().join("grant-state");
     let host = Arc::new(RecordingHost::default());
     host.cutover_generation_before.store(1, Ordering::Relaxed);
-    let coordinator = coordinator(&temp.path().join("enablement-journal"), host.clone());
+    let coordinator = coordinator(
+        &temp.path().join("enablement-journal"),
+        intent.scope.clone(),
+        host.clone(),
+    );
     GrantEnablementFixture {
         _temp: temp,
         grant_root,

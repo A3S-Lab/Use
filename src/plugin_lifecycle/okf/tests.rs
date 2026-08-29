@@ -107,7 +107,7 @@ impl OkfKnowledgeAdapter for FakeKnowledgeAdapter {
 async fn stages_promotes_hides_and_receipt_removes_the_real_okf_fixture() {
     let temporary = tempfile::tempdir().unwrap();
     let adapter = Arc::new(FakeKnowledgeAdapter::default());
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store = OkfKnowledgeBindingStore::new(temporary.path(), knowledge_installation()).unwrap();
     let host = OkfKnowledgeLifecycleHost::new(
         package_root(),
         OkfKnowledgeClient::new(adapter.clone()),
@@ -178,7 +178,7 @@ async fn missing_receipt_removal_is_idempotent_without_calling_knowledge() {
     let host = OkfKnowledgeLifecycleHost::new(
         package_root(),
         OkfKnowledgeClient::new(adapter.clone()),
-        OkfKnowledgeBindingStore::new(temporary.path()),
+        OkfKnowledgeBindingStore::new(temporary.path(), knowledge_installation()).unwrap(),
     );
     let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
     let intent = intent(&manifest, PluginLifecycleAction::Uninstall);
@@ -192,9 +192,10 @@ async fn missing_receipt_removal_is_idempotent_without_calling_knowledge() {
 #[tokio::test]
 async fn real_sqlite_backend_runs_lifecycle_and_cited_retrieval_end_to_end() {
     let temporary = tempfile::tempdir().unwrap();
-    let client =
-        OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path())));
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let client = OkfKnowledgeClient::new(Arc::new(
+        SqliteOkfKnowledgeAdapter::new(temporary.path(), knowledge_installation()).unwrap(),
+    ));
+    let store = OkfKnowledgeBindingStore::new(temporary.path(), knowledge_installation()).unwrap();
     let host = OkfKnowledgeLifecycleHost::new(package_root(), client.clone(), store.clone());
     let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
     let intent = intent(&manifest, PluginLifecycleAction::Install);
@@ -262,6 +263,11 @@ async fn real_sqlite_backend_runs_lifecycle_and_cited_retrieval_end_to_end() {
 fn package_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("crates/extension/fixtures/packages/plugin-v3-okf/package")
+}
+
+fn knowledge_installation() -> a3s_use_core::InstallationId {
+    a3s_use_core::InstallationId::new(a3s_use_core::InstallationKind::Workspace, "knowledge")
+        .unwrap()
 }
 
 fn intent(manifest: &ExtensionManifest, action: PluginLifecycleAction) -> PluginLifecycleIntent {

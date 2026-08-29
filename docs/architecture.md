@@ -51,6 +51,14 @@ scatter authoritative files across host directories. The current preview still
 materializes this authority across multiple scoped stores; ROADMAP A1 tracks
 their consolidation into one `InstallationSnapshot`.
 
+Every Runtime, Flow, OKF binding/SQLite, and lifecycle journal store captures
+one `InstallationId` at construction. Scope fields retained in receipts and
+paths are integrity evidence, not a second caller-selected authority. The
+store compares them with its captured installation before deriving a path,
+acquiring a lock, opening SQLite, or mutating evidence. Independent User and
+Workspace installations therefore require independent stores even when their
+textual IDs match and their immutable inputs are shared.
+
 The managed-host entry point is `CognitivePackageHostManager`, an adapter over
 `CognitivePackageManager`, not another manager. Its protocol store contains
 only request-to-plan, operation-to-request, pre-admission cancellation,

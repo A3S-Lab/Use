@@ -69,7 +69,8 @@ fn evidence(value: char) -> String {
 #[tokio::test]
 async fn resumes_exact_checkpoint_and_replays_terminal_record() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let intent = intent("install:acme-guide:1");
 
     let begun = store.begin(&intent).await.unwrap();
@@ -87,7 +88,8 @@ async fn resumes_exact_checkpoint_and_replays_terminal_record() {
     assert_eq!(failed.next_checkpoint(), Some(&package));
     assert!(failed.last_failure.is_some());
 
-    let reopened = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let reopened =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     assert_eq!(reopened.begin(&intent).await.unwrap(), failed);
     let package_applied = reopened
         .record_checkpoint(
@@ -144,7 +146,8 @@ async fn resumes_exact_checkpoint_and_replays_terminal_record() {
 #[tokio::test]
 async fn rejects_conflicting_operation_until_current_one_completes() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let first = intent("install:acme-guide:1");
     let second = intent("install:acme-guide:2");
     store.begin(&first).await.unwrap();
@@ -156,7 +159,8 @@ async fn rejects_conflicting_operation_until_current_one_completes() {
 #[tokio::test]
 async fn rolling_back_operation_blocks_a_different_intent() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let first = intent("install:acme-guide:rolling-back");
     let second = intent("install:acme-guide:replacement");
     store.begin(&first).await.unwrap();
@@ -180,7 +184,8 @@ async fn rolling_back_operation_blocks_a_different_intent() {
 #[tokio::test]
 async fn lifecycle_diagnostics_project_bounded_non_secret_checkpoint_evidence() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let intent = intent("install:acme-guide:diagnostic");
     let begun = store.begin(&intent).await.unwrap();
     let package = begun.next_checkpoint().unwrap();
@@ -236,7 +241,8 @@ async fn lifecycle_diagnostics_project_bounded_non_secret_checkpoint_evidence() 
 #[tokio::test]
 async fn lifecycle_diagnostics_distinguish_latest_and_previous_operations() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let first = intent("install:acme-guide:diagnostic-first");
     let mut record = store.begin(&first).await.unwrap();
     let mut completed_at_ms = 10;
@@ -275,7 +281,8 @@ async fn lifecycle_diagnostics_distinguish_latest_and_previous_operations() {
 #[tokio::test]
 async fn lifecycle_diagnostics_distinguish_phase_intents_with_one_operation_id() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let operation_id = "install:acme-guide:shared-operation";
     let first = intent_in_scope_with_action(
         operation_id,
@@ -322,7 +329,8 @@ async fn lifecycle_diagnostics_distinguish_phase_intents_with_one_operation_id()
 #[tokio::test]
 async fn lifecycle_diagnostics_reject_duplicate_intent_history() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let intent = intent("install:acme-guide:duplicate-diagnostic");
     store.begin(&intent).await.unwrap();
     let directory = operation_directory(&store, &intent.scope);
@@ -338,7 +346,8 @@ async fn lifecycle_diagnostics_reject_duplicate_intent_history() {
 #[tokio::test]
 async fn rejects_out_of_order_and_required_optional_failure_checkpoints() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let intent = intent("install:acme-guide:3");
     let record = store.begin(&intent).await.unwrap();
     let package = &record.intent.checkpoints[0];
@@ -381,7 +390,8 @@ async fn rejects_out_of_order_and_required_optional_failure_checkpoints() {
 #[tokio::test]
 async fn rolling_back_and_rolled_back_states_round_trip_and_replay_exactly() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let intent = intent("install:acme-guide:rollback");
     store.begin(&intent).await.unwrap();
 
@@ -419,7 +429,8 @@ async fn rolling_back_and_rolled_back_states_round_trip_and_replay_exactly() {
 #[tokio::test]
 async fn rollback_states_reject_forward_progress_and_changed_evidence() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let intent = intent("install:acme-guide:rollback-conflict");
     let applying = store.begin(&intent).await.unwrap();
     assert_eq!(
@@ -470,7 +481,8 @@ async fn rollback_states_reject_forward_progress_and_changed_evidence() {
 #[tokio::test]
 async fn tampered_active_record_fails_closed() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let intent = intent("install:acme-guide:4");
     store.begin(&intent).await.unwrap();
 
@@ -493,7 +505,8 @@ async fn tampered_active_record_fails_closed() {
 #[tokio::test]
 async fn linked_operation_record_fails_closed() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let store =
+        PluginLifecycleJournalStore::new(temp.path().join("state"), workspace_scope()).unwrap();
     let intent = intent("install:acme-guide:5");
     store.begin(&intent).await.unwrap();
 
@@ -512,9 +525,8 @@ async fn linked_operation_record_fails_closed() {
 }
 
 #[tokio::test]
-async fn identical_scope_ids_are_isolated_by_scope_kind() {
+async fn installation_bound_store_rejects_another_scope_kind() {
     let temp = tempfile::tempdir().unwrap();
-    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
     let user_scope = PlanScope {
         kind: PlanScopeKind::User,
         id: "shared".to_owned(),
@@ -523,11 +535,19 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
         kind: PlanScopeKind::Workspace,
         id: "shared".to_owned(),
     };
+    let paths = a3s_use_extension::ExtensionPaths::new(
+        temp.path().join("data"),
+        temp.path().join("state"),
+        user_scope.clone(),
+    )
+    .unwrap();
+    let store = PluginLifecycleJournalStore::from_extension_paths(&paths);
     let user = intent_in_scope("install:acme-guide:user", user_scope.clone());
     let workspace = intent_in_scope("install:acme-guide:workspace", workspace_scope.clone());
 
     store.begin(&user).await.unwrap();
-    store.begin(&workspace).await.unwrap();
+    let error = store.begin(&workspace).await.unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
 
     assert_eq!(
         store
@@ -538,19 +558,12 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
             .intent,
         user
     );
-    assert_eq!(
-        store
-            .load_active(&workspace_scope, "acme/guide")
-            .await
-            .unwrap()
-            .unwrap()
-            .intent,
-        workspace
-    );
-    assert_ne!(
-        operation_directory(&store, &user_scope),
-        operation_directory(&store, &workspace_scope)
-    );
+    let error = store
+        .load_active(&workspace_scope, "acme/guide")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
+    assert!(!operation_directory(&store, &workspace_scope).exists());
 }
 
 fn workspace_scope() -> PlanScope {

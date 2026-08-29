@@ -810,7 +810,12 @@ fn package_unit(
     )
     .unwrap();
     let journal = root.join(format!("journal-{generation}-{}", action.name()));
-    PluginPackageLifecycleUnit::new(coordinator(&journal, host), intent, manifest).unwrap()
+    PluginPackageLifecycleUnit::new(
+        coordinator(&journal, intent.scope.clone(), host),
+        intent,
+        manifest,
+    )
+    .unwrap()
 }
 
 pub(super) fn tool_catalog(version: &str, seed: char) -> VerifiedPluginCatalogRecord {

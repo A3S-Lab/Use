@@ -181,7 +181,7 @@ fn running_observation(
 #[tokio::test]
 async fn binding_store_round_trips_idempotently_and_removes_exact_ownership() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let receipt = task_receipt(7);
 
     assert!(store.put(&receipt).await.unwrap());
@@ -200,7 +200,7 @@ async fn binding_store_round_trips_idempotently_and_removes_exact_ownership() {
 #[tokio::test]
 async fn provisioning_store_advances_and_commits_without_an_unowned_gap() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let (plan, provider) = service_plan(7);
     let mut pending = provisioning_receipt(7);
 
@@ -238,7 +238,7 @@ async fn provisioning_store_advances_and_commits_without_an_unowned_gap() {
 #[tokio::test]
 async fn provisioning_store_rejects_conflicting_operation_identity() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let pending = provisioning_receipt(7);
     store.put_provisioning(&pending).await.unwrap();
     let mut conflict = pending.clone();
@@ -256,9 +256,15 @@ async fn provisioning_store_rejects_conflicting_operation_identity() {
 }
 
 #[tokio::test]
-async fn identical_scope_ids_are_isolated_by_scope_kind() {
+async fn installation_bound_store_rejects_another_scope_kind() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let paths = a3s_use_extension::ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        workspace_scope(),
+    )
+    .unwrap();
+    let store = RuntimeBindingStore::from_extension_paths(&paths);
     let workspace = task_receipt(7);
     let user = task_receipt_for_scope(
         7,
@@ -269,16 +275,9 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
     );
 
     assert!(store.put(&workspace).await.unwrap());
-    assert!(store.put(&user).await.unwrap());
-    assert_ne!(
-        binding_path(
-            &store,
-            workspace.scope(),
-            workspace.surface(),
-            workspace.generation(),
-        ),
-        binding_path(&store, user.scope(), user.surface(), user.generation(),)
-    );
+    let error = store.put(&user).await.unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
+    assert!(!binding_path(&store, user.scope(), user.surface(), user.generation()).exists());
     assert_eq!(
         store
             .get_generation(
@@ -290,19 +289,17 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
             .unwrap(),
         Some(workspace)
     );
-    assert_eq!(
-        store
-            .get_generation(user.scope(), user.surface(), user.generation())
-            .await
-            .unwrap(),
-        Some(user)
-    );
+    let error = store
+        .get_generation(user.scope(), user.surface(), user.generation())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
 }
 
 #[tokio::test]
 async fn binding_store_retains_exact_generations_and_rejects_conflicts() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let current = task_receipt(7);
     store.put(&current).await.unwrap();
 
@@ -360,7 +357,7 @@ async fn binding_store_retains_exact_generations_and_rejects_conflicts() {
 #[tokio::test]
 async fn service_observation_refresh_is_monotonic_within_one_generation() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let first = service_receipt(1_000);
     store.put(&first).await.unwrap();
     let mut refreshed = service_receipt(1_001);
@@ -387,7 +384,7 @@ async fn service_observation_refresh_is_monotonic_within_one_generation() {
 #[tokio::test]
 async fn binding_store_fails_closed_on_tampered_json() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let receipt = task_receipt(7);
     store.put(&receipt).await.unwrap();
     let path = binding_path(
@@ -408,7 +405,7 @@ async fn binding_store_fails_closed_on_tampered_json() {
 #[tokio::test]
 async fn binding_store_rejects_a_receipt_moved_to_another_generation() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let receipt = task_receipt(7);
     store.put(&receipt).await.unwrap();
     let original = binding_path(&store, receipt.scope(), receipt.surface(), 7);
@@ -426,7 +423,7 @@ async fn binding_store_rejects_a_receipt_moved_to_another_generation() {
 #[tokio::test]
 async fn binding_store_rejects_linked_generation_receipts() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let receipt = task_receipt(7);
     store.put(&receipt).await.unwrap();
     let path = binding_path(&store, receipt.scope(), receipt.surface(), 7);
@@ -445,7 +442,7 @@ async fn binding_store_rejects_linked_generation_receipts() {
 #[tokio::test]
 async fn binding_store_enforces_the_retained_generation_limit() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     for generation in 1..=MAX_RUNTIME_BINDING_GENERATIONS as u64 {
         store.put(&task_receipt(generation)).await.unwrap();
     }
@@ -486,7 +483,7 @@ async fn binding_store_enforces_the_retained_generation_limit() {
 #[tokio::test]
 async fn binding_store_rejects_okf_surfaces() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let okf = surface(PluginSurfaceKind::Okf, "domain-knowledge");
 
     let error = store.get(&workspace_scope(), &okf).await.unwrap_err();

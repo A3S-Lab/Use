@@ -217,6 +217,10 @@ Implementation evidence (2026-08-28):
   and capability publication under an `InstallationId`.
 - [x] Require scope in extension paths, receipts, routes, snapshots, and every
   `CapabilityRegistry` constructor. Remove implicit `User/current` projection.
+- [x] Bind Runtime, Flow, OKF binding/SQLite, and lifecycle journal stores to
+  one constructor-supplied `InstallationId`. Reject a different or invalid
+  identity before path derivation, lock acquisition, database creation, or
+  evidence mutation.
 - [ ] Make the same package independently selectable at different versions in
   User and Workspace installations while safely sharing identical artifact
   bytes.
@@ -248,6 +252,11 @@ open):
   routes, enablement, Grants, provider bindings, capability publication,
   backup/restore, and both maintenance and mutation locks are installation
   scoped. Installation backup rejects the global cache families.
+- Provider and lifecycle evidence stores no longer accept a second scope as
+  storage authority beneath an already installation-scoped root. Their scope
+  fields and nested keys remain integrity evidence and must exactly match the
+  constructor-bound installation; cross-installation reads and writes fail
+  with `use.installation.identity_mismatch` before filesystem effects.
 - Windows publication and SQLite/Flow access use a shared extended-length path
   primitive. Native regressions cover long scoped roots, atomic publication,
   same-text-ID scope-kind isolation, and independent installation locks.

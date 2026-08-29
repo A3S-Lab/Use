@@ -591,7 +591,11 @@ fn manifest_version(
     ExtensionManifest::parse_acl(&input).unwrap()
 }
 
-fn coordinator(root: &std::path::Path, host: Arc<RecordingHost>) -> PluginLifecycleCoordinator {
+fn coordinator(
+    root: &std::path::Path,
+    installation: PlanScope,
+    host: Arc<RecordingHost>,
+) -> PluginLifecycleCoordinator {
     let hosts = PluginLifecycleHosts::new(
         host.clone(),
         host.clone(),
@@ -602,7 +606,10 @@ fn coordinator(root: &std::path::Path, host: Arc<RecordingHost>) -> PluginLifecy
         host.clone(),
         host,
     );
-    PluginLifecycleCoordinator::new(PluginLifecycleJournalStore::new(root), hosts)
+    PluginLifecycleCoordinator::new(
+        PluginLifecycleJournalStore::new(root, installation).unwrap(),
+        hosts,
+    )
 }
 
 struct InstallGraphFixture {
@@ -732,6 +739,7 @@ fn install_graph_fixture(retain_base: bool) -> InstallGraphFixture {
                 PluginPackageLifecycleUnit::new(
                     coordinator(
                         &temp.path().join(package.package_id().replace('/', "-")),
+                        envelope.plan.scope.clone(),
                         host.clone(),
                     ),
                     intent,
@@ -874,7 +882,11 @@ fn upgrade_graph_fixture() -> UpgradeGraphFixture {
             )
             .unwrap();
             PluginPackageLifecycleUnit::new(
-                coordinator(&package_root(package.package_id()), host.clone()),
+                coordinator(
+                    &package_root(package.package_id()),
+                    envelope.plan.scope.clone(),
+                    host.clone(),
+                ),
                 intent,
                 manifest,
             )
@@ -912,7 +924,11 @@ fn upgrade_graph_fixture() -> UpgradeGraphFixture {
             )
             .unwrap();
             PluginPackageLifecycleUnit::new(
-                coordinator(&package_root(package.package_id()), host.clone()),
+                coordinator(
+                    &package_root(package.package_id()),
+                    envelope.plan.scope.clone(),
+                    host.clone(),
+                ),
                 intent,
                 manifest,
             )

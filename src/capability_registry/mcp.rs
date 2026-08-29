@@ -451,7 +451,7 @@ extension "acme/research" {
         write_executable(&temporary.path().join("bin/catalog"), b"catalog-v1").await;
         write_executable(&temporary.path().join("bin/library"), b"library-v1").await;
         let extension = installed_extension(STDIO_PLUGIN, temporary.path());
-        let store = RuntimeBindingStore::new(temporary.path().join("state"));
+        let store = RuntimeBindingStore::new(temporary.path().join("state"), scope()).unwrap();
 
         let evidence = mcp_evidence_from_store(&extension, &store, &scope())
             .await
@@ -505,7 +505,7 @@ extension "acme/research" {
         let temporary = tempfile::tempdir().unwrap();
         let descriptor = write_mcp_descriptor(temporary.path()).await;
         let extension = installed_extension(HTTP_PLUGIN, temporary.path());
-        let store = RuntimeBindingStore::new(temporary.path().join("state"));
+        let store = RuntimeBindingStore::new(temporary.path().join("state"), scope()).unwrap();
         let binding = service_binding(
             &descriptor,
             "acme/research",
@@ -566,7 +566,7 @@ extension "acme/research" {
         let temporary = tempfile::tempdir().unwrap();
         let descriptor = write_mcp_descriptor(temporary.path()).await;
         let extension = installed_extension(HTTP_PLUGIN, temporary.path());
-        let store = RuntimeBindingStore::new(temporary.path().join("state"));
+        let store = RuntimeBindingStore::new(temporary.path().join("state"), scope()).unwrap();
         let binding = service_binding(
             &descriptor,
             "acme/research",
@@ -605,7 +605,7 @@ extension "acme/research" {
             .await
             .unwrap();
         let temporary = tempfile::tempdir().unwrap();
-        let store = RuntimeBindingStore::new(temporary.path().join("state"));
+        let store = RuntimeBindingStore::new(temporary.path().join("state"), scope()).unwrap();
 
         let missing = mcp_evidence_from_store(&extension, &store, &scope())
             .await
