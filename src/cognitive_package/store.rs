@@ -1,11 +1,13 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{File as StdFile, OpenOptions as StdOpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
-    InstallationId, InstallationRootSelection, InstallationSnapshot, PluginOperationAction,
-    PluginPackageId, PluginPackageLock, UseError, UseResult, MAX_INSTALLATION_SNAPSHOT_BYTES,
+    InstallationId, InstallationPackageSelection, InstallationRootSelection, InstallationSnapshot,
+    PluginOperationAction, PluginPackageId, PluginPackageLock, UseError, UseResult,
+    MAX_INSTALLATION_SNAPSHOT_BYTES,
 };
 use a3s_use_extension::ExtensionPaths;
 use fs2::FileExt;
@@ -32,7 +34,7 @@ const LEGACY_INSTALLED_GRAPHS_DIRECTORY: &str = "package-graphs";
 /// monotonically generated `InstallationSnapshot`; a package ID cannot hold
 /// conflicting selections beneath different roots.
 #[derive(Debug, Clone)]
-pub(super) struct InstallationSnapshotStore {
+pub(crate) struct InstallationSnapshotStore {
     installation: InstallationId,
     state_root: PathBuf,
     path: PathBuf,
@@ -55,7 +57,7 @@ impl InstallationSnapshotStore {
         }
     }
 
-    pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
+    pub(crate) fn from_extension_paths(paths: &ExtensionPaths) -> Self {
         Self::from_parts(
             paths.installation_state_root(),
             paths.installation().clone(),
@@ -72,16 +74,23 @@ impl InstallationSnapshotStore {
         self.read_snapshot().await
     }
 
-    pub async fn put(&self, lock: &PluginPackageLock, installed_at_ms: u64) -> UseResult<bool> {
+    pub async fn put(
+        &self,
+        lock: &PluginPackageLock,
+        installed_at_ms: u64,
+        package_selections: Vec<InstallationPackageSelection>,
+    ) -> UseResult<bool> {
         lock.validate()?;
+        validate_candidate_selections(lock, &package_selections)?;
         let selection = InstallationRootSelection::new(&lock.root_package_id, installed_at_ms)?;
         let _guard = acquire_lock(&self.state_root).await?;
         reject_legacy_graph_layout(&self.legacy_root).await?;
         let current = self.read_snapshot_file().await?;
-        let (generation, host, mut roots) = match current {
+        let (generation, host, mut roots) = match current.as_ref() {
             Some(snapshot) => {
                 if let Some(current_lock) = snapshot.package_lock(&lock.root_package_id)? {
                     if current_lock == *lock {
+                        ensure_current_selections(snapshot, &package_selections)?;
                         return Ok(false);
                     }
                     return Err(package_manager_error(
@@ -100,7 +109,7 @@ impl InstallationSnapshotStore {
                 (
                     next_snapshot_generation(snapshot.generation)?,
                     host,
-                    snapshot_root_locks(&snapshot)?,
+                    snapshot_root_locks(snapshot)?,
                 )
             }
             None => (1, lock.host.clone(), Vec::new()),
@@ -111,11 +120,14 @@ impl InstallationSnapshotStore {
             ));
         }
         roots.push((selection, lock.clone()));
+        let package_selections =
+            merge_package_selections(&roots, current.as_ref(), package_selections)?;
         let replacement = InstallationSnapshot::from_root_locks(
             self.installation.clone(),
             generation,
             host,
             roots,
+            package_selections,
         )?;
         write_new_bounded(
             &self.state_root,
@@ -141,9 +153,11 @@ impl InstallationSnapshotStore {
         expected_digest: &str,
         replacement: &PluginPackageLock,
         installed_at_ms: u64,
+        package_selections: Vec<InstallationPackageSelection>,
     ) -> UseResult<bool> {
         validate_root_package_id(root_package_id)?;
         replacement.validate()?;
+        validate_candidate_selections(replacement, &package_selections)?;
         if replacement.root_package_id != root_package_id {
             return Err(store_error(
                 "A replacement graph does not own the requested root package.",
@@ -159,6 +173,7 @@ impl InstallationSnapshotStore {
             store_error("The installed package graph disappeared before replacement.")
         })?;
         if current == *replacement {
+            ensure_current_selections(&snapshot, &package_selections)?;
             return Ok(false);
         }
         if current.descriptor_digest()? != expected_digest {
@@ -169,11 +184,14 @@ impl InstallationSnapshotStore {
         let mut roots = snapshot_root_locks(&snapshot)?;
         roots.retain(|(root, _)| root.package_id != root_package_id);
         roots.push((selection, replacement.clone()));
+        let package_selections =
+            merge_package_selections(&roots, Some(&snapshot), package_selections)?;
         let replacement = InstallationSnapshot::from_root_locks(
             self.installation.clone(),
             next_snapshot_generation(snapshot.generation)?,
             snapshot.host.clone(),
             roots,
+            package_selections,
         )?;
         write_new_bounded(
             &self.state_root,
@@ -190,6 +208,52 @@ impl InstallationSnapshotStore {
             return Ok(Vec::new());
         };
         snapshot.package_locks()
+    }
+
+    pub(crate) async fn current(&self) -> UseResult<Option<InstallationSnapshot>> {
+        self.read_snapshot().await
+    }
+
+    /// Complete or replay the cutover owned by one already-admitted
+    /// enablement operation. A replay is accepted only at exactly the next
+    /// package state generation with the requested desired state.
+    pub async fn complete_package_enablement(
+        &self,
+        package_id: &str,
+        expected_state_generation_before: u64,
+        enabled: bool,
+    ) -> UseResult<(InstallationSnapshot, bool)> {
+        PluginPackageId::parse(package_id.to_owned())?;
+        let _guard = acquire_lock(&self.state_root).await?;
+        reject_legacy_graph_layout(&self.legacy_root).await?;
+        let snapshot = self.read_snapshot_file().await?.ok_or_else(|| {
+            store_error("The installation snapshot is absent during enablement completion.")
+        })?;
+        if snapshot
+            .package_selection(package_id)
+            .is_some_and(|selection| {
+                selection.enabled == enabled
+                    && expected_state_generation_before.checked_add(1)
+                        == Some(selection.state_generation)
+            })
+        {
+            return Ok((snapshot, false));
+        }
+        let replacement = snapshot
+            .transition_package_enablement(package_id, expected_state_generation_before, enabled)?
+            .ok_or_else(|| {
+                store_error(
+                    "An admitted enablement operation no longer describes a state transition.",
+                )
+            })?;
+        write_new_bounded(
+            &self.state_root,
+            &self.path,
+            &replacement,
+            MAX_INSTALLATION_SNAPSHOT_BYTES as u64,
+        )
+        .await?;
+        Ok((replacement, true))
     }
 
     pub async fn remove(&self, root_package_id: &str, expected_digest: &str) -> UseResult<bool> {
@@ -209,11 +273,23 @@ impl InstallationSnapshotStore {
         }
         let mut roots = snapshot_root_locks(&snapshot)?;
         roots.retain(|(root, _)| root.package_id != root_package_id);
+        let reachable = roots
+            .iter()
+            .flat_map(|(_, lock)| lock.packages.iter())
+            .map(|package| package.package_id().to_owned())
+            .collect::<BTreeSet<_>>();
+        let package_selections = snapshot
+            .packages
+            .iter()
+            .filter(|selection| reachable.contains(selection.package_id()))
+            .cloned()
+            .collect();
         let replacement = InstallationSnapshot::from_root_locks(
             self.installation.clone(),
             next_snapshot_generation(snapshot.generation)?,
             snapshot.host.clone(),
             roots,
+            package_selections,
         )?;
         write_new_bounded(
             &self.state_root,
@@ -257,6 +333,90 @@ fn snapshot_root_locks(
         ));
     }
     Ok(snapshot.roots.iter().cloned().zip(locks).collect())
+}
+
+fn validate_candidate_selections(
+    lock: &PluginPackageLock,
+    selections: &[InstallationPackageSelection],
+) -> UseResult<()> {
+    if selections.len() != lock.packages.len() {
+        return Err(store_error(
+            "A graph cutover must provide one activation selection for every candidate package.",
+        ));
+    }
+    for (package, selection) in lock.packages.iter().zip(selections) {
+        selection.validate()?;
+        if selection.package != *package {
+            return Err(store_error(
+                "A graph activation selection differs from its exact candidate package.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn ensure_current_selections(
+    snapshot: &InstallationSnapshot,
+    selections: &[InstallationPackageSelection],
+) -> UseResult<()> {
+    if selections
+        .iter()
+        .all(|selection| snapshot.package_selection(selection.package_id()) == Some(selection))
+    {
+        return Ok(());
+    }
+    Err(package_manager_error(
+        "use.plugin.package_graph_reconcile_required",
+        "The installed dependency lock matches, but its activation intent differs from the installation snapshot.",
+    ))
+}
+
+fn merge_package_selections(
+    roots: &[(InstallationRootSelection, PluginPackageLock)],
+    current: Option<&InstallationSnapshot>,
+    candidate: Vec<InstallationPackageSelection>,
+) -> UseResult<Vec<InstallationPackageSelection>> {
+    let packages = roots
+        .iter()
+        .flat_map(|(_, lock)| lock.packages.iter())
+        .map(|package| (package.package_id().to_owned(), package))
+        .collect::<BTreeMap<_, _>>();
+    let mut merged = current
+        .into_iter()
+        .flat_map(|snapshot| snapshot.packages.iter().cloned())
+        .map(|selection| (selection.package_id().to_owned(), selection))
+        .collect::<BTreeMap<_, _>>();
+    for selection in candidate {
+        if let Some(existing) = merged.get(selection.package_id()) {
+            if selection.package == existing.package && &selection != existing {
+                return Err(store_error(
+                    "A graph cutover attempted to change activation intent for a retained package.",
+                ));
+            }
+            if selection.package != existing.package
+                && (selection.state_generation <= existing.state_generation
+                    || selection.enabled != existing.enabled)
+            {
+                return Err(store_error(
+                    "A graph replacement must advance package state without changing enablement intent.",
+                ));
+            }
+        }
+        merged.insert(selection.package_id().to_owned(), selection);
+    }
+    merged.retain(|package_id, _| packages.contains_key(package_id));
+    if merged.len() != packages.len()
+        || packages.iter().any(|(package_id, package)| {
+            merged
+                .get(package_id)
+                .is_none_or(|selection| &selection.package != *package)
+        })
+    {
+        return Err(store_error(
+            "The graph cutover does not own complete activation intent for its resolved packages.",
+        ));
+    }
+    Ok(merged.into_values().collect())
 }
 
 fn next_snapshot_generation(generation: u64) -> UseResult<u64> {
@@ -613,6 +773,34 @@ mod tests {
 
     fn package_lock(version: &str, seed: char) -> PluginPackageLock {
         package_lock_for("acme/knowledge", version, seed)
+    }
+
+    fn package_selections(
+        lock: &PluginPackageLock,
+        state_generation: u64,
+        enabled: bool,
+    ) -> Vec<InstallationPackageSelection> {
+        lock.packages
+            .iter()
+            .cloned()
+            .map(|package| {
+                let selected_surfaces = package
+                    .catalog
+                    .record
+                    .resolve_surfaces(&[])
+                    .unwrap()
+                    .into_iter()
+                    .map(|surface| surface.reference())
+                    .collect();
+                InstallationPackageSelection::new(
+                    package,
+                    state_generation,
+                    enabled,
+                    selected_surfaces,
+                )
+                .unwrap()
+            })
+            .collect()
     }
 
     fn package_lock_for(package_id: &str, version: &str, seed: char) -> PluginPackageLock {

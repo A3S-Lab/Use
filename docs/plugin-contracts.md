@@ -40,7 +40,7 @@ current set.
 | Host cancellation request/result | `a3s.use.plugin-host-cancel-request/result.v1` |
 | Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
 | Installed receipt | numeric schema version `5` |
-| Installation snapshot | `a3s.use.installation-snapshot.v1` |
+| Installation snapshot | `a3s.use.installation-snapshot.v2` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
 | Pre-lock resolution attempt | `a3s.use.plugin-resolution-attempt.v1` |
 | Pre-plan download attempt | `a3s.use.plugin-download-attempt.v1` |
@@ -53,13 +53,14 @@ current set.
 | Pre-plan download diagnostic | `a3s.use.plugin-download-attempt-diagnostic.v1` |
 | Enablement request/result | `a3s.use.cognitive-package-enablement-request/result.v1` |
 | Enablement plan result | `a3s.use.cognitive-package-enablement-plan-result.v1` |
-| Enablement state/operation | `a3s.use.cognitive-package-enablement-state/operation.v2` |
+| Enablement recovery projection | `a3s.use.cognitive-package-enablement-projection.v3` |
+| Enablement operation | `a3s.use.cognitive-package-enablement-operation.v3` |
 | Workspace Grant | `a3s.use.plugin-workspace-grant.v1` |
 | Registry cutover | `a3s.use.registry-cutover.v1` |
 | Extension Registry snapshot | numeric schema version `2` |
 | Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v2` |
-| Capability snapshot | numeric schema version `3` |
-| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v2` |
+| Capability snapshot | numeric schema version `4` |
+| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v3` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
@@ -145,18 +146,22 @@ host-side lease pins its lifecycle generation and installed package integrity
 for the complete retrieval. Staged content is not live evidence. Only an exact
 promoted binding may enter the capability snapshot.
 
-Capability snapshot schema v3 binds the exact installation and applies the
+Capability snapshot schema v4 binds the exact installation generation and
+snapshot digest and applies the
 same rule to Runtime Tool Tasks. A
 `toolTasks` entry is emitted only for a published, non-interactive,
 release-backed Task whose v4 binding matches the exact scope, package digest,
 surface, and lifecycle generation. The entry is invocation metadata, not a
 provider fallback: hosts must still possess the named reviewed provider and
 dispatch through the receipt-owned exact-generation lease.
+The installation-generation fields are absent only before that scope has
+created its first Installation Snapshot; an empty snapshot retained after the
+final uninstall still has a generation and digest.
 
 Rust embedding hosts acquire a complete generation through
-`a3s.use.capability-snapshot-cursor.v2`. The cursor binds the installation,
-capability and Registry revisions, plus the sorted package, manifest, and
-lifecycle identities.
+`a3s.use.capability-snapshot-cursor.v3`. The cursor binds the installation,
+Installation Snapshot generation and digest, capability and Registry
+revisions, plus the sorted package, manifest, and lifecycle identities.
 The returned RAII lease is all-or-nothing and must be retained for the full
 accepted Run or invocation. It does not grant package mutation authority and
 does not replace the versioned CLI snapshot, native Tool contract, standard
@@ -409,12 +414,23 @@ Cancellation additionally requires its timestamp and request identity. V2 and
 v3 records are unsupported preview state and are rejected rather than upgraded
 or interpreted with implicit defaults.
 
-`a3s.use.installation-snapshot.v1` is the only accepted installed-selection
-record. One `state/installation-snapshot.json` binds the exact installation,
-monotonic generation, resolution host, desired roots, and unified resolved
-package graph. Per-root locks are derived from that graph; duplicate package
-IDs must carry the same exact node, and unreachable nodes are invalid. The
+`a3s.use.installation-snapshot.v2` is the only accepted installed-selection and
+desired-activation record. One `state/installation-snapshot.json` binds the
+exact installation, monotonic installation generation, resolution host,
+desired roots, and unified resolved package graph. Every package selection
+also binds its monotonic state generation, desired enablement, and exact
+selected-surface closure. Per-root locks are derived from that graph;
+duplicate package IDs must carry the same exact node, every dependency of an
+enabled package must also be enabled, and unreachable nodes are invalid. The
 empty desired set remains a durable generation after the final uninstall.
+
+`a3s.use.cognitive-package-enablement-projection.v3` is a derived recovery
+projection, not desired-state authority. It binds the exact Installation
+Snapshot generation and digest that it materializes. A completed
+`a3s.use.cognitive-package-enablement-operation.v3` retains reviewed-plan and
+replay evidence, while receipts and Registry routes record provider effects.
+Loading, observation, replay, and capability projection all fail closed when
+that evidence disagrees with the snapshot's package state or selected surfaces.
 
 The preview `state/package-graphs/<publisher>/<package>.json` layout is not
 migrated or read as a second authority. Preserve it for operator review,

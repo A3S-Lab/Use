@@ -100,7 +100,7 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
         return Ok(None);
     }
 
-    let (extension, _) = match manager.required_enablement_extension(package_id).await {
+    let (extension, _, _) = match manager.required_enablement_extension(package_id).await {
         Ok(installed) => installed,
         Err(error) if error.code == "use.extension.not_installed" => return Ok(None),
         Err(_) => return Err(diagnostic_state_error()),

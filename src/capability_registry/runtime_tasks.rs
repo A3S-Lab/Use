@@ -299,18 +299,21 @@ extension "acme/research" {
             Some(&SurfaceObservedState::Prepared)
         );
 
-        let capability = super::super::project_extension_for_host_with_flow_observations(
+        let capability = super::super::project_extension_for_host_with_evidence(
             &extension,
             extension
                 .surfaces()
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            "0.3.0",
-            &evidence.observations,
-            &[],
-            &evidence.projections,
-            &[],
+            super::super::CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &evidence.observations,
+                knowledge_bindings: &[],
+                runtime_tasks: &evidence.projections,
+                mcp_projections: &[],
+            },
         )
         .await
         .unwrap();
@@ -356,18 +359,21 @@ extension "acme/research" {
             Some(&SurfaceObservedState::Failed)
         );
 
-        let capability = super::super::project_extension_for_host_with_flow_observations(
+        let capability = super::super::project_extension_for_host_with_evidence(
             &extension,
             extension
                 .surfaces()
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            "0.3.0",
-            &evidence.observations,
-            &[],
-            &evidence.projections,
-            &[],
+            super::super::CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &evidence.observations,
+                knowledge_bindings: &[],
+                runtime_tasks: &evidence.projections,
+                mcp_projections: &[],
+            },
         )
         .await
         .unwrap();

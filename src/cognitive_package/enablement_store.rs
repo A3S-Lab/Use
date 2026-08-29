@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
-    PlanPackageChangeKind, PlanScope, PluginOperationAction, PluginOperationPlanEnvelope,
-    PluginPackageId, UseError, UseResult,
+    InstallationSnapshot, PlanPackageChangeKind, PlanScope, PluginOperationAction,
+    PluginOperationPlanEnvelope, PluginPackageId, UseError, UseResult,
 };
 use fs2::FileExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -19,8 +19,9 @@ use crate::plugin_lifecycle::{PluginLifecycleAction, PluginLifecycleIntent};
 use super::grant::PackageGraphAuthorization;
 use super::{CognitivePackageEnablementRequest, CognitivePackageEnablementResult};
 
-pub(super) const ENABLEMENT_STATE_SCHEMA: &str = "a3s.use.cognitive-package-enablement-state.v2";
-const ENABLEMENT_OPERATION_SCHEMA: &str = "a3s.use.cognitive-package-enablement-operation.v2";
+pub(super) const ENABLEMENT_STATE_SCHEMA: &str =
+    "a3s.use.cognitive-package-enablement-projection.v3";
+const ENABLEMENT_OPERATION_SCHEMA: &str = "a3s.use.cognitive-package-enablement-operation.v3";
 const MAX_ENABLEMENT_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_ENABLEMENT_STATE_INVENTORY_ENTRIES: usize = 2_048;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -133,10 +134,16 @@ impl PendingCognitivePackageEnablement {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+/// Snapshot-bound materialization and crash-recovery evidence.
+///
+/// This record never selects desired state. Its package state, installation
+/// generation, and digest must be re-derived from `InstallationSnapshot`.
 pub(super) struct StoredCognitivePackageEnablement {
     pub schema: String,
     pub scope: PlanScope,
     pub package_id: String,
+    pub installation_generation: u64,
+    pub installation_snapshot_digest: String,
     pub state_generation: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifact: Option<CognitivePackageArtifactState>,
@@ -150,6 +157,7 @@ impl StoredCognitivePackageEnablement {
     pub fn new(
         scope: PlanScope,
         package_id: impl Into<String>,
+        installation_snapshot: &InstallationSnapshot,
         state_generation: u64,
         artifact: Option<CognitivePackageArtifactState>,
         enabled: bool,
@@ -159,6 +167,8 @@ impl StoredCognitivePackageEnablement {
             schema: ENABLEMENT_STATE_SCHEMA.to_string(),
             scope,
             package_id: package_id.into(),
+            installation_generation: installation_snapshot.generation,
+            installation_snapshot_digest: installation_snapshot.descriptor_digest()?,
             state_generation,
             artifact,
             enabled,
@@ -175,12 +185,14 @@ impl StoredCognitivePackageEnablement {
             store_invalid("A cognitive-package enablement package identity is invalid.")
         })?;
         if self.schema != ENABLEMENT_STATE_SCHEMA
+            || self.installation_generation == 0
+            || !valid_sha256(&self.installation_snapshot_digest)
             || self.state_generation == 0
             || self.updated_at_ms == 0
             || (self.artifact.is_none() && self.enabled)
         {
             return Err(store_invalid(
-                "A cognitive-package enablement state record is invalid.",
+                "A cognitive-package enablement recovery projection is invalid.",
             ));
         }
         if let Some(artifact) = &self.artifact {

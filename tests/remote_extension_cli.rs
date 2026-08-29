@@ -5,14 +5,16 @@ use std::io::Read;
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
 
+use a3s_use::capability_registry::CapabilityRegistry;
 use a3s_use::cognitive_package::{
     CognitivePackageEnablementPlanResult, CognitivePackageEnablementPlanStatus,
     CognitivePackageEnablementRequest, CognitivePackageManager,
 };
 use a3s_use_core::{
-    CatalogAvailability, CatalogSurface, InstallationId, InstallationKind, PluginCatalogRecord,
-    PluginDesiredState, PluginObservedState, PluginOperationAction, PluginPackageDependency,
-    PluginPackageLockHost, PluginReleaseChannel, PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA_V3,
+    CatalogAvailability, CatalogSurface, InstallationId, InstallationKind, InstallationSnapshot,
+    PluginCatalogRecord, PluginDesiredState, PluginObservedState, PluginOperationAction,
+    PluginPackageDependency, PluginPackageLockHost, PluginReleaseChannel, PluginSurfaceKind,
+    PLUGIN_CATALOG_SCHEMA_V3,
 };
 use a3s_use_extension::{
     prepare_remote_package, resolve_remote_package_lock, ExtensionPaths, ExtensionRegistry,

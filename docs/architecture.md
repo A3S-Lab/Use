@@ -50,8 +50,8 @@ ownership boundaries stabilize.
 | --- | --- | --- |
 | Package aggregate | One manifest generation owns Tool, MCP, OKF, Flow, Skill, and UI surfaces; dependency preparation and retirement are ordered around one cutover. | Correct foundation. A surface must not become an independently installed mini-package. |
 | Trust and planning | TUF provenance, exact SemVer locks, read-only planning, explicit confirmation, generation compare-and-swap, and crash replay are enforced. | Correct foundation. Keep source transport, trust evidence, and package identity separate. |
-| Immutable bytes | Expanded packages now use the global content-addressed Artifact Store and are shared across installations. Verified archive, planning, and media targets are still retained inside each Registry-source datastore, and corrupted shared content has no automated quarantine/rehydration path. | Partially correct. Move raw blobs behind one global digest tier only with a global reachability, quota, audit, repair, and garbage-collection model; source observations remain source-scoped metadata. |
-| Installation authority | `InstallationSnapshot` owns desired roots and the unified resolved graph, but receipts, routes, enablement, Grants, provider bindings, operations, and publication metadata still live in separate mutable stores. | Critical debt. A2 must make these facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
+| Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. Source observations and resumable partials remain source-scoped; global reachability, quota, quarantine, rehydration, and garbage collection are not implemented. | Partially correct. Add one cross-installation inventory and explicit audit/repair/GC policy before deleting or replacing shared bytes. |
+| Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, routes, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. | Critical debt. A2 must make related control facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
 | Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
 | Identity | Package and generation keys exist, but route strings still select, lock, conflict-check, and dispatch capabilities. | High debt. Route becomes an optional alias indexed to a canonical package/surface/generation identity. |
 | Observation cost | Registry watch polls at a fixed interval, and normal snapshot projection can reopen and rehash package assets. | High scalability debt. Materialize one immutable Capability Index at cutover, publish generation notifications, and reserve full hashing for admission, audit, or detected drift. |
@@ -85,14 +85,24 @@ PackageGraphLifecycle         prepare forward · cut over once · retire reverse
 Global Artifact Store · scoped control state · immutable capability index
 ```
 
-`InstallationId(kind, id)` is the authority boundary. Every mutable selection,
-receipt, route, enablement record, Grant, provider binding, and capability
-projection belongs to that exact User or Workspace installation. Host
+`InstallationId(kind, id)` is the authority boundary. Every desired package
+selection lives in its `InstallationSnapshot`; each receipt, route, enablement
+recovery projection, Grant, provider binding, and capability projection belongs
+to that exact User or Workspace installation. Host
 projections and deployed units are receipt-owned derived state; packages do not
 scatter authoritative files across host directories. The current preview still
 materializes mutable authority across multiple scoped stores.
-`InstallationSnapshot` is already the sole installed-selection graph; ROADMAP
-A2 tracks transactional consolidation of the remaining control facts.
+`InstallationSnapshot` is already the sole installed-selection and
+desired-activation authority; ROADMAP A2 tracks transactional consolidation of
+the remaining control facts and applied observations.
+
+Snapshot v2 gives every selected package one monotonic state generation,
+desired enablement bit, and exact selected-surface closure. Enable/disable
+commits that package state through compare-and-swap while advancing the global
+installation generation. The receipt, Registry route, and
+`cognitive-package-enablement-projection.v3` record are materialization and
+recovery evidence. They are validated against the snapshot and cannot select
+desired state independently.
 
 Expanded package bytes are not installation authority. They live at
 `<data-root>/artifacts/expanded-packages/sha256/<prefix>/<digest>/content` and
@@ -104,12 +114,13 @@ global store. Until a future global garbage collector can prove reachability
 across every installation and durable operation, unreferenced expanded content
 is retained deliberately.
 
-This is not yet the complete Artifact Store. Verified archives, executable
-planning targets, and presentation media remain content-addressed within their
-Registry-source datastores, so identical bytes from different sources can still
-be duplicated and governed by conflicting per-source cache policies. Their
-future blob bytes belong in the global store; signed TUF/source observations,
-freshness, and provenance do not.
+Verified archives, executable planning targets, and presentation media now use
+the global sharded Blob tier. Registry-source datastores retain only canonical
+source observations, TUF freshness/provenance, and resumable partials. This is
+still not a complete Artifact Store: no collector may delete shared raw or
+expanded bytes until one global inventory can prove reachability across every
+installation and durable operation, enforce quota, quarantine corruption, and
+rehydrate verified bytes without replacing an admitted generation in place.
 
 Every Runtime, Flow, OKF binding/SQLite, and lifecycle journal store captures
 one `InstallationId` at construction. Scope fields retained in receipts and
@@ -167,9 +178,10 @@ code accepts one preview baseline only:
 | Manifest | ACL schema 3 |
 | Catalog | `a3s.use.plugin-catalog.v3` |
 | Receipt | numeric schema 5 |
+| Installation snapshot | `a3s.use.installation-snapshot.v2` |
 | Extension Registry snapshot | numeric schema 2 |
-| Capability snapshot | numeric schema 3 |
-| Extension/capability cursor | `a3s.use.extension-snapshot-cursor.v2` / `a3s.use.capability-snapshot-cursor.v2` |
+| Capability snapshot | numeric schema 4 |
+| Extension/capability cursor | `a3s.use.extension-snapshot-cursor.v2` / `a3s.use.capability-snapshot-cursor.v3` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6`, protocol 6 |
 | Host managed scope | `a3s.use.plugin-managed-scope.v2` |
@@ -178,7 +190,7 @@ code accepts one preview baseline only:
 | Pre-lock resolution attempt/diagnostic | `a3s.use.plugin-resolution-attempt.v1` / `a3s.use.plugin-resolution-attempt-diagnostic.v1` |
 | Pre-plan download attempt/diagnostic | `a3s.use.plugin-download-attempt.v1` / `a3s.use.plugin-download-attempt-diagnostic.v1` |
 | Operation diagnostic/history | `a3s.use.plugin-operation-diagnostic.v1` / `a3s.use.plugin-operation-history-diagnostic.v1` |
-| Enablement state/operation | v2 |
+| Enablement recovery projection/operation | `a3s.use.cognitive-package-enablement-projection.v3` / `a3s.use.cognitive-package-enablement-operation.v3` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
@@ -263,10 +275,11 @@ until drain completes.
 
 Embedding hosts use `CapabilityRegistry` with the same injected
 `ExtensionRegistry` that owns planning and cutover. A typed
-`a3s.use.capability-snapshot-cursor.v2` binds the exact installation, complete
-capability revision, authoritative Registry revision, and canonically sorted
-immutable package identities. Acquiring the cursor obtains every shared package route
-lease and then re-reads the publication. If any identity is hidden, stale,
+`a3s.use.capability-snapshot-cursor.v3` binds the exact installation, current
+Installation Snapshot generation and digest, complete capability revision,
+authoritative Registry revision, and canonically sorted immutable package
+identities. Acquiring the cursor obtains every shared package route lease and
+then re-reads both authorities. If any identity is hidden, stale,
 mixed, contended, digest-mismatched, or lacks lifecycle evidence, the whole
 attempt fails and Rust RAII releases any earlier locks. No partial lease can
 escape.

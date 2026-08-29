@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use a3s_use_core::{
-    LockedPluginPackage, PlanScope, PluginDesiredState, PluginHostPackageState,
-    PluginObservedState, PluginOperationConfirmation, PluginOperationPlan,
+    InstallationPackageSelection, InstallationSnapshot, PlanScope, PluginDesiredState,
+    PluginHostPackageState, PluginObservedState, PluginOperationConfirmation, PluginOperationPlan,
     PluginOperationPlanEnvelope, PluginPackageId, UseError, UseResult,
 };
 use a3s_use_extension::{
@@ -220,10 +220,10 @@ impl CognitivePackageManager {
     /// Apply one exact host-reviewed enablement plan without replacing its
     /// immutable artifact generation or installed dependency graph.
     ///
-    /// The package state generation is Use-owned and distinct from the
-    /// immutable receipt lifecycle generation. The operation ID and complete
-    /// result are durable, so a host restart resumes checkpoints or replays the
-    /// exact prior result.
+    /// The package state generation is owned by the Installation Snapshot and
+    /// is distinct from the immutable receipt lifecycle generation. The
+    /// operation ID and complete result are durable, so a host restart resumes
+    /// checkpoints or replays the exact prior result.
     pub async fn apply_enablement(
         &self,
         request: &CognitivePackageEnablementRequest,
@@ -333,9 +333,10 @@ impl CognitivePackageManager {
                 .await;
         }
 
-        let (extension, locked_package) = self
+        let (extension, package_selection, installation_snapshot) = self
             .required_enablement_extension(&request.package_id)
             .await?;
+        require_materialized_enablement(&extension, &package_selection)?;
         if request.enabled {
             self.lifecycle.validate_manifest(&extension.manifest)?;
         } else {
@@ -348,6 +349,8 @@ impl CognitivePackageManager {
             &request.package_id,
             current.as_ref(),
             &extension,
+            &installation_snapshot,
+            &package_selection,
             admitted_at_ms,
         )?;
         if reconciled.state_generation != request.expected_package_generation {
@@ -374,6 +377,18 @@ impl CognitivePackageManager {
                 "The reviewed enablement plan is no longer applicable; plan the current state again.",
             ));
         }
+        installation_snapshot
+            .transition_package_enablement(
+                request.package_id.as_str(),
+                request.expected_package_generation,
+                request.enabled,
+            )?
+            .ok_or_else(|| {
+                enablement_error(
+                    "use.plugin.package_enablement_plan_stale",
+                    "The reviewed enablement plan no longer changes installation intent.",
+                )
+            })?;
 
         let state_generation_after = reconciled
             .state_generation
@@ -395,8 +410,8 @@ impl CognitivePackageManager {
             .await?;
         let generated = enablement_operation(
             request,
-            &locked_package,
-            &extension.selected_surfaces()?,
+            &package_selection.package,
+            &package_selection.selected_surfaces,
             &extension.manifest,
             extension.receipt.descriptor_digest()?,
             snapshot.generation,
@@ -465,7 +480,7 @@ impl CognitivePackageManager {
     }
 
     /// Observe the exact current package and capability evidence while using
-    /// the durable Use-owned state generation for optimistic concurrency.
+    /// the snapshot-owned package state generation for optimistic concurrency.
     pub async fn observe_package(&self, package_id: &str) -> UseResult<PluginHostPackageState> {
         let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let _mutation = self.installation_mutation_lock().acquire().await?;
@@ -487,39 +502,36 @@ impl CognitivePackageManager {
 
         let observed_at_ms = now_ms()?;
         let snapshot = self.registry.snapshot().await?;
-        let Some(extension) = self.registry.get(package_id.as_str()).await? else {
-            if let Some(state) = current.as_ref() {
-                if state.artifact.is_some() {
-                    let state_generation = state
-                        .state_generation
-                        .checked_add(1)
-                        .ok_or_else(generation_exhausted)?;
-                    let tombstone = StoredCognitivePackageEnablement::new(
-                        self.scope().clone(),
-                        package_id.to_string(),
-                        state_generation,
-                        None,
-                        false,
-                        observed_at_ms,
-                    )?;
-                    store.put_state(&tombstone).await?;
-                }
-            }
+        let Some(installation_snapshot) = self.snapshot_store().current().await? else {
             return project_absent_state(&snapshot);
         };
-        self.validate_enablement_extension(&package_id, &extension)
-            .await?;
+        let Some(package_selection) = installation_snapshot.package_selection(package_id.as_str())
+        else {
+            return project_absent_state(&snapshot);
+        };
+        let extension = self
+            .registry
+            .get(package_id.as_str())
+            .await?
+            .ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_graph_reconcile_required",
+                    "The installation snapshot selects a package whose lifecycle receipt is absent.",
+                )
+            })?;
         let reconciled = reconcile_state(
             self.scope(),
             &package_id,
             current.as_ref(),
             &extension,
+            &installation_snapshot,
+            package_selection,
             observed_at_ms,
         )?;
         if current.as_ref() != Some(&reconciled) {
             store.put_state(&reconciled).await?;
         }
-        project_installed_state(&extension, reconciled.state_generation, &snapshot, None)
+        project_installed_state(&extension, package_selection, &snapshot, None)
     }
 
     pub(super) async fn replay_enablement_operation(
@@ -546,6 +558,42 @@ impl CognitivePackageManager {
         operation: &StoredCognitivePackageEnablementOperation,
     ) -> UseResult<()> {
         let package_id = &operation.request.package_id;
+        let snapshot = self.snapshot_store().current().await?.ok_or_else(|| {
+            enablement_error(
+                "use.plugin.package_enablement_state_invalid",
+                "A completed enablement operation has no installation snapshot.",
+            )
+        })?;
+        if snapshot.generation < operation.state_after.installation_generation
+            || (snapshot.generation == operation.state_after.installation_generation
+                && snapshot.descriptor_digest()?
+                    != operation.state_after.installation_snapshot_digest)
+        {
+            return Err(enablement_error(
+                "use.plugin.package_enablement_state_invalid",
+                "Completed enablement evidence disagrees with its exact installation generation.",
+            ));
+        }
+        let selection = snapshot
+            .package_selection(package_id.as_str())
+            .ok_or_else(|| {
+                enablement_error(
+                    "use.plugin.package_enablement_state_invalid",
+                    "A completed enablement operation refers to an unselected package.",
+                )
+            })?;
+        if selection.state_generation > operation.state_after.state_generation {
+            return Ok(());
+        }
+        if selection.state_generation != operation.state_after.state_generation
+            || selection.enabled != operation.state_after.enabled
+            || selection.selected_surfaces != operation.result.state.selected_surfaces
+        {
+            return Err(enablement_error(
+                "use.plugin.package_enablement_state_invalid",
+                "Completed enablement evidence disagrees with the authoritative installation snapshot.",
+            ));
+        }
         let current = store.get_state(self.scope(), package_id).await?;
         if current
             .as_ref()
@@ -558,6 +606,28 @@ impl CognitivePackageManager {
                 && current == &operation.state_after
             {
                 return Ok(());
+            }
+            if current.state_generation == operation.state_after.state_generation {
+                if current.installation_generation > operation.state_after.installation_generation {
+                    if current.enabled == selection.enabled
+                        && current.artifact == operation.state_after.artifact
+                    {
+                        return Ok(());
+                    }
+                    return Err(enablement_error(
+                        "use.plugin.package_enablement_state_invalid",
+                        "A newer enablement recovery projection conflicts with the selected package state.",
+                    ));
+                }
+                if current.installation_generation == operation.state_after.installation_generation
+                    && current.installation_snapshot_digest
+                        != operation.state_after.installation_snapshot_digest
+                {
+                    return Err(enablement_error(
+                        "use.plugin.package_enablement_state_invalid",
+                        "The enablement recovery projection conflicts with its installation generation.",
+                    ));
+                }
             }
             if current
                 .active
@@ -604,9 +674,22 @@ impl CognitivePackageManager {
             return Ok(operation);
         }
 
-        let (extension, _) = self
+        let (extension, package_selection, installation_snapshot) = self
             .required_enablement_extension(&active.request.package_id)
             .await?;
+        let snapshot_is_before = package_selection.state_generation
+            == active.request.expected_package_generation
+            && package_selection.enabled != active.request.enabled
+            && installation_snapshot.generation == current.installation_generation
+            && installation_snapshot.descriptor_digest()? == current.installation_snapshot_digest;
+        let snapshot_is_after = package_selection.state_generation == active.state_generation_after
+            && package_selection.enabled == active.request.enabled;
+        if !snapshot_is_before && !snapshot_is_after {
+            return Err(enablement_error(
+                "use.plugin.package_enablement_state_invalid",
+                "The active enablement operation disagrees with the current installation generation.",
+            ));
+        }
         if active.request.enabled {
             self.lifecycle.validate_manifest(&extension.manifest)?;
         } else {
@@ -705,18 +788,37 @@ impl CognitivePackageManager {
                 "The package receipt does not reflect the completed enablement lifecycle.",
             ));
         }
+        let (installation_snapshot, _) = self
+            .snapshot_store()
+            .complete_package_enablement(
+                active.request.package_id.as_str(),
+                active.request.expected_package_generation,
+                active.request.enabled,
+            )
+            .await?;
+        let package_selection = installation_snapshot
+            .package_selection(active.request.package_id.as_str())
+            .ok_or_else(|| {
+                enablement_error(
+                    "use.plugin.package_enablement_state_invalid",
+                    "The completed installation generation omitted its selected package.",
+                )
+            })?;
+        if package_selection.state_generation != active.state_generation_after {
+            return Err(enablement_error(
+                "use.plugin.package_enablement_state_invalid",
+                "The installation snapshot committed an unexpected package state generation.",
+            ));
+        }
         let snapshot = self.registry.snapshot().await?;
-        let state = project_installed_state(
-            &selected,
-            active.state_generation_after,
-            &snapshot,
-            Some(&lifecycle),
-        )?;
+        let state =
+            project_installed_state(&selected, package_selection, &snapshot, Some(&lifecycle))?;
         let result =
             CognitivePackageEnablementResult::new(&active.request, completed_at_ms, true, state)?;
         let state_after = StoredCognitivePackageEnablement::new(
             self.scope().clone(),
             active.request.package_id.to_string(),
+            &installation_snapshot,
             active.state_generation_after,
             Some(artifact),
             active.request.enabled,
@@ -740,7 +842,11 @@ impl CognitivePackageManager {
     pub(super) async fn required_enablement_extension(
         &self,
         package_id: &PluginPackageId,
-    ) -> UseResult<(InstalledExtension, LockedPluginPackage)> {
+    ) -> UseResult<(
+        InstalledExtension,
+        InstallationPackageSelection,
+        InstallationSnapshot,
+    )> {
         let extension = self
             .registry
             .get(package_id.as_str())
@@ -751,17 +857,17 @@ impl CognitivePackageManager {
                     format!("Cognitive package '{}' is not installed.", package_id),
                 )
             })?;
-        let package = self
+        let (package, snapshot) = self
             .validate_enablement_extension(package_id, &extension)
             .await?;
-        Ok((extension, package))
+        Ok((extension, package, snapshot))
     }
 
     async fn validate_enablement_extension(
         &self,
         package_id: &PluginPackageId,
         extension: &InstalledExtension,
-    ) -> UseResult<LockedPluginPackage> {
+    ) -> UseResult<(InstallationPackageSelection, InstallationSnapshot)> {
         if extension.receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION
             || extension.receipt.package_id != package_id.as_str()
             || extension.receipt.lifecycle_generation.is_none()
@@ -773,24 +879,30 @@ impl CognitivePackageManager {
             ));
         }
         let catalog = extension.plan_ready_catalog()?;
-        let mut owned = None;
-        for lock in self.snapshot_store().list().await? {
-            if let Some(locked) = lock.package(package_id.as_str()) {
-                if &locked.catalog != catalog {
-                    return Err(enablement_error(
-                        "use.plugin.package_enablement_state_invalid",
-                        "An installed graph disagrees with the selected package catalog evidence.",
-                    ));
-                }
-                owned.get_or_insert_with(|| locked.clone());
-            }
-        }
-        owned.ok_or_else(|| {
+        let snapshot = self.snapshot_store().current().await?.ok_or_else(|| {
             enablement_error(
                 "use.plugin.package_enablement_state_invalid",
-                "The schema-v3 package is not owned by an installed dependency graph.",
+                "The installation snapshot is absent for an installed package.",
             )
-        })
+        })?;
+        let selection = snapshot
+            .package_selection(package_id.as_str())
+            .cloned()
+            .ok_or_else(|| {
+                enablement_error(
+                    "use.plugin.package_enablement_state_invalid",
+                    "The package is not selected by the installation snapshot.",
+                )
+            })?;
+        if &selection.package.catalog != catalog
+            || selection.selected_surfaces != extension.selected_surfaces()?
+        {
+            return Err(enablement_error(
+                "use.plugin.package_enablement_state_invalid",
+                "The installation snapshot disagrees with the package catalog or publication intent.",
+            ));
+        }
+        Ok((selection, snapshot))
     }
 }
 
@@ -799,48 +911,51 @@ pub(super) fn reconcile_state(
     package_id: &PluginPackageId,
     current: Option<&StoredCognitivePackageEnablement>,
     extension: &InstalledExtension,
+    installation_snapshot: &InstallationSnapshot,
+    selection: &InstallationPackageSelection,
     updated_at_ms: u64,
 ) -> UseResult<StoredCognitivePackageEnablement> {
+    if installation_snapshot.package_selection(package_id.as_str()) != Some(selection)
+        || selection.package_id() != package_id.as_str()
+        || selection.package.catalog != *extension.plan_ready_catalog()?
+        || selection.selected_surfaces != extension.selected_surfaces()?
+    {
+        return Err(enablement_error(
+            "use.plugin.package_enablement_state_invalid",
+            "The lifecycle receipt does not materialize the authoritative installation snapshot intent.",
+        ));
+    }
     let artifact = artifact_state(extension)?;
     if let Some(current) = current {
         current.validate()?;
         if current.scope != *scope || current.package_id != package_id.as_str() {
             return Err(enablement_error(
                 "use.plugin.package_enablement_state_invalid",
-                "The stored package enablement state has different ownership.",
+                "The stored package enablement projection has different ownership.",
             ));
         }
         if current.active.is_some() {
             return Err(enablement_error(
                 "use.plugin.package_enablement_state_invalid",
-                "A pending package enablement operation was not recovered before reconciliation.",
+                "A pending package enablement operation was not recovered before projection.",
             ));
         }
         if current.artifact.as_ref() == Some(&artifact)
-            && current.enabled == extension.receipt.enabled
+            && current.installation_generation == installation_snapshot.generation
+            && current.installation_snapshot_digest == installation_snapshot.descriptor_digest()?
+            && current.state_generation == selection.state_generation
+            && current.enabled == selection.enabled
         {
             return Ok(current.clone());
         }
-        let state_generation = current
-            .state_generation
-            .checked_add(1)
-            .ok_or_else(generation_exhausted)?
-            .max(artifact.generation);
-        return StoredCognitivePackageEnablement::new(
-            scope.clone(),
-            package_id.to_string(),
-            state_generation,
-            Some(artifact),
-            extension.receipt.enabled,
-            updated_at_ms,
-        );
     }
     StoredCognitivePackageEnablement::new(
         scope.clone(),
         package_id.to_string(),
-        artifact.generation,
+        installation_snapshot,
+        selection.state_generation,
         Some(artifact),
-        extension.receipt.enabled,
+        selection.enabled,
         updated_at_ms,
     )
 }
@@ -876,11 +991,20 @@ fn artifact_state(extension: &InstalledExtension) -> UseResult<CognitivePackageA
 
 pub(super) fn project_installed_state(
     extension: &InstalledExtension,
-    state_generation: u64,
+    selection: &InstallationPackageSelection,
     snapshot: &ExtensionRegistrySnapshot,
     lifecycle: Option<&PluginLifecycleOperationRecord>,
 ) -> UseResult<PluginHostPackageState> {
     let artifact = artifact_state(extension)?;
+    if selection.package_id() != extension.receipt.package_id
+        || selection.package.catalog != *extension.plan_ready_catalog()?
+        || selection.selected_surfaces != extension.selected_surfaces()?
+    {
+        return Err(enablement_error(
+            "use.plugin.package_enablement_state_invalid",
+            "The package receipt does not materialize its installation snapshot selection.",
+        ));
+    }
     let bindings = snapshot
         .routes
         .iter()
@@ -905,13 +1029,14 @@ pub(super) fn project_installed_state(
         ));
     }
     extension.plan_ready_catalog()?;
-    let selected_surfaces = extension.selected_surfaces()?;
-    let desired = if extension.receipt.enabled {
+    let desired = if selection.enabled {
         PluginDesiredState::Enabled
     } else {
         PluginDesiredState::InstalledDisabled
     };
-    let observed = if desired == PluginDesiredState::InstalledDisabled {
+    let observed = if selection.enabled != extension.receipt.enabled {
+        PluginObservedState::Reconciling
+    } else if desired == PluginDesiredState::InstalledDisabled {
         PluginObservedState::Installed
     } else if lifecycle.is_some_and(|record| {
         record
@@ -925,7 +1050,7 @@ pub(super) fn project_installed_state(
     };
     let state = PluginHostPackageState {
         version: Some(artifact.version),
-        package_generation: Some(state_generation),
+        package_generation: Some(selection.state_generation),
         package_digest: Some(artifact.package_digest),
         manifest_digest: Some(artifact.manifest_digest),
         receipt_digest: Some(extension.receipt.descriptor_digest()?),
@@ -933,10 +1058,23 @@ pub(super) fn project_installed_state(
         capability_revision: snapshot.descriptor_digest()?,
         desired,
         observed,
-        selected_surfaces,
+        selected_surfaces: selection.selected_surfaces.clone(),
     };
     state.validate()?;
     Ok(state)
+}
+
+pub(super) fn require_materialized_enablement(
+    extension: &InstalledExtension,
+    selection: &InstallationPackageSelection,
+) -> UseResult<()> {
+    if selection.enabled != extension.receipt.enabled {
+        return Err(package_manager_error(
+            "use.plugin.package_graph_reconcile_required",
+            "The package receipt has not materialized the current installation enablement intent.",
+        ));
+    }
+    Ok(())
 }
 
 fn project_absent_state(snapshot: &ExtensionRegistrySnapshot) -> UseResult<PluginHostPackageState> {

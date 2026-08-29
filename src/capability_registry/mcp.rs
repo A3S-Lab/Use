@@ -478,18 +478,21 @@ extension "acme/research" {
             .values()
             .all(|observation| { *observation == SurfaceObservedState::Prepared }));
 
-        let capability = super::super::project_extension_for_host_with_flow_observations(
+        let capability = super::super::project_extension_for_host_with_evidence(
             &extension,
             extension
                 .surfaces()
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            "0.3.0",
-            &evidence.observations,
-            &[],
-            &[],
-            &evidence.projections,
+            super::super::CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &evidence.observations,
+                knowledge_bindings: &[],
+                runtime_tasks: &[],
+                mcp_projections: &evidence.projections,
+            },
         )
         .await
         .unwrap();
@@ -542,18 +545,21 @@ extension "acme/research" {
         );
         assert!(runtime.binding_digest.starts_with("sha256:"));
 
-        let capability = super::super::project_extension_for_host_with_flow_observations(
+        let capability = super::super::project_extension_for_host_with_evidence(
             &extension,
             extension
                 .surfaces()
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            "0.3.0",
-            &evidence.observations,
-            &[],
-            &[],
-            &evidence.projections,
+            super::super::CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &evidence.observations,
+                knowledge_bindings: &[],
+                runtime_tasks: &[],
+                mcp_projections: &evidence.projections,
+            },
         )
         .await
         .unwrap();
@@ -618,18 +624,21 @@ extension "acme/research" {
             },
             SurfaceObservedState::Prepared,
         );
-        let unpublished = super::super::project_extension_for_host_with_flow_observations(
+        let unpublished = super::super::project_extension_for_host_with_evidence(
             &extension,
             extension
                 .surfaces()
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            "0.3.0",
-            &missing_observations,
-            &[],
-            &[],
-            &missing.projections,
+            super::super::CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &missing_observations,
+                knowledge_bindings: &[],
+                runtime_tasks: &[],
+                mcp_projections: &missing.projections,
+            },
         )
         .await
         .unwrap();
@@ -663,18 +672,21 @@ extension "acme/research" {
             SurfaceObservedState::Prepared,
         );
 
-        let capability = super::super::project_extension_for_host_with_flow_observations(
+        let capability = super::super::project_extension_for_host_with_evidence(
             &extension,
             extension
                 .surfaces()
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            "0.3.0",
-            &observations,
-            &[],
-            &[],
-            &evidence.projections,
+            super::super::CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &observations,
+                knowledge_bindings: &[],
+                runtime_tasks: &[],
+                mcp_projections: &evidence.projections,
+            },
         )
         .await
         .unwrap();

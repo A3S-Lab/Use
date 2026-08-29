@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{
-    PluginOperationAction, PluginPackageLock, PluginReleaseChannel, PluginSurfaceRef, UseResult,
+    InstallationPackageSelection, PluginOperationAction, PluginPackageLock, PluginReleaseChannel,
+    PluginSurfaceRef, UseResult,
 };
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest,
@@ -773,12 +774,15 @@ impl CognitivePackageManager {
             return Err(error);
         }
 
+        let snapshot_selections =
+            upgrade_snapshot_selections(&snapshot_store, &candidate_lock, &pending).await?;
         snapshot_store
             .replace(
                 package_id,
                 &prior_lock.descriptor_digest()?,
                 &candidate_lock,
                 now_ms()?,
+                snapshot_selections,
             )
             .await?;
         self.retain_and_remove_graph_operation(
@@ -1250,6 +1254,63 @@ fn upgrade_dispositions(
         }
     }
     Ok(dispositions)
+}
+
+async fn upgrade_snapshot_selections(
+    store: &super::store::InstallationSnapshotStore,
+    candidate: &PluginPackageLock,
+    pending: &PendingPackageGraphOperation,
+) -> UseResult<Vec<InstallationPackageSelection>> {
+    let current = store.current().await?.ok_or_else(|| {
+        package_manager_error(
+            "use.plugin.package_graph_missing",
+            "The installation snapshot disappeared before upgrade cutover.",
+        )
+    })?;
+    candidate
+        .packages
+        .iter()
+        .map(|package| {
+            let package_id = package.package_id();
+            let state = pending
+                .envelope
+                .plan
+                .packages
+                .iter()
+                .find(|transition| transition.package_id == package_id)
+                .and_then(|transition| transition.after.as_ref())
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "An upgrade snapshot cutover omitted candidate publication intent.",
+                    )
+                })?;
+            let state_generation = pending
+                .generations
+                .get(package_id)
+                .copied()
+                .or_else(|| {
+                    current
+                        .package_selection(package_id)
+                        .filter(|selection| selection.package == *package)
+                        .map(|selection| selection.state_generation)
+                })
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_generation_changed",
+                        format!(
+                            "Package '{package_id}' has no exact state generation for upgrade snapshot cutover."
+                        ),
+                    )
+                })?;
+            InstallationPackageSelection::new(
+                package.clone(),
+                state_generation,
+                true,
+                state_surface_refs(state),
+            )
+        })
+        .collect()
 }
 
 fn validate_prepared_candidates(

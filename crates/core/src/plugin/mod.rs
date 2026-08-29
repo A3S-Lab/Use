@@ -88,8 +88,9 @@ pub use host_plan::{
 pub use identity::PluginPackageId;
 pub use installation::{InstallationId, InstallationKind, PlanScope, PlanScopeKind};
 pub use installation_snapshot::{
-    InstallationRootSelection, InstallationSnapshot, INSTALLATION_SNAPSHOT_SCHEMA,
-    MAX_INSTALLATION_PACKAGES, MAX_INSTALLATION_ROOTS, MAX_INSTALLATION_SNAPSHOT_BYTES,
+    InstallationPackageSelection, InstallationRootSelection, InstallationSnapshot,
+    INSTALLATION_SNAPSHOT_SCHEMA, MAX_INSTALLATION_PACKAGES, MAX_INSTALLATION_ROOTS,
+    MAX_INSTALLATION_SNAPSHOT_BYTES,
 };
 pub use installed_plan::InstalledPluginPlanEvidence;
 pub use manager::{

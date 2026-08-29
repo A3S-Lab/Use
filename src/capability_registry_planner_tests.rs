@@ -154,12 +154,16 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
     let snapshot = CapabilityRegistrySnapshot {
         schema_version: CAPABILITY_REGISTRY_SCHEMA_VERSION,
         installation: crate::test_installation(),
+        installation_generation: Some(11),
+        installation_snapshot_digest: Some(format!("sha256:{}", "d".repeat(64))),
         generation: 23,
         revision: "e".repeat(64),
         capabilities: vec![binding.clone()],
         cursor: CapabilitySnapshotCursor {
             schema: CAPABILITY_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
             installation: crate::test_installation(),
+            installation_generation: Some(11),
+            installation_snapshot_digest: Some(format!("sha256:{}", "d".repeat(64))),
             generation: 23,
             revision: "e".repeat(64),
             registry_revision: format!("sha256:{}", "f".repeat(64)),

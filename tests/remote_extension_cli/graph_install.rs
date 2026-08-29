@@ -1,5 +1,114 @@
 use super::*;
 
+async fn capability_intent_evidence(
+    registry: ExtensionRegistry,
+    route: &str,
+) -> (Option<u64>, Option<String>, Option<u64>, Option<bool>) {
+    let snapshot = CapabilityRegistry::new(registry).snapshot().await.unwrap();
+    let route_enabled = snapshot
+        .capabilities
+        .iter()
+        .find(|capability| capability.route == route)
+        .map(|capability| capability.enabled);
+    let cursor_generation = snapshot.cursor().installation_generation;
+    (
+        snapshot.installation_generation,
+        snapshot.installation_snapshot_digest,
+        cursor_generation,
+        route_enabled,
+    )
+}
+
+#[test]
+fn capability_snapshot_binds_the_exact_installation_enablement_intent() {
+    std::thread::Builder::new()
+        .name("capability-installation-intent".to_owned())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(capability_snapshot_installation_intent_scenario());
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+async fn capability_snapshot_installation_intent_scenario() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let root = cognitive_skill_target(temp.path(), "acme/root", "root", Vec::new(), &target);
+    let repository = TestRepository::with_targets(vec![root], 7, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temp.path().join("home");
+    let trusted = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        &repository.root_sha256,
+        None,
+        home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
+    )
+    .unwrap();
+    let extension_registry = ExtensionRegistry::new(extension_paths(&home));
+    let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
+
+    manager
+        .install_remote(
+            &trusted,
+            &[],
+            "acme/root",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    let graph_path = scoped_state(&home, "installation-snapshot.json");
+    let installed_snapshot =
+        InstallationSnapshot::from_json(&std::fs::read(&graph_path).unwrap()).unwrap();
+    let installed_evidence = Box::pin(capability_intent_evidence(
+        extension_registry.clone(),
+        "root",
+    ))
+    .await;
+    assert_eq!(installed_evidence.0, Some(installed_snapshot.generation));
+    assert_eq!(
+        installed_evidence.1,
+        Some(installed_snapshot.descriptor_digest().unwrap())
+    );
+    assert_eq!(installed_evidence.2, Some(installed_snapshot.generation));
+    assert_eq!(installed_evidence.3, Some(true));
+
+    let state_generation = manager
+        .observe_package("acme/root")
+        .await
+        .unwrap()
+        .package_generation
+        .unwrap();
+    let disable = CognitivePackageEnablementRequest::new(
+        "enablement:disable:capability-intent",
+        "acme/root",
+        state_generation,
+        false,
+    )
+    .unwrap();
+    apply_planned_enablement(&manager, &disable).await.unwrap();
+
+    let disabled_snapshot =
+        InstallationSnapshot::from_json(&std::fs::read(&graph_path).unwrap()).unwrap();
+    let disabled_evidence = Box::pin(capability_intent_evidence(extension_registry, "root")).await;
+    assert_eq!(disabled_evidence.0, Some(disabled_snapshot.generation));
+    assert_eq!(
+        disabled_evidence.1,
+        Some(disabled_snapshot.descriptor_digest().unwrap())
+    );
+    assert_eq!(disabled_evidence.2, Some(disabled_snapshot.generation));
+    assert_eq!(disabled_evidence.3, Some(false));
+}
+
 #[tokio::test]
 async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive() {
     let temp = tempfile::tempdir().unwrap();
@@ -44,6 +153,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     let artifact_generation = installed.receipt.lifecycle_generation.unwrap();
     let graph_path = scoped_state(&home, "installation-snapshot.json");
     let graph_before = std::fs::read(&graph_path).unwrap();
+    let snapshot_before = InstallationSnapshot::from_json(&graph_before).unwrap();
     let observed = manager.observe_package("acme/root").await.unwrap();
     assert_eq!(observed.package_generation, Some(artifact_generation));
     assert_eq!(observed.desired, PluginDesiredState::Enabled);
@@ -103,7 +213,19 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
             .enabled
     );
     assert!(package_root.is_dir());
-    assert_eq!(std::fs::read(&graph_path).unwrap(), graph_before);
+    let snapshot_disabled =
+        InstallationSnapshot::from_json(&std::fs::read(&graph_path).unwrap()).unwrap();
+    assert_eq!(snapshot_disabled.generation, snapshot_before.generation + 1);
+    let disabled_selection = snapshot_disabled.package_selection("acme/root").unwrap();
+    assert!(!disabled_selection.enabled);
+    assert_eq!(disabled_selection.state_generation, disabled_generation);
+    assert_eq!(
+        disabled_selection.package,
+        snapshot_before
+            .package_selection("acme/root")
+            .unwrap()
+            .package
+    );
 
     let journal: serde_json::Value =
         serde_json::from_slice(&std::fs::read(lifecycle_journal_path(&home, "acme/root")).unwrap())
@@ -216,7 +338,16 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     assert!(no_change.plan.is_none());
     assert_eq!(no_change.state.package_generation, Some(enabled_generation));
     assert!(package_root.is_dir());
-    assert_eq!(std::fs::read(graph_path).unwrap(), graph_before);
+    let snapshot_enabled =
+        InstallationSnapshot::from_json(&std::fs::read(&graph_path).unwrap()).unwrap();
+    assert_eq!(
+        snapshot_enabled.generation,
+        snapshot_disabled.generation + 1
+    );
+    let enabled_selection = snapshot_enabled.package_selection("acme/root").unwrap();
+    assert!(enabled_selection.enabled);
+    assert_eq!(enabled_selection.state_generation, enabled_generation);
+    assert_eq!(enabled_selection.package, disabled_selection.package);
 
     let state_generation_before_reinstall = no_change.state.package_generation.unwrap();
     restarted_again.uninstall("acme/root").await.unwrap();

@@ -1,9 +1,9 @@
 use a3s_use_core::{
-    CatalogAvailability, InstallationId, InstallationKind, InstallationRootSelection,
-    InstallationSnapshot, PluginCatalogRecord, PluginPackageDependency, PluginPackageLock,
-    PluginPackageLockHost, PluginPackageResolver, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord, INSTALLATION_SNAPSHOT_SCHEMA, MAX_INSTALLATION_ROOTS,
-    PLUGIN_CATALOG_SCHEMA_V3,
+    CatalogAvailability, InstallationId, InstallationKind, InstallationPackageSelection,
+    InstallationRootSelection, InstallationSnapshot, LockedPluginPackage, PluginCatalogRecord,
+    PluginPackageDependency, PluginPackageLock, PluginPackageLockHost, PluginPackageResolver,
+    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, INSTALLATION_SNAPSHOT_SCHEMA,
+    MAX_INSTALLATION_ROOTS, PLUGIN_CATALOG_SCHEMA_V3,
 };
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3.json");
@@ -45,6 +45,7 @@ fn one_snapshot_merges_shared_packages_and_reconstructs_each_root_lock() {
                 first.clone(),
             ),
         ],
+        selections(&[&first, &second]),
     )
     .unwrap();
 
@@ -63,7 +64,7 @@ fn one_snapshot_merges_shared_packages_and_reconstructs_each_root_lock() {
         snapshot
             .packages
             .iter()
-            .map(|package| package.package_id())
+            .map(InstallationPackageSelection::package_id)
             .collect::<Vec<_>>(),
         vec!["acme/first", "acme/second", "acme/shared"]
     );
@@ -107,6 +108,7 @@ fn snapshot_rejects_conflicting_shared_package_selections() {
                 second,
             ),
         ],
+        Vec::new(),
     )
     .unwrap_err();
 
@@ -125,19 +127,19 @@ fn snapshot_rejects_orphaned_packages_and_non_monotonic_identity_fields() {
         host(),
         vec![(
             InstallationRootSelection::new("acme/root", 10).unwrap(),
-            lock,
+            lock.clone(),
         )],
+        selections(&[&lock]),
     )
     .unwrap();
 
-    snapshot.packages.push(
-        resolved_lock(
-            verified_record("acme/orphan", "1.0.0", Vec::new(), 'e'),
-            Vec::new(),
-        )
-        .packages
-        .remove(0),
+    let orphan = resolved_lock(
+        verified_record("acme/orphan", "1.0.0", Vec::new(), 'e'),
+        Vec::new(),
     );
+    snapshot
+        .packages
+        .push(selection(orphan.packages[0].clone(), 2, true));
     snapshot
         .packages
         .sort_by(|left, right| left.package_id().cmp(right.package_id()));
@@ -159,7 +161,8 @@ fn snapshot_rejects_orphaned_packages_and_non_monotonic_identity_fields() {
 #[test]
 fn empty_snapshot_retains_host_and_round_trips_canonically() {
     let snapshot =
-        InstallationSnapshot::from_root_locks(installation(), 9, host(), Vec::new()).unwrap();
+        InstallationSnapshot::from_root_locks(installation(), 9, host(), Vec::new(), Vec::new())
+            .unwrap();
     let bytes = snapshot.canonical_bytes().unwrap();
     let parsed = InstallationSnapshot::from_json(&bytes).unwrap();
 
@@ -171,6 +174,7 @@ fn empty_snapshot_retains_host_and_round_trips_canonically() {
         snapshot.descriptor_digest().unwrap()
     );
     assert_send_sync::<InstallationSnapshot>();
+    assert_send_sync::<InstallationPackageSelection>();
 }
 
 #[test]
@@ -188,9 +192,153 @@ fn snapshot_constructor_rejects_the_root_bound_before_merging() {
         })
         .collect();
 
-    let error =
-        InstallationSnapshot::from_root_locks(installation(), 1, host(), roots).unwrap_err();
+    let error = InstallationSnapshot::from_root_locks(
+        installation(),
+        1,
+        host(),
+        roots,
+        selections(&[&lock]),
+    )
+    .unwrap_err();
     assert_eq!(error.code, "use.installation.snapshot_invalid");
+}
+
+#[test]
+fn snapshot_owns_enablement_and_exact_publication_selection() {
+    let lock = resolved_lock(
+        verified_record("acme/root", "1.0.0", Vec::new(), 'a'),
+        Vec::new(),
+    );
+    let snapshot = InstallationSnapshot::from_root_locks(
+        installation(),
+        4,
+        host(),
+        vec![(
+            InstallationRootSelection::new("acme/root", 10).unwrap(),
+            lock.clone(),
+        )],
+        selections(&[&lock]),
+    )
+    .unwrap();
+    let selected = snapshot.package_selection("acme/root").unwrap();
+
+    assert!(selected.enabled);
+    assert_eq!(selected.state_generation, 1);
+    assert_eq!(
+        selected.selected_surfaces,
+        lock.packages[0]
+            .catalog
+            .record
+            .resolve_surfaces(&[])
+            .unwrap()
+            .into_iter()
+            .map(|surface| surface.reference())
+            .collect::<Vec<_>>()
+    );
+
+    let disabled = snapshot
+        .transition_package_enablement("acme/root", 1, false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(disabled.generation, 5);
+    let selected = disabled.package_selection("acme/root").unwrap();
+    assert!(!selected.enabled);
+    assert_eq!(selected.state_generation, 2);
+    assert!(disabled
+        .transition_package_enablement("acme/root", 2, false)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        disabled
+            .transition_package_enablement("acme/root", 1, true)
+            .unwrap_err()
+            .code,
+        "use.installation.snapshot_generation_changed"
+    );
+}
+
+#[test]
+fn enabled_packages_require_enabled_dependencies() {
+    let shared = verified_record("acme/shared", "1.0.0", Vec::new(), 'c');
+    let root = resolved_lock(
+        verified_record(
+            "acme/root",
+            "1.0.0",
+            vec![dependency("acme/shared", "^1.0.0")],
+            '1',
+        ),
+        vec![shared],
+    );
+    let snapshot = InstallationSnapshot::from_root_locks(
+        installation(),
+        1,
+        host(),
+        vec![(
+            InstallationRootSelection::new("acme/root", 10).unwrap(),
+            root.clone(),
+        )],
+        selections(&[&root]),
+    )
+    .unwrap();
+
+    let error = snapshot
+        .transition_package_enablement("acme/shared", 1, false)
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.snapshot_dependency_disabled");
+
+    let root_disabled = snapshot
+        .transition_package_enablement("acme/root", 1, false)
+        .unwrap()
+        .unwrap();
+    let dependency_disabled = root_disabled
+        .transition_package_enablement("acme/shared", 1, false)
+        .unwrap()
+        .unwrap();
+    let error = dependency_disabled
+        .transition_package_enablement("acme/root", 2, true)
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.snapshot_dependency_disabled");
+}
+
+#[test]
+fn snapshot_rejects_missing_or_mismatched_package_intent() {
+    let lock = resolved_lock(
+        verified_record("acme/root", "1.0.0", Vec::new(), 'a'),
+        Vec::new(),
+    );
+    let roots = vec![(
+        InstallationRootSelection::new("acme/root", 10).unwrap(),
+        lock.clone(),
+    )];
+    assert_eq!(
+        InstallationSnapshot::from_root_locks(
+            installation(),
+            1,
+            host(),
+            roots.clone(),
+            Vec::new(),
+        )
+        .unwrap_err()
+        .code,
+        "use.installation.snapshot_invalid"
+    );
+
+    let other = resolved_lock(
+        verified_record("acme/root", "2.0.0", Vec::new(), 'b'),
+        Vec::new(),
+    );
+    assert_eq!(
+        InstallationSnapshot::from_root_locks(
+            installation(),
+            1,
+            host(),
+            roots,
+            selections(&[&other]),
+        )
+        .unwrap_err()
+        .code,
+        "use.installation.snapshot_invalid"
+    );
 }
 
 fn assert_send_sync<T: Send + Sync>() {}
@@ -213,6 +361,34 @@ fn resolved_lock(
 ) -> PluginPackageLock {
     PluginPackageResolver::new(host())
         .resolve(root, candidates)
+        .unwrap()
+}
+
+fn selections(locks: &[&PluginPackageLock]) -> Vec<InstallationPackageSelection> {
+    let mut packages = locks
+        .iter()
+        .flat_map(|lock| lock.packages.iter())
+        .map(|package| selection(package.clone(), 1, true))
+        .collect::<Vec<_>>();
+    packages.sort_by(|left, right| left.package_id().cmp(right.package_id()));
+    packages.dedup_by(|left, right| left.package_id() == right.package_id());
+    packages
+}
+
+fn selection(
+    package: LockedPluginPackage,
+    state_generation: u64,
+    enabled: bool,
+) -> InstallationPackageSelection {
+    let selected_surfaces = package
+        .catalog
+        .record
+        .resolve_surfaces(&[])
+        .unwrap()
+        .into_iter()
+        .map(|surface| surface.reference())
+        .collect();
+    InstallationPackageSelection::new(package, state_generation, enabled, selected_surfaces)
         .unwrap()
 }
 
