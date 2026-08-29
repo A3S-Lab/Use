@@ -153,6 +153,7 @@ impl RegistrySourceStore {
             .registry_source_datastore(&provenance.registry_name, &identity)?;
         crate::remote::observe_verified_target_cache_entry(
             &datastore,
+            &self.paths.artifact_store(),
             &provenance.registry_name,
             expected_length,
             expected_sha256,
@@ -421,6 +422,7 @@ impl RegistrySourceStore {
             trusted_root_path,
             self.paths
                 .registry_source_datastore(&source.name, &source.source_identity)?,
+            self.paths.artifact_store(),
         )?
         .with_target_cache_policy(source.cache_policy)
         .with_network_policy(self.network_policy))

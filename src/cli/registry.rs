@@ -178,7 +178,7 @@ async fn cache_usage(args: &[String]) -> UseResult<CommandOutput> {
     let usage = inspect_verified_target_cache(&registry).await?;
     Ok(CommandOutput::success(
         format!(
-            "Registry '{}' verified target cache contains {} verified entries ({} bytes), {} resumable partials ({} bytes), and {} stale writes ({} bytes).",
+            "Registry '{}' source cache contains {} target observations ({} referenced blob bytes), {} resumable partials ({} physical bytes), and {} stale writes ({} physical bytes).",
             usage.registry_name,
             usage.target_entries,
             usage.target_bytes,
@@ -198,7 +198,7 @@ async fn cache_prune(args: &[String]) -> UseResult<CommandOutput> {
     let result = prune_verified_target_cache(&registry).await?;
     Ok(CommandOutput::success(
         format!(
-            "Pruned {} verified targets, {} resumable partials, and {} stale cache files from Registry '{}'.",
+            "Pruned {} target observations, {} resumable partials, and {} stale cache files from Registry '{}'; global artifact blobs were retained.",
             result.removed_target_entries,
             result.removed_partial_entries,
             result.removed_stale_entries,

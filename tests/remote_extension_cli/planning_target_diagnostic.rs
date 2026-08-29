@@ -34,7 +34,8 @@ fn killed_planning_target_download_is_diagnostic_and_hands_off_without_a_gap() {
         .join(source_identity)
         .join("verified-targets/sha256");
     let partial = cache_directory.join(format!(".target-{planning_digest}.part"));
-    let verified = cache_directory.join(planning_digest);
+    let observation = source_target_observation(&cache_directory, planning_digest);
+    let blob = raw_blob_artifact(&home, planning_digest);
     let pause_after = usize::try_from((planning_bytes / 2).max(1)).unwrap();
     server.pause_response_after(&planning_path, pause_after);
     server.clear_requests();
@@ -117,7 +118,8 @@ fn killed_planning_target_download_is_diagnostic_and_hands_off_without_a_gap() {
     server.resume_response(&planning_path);
     let partial_length = std::fs::metadata(&partial).unwrap().len();
     assert!(partial_length > 0 && partial_length < planning_bytes);
-    assert!(!verified.exists());
+    assert!(!observation.exists());
+    assert!(!blob.exists());
     assert!(!scoped_state(&home, "operations/package-graphs/install/acme/worker.json").exists());
 
     let retained = Command::new(binary())
@@ -145,7 +147,8 @@ fn killed_planning_target_download_is_diagnostic_and_hands_off_without_a_gap() {
         vec![format!("bytes={partial_length}-")]
     );
     assert!(!partial.exists());
-    assert!(verified.is_file());
+    assert!(observation.is_file());
+    assert!(blob.is_file());
     assert!(!scoped_state(
         &home,
         "operations/package-downloads/install/acme/worker.json"

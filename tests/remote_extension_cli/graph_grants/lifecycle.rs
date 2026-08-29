@@ -27,6 +27,7 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let managed_scope = PlanScope {
@@ -360,6 +361,7 @@ async fn permission_bearing_enablement_scenario() {
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let extension_registry = ExtensionRegistry::new(extension_paths(&home));

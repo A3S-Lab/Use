@@ -56,10 +56,10 @@ The current architecture has five non-negotiable properties:
   disable, and exact recovery share a cross-process writer fence. Every
   reviewed cutover is bound to the expected capability generation; a losing
   concurrent plan fails before provider or package-publication effects.
-- **One immutable content identity:** expanded package bytes are keyed only by
-  digest in the global Artifact Store. Installations own selections and
-  lifecycle generations, never private copies of identical content; uninstall
-  therefore retires scoped authority without deleting shared bytes.
+- **One immutable content identity:** verified raw targets and expanded package
+  trees are keyed only by digest in the global Artifact Store. Registry sources
+  retain observations and partial downloads; installations own selections and
+  lifecycle generations, never private copies of identical content.
 - **One current protocol baseline:** pre-release formats are rejected rather
   than decoded, migrated, or silently defaulted.
 
@@ -580,10 +580,10 @@ echoing retained bytes or paths.
 
 The graph and download projections derive historical Registry datastores from
 retained signed provenance, make no network request or write, expose no path,
-and do not acquire the target-cache lock. A complete archive or planning-target
-entry is only an exact-length observation at the verified-promotion location;
-it is not rehashed and neither it nor a partial is apply, planning, or recovery
-authority. Resolution diagnostics are likewise read-only and zero-network and
+and do not acquire the target-cache lock. A complete archive or planning target
+is a canonical source observation plus an owned exact-length global blob; the
+diagnostic does not rehash it, and neither it nor a partial is apply, planning,
+or recovery authority. Resolution diagnostics are likewise read-only and zero-network and
 do not wait for or acquire the package lock. Real-process tests prove killed
 planning-target observation and exact Range resume, reviewed Host
 planned/cancelled enablement projection without admission, authorization, or
@@ -642,10 +642,11 @@ a3s-use registry source replace packages \
 ```
 
 Replacing, disabling, or removing a source never rewrites installed receipts
-and never deletes its identity-bound TUF metadata or target cache. Re-enabling
-or restoring the exact name, URL, and bootstrap-root digest reuses that exact
-state. A changed source identity receives a separate datastore, preventing old
-metadata or cached targets from crossing the trust boundary.
+and never deletes its identity-bound TUF metadata, observations, partials, or
+global blobs. Re-enabling or restoring the exact name, URL, and bootstrap-root
+digest reuses that exact source state. A changed source identity receives a
+separate datastore, preventing old metadata or observations from crossing the
+trust boundary.
 
 Example development install from the configured Registry:
 
@@ -712,33 +713,26 @@ targets after a network or refresh failure.
 
 ### Verified target cache operations
 
-Each Registry has an independent default cache limit of 4 GiB and 4,096
-combined verified targets and resumable partials, with a 256 MiB free-space
-reserve. The same typed policy is enforced before downloading and while
-committing a verified target. Interrupted HTTP downloads retain a digest-bound
-`.target-<sha256>.part` file and retry from its exact length. A resumed response
-must return the exact signed byte range; the complete file is rehashed through
-the transaction-owned handle before atomic promotion. The promoted path is
-then reopened without following its final component, rehashed, and retained as
-the staging authority. A post-verification replacement therefore fails commit;
-on Unix a later path replacement cannot redirect staging away from the retained
-handle, while Windows permits readers but denies external writes, removal, and
-replacement until staging completes. Windows-native tests also model a read-only
-scanner handle that permits the transaction's existing read/write access but
-denies delete sharing. Promotion completes when a transient handle releases
-within the two-second retry bound; a persistent handle returns an I/O error,
-leaves the exact complete partial intact, and permits the next operation to
-rehash, promote, and stage it without a network transfer after the handle is
-released. Stale atomic-write files are removed first, followed by the oldest
-resumable partials and then the oldest verified targets until the byte, entry,
-and disk-space bounds are satisfied. Invalid-partial cleanup and those three GC
-deletion classes use the same bounded blocking retry. Native Windows tests prove
-transient scanner release for stale entries, partials, and invalid-partial
-cleanup. A persistent lock on the selected verified target stops at two seconds,
-preserves that target, and lets a later prune rescan and finish the remaining
-inventory; any earlier successful deletion remains durable. This qualifies the
-verified-target promotion and cache-removal boundaries, not the broader
-product-host, reboot, and antivirus matrix.
+Each Registry has an independent default logical working-set limit of 4 GiB and
+4,096 combined target observations and resumable partials, with a 256 MiB
+source-partial/staging free-space reserve. Interrupted HTTP downloads retain a
+digest-bound `.target-<sha256>.part` and retry only from an exact signed Range
+response. Fully verified bytes are copied and rehashed through the
+transaction-owned handle into
+`<data-root>/artifacts/blobs/sha256/<shard>/<digest>/content`, synchronized, and
+published without replacing existing content. Only then does the Registry
+source publish canonical `<digest>.json` observation metadata and remove its
+partial. Cached staging reopens and rehashes the global blob; corruption fails
+closed and is never silently replaced.
+
+Windows-native tests model scanner contention across blob publication and
+source cleanup. If final partial deletion remains locked, the durable blob and
+observation remain usable and retry removes the redundant partial without a
+network transfer. Source prune removes stale writes, then inactive partials,
+then the oldest observations. It releases logical source-policy capacity but
+never deletes global blobs, installed artifacts, receipts, generations, or
+journals. Cross-source reachability, global quota/GC, audit, quarantine, and
+verified rehydration remain explicit release work.
 
 Inspect cache usage without making a Registry request:
 
@@ -748,8 +742,8 @@ a3s-use registry cache usage \
   --json
 ```
 
-Pruning can remove targets required for a later offline reinstall or upgrade,
-so the standalone CLI requires explicit confirmation:
+Pruning can discard resumable progress and source observations, so the
+standalone CLI requires explicit confirmation:
 
 ```bash
 a3s-use registry cache prune \
@@ -766,9 +760,10 @@ Confirmed prune may use a stricter one-command override; it does not rewrite
 the source configuration. Embedding hosts use the same typed
 `VerifiedTargetCachePolicy`. Cache usage and pruning are zero-network
 operations and validate any retained catalog-cache source identity before
-inspecting or deleting targets. This source-cache GC never changes global
-expanded package artifacts, receipts, capability generations, or lifecycle
-journals. See [Registry cache
+inspecting or deleting source state. Schema v3 reports `targetBytes` as logical
+referenced blob bytes, not physical bytes reclaimed by prune. This source-cache
+GC never changes global raw or expanded artifacts, receipts, capability
+generations, or lifecycle journals. See [Registry cache
 operations](docs/registry-cache-operations.md).
 
 ## Cognitive-package format
@@ -981,20 +976,21 @@ Current Registry rules:
   argv, command, timeout, and transport drift fail closed.
 - Prepared downloads and installed Registry/TUF receipts must retain the full
   verified catalog record and its provenance.
-- Online preparation persists verified archives and signed planning targets at
-  `<registry-datastore>/verified-targets/sha256/<digest>`. Cache reads reject
-  links and non-regular files, stream-copy and rehash the target, and verify its
-  signed length before package admission.
+- Online preparation keeps source observations at
+  `<registry-datastore>/verified-targets/sha256/<digest>.json` and commits
+  verified archives, planning targets, and presentation media to the global
+  sharded blob tier. Cache reads reject links and non-regular files, rehash the
+  blob through a retained handle, and verify signed length before admission.
 - Explicit cached resolution revalidates the last trusted, unexpired TUF
   metadata and exact Registry name, URL, and trust root. It never refreshes the
   network and never weakens source or package-lock provenance.
-- A typed per-Registry policy bounds retained bytes and entries and reserves
-  staging/cache disk space before target requests and commits. Digest-bound
+- A typed per-Registry policy bounds logical referenced bytes, observations,
+  and partials and reserves source/staging disk space. Digest-bound
   partials survive process interruption, resume only through an exact HTTP
   range response, and are never staged before full signed-length and SHA-256
-  verification. Automatic and confirmed GC remove stale writes, then the
-  oldest partials and verified targets, under the same cache lock and
-  synchronize the directory after deletion.
+  verification. Automatic and confirmed source cleanup removes stale writes,
+  then the oldest partials and observations under the same cache lock. It never
+  treats source-reference removal as global blob deletion.
 - Real-process recovery coverage also kills installation during verified
   archive extraction, proves no receipt, installation snapshot, pending
   operation, or package root was published, and completes an explicit
@@ -1209,8 +1205,8 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | MHS research-preview adapter profile | The A3S Use boundary, least-authority ceiling, exact managed-MCP publication gate, dependency graph, and no-implicit-write-retry rule are documented and contract-tested. This is not an MHS implementation or protocol-conformance claim |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
-| Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
-| Global expanded-package Artifact Store | Expanded package trees are sharded by SHA-256 under one global root, committed under a cross-process digest lock, link/reparse checked, shared by independent installations, retained across scoped uninstall, and excluded from installation backup. Raw verified targets remain source-scoped; global reachability, quota, audit/repair, and GC are still open |
+| Registry target observations, explicit offline install/upgrade, bounded source working set, resumable downloads, usage, and confirmed source cleanup | Implemented with interruption, range, tamper, and zero-network tests; cleanup never claims global blob reclamation |
+| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. Global reachability, quota/GC, audit, quarantine, and verified rehydration are still open |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |
@@ -1248,7 +1244,7 @@ release claim.
 | --- | --- | --- |
 | Linux x86_64 / arm64 | Full A3S Use workspace CI plus release-container conformance | Development preview |
 | macOS arm64 / x86_64 | Current A3S Use workspace build and tests | Development preview |
-| Windows x86_64 | Current A3S Use workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, scanner-lock target promotion/cache/package-commit/upgrade-receipt/lifecycle-removal recovery, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
+| Windows x86_64 | Current A3S Use workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, scanner-lock blob publication/source-cleanup/package-commit/upgrade-receipt/lifecycle-removal recovery, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
 
 Native CI run
 [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)

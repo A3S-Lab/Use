@@ -232,7 +232,7 @@ RegistryConfig
 ├── base URL
 ├── bootstrap root digest and optional managed root bytes
 ├── enabled state
-├── verified-target cache policy
+├── source-observation and partial-cache policy
 ├── source identity and isolated TUF/cache location
 └── reviewed configuration revision
 ```
@@ -495,17 +495,19 @@ read into an unbounded mutation queue.
 
 Use separates global immutable/derivable inputs from installation authority.
 The global roots contain Registry source configuration, TUF metadata and
-source-scoped verified targets, expanded packages in the global Artifact Store,
-and content-addressed compiled artifacts. They cannot contain selection,
-activation, or authorization state. Expanded content is stored at
+source-scoped target observations and partials, raw blobs and expanded packages
+in the global Artifact Store, and content-addressed compiled artifacts. They
+cannot contain selection, activation, or authorization state. Raw blobs are
+stored at `data/artifacts/blobs/sha256/<prefix>/<digest>/content`; expanded
+content is stored at
 `data/artifacts/expanded-packages/sha256/<prefix>/<digest>/content`; one
 cross-process digest lock makes concurrent installations converge on the same
-complete tree. Registry-source cache metadata and provenance remain
-source-scoped. Raw verified target bytes still need a future global blob tier
-with one reachability, quota, and garbage-collection policy.
-Shared-content corruption currently fails closed; explicit quarantine and
-verified rehydration remain part of that global policy rather than an implicit
-overwrite performed by one installation.
+complete content identity. Registry-source observations, partials, metadata,
+and provenance remain source-scoped. The raw-blob and expanded-tree tiers still
+need one cross-source and cross-installation reachability, quota, and
+garbage-collection policy. Shared-content corruption currently fails closed;
+explicit quarantine and verified rehydration remain part of that global policy
+rather than an implicit overwrite performed by one source or installation.
 
 Each `InstallationId(kind, id)` owns separate roots for:
 

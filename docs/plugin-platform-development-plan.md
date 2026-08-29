@@ -353,18 +353,20 @@ Status: in progress
   unchanged prior content, source retention, and temporary cleanup.
 - [x] Open retained resumable Registry partials once without following their
   final path and keep that exact handle through admission, append, and
-  checkpoint. Verify complete bytes through that handle, then reopen and rehash
-  the promoted final path without following it and retain the verified handle
-  through staging. A deterministic replacement after initial verification
-  fails commit; a Unix path replacement after reopen cannot redirect staging,
-  and Windows live partial and verified-target handles permit readers while
+  checkpoint. Verify complete bytes through that handle, then copy and rehash
+  into a digest-locked, no-clobber global blob before publishing canonical
+  source observation metadata. Retain the no-follow blob handle through staging.
+  A Unix partial-path replacement cannot redirect commit away from the held
+  source handle, and Windows live partial/blob handles permit readers while
   denying external writes, removal, and replacement. Windows-native scanner
-  tests also prove transient no-delete-share contention converges within the
-  two-second promotion bound, while persistent contention preserves the complete
-  partial for a later zero-network rehash, promotion, and staging retry.
-  Invalid-partial cleanup and stale/partial/verified-target cache reclamation use
-  the same bounded blocking delete; native tests prove transient convergence and
-  persistent selected-target preservation followed by an exact rescan retry.
+  tests prove transient no-delete-share contention converges within the
+  two-second bound. If final partial cleanup remains locked, the durable global
+  blob and source observation survive together with a redundant complete
+  partial for a later zero-network cleanup retry. Invalid-partial cleanup and
+  stale/partial/source-observation reclamation use the same bounded blocking
+  delete; native tests prove transient convergence and persistent selected-file
+  preservation followed by an exact rescan retry. Source cleanup never deletes
+  a global blob.
   Lifecycle receipts and bounded abandoned `.artifact-staging-*` trees also use
   blocking deletion with the same Windows retry. Native tests prove transient
   receipt and nested-file release lets authority retirement or commit continue,
@@ -379,7 +381,7 @@ Status: in progress
   candidate state, preserves the byte-exact prior published generation, leaves
   no temporary receipt, and permits exact replay after release.
 - Expand filesystem coverage to externally raced targets, antivirus contention
-  outside verified-target promotion, cache removal, active package commit,
+  outside global blob publication/source cleanup, active package commit,
   upgrade-receipt replacement, lifecycle removal, and the shared publication
   paths, process groups, named resources, and reboot recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.
@@ -440,8 +442,12 @@ Status: pending
 
 - Define retention and garbage collection for packages, prior generations,
   TUF metadata, Grants, Flow history, OKF indexes, UI storage, and journals.
-- [x] Define verified target-payload cache byte/entry/free-space bounds,
-  deterministic retention, stale-write cleanup, usage, and confirmed GC.
+- [x] Define Registry source-observation/partial logical byte, entry, and
+  free-space bounds, deterministic retention, stale-write cleanup, usage, and
+  confirmed source cleanup. This never deletes a global blob.
+- Define global raw-blob and expanded-tree reachability, quota, audit,
+  quarantine, verified rehydration, and confirmed GC across every source,
+  installation, and durable operation.
 - Treat the implemented standalone OKF scope quota/GC, integrity audit,
   non-overwriting verified database backup, exact-plan oldest-first backup
   rotation, derived FTS repair, and authority-bound database plus

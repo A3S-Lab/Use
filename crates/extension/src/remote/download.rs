@@ -107,6 +107,7 @@ impl PreparedRemotePackage {
                     &self.repository,
                     &target_name,
                     self.registry.datastore(),
+                    self.registry.artifact_store(),
                     &self.registry.targets_url()?,
                     self.registry.network_policy(),
                     self.repository.root().signed.consistent_snapshot,
@@ -118,14 +119,8 @@ impl PreparedRemotePackage {
                 .await?
             }
             RemoteRegistryAccess::Cached => {
-                stage_cached_target(
-                    self.registry.datastore(),
-                    "planning-v1.json",
-                    expected.length,
-                    digest,
-                    self.registry.target_cache_policy(),
-                )
-                .await?
+                stage_cached_target(&self.registry, "planning-v1.json", expected.length, digest)
+                    .await?
             }
         };
         let bytes = fs::read(&path)
@@ -150,6 +145,7 @@ impl PreparedRemotePackage {
                     &self.repository,
                     &self.target_name,
                     self.registry.datastore(),
+                    self.registry.artifact_store(),
                     &self.registry.targets_url()?,
                     self.registry.network_policy(),
                     self.repository.root().signed.consistent_snapshot,
@@ -162,11 +158,10 @@ impl PreparedRemotePackage {
             }
             RemoteRegistryAccess::Cached => {
                 stage_cached_target(
-                    self.registry.datastore(),
+                    &self.registry,
                     &self.resolved.archive_name,
                     self.resolved.length,
                     &self.resolved.sha256,
-                    self.registry.target_cache_policy(),
                 )
                 .await?
             }
@@ -186,6 +181,7 @@ pub(super) async fn download_and_cache_target(
     repository: &Repository,
     target_name: &TargetName,
     datastore: &Path,
+    artifact_store: &crate::ArtifactStore,
     targets_url: &Url,
     network_policy: RegistryNetworkPolicy,
     consistent_snapshot: bool,
@@ -233,6 +229,7 @@ pub(super) async fn download_and_cache_target(
     ensure_staging_capacity(temporary.path(), expected_length, target_cache_policy).await?;
     let mut target = ResumableTarget::begin(
         datastore,
+        artifact_store,
         expected_length,
         expected_sha256,
         target_cache_policy,

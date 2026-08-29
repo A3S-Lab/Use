@@ -265,9 +265,10 @@ async fn reviewed_graph_plan_has_a_bounded_path_free_operation_diagnostic() {
         .sha256
         .strip_prefix("sha256:")
         .unwrap();
-    let complete_path = cache.join(archive_digest);
-    let complete_bytes = std::fs::read(&complete_path).unwrap();
-    std::fs::remove_file(&complete_path).unwrap();
+    let observation_path = source_target_observation(&cache, archive_digest);
+    let blob_path = raw_blob_artifact(&home, archive_digest);
+    let complete_bytes = std::fs::read(&blob_path).unwrap();
+    std::fs::remove_file(&observation_path).unwrap();
 
     let missing = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
@@ -318,7 +319,7 @@ async fn reviewed_graph_plan_has_a_bounded_path_free_operation_diagnostic() {
     );
     assert_eq!(server.requests().len(), requests_before_diagnostic);
 
-    std::fs::write(&complete_path, &complete_bytes).unwrap();
+    std::fs::write(&observation_path, &complete_bytes).unwrap();
     let invalid = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
         .for_test_installation()
@@ -356,6 +357,7 @@ async fn operation_diagnostic_sanitizes_invalid_pending_state() {
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let lock = resolve_remote_package_lock(

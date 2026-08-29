@@ -5,7 +5,7 @@ use a3s_use_core::{
     PluginPackageId, PluginReleaseChannel,
 };
 use a3s_use_extension::{
-    PackageRegistryResolutionObserver, TrustedRegistry, VerifiedRegistryMetadata,
+    PackageRegistryResolutionObserver, TrustedRegistry, UsePaths, VerifiedRegistryMetadata,
 };
 
 use super::download_attempt::{PackageDownloadAttemptStore, PendingPackageDownloadAttempt};
@@ -33,6 +33,7 @@ fn registry(temp: &std::path::Path, name: &str, seed: char) -> TrustedRegistry {
         digest(seed),
         None,
         temp.join(format!("registry-{name}")),
+        UsePaths::new(temp.join("data"), temp.join("state")).artifact_store(),
     )
     .unwrap()
 }

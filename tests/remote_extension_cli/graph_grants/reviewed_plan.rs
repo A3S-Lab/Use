@@ -24,6 +24,7 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         &repository.root_sha256,
         None,
         source_home.join("state/remote-registries/fixture"),
+        use_paths(&source_home).artifact_store(),
     )
     .unwrap();
     let reviewed_scope = PlanScope {
@@ -120,6 +121,7 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         &repository.root_sha256,
         None,
         target_home.join("state/remote-registries/fixture"),
+        use_paths(&target_home).artifact_store(),
     )
     .unwrap();
     let target_extension_registry = ExtensionRegistry::new(

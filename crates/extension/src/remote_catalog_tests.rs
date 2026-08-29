@@ -80,6 +80,7 @@ async fn complete_signed_fixture_is_searchable_and_inspectable_without_archive_d
         FIXTURE_ROOT_SHA256,
         None,
         temp.path().join("tuf"),
+        ArtifactStore::from_data_root(&temp.path().join("data")),
     )
     .unwrap();
     let host = PluginCatalogHost::new("linux-x86_64", "0.3.0").unwrap();
@@ -318,6 +319,7 @@ async fn public_catalog_policy_rejects_loopback_before_metadata_transport() {
         FIXTURE_ROOT_SHA256,
         Some(root),
         temp.path().join("tuf"),
+        ArtifactStore::from_data_root(&temp.path().join("data")),
     )
     .unwrap()
     .with_network_policy(RegistryNetworkPolicy::PublicInternet);
@@ -946,12 +948,19 @@ fn trusted_registry(
     repository: &TestRepository,
     datastore: PathBuf,
 ) -> TrustedRegistry {
+    let artifact_store = ArtifactStore::from_data_root(
+        &datastore
+            .parent()
+            .unwrap_or(datastore.as_path())
+            .join("data"),
+    );
     TrustedRegistry::new(
         "fixture",
         server.base_url(),
         &repository.root_sha256,
         None,
         datastore,
+        artifact_store,
     )
     .unwrap()
 }

@@ -68,6 +68,20 @@ fn expanded_package_artifact(home: &std::path::Path, package_digest: &str) -> st
         .unwrap()
 }
 
+fn raw_blob_artifact(home: &std::path::Path, digest: &str) -> std::path::PathBuf {
+    use_paths(home)
+        .artifact_store()
+        .blob_path(&format!("sha256:{digest}"))
+        .unwrap()
+}
+
+fn source_target_observation(
+    cache_directory: &std::path::Path,
+    digest: &str,
+) -> std::path::PathBuf {
+    cache_directory.join(format!("{digest}.json"))
+}
+
 fn target_package_digest(target: &TestTarget) -> String {
     serde_json::from_value::<PluginCatalogRecord>(target.custom.clone().unwrap())
         .unwrap()

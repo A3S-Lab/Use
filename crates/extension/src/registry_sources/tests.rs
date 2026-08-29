@@ -241,10 +241,26 @@ async fn source_replacement_changes_identity_without_rewriting_an_old_datastore(
     let first = store.resolve(None).await.unwrap();
     std::fs::create_dir_all(first.root().datastore()).unwrap();
     std::fs::write(first.root().datastore().join("evidence"), b"old").unwrap();
-    let archive_digest = "3".repeat(64);
+    let archive = b"old!";
+    let archive_digest = format!("{:x}", Sha256::digest(archive));
     let cache = first.root().datastore().join("verified-targets/sha256");
     std::fs::create_dir_all(&cache).unwrap();
-    std::fs::write(cache.join(&archive_digest), b"old!").unwrap();
+    let source = temporary.path().join("old-target.part");
+    std::fs::write(&source, archive).unwrap();
+    let mut source = tokio::fs::File::open(&source).await.unwrap();
+    first
+        .root()
+        .artifact_store()
+        .commit_blob(&mut source, archive.len() as u64, &archive_digest)
+        .await
+        .unwrap();
+    std::fs::write(
+        cache.join(format!("{archive_digest}.json")),
+        format!(
+            "{{\"schema\":\"a3s.use.registry-target-observation.v1\",\"targetDigest\":\"sha256:{archive_digest}\",\"expectedBytes\":4}}"
+        ),
+    )
+    .unwrap();
     let retained_provenance = a3s_use_core::VerifiedCatalogProvenance {
         registry_name: "packages".to_owned(),
         registry_url: "https://one.example/".to_owned(),

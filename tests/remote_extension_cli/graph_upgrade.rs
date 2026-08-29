@@ -29,6 +29,7 @@ async fn schema_v3_upgrade_advances_enablement_state_without_reusing_artifact_ge
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let extension_registry = ExtensionRegistry::new(extension_paths(&home));
@@ -615,6 +616,7 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         &first_repository.root_sha256,
         None,
         home.join("state/remote-registries/first"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let next_registry = TrustedRegistry::new(
@@ -623,6 +625,7 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         &next_repository.root_sha256,
         None,
         home.join("state/remote-registries/next"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let third_registry = TrustedRegistry::new(
@@ -631,6 +634,7 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         &third_repository.root_sha256,
         None,
         home.join("state/remote-registries/third"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let extension_registry = ExtensionRegistry::new(extension_paths(&home));

@@ -29,7 +29,8 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
         .join(source_identity)
         .join("verified-targets/sha256");
     let partial = cache_directory.join(format!(".target-{}.part", repository.target_sha256));
-    let verified = cache_directory.join(&repository.target_sha256);
+    let observation = source_target_observation(&cache_directory, &repository.target_sha256);
+    let blob = raw_blob_artifact(&home, &repository.target_sha256);
     server.clear_requests();
 
     let mut interrupted = Command::new(binary())
@@ -53,7 +54,7 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
     if !reached_extraction {
         let process_status = interrupted.try_wait().unwrap();
         let extracted_files = extraction_payload_count(&process_temp);
-        let cached = verified.exists();
+        let cached = observation.exists() && blob.exists();
         let requests = server.requests();
         let _ = interrupted.kill();
         let _ = interrupted.wait();
@@ -67,7 +68,8 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
     let extracted_files = extraction_payload_count(&process_temp).unwrap();
     assert!(extracted_files > 0 && extracted_files < EXTRACTION_PAYLOAD_FILES);
     assert!(!partial.exists());
-    assert!(verified.is_file());
+    assert!(observation.is_file());
+    assert!(blob.is_file());
     assert!(!scoped_state(&home, "extensions/acme/root.json").exists());
     assert!(!scoped_state(&home, "installation-snapshot.json").exists());
     assert!(!scoped_state(&home, "operations/package-graphs/install/acme/root.json").exists());
@@ -79,7 +81,8 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
     assert!(recovered.status.success(), "{recovered:?}");
     assert!(server.requests().is_empty());
     assert!(!partial.exists());
-    assert!(verified.is_file());
+    assert!(observation.is_file());
+    assert!(blob.is_file());
     assert!(scoped_state(&home, "extensions/acme/root.json").is_file());
     assert!(scoped_state(&home, "installation-snapshot.json").is_file());
     assert!(artifact.is_dir());

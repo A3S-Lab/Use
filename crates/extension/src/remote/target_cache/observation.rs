@@ -4,13 +4,14 @@ use a3s_use_core::{UseError, UseResult};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-use super::{target_cache_error, validate_regular_metadata, validated_evidence};
+use super::{record, target_cache_error, validated_evidence};
+use crate::ArtifactStore;
 
-/// Path-free observation of one exact digest-bound target cache entry.
+/// Path-free observation of one exact digest-bound Registry target.
 ///
-/// `Complete` means that an exact-length target exists at the cache location
-/// which only the verified promotion path writes. Observation does not rehash
-/// the content and is never download, apply, or recovery authority.
+/// `Complete` means a canonical source observation references an exact-length
+/// owned global blob. Observation does not rehash the blob and is never
+/// download, apply, or recovery authority.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VerifiedTargetObservation {
@@ -31,6 +32,7 @@ pub enum VerifiedTargetObservationStatus {
 
 pub(in crate::remote) async fn observe_target_cache_entry(
     datastore: &Path,
+    artifact_store: &ArtifactStore,
     registry_name: &str,
     expected_length: u64,
     expected_sha256: &str,
@@ -53,24 +55,31 @@ pub(in crate::remote) async fn observe_target_cache_entry(
     let Some(cache) = optional_cache_directory(datastore).await? else {
         return Ok(missing());
     };
-    let target_path = cache.join(&digest);
+    let target_path = record::observation_path(&cache, &digest);
     let partial_path = cache.join(format!(".target-{digest}.part"));
     let target = optional_metadata(&target_path).await?;
     let partial = optional_metadata(&partial_path).await?;
-    if target.is_some() && partial.is_some() {
-        return Err(target_cache_error(
-            "use.extension.registry_target_cache_invalid",
-            "The exact Registry target cache contains both complete and partial evidence.",
-        ));
-    }
-    if let Some(metadata) = target {
-        validate_regular_metadata(
-            &target_path,
-            &metadata,
-            expected_length,
-            "use.extension.registry_target_cache_invalid",
-            "The observed complete Registry target is not a bounded regular file.",
-        )?;
+    if target.is_some() {
+        record::read_observation(&cache, &digest, expected_length)
+            .await?
+            .ok_or_else(|| {
+                target_cache_error(
+                    "use.extension.registry_target_cache_invalid",
+                    "The Registry target observation disappeared during inspection.",
+                )
+            })?;
+        if !artifact_store
+            .observe_blob(&digest, expected_length)
+            .await?
+        {
+            return Err(target_cache_error(
+                "use.extension.registry_target_cache_invalid",
+                "A Registry target observation references a missing global artifact blob.",
+            ));
+        }
+        if let Some(metadata) = partial {
+            validate_partial_observation(&metadata, expected_length)?;
+        }
         return Ok(VerifiedTargetObservation {
             retained_bytes: expected_length,
             status: VerifiedTargetObservationStatus::Complete,
@@ -78,15 +87,7 @@ pub(in crate::remote) async fn observe_target_cache_entry(
         });
     }
     if let Some(metadata) = partial {
-        if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
-            || !metadata.is_file()
-            || metadata.len() > expected_length
-        {
-            return Err(target_cache_error(
-                "use.extension.registry_target_cache_invalid",
-                "The observed partial Registry target is not a bounded regular file.",
-            ));
-        }
+        validate_partial_observation(&metadata, expected_length)?;
         return Ok(VerifiedTargetObservation {
             retained_bytes: metadata.len(),
             status: VerifiedTargetObservationStatus::Partial,
@@ -94,6 +95,22 @@ pub(in crate::remote) async fn observe_target_cache_entry(
         });
     }
     Ok(missing())
+}
+
+fn validate_partial_observation(
+    metadata: &std::fs::Metadata,
+    expected_length: u64,
+) -> UseResult<()> {
+    if a3s_use_core::metadata_is_link_or_reparse_point(metadata)
+        || !metadata.is_file()
+        || metadata.len() > expected_length
+    {
+        return Err(target_cache_error(
+            "use.extension.registry_target_cache_invalid",
+            "The observed partial Registry target is not a bounded regular file.",
+        ));
+    }
+    Ok(())
 }
 
 async fn optional_cache_directory(datastore: &Path) -> UseResult<Option<PathBuf>> {

@@ -542,10 +542,10 @@ are `not-required`, while a graph containing a source that cannot be observed
 is `unavailable`. The datastore identity is derived from the exact historical
 `VerifiedCatalogProvenance`, so replacing the named Registry source cannot
 redirect an old operation to new cache state. Observation is lock-independent,
-zero-network, read-only, and path-free. `complete` means an exact-length regular
-entry exists where only verified promotion normally writes; observation does
-not rehash it. A partial or complete observation is never download, apply, or
-recovery authority.
+zero-network, read-only, and path-free. `complete` means a canonical
+source-scoped observation references an owned exact-length global Artifact
+Store blob; diagnostic observation does not rehash the blob. A partial or
+complete observation is never download, apply, or recovery authority.
 
 The same retained graph and download-attempt projections observe every
 separately signed executable-planning target selected by the exact package

@@ -1,7 +1,7 @@
 use a3s_use_core::{UseError, UseResult};
 use serde::Serialize;
 
-pub const VERIFIED_TARGET_CACHE_SCHEMA_VERSION: u32 = 2;
+pub const VERIFIED_TARGET_CACHE_SCHEMA_VERSION: u32 = 3;
 pub const DEFAULT_VERIFIED_TARGET_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 pub const DEFAULT_VERIFIED_TARGET_CACHE_MAX_ENTRIES: u64 = 4_096;
 pub const DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES: u64 = 256 * 1024 * 1024;
@@ -9,12 +9,14 @@ pub const DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_VERIFIED_TARGET_CACHE_POLICY_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 const MAX_VERIFIED_TARGET_CACHE_POLICY_ENTRIES: u64 = 100_000;
 
-/// Per-Registry bounds for verified package archives and planning targets.
+/// Per-Registry bounds for target observations and resumable downloads.
 ///
-/// The policy is enforced before a target request and again while committing
-/// the verified target. Resumable partials share the same limits and are
-/// removed before the oldest verified targets. Cache removal never changes
-/// installed package generations or trust receipts.
+/// `max_bytes` and `max_entries` bound each source's logical verified-target
+/// working set. `min_free_bytes` protects physical source partial downloads.
+/// Fully verified bytes live in the global Artifact Store and intentionally
+/// require a separate future reachability, quota, and garbage-collection
+/// policy. Source cache removal never deletes global blobs, installed package
+/// generations, or trust receipts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifiedTargetCachePolicy {
@@ -73,6 +75,10 @@ impl Default for VerifiedTargetCachePolicy {
     }
 }
 
+/// Schema-v3 source-cache usage.
+///
+/// `target_entries` counts canonical source observations and `target_bytes`
+/// is their logical referenced blob size, not physical source-datastore bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifiedTargetCacheUsage {
@@ -89,6 +95,10 @@ pub struct VerifiedTargetCacheUsage {
     pub policy: VerifiedTargetCachePolicy,
 }
 
+/// Schema-v3 source-cache pruning result.
+///
+/// Removed target bytes are released logical references. Global Artifact Store
+/// blobs are retained until a cross-source reachability collector exists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifiedTargetCachePruneResult {

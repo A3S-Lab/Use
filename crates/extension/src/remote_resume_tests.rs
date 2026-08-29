@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::test_support::{extension_archive, TestRepository, TestServer, FUTURE, PACKAGE_VERSION};
 use super::*;
@@ -44,10 +44,8 @@ async fn interrupted_target_download_resumes_from_a_durable_verified_prefix() {
         vec![format!("bytes={partial_length}-")]
     );
     assert!(!partial.exists());
-    assert!(datastore
-        .join("verified-targets/sha256")
-        .join(digest)
-        .is_file());
+    assert!(target_observation_path(&datastore, &digest).is_file());
+    assert!(global_blob_path(&trusted, &digest).is_file());
 }
 
 #[tokio::test]
@@ -81,10 +79,8 @@ async fn tampered_resumable_prefix_fails_digest_verification_and_is_discarded() 
         vec![format!("bytes={partial_length}-")]
     );
     assert!(!partial.exists());
-    assert!(!datastore
-        .join("verified-targets/sha256")
-        .join(&digest)
-        .exists());
+    assert!(!target_observation_path(&datastore, &digest).exists());
+    assert!(!global_blob_path(&trusted, &digest).exists());
 
     server.clear_requests();
     let prepared = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
@@ -126,10 +122,8 @@ async fn mismatched_content_range_discards_the_unverified_partial() {
         vec![format!("bytes={partial_length}-")]
     );
     assert!(!partial.exists());
-    assert!(!datastore
-        .join("verified-targets/sha256")
-        .join(digest)
-        .exists());
+    assert!(!target_observation_path(&datastore, &digest).exists());
+    assert!(!global_blob_path(&trusted, &digest).exists());
 }
 
 #[tokio::test]
@@ -162,10 +156,8 @@ async fn server_that_ignores_range_restarts_from_a_complete_response() {
         vec![format!("bytes={partial_length}-")]
     );
     assert!(!partial.exists());
-    assert!(datastore
-        .join("verified-targets/sha256")
-        .join(digest)
-        .is_file());
+    assert!(target_observation_path(&datastore, &digest).is_file());
+    assert!(global_blob_path(&trusted, &digest).is_file());
 }
 
 fn trusted_registry(
@@ -173,12 +165,32 @@ fn trusted_registry(
     repository: &TestRepository,
     datastore: PathBuf,
 ) -> TrustedRegistry {
+    let artifact_store = ArtifactStore::from_data_root(
+        &datastore
+            .parent()
+            .unwrap_or(datastore.as_path())
+            .join("data"),
+    );
     TrustedRegistry::new(
         "fixture",
         server.base_url(),
         &repository.root_sha256,
         None,
         datastore,
+        artifact_store,
     )
     .unwrap()
+}
+
+fn target_observation_path(datastore: &Path, digest: &str) -> PathBuf {
+    datastore
+        .join("verified-targets/sha256")
+        .join(format!("{digest}.json"))
+}
+
+fn global_blob_path(registry: &TrustedRegistry, digest: &str) -> PathBuf {
+    registry
+        .artifact_store()
+        .blob_path(&format!("sha256:{digest}"))
+        .unwrap()
 }
