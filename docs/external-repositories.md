@@ -110,8 +110,8 @@ verify catalog and provenance
 
 Install, upgrade, uninstall, enable, and disable use the same plan-v4 and apply
 boundary. There is no direct enable/disable mutation tool. Crash recovery
-resumes exact durable evidence; deleted journals or graph records are
-corruption and are never reconstructed heuristically.
+resumes exact durable evidence; deleted journals or the installation snapshot
+are corruption and are never reconstructed heuristically.
 
 The complete contract inventory is in [Plugin Contracts](plugin-contracts.md),
 and lifecycle ownership is in [Plugin Platform Architecture](plugin-platform-architecture.md).

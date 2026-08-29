@@ -41,7 +41,7 @@ protocol baseline and no pre-release compatibility branches.
                            │ exact reviewed envelope
                            ▼
                     A3S Use engine
-      verify · lock · journal · immutable package graph
+      verify · lock · journal · installation snapshot
                            │
           ┌────────────────┼────────────────┐
           ▼                ▼                ▼
@@ -364,13 +364,13 @@ mixed or unreviewed graph.
 ### Uninstall
 
 ```text
-verify installed graph + reverse order
+derive exact root lock from installation snapshot
 → atomically hide the removal closure
 → checkpoint Grant cutover
 → drain each prior route
 → revoke exact Grants
 → remove surfaces and packages in reverse
-→ remove installed graph record
+→ commit the next installation snapshot generation without that root
 ```
 
 Installed dependents prevent removal. A retained shared dependency is not part
@@ -502,7 +502,8 @@ Each `InstallationId(kind, id)` owns separate roots for:
 
 - immutable package generations;
 - selected and retained receipts;
-- pre-plan archive/planning-target attempts and installed/pending package graphs;
+- pre-plan archive/planning-target attempts, the installation snapshot, and
+  pending package-graph operations;
 - Host request bindings and their observation-only enablement index;
 - lifecycle intents and journals;
 - Registry snapshots and pending cutovers;

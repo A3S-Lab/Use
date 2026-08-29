@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
-    PluginOperationAction, PluginPackageId, PluginPackageLock, UseError, UseResult,
-    MAX_PLUGIN_PLAN_ITEMS,
+    InstallationId, InstallationRootSelection, InstallationSnapshot, PluginOperationAction,
+    PluginPackageId, PluginPackageLock, UseError, UseResult, MAX_INSTALLATION_SNAPSHOT_BYTES,
 };
+use a3s_use_extension::ExtensionPaths;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -21,102 +22,117 @@ pub(super) use pending::{
     PackageGraphOperationPhase, PendingPackageGraphOperation, PendingPackageGraphStore,
 };
 
-const INSTALLED_GRAPH_SCHEMA: &str = "a3s.use.installed-package-graph.v1";
 const MAX_GRAPH_RECORD_BYTES: u64 = 2 * 1024 * 1024;
+const INSTALLATION_SNAPSHOT_FILE: &str = "installation-snapshot.json";
+const LEGACY_INSTALLED_GRAPHS_DIRECTORY: &str = "package-graphs";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct InstalledPackageGraph {
-    pub schema: String,
-    pub package_lock_digest: String,
-    pub package_lock: PluginPackageLock,
-    pub installed_at_ms: u64,
-}
-
-impl InstalledPackageGraph {
-    fn new(package_lock: PluginPackageLock, installed_at_ms: u64) -> UseResult<Self> {
-        let graph = Self {
-            schema: INSTALLED_GRAPH_SCHEMA.to_string(),
-            package_lock_digest: package_lock.descriptor_digest()?,
-            package_lock,
-            installed_at_ms,
-        };
-        graph.validate()?;
-        Ok(graph)
-    }
-
-    fn validate(&self) -> UseResult<()> {
-        self.package_lock.validate()?;
-        if self.schema != INSTALLED_GRAPH_SCHEMA
-            || self.package_lock_digest != self.package_lock.descriptor_digest()?
-            || self.installed_at_ms == 0
-        {
-            return Err(store_error(
-                "An installed cognitive-package graph record is invalid.",
-            ));
-        }
-        Ok(())
-    }
-}
-
+/// Durable owner of the single resolved package graph for one installation.
+///
+/// Root-specific locks are derived views. The only stored authority is one
+/// monotonically generated `InstallationSnapshot`; a package ID cannot hold
+/// conflicting selections beneath different roots.
 #[derive(Debug, Clone)]
-pub(super) struct InstalledPackageGraphStore {
+pub(super) struct InstallationSnapshotStore {
+    installation: InstallationId,
     state_root: PathBuf,
-    root: PathBuf,
+    path: PathBuf,
+    legacy_root: PathBuf,
 }
 
-impl InstalledPackageGraphStore {
-    pub fn new(state_root: impl Into<PathBuf>) -> Self {
-        let state_root = state_root.into();
+impl InstallationSnapshotStore {
+    #[cfg(test)]
+    fn new(state_root: impl Into<PathBuf>, installation: InstallationId) -> UseResult<Self> {
+        installation.validate()?;
+        Ok(Self::from_parts(state_root.into(), installation))
+    }
+
+    fn from_parts(state_root: PathBuf, installation: InstallationId) -> Self {
         Self {
-            root: state_root.join("package-graphs"),
+            installation,
+            path: state_root.join(INSTALLATION_SNAPSHOT_FILE),
+            legacy_root: state_root.join(LEGACY_INSTALLED_GRAPHS_DIRECTORY),
             state_root,
         }
     }
 
+    pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
+        Self::from_parts(
+            paths.installation_state_root(),
+            paths.installation().clone(),
+        )
+    }
+
+    #[cfg(test)]
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    #[cfg(test)]
+    async fn snapshot(&self) -> UseResult<Option<InstallationSnapshot>> {
+        self.read_snapshot().await
+    }
+
     pub async fn put(&self, lock: &PluginPackageLock, installed_at_ms: u64) -> UseResult<bool> {
-        let record = InstalledPackageGraph::new(lock.clone(), installed_at_ms)?;
+        lock.validate()?;
+        let selection = InstallationRootSelection::new(&lock.root_package_id, installed_at_ms)?;
         let _guard = acquire_lock(&self.state_root).await?;
-        let path = package_record_path(&self.root, &lock.root_package_id)?;
-        let parent = path.parent().ok_or_else(path_identity_error)?;
-        let current = if validate_existing_directory_chain(&self.state_root, parent).await? {
-            read_optional::<InstalledPackageGraph>(&path).await?
-        } else {
-            None
-        };
-        if let Some(current) = current {
-            current.validate()?;
-            if current.package_lock == record.package_lock {
-                return Ok(false);
+        reject_legacy_graph_layout(&self.legacy_root).await?;
+        let current = self.read_snapshot_file().await?;
+        let (generation, host, mut roots) = match current {
+            Some(snapshot) => {
+                if let Some(current_lock) = snapshot.package_lock(&lock.root_package_id)? {
+                    if current_lock == *lock {
+                        return Ok(false);
+                    }
+                    return Err(package_manager_error(
+                        "use.plugin.package_graph_reconcile_required",
+                        format!(
+                            "Cognitive package '{}' already owns a different installed dependency lock.",
+                            lock.root_package_id
+                        ),
+                    ));
+                }
+                let host = if snapshot.roots.is_empty() {
+                    lock.host.clone()
+                } else {
+                    snapshot.host.clone()
+                };
+                (
+                    next_snapshot_generation(snapshot.generation)?,
+                    host,
+                    snapshot_root_locks(&snapshot)?,
+                )
             }
-            return Err(package_manager_error(
-                "use.plugin.package_graph_reconcile_required",
-                format!(
-                    "Cognitive package '{}' already owns a different installed dependency lock.",
-                    lock.root_package_id
-                ),
+            None => (1, lock.host.clone(), Vec::new()),
+        };
+        if host != lock.host {
+            return Err(store_error(
+                "An installed package lock targets a different installation host.",
             ));
         }
-        write_new(&self.state_root, &path, &record).await?;
+        roots.push((selection, lock.clone()));
+        let replacement = InstallationSnapshot::from_root_locks(
+            self.installation.clone(),
+            generation,
+            host,
+            roots,
+        )?;
+        write_new_bounded(
+            &self.state_root,
+            &self.path,
+            &replacement,
+            MAX_INSTALLATION_SNAPSHOT_BYTES as u64,
+        )
+        .await?;
         Ok(true)
     }
 
-    pub async fn get(&self, root_package_id: &str) -> UseResult<Option<InstalledPackageGraph>> {
-        let path = package_record_path(&self.root, root_package_id)?;
-        let parent = path.parent().ok_or_else(path_identity_error)?;
-        if !validate_existing_directory_chain(&self.state_root, parent).await? {
+    pub async fn get(&self, root_package_id: &str) -> UseResult<Option<PluginPackageLock>> {
+        validate_root_package_id(root_package_id)?;
+        let Some(snapshot) = self.read_snapshot().await? else {
             return Ok(None);
-        }
-        let value: Option<InstalledPackageGraph> = read_optional(&path).await?;
-        if let Some(value) = &value {
-            value.validate()?;
-            if value.package_lock.root_package_id != root_package_id {
-                return Err(store_error(
-                    "An installed graph record does not match its root package path.",
-                ));
-            }
-        }
-        Ok(value)
+        };
+        snapshot.package_lock(root_package_id)
     }
 
     pub async fn replace(
@@ -126,118 +142,146 @@ impl InstalledPackageGraphStore {
         replacement: &PluginPackageLock,
         installed_at_ms: u64,
     ) -> UseResult<bool> {
+        validate_root_package_id(root_package_id)?;
+        replacement.validate()?;
         if replacement.root_package_id != root_package_id {
             return Err(store_error(
                 "A replacement graph does not own the requested root package.",
             ));
         }
-        let record = InstalledPackageGraph::new(replacement.clone(), installed_at_ms)?;
+        let selection = InstallationRootSelection::new(root_package_id, installed_at_ms)?;
         let _guard = acquire_lock(&self.state_root).await?;
-        let path = package_record_path(&self.root, root_package_id)?;
-        let parent = path.parent().ok_or_else(path_identity_error)?;
-        if !validate_existing_directory_chain(&self.state_root, parent).await? {
-            return Err(store_error(
-                "The installed package graph disappeared before replacement.",
-            ));
-        }
-        let current = read_optional::<InstalledPackageGraph>(&path)
-            .await?
-            .ok_or_else(|| {
-                store_error("The installed package graph disappeared before replacement.")
-            })?;
-        current.validate()?;
-        if current.package_lock == record.package_lock {
+        reject_legacy_graph_layout(&self.legacy_root).await?;
+        let snapshot = self.read_snapshot_file().await?.ok_or_else(|| {
+            store_error("The installation snapshot disappeared before replacement.")
+        })?;
+        let current = snapshot.package_lock(root_package_id)?.ok_or_else(|| {
+            store_error("The installed package graph disappeared before replacement.")
+        })?;
+        if current == *replacement {
             return Ok(false);
         }
-        if current.package_lock_digest != expected_digest {
+        if current.descriptor_digest()? != expected_digest {
             return Err(store_error(
                 "The installed package graph changed before replacement.",
             ));
         }
-        write_new(&self.state_root, &path, &record).await?;
+        let mut roots = snapshot_root_locks(&snapshot)?;
+        roots.retain(|(root, _)| root.package_id != root_package_id);
+        roots.push((selection, replacement.clone()));
+        let replacement = InstallationSnapshot::from_root_locks(
+            self.installation.clone(),
+            next_snapshot_generation(snapshot.generation)?,
+            snapshot.host.clone(),
+            roots,
+        )?;
+        write_new_bounded(
+            &self.state_root,
+            &self.path,
+            &replacement,
+            MAX_INSTALLATION_SNAPSHOT_BYTES as u64,
+        )
+        .await?;
         Ok(true)
     }
 
-    pub async fn list(&self) -> UseResult<Vec<InstalledPackageGraph>> {
-        let mut records = Vec::new();
-        if !validate_existing_directory_chain(&self.state_root, &self.root).await? {
-            return Ok(records);
-        }
-        let mut publishers = match fs::read_dir(&self.root).await {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(records),
-            Err(error) => return Err(path_error("read installed graph store", &self.root, error)),
+    pub async fn list(&self) -> UseResult<Vec<PluginPackageLock>> {
+        let Some(snapshot) = self.read_snapshot().await? else {
+            return Ok(Vec::new());
         };
-        while let Some(publisher) = publishers
-            .next_entry()
-            .await
-            .map_err(|error| path_error("read installed graph publisher", &self.root, error))?
-        {
-            let publisher_path = publisher.path();
-            let publisher_metadata = fs::symlink_metadata(&publisher_path)
-                .await
-                .map_err(|error| path_error("inspect graph publisher", &publisher_path, error))?;
-            if a3s_use_core::metadata_is_link_or_reparse_point(&publisher_metadata)
-                || !publisher_metadata.is_dir()
-            {
-                return Err(store_error(
-                    "The installed graph store contains an invalid publisher entry.",
-                ));
-            }
-            let mut packages = fs::read_dir(&publisher_path).await.map_err(|error| {
-                path_error("read installed graph packages", &publisher_path, error)
-            })?;
-            while let Some(package) = packages.next_entry().await.map_err(|error| {
-                path_error("read installed graph package", &publisher_path, error)
-            })? {
-                let package_path = package.path();
-                let package_metadata =
-                    fs::symlink_metadata(&package_path).await.map_err(|error| {
-                        path_error("inspect installed graph record", &package_path, error)
-                    })?;
-                if records.len() >= MAX_PLUGIN_PLAN_ITEMS
-                    || a3s_use_core::metadata_is_link_or_reparse_point(&package_metadata)
-                    || !package_metadata.is_file()
-                    || package_path.extension().and_then(|value| value.to_str()) != Some("json")
-                {
-                    return Err(store_error(
-                        "The installed graph store contains an invalid or oversized record set.",
-                    ));
-                }
-                let record = read_required::<InstalledPackageGraph>(&package_path).await?;
-                record.validate()?;
-                records.push(record);
-            }
-        }
-        records.sort_by(|left, right| {
-            left.package_lock
-                .root_package_id
-                .cmp(&right.package_lock.root_package_id)
-        });
-        Ok(records)
+        snapshot.package_locks()
     }
 
     pub async fn remove(&self, root_package_id: &str, expected_digest: &str) -> UseResult<bool> {
+        validate_root_package_id(root_package_id)?;
         let _guard = acquire_lock(&self.state_root).await?;
-        let path = package_record_path(&self.root, root_package_id)?;
-        let parent = path.parent().ok_or_else(path_identity_error)?;
-        if !validate_existing_directory_chain(&self.state_root, parent).await? {
-            return Ok(false);
-        }
-        let Some(current) = read_optional::<InstalledPackageGraph>(&path).await? else {
+        reject_legacy_graph_layout(&self.legacy_root).await?;
+        let Some(snapshot) = self.read_snapshot_file().await? else {
             return Ok(false);
         };
-        current.validate()?;
-        if current.package_lock_digest != expected_digest {
+        let Some(current) = snapshot.package_lock(root_package_id)? else {
+            return Ok(false);
+        };
+        if current.descriptor_digest()? != expected_digest {
             return Err(store_error(
                 "The installed package graph changed before removal.",
             ));
         }
-        fs::remove_file(&path)
-            .await
-            .map_err(|error| path_error("remove installed package graph", &path, error))?;
-        sync_parent(path.parent().ok_or_else(path_identity_error)?).await?;
+        let mut roots = snapshot_root_locks(&snapshot)?;
+        roots.retain(|(root, _)| root.package_id != root_package_id);
+        let replacement = InstallationSnapshot::from_root_locks(
+            self.installation.clone(),
+            next_snapshot_generation(snapshot.generation)?,
+            snapshot.host.clone(),
+            roots,
+        )?;
+        write_new_bounded(
+            &self.state_root,
+            &self.path,
+            &replacement,
+            MAX_INSTALLATION_SNAPSHOT_BYTES as u64,
+        )
+        .await?;
         Ok(true)
+    }
+
+    async fn read_snapshot(&self) -> UseResult<Option<InstallationSnapshot>> {
+        if !validate_existing_directory_chain(&self.state_root, &self.state_root).await? {
+            return Ok(None);
+        }
+        reject_legacy_graph_layout(&self.legacy_root).await?;
+        self.read_snapshot_file().await
+    }
+
+    async fn read_snapshot_file(&self) -> UseResult<Option<InstallationSnapshot>> {
+        let snapshot = read_optional_bounded::<InstallationSnapshot>(
+            &self.path,
+            MAX_INSTALLATION_SNAPSHOT_BYTES as u64,
+        )
+        .await?;
+        if let Some(snapshot) = &snapshot {
+            snapshot.validate()?;
+            self.installation.ensure_same(&snapshot.installation)?;
+        }
+        Ok(snapshot)
+    }
+}
+
+fn snapshot_root_locks(
+    snapshot: &InstallationSnapshot,
+) -> UseResult<Vec<(InstallationRootSelection, PluginPackageLock)>> {
+    let locks = snapshot.package_locks()?;
+    if locks.len() != snapshot.roots.len() {
+        return Err(store_error(
+            "The installation snapshot root and lock counts differ.",
+        ));
+    }
+    Ok(snapshot.roots.iter().cloned().zip(locks).collect())
+}
+
+fn next_snapshot_generation(generation: u64) -> UseResult<u64> {
+    generation.checked_add(1).ok_or_else(|| {
+        package_manager_error(
+            "use.installation.snapshot_generation_exhausted",
+            "The installation snapshot generation is exhausted.",
+        )
+    })
+}
+
+fn validate_root_package_id(root_package_id: &str) -> UseResult<()> {
+    PluginPackageId::parse(root_package_id.to_owned())
+        .map(drop)
+        .map_err(|_| store_error("An installation root package identity is invalid."))
+}
+
+async fn reject_legacy_graph_layout(path: &Path) -> UseResult<()> {
+    match fs::symlink_metadata(path).await {
+        Ok(_) => Err(package_manager_error(
+            "use.installation.snapshot_legacy_state_unsupported",
+            "Per-root installed package graph files are unsupported; preserve the old state for review and reinstall into a clean installation root.",
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(path_error("inspect legacy installed graph state", path, error)),
     }
 }
 
@@ -274,19 +318,26 @@ async fn read_optional<T>(path: &Path) -> UseResult<Option<T>>
 where
     T: for<'de> Deserialize<'de>,
 {
+    read_optional_bounded(path, MAX_GRAPH_RECORD_BYTES).await
+}
+
+async fn read_optional_bounded<T>(path: &Path, max_bytes: u64) -> UseResult<Option<T>>
+where
+    T: for<'de> Deserialize<'de>,
+{
     match fs::symlink_metadata(path).await {
         Ok(metadata)
             if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
                 && metadata.is_file()
-                && metadata.len() <= MAX_GRAPH_RECORD_BYTES => {}
+                && metadata.len() <= max_bytes => {}
         Ok(_) => return Err(store_error("A package graph record path is invalid.")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(path_error("inspect package graph record", path, error)),
     }
-    read_required(path).await.map(Some)
+    read_required_bounded(path, max_bytes).await.map(Some)
 }
 
-async fn read_required<T>(path: &Path) -> UseResult<T>
+async fn read_required_bounded<T>(path: &Path, max_bytes: u64) -> UseResult<T>
 where
     T: for<'de> Deserialize<'de>,
 {
@@ -296,14 +347,14 @@ where
     if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
         || !metadata.is_file()
         || metadata.len() == 0
-        || metadata.len() > MAX_GRAPH_RECORD_BYTES
+        || metadata.len() > max_bytes
     {
         return Err(store_error("A package graph record path is invalid."));
     }
     let bytes = fs::read(path)
         .await
         .map_err(|error| path_error("read package graph record", path, error))?;
-    if bytes.is_empty() || bytes.len() as u64 > MAX_GRAPH_RECORD_BYTES {
+    if bytes.is_empty() || bytes.len() as u64 > max_bytes {
         return Err(store_error(
             "A package graph record exceeds its size bound.",
         ));
@@ -313,12 +364,21 @@ where
 }
 
 async fn write_new<T: Serialize>(state_root: &Path, path: &Path, value: &T) -> UseResult<()> {
+    write_new_bounded(state_root, path, value, MAX_GRAPH_RECORD_BYTES).await
+}
+
+async fn write_new_bounded<T: Serialize>(
+    state_root: &Path,
+    path: &Path,
+    value: &T,
+    max_bytes: u64,
+) -> UseResult<()> {
     if !path.starts_with(state_root) || path == state_root {
         return Err(path_identity_error());
     }
     let bytes = serde_json::to_vec_pretty(value)
         .map_err(|_| store_error("Failed to encode a package graph record."))?;
-    if bytes.is_empty() || bytes.len() as u64 > MAX_GRAPH_RECORD_BYTES {
+    if bytes.is_empty() || bytes.len() as u64 > max_bytes {
         return Err(store_error(
             "A package graph record exceeds its size bound.",
         ));

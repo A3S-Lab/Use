@@ -31,9 +31,10 @@
 
 A3S Use resolves, verifies, installs, upgrades, and removes an exact SemVer
 package graph. A cognitive package can contribute six named surfaces:
-**Tool, MCP, OKF, A3S Flow, Skill, and UI**. The package graph is the lifecycle
-unit; its surfaces are prepared together and become visible through one
-immutable capability-snapshot cutover.
+**Tool, MCP, OKF, A3S Flow, Skill, and UI**. The package is the lifecycle unit;
+its User or Workspace installation is the consistency unit. Its surfaces are
+prepared together and become visible through one immutable
+capability-snapshot cutover.
 
 It is designed for A3S hosts on Linux, macOS, and Windows. It does not try to
 replace `apt`, Homebrew, or WinGet for arbitrary system software. A3S Use owns
@@ -41,10 +42,13 @@ package trust, immutable generations, receipts, dependency ordering, lifecycle
 journals, and capability evidence. Runtime, Gateway, Flow, Knowledge, and UI
 hosts keep ownership of execution and presentation.
 
-The current architecture has three non-negotiable properties:
+The current architecture has four non-negotiable properties:
 
-- **One package graph:** dependencies install forward; retirement runs in
-  reverse; retained dependencies must match their exact lock evidence.
+- **One installation graph:** each explicit User or Workspace installation has
+  one monotonically generated `InstallationSnapshot`. Root locks are derived
+  views; dependencies install forward, retirement runs in reverse, and one
+  package ID cannot resolve differently beneath two roots in the same
+  installation.
 - **One reviewed mutation path:** planning is read-only; apply accepts the
   reviewed operation ID, plan digest, and confirmation. There is no direct
   enable/disable mutation API.
@@ -125,8 +129,8 @@ external writes and removal until the transaction releases it. Signed Registry,
 dependency-graph, Grant, Flow-preflight/lifecycle, and standalone OKF scenarios
 also run through the real CLI. Its killed-process coverage now
 includes a multi-node install killed after the durable Registry graph publish
-but before dependency journal and parent graph completion, removed-dependency
-cleanup after upgrade cutover, and an uninstall killed after the durable
+but before dependency journal and installation snapshot completion,
+removed-dependency cleanup after upgrade cutover, and an uninstall killed after the durable
 Registry hide but before the package hide receipt. The install replays the
 exact cutover offline without another generation or network request. The
 uninstall restarts from the same plan, blocks on the accepted-call generation
@@ -967,21 +971,21 @@ Current Registry rules:
   oldest partials and verified targets, under the same cache lock and
   synchronize the directory after deletion.
 - Real-process recovery coverage also kills installation during verified
-  archive extraction, proves no receipt, package graph, pending operation, or
-  package root was published, and completes an explicit zero-network retry
-  from the revalidated cache.
+  archive extraction, proves no receipt, installation snapshot, pending
+  operation, or package root was published, and completes an explicit
+  zero-network retry from the revalidated cache.
 - The following real-process package-copy interruption retains its exact
-  pending plan and applying journal but no receipt, graph, or route. Offline
-  replay reclaims the physical `.lifecycle-staging-*` residue and publishes the
-  reviewed generation exactly once.
+  pending plan and applying journal but no receipt, installation snapshot, or
+  route. Offline replay reclaims the physical `.lifecycle-staging-*` residue
+  and publishes the reviewed generation exactly once.
 - Real-process uninstall interruption during partial directory removal also
   replays the exact lifecycle identity, finishes cleanup after receipt removal,
   and does not advance the Registry generation a second time.
 - Real-process multi-node install interruption after the atomic Registry graph
   publication retains one complete visible closure and its durable cutover but
-  no installed parent graph. Offline replay completes every package journal,
-  writes the exact graph, retires the cutover, and keeps Registry generation 1
-  without a network request.
+  no installation snapshot. Offline replay completes every package journal,
+  writes the exact snapshot, retires the cutover, and keeps Registry generation
+  1 without a network request.
 - Watchers read immutable publications without waiting behind writers. If a
   one-time crash reconciliation briefly owns the Registry lock, lifecycle
   writers wait asynchronously for at most two seconds; genuinely concurrent
@@ -1125,6 +1129,7 @@ Only the following cognitive-package protocol line is accepted:
 | Registry source configuration | ACL schema version `1` |
 | Signed catalog record | `a3s.use.plugin-catalog.v3` |
 | Installed receipt | schema version `5` |
+| Installation snapshot | `a3s.use.installation-snapshot.v1` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6` (protocol `6`) |
 | Host managed scope | `a3s.use.plugin-managed-scope.v2` |

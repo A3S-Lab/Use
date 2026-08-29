@@ -1,28 +1,25 @@
 use super::*;
 
 #[tokio::test]
-async fn installed_graph_replace_is_cas_idempotent_and_atomically_overwrites() {
+async fn installation_snapshot_replace_is_cas_idempotent_and_advances_generation() {
     let temp = tempfile::tempdir().unwrap();
     let state_root = temp.path().join("state");
-    let store = InstalledPackageGraphStore::new(&state_root);
+    let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
     let prior = package_lock("1.0.0", '1');
     let candidate = package_lock("2.0.0", '2');
 
     assert!(store.put(&prior, 1).await.unwrap());
+    assert_eq!(store.snapshot().await.unwrap().unwrap().generation, 1);
     let error = store
         .replace(&prior.root_package_id, &digest('0'), &candidate, 2)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
     assert_eq!(
-        store
-            .get(&prior.root_package_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .package_lock,
+        store.get(&prior.root_package_id).await.unwrap().unwrap(),
         prior
     );
+    assert_eq!(store.snapshot().await.unwrap().unwrap().generation, 1);
 
     let prior_digest = prior.descriptor_digest().unwrap();
     assert!(store
@@ -33,45 +30,81 @@ async fn installed_graph_replace_is_cas_idempotent_and_atomically_overwrites() {
         .replace(&prior.root_package_id, &prior_digest, &candidate, 3,)
         .await
         .unwrap());
+    assert_eq!(store.snapshot().await.unwrap().unwrap().generation, 2);
     assert_eq!(
-        store
-            .get(&prior.root_package_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .package_lock,
+        store.get(&prior.root_package_id).await.unwrap().unwrap(),
         candidate
     );
 
-    let parent = package_record_path(&state_root.join("package-graphs"), &prior.root_package_id)
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    let mut entries = fs::read_dir(parent).await.unwrap();
+    let mut entries = fs::read_dir(&state_root).await.unwrap();
     while let Some(entry) = entries.next_entry().await.unwrap() {
         assert!(!entry.file_name().to_string_lossy().contains(".tmp-"));
     }
 }
 
 #[tokio::test]
-async fn installed_graph_read_rejects_digest_tampering() {
+async fn installation_snapshot_read_rejects_generation_tampering() {
     let temp = tempfile::tempdir().unwrap();
     let state_root = temp.path().join("state");
-    let store = InstalledPackageGraphStore::new(&state_root);
+    let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
     let lock = package_lock("1.0.0", '1');
     store.put(&lock, 1).await.unwrap();
-    let path =
-        package_record_path(&state_root.join("package-graphs"), &lock.root_package_id).unwrap();
+    let path = store.path();
     let mut value: serde_json::Value =
         serde_json::from_slice(&fs::read(&path).await.unwrap()).unwrap();
-    value["packageLockDigest"] = serde_json::json!(digest('0'));
+    value["generation"] = serde_json::json!(0);
     fs::write(&path, serde_json::to_vec_pretty(&value).unwrap())
         .await
         .unwrap();
 
     let error = store.get(&lock.root_package_id).await.unwrap_err();
-    assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
+    assert_eq!(error.code, "use.installation.snapshot_invalid");
+}
+
+#[tokio::test]
+async fn empty_installation_snapshot_accepts_a_new_resolution_host() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
+    let prior = package_lock("1.0.0", '1');
+    store.put(&prior, 1).await.unwrap();
+    store
+        .remove(&prior.root_package_id, &prior.descriptor_digest().unwrap())
+        .await
+        .unwrap();
+
+    let mut replacement = package_lock("2.0.0", '2');
+    replacement.host = PluginPackageLockHost::new("linux-x86_64", "0.3.5").unwrap();
+    replacement.validate().unwrap();
+
+    assert!(store.put(&replacement, 3).await.unwrap());
+    let snapshot = store.snapshot().await.unwrap().unwrap();
+    assert_eq!(snapshot.generation, 3);
+    assert_eq!(snapshot.host, replacement.host);
+    assert_eq!(
+        snapshot.package_lock(&replacement.root_package_id).unwrap(),
+        Some(replacement)
+    );
+}
+
+#[tokio::test]
+async fn installation_snapshot_rejects_another_scope_kind_at_the_same_root() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
+    let lock = package_lock("1.0.0", '1');
+    store.put(&lock, 1).await.unwrap();
+
+    let other = InstallationSnapshotStore::new(
+        &state_root,
+        PlanScope {
+            kind: PlanScopeKind::Workspace,
+            id: "current".to_string(),
+        },
+    )
+    .unwrap();
+    let error = other.get(&lock.root_package_id).await.unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
 }
 
 #[tokio::test]

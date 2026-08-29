@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use a3s_use_core::{PluginOperationAction, PluginReleaseChannel, PluginSurfaceRef, UseResult};
+use a3s_use_core::{
+    PluginOperationAction, PluginPackageLock, PluginReleaseChannel, PluginSurfaceRef, UseResult,
+};
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest,
     ExtensionRegistrySnapshot, InstalledExtension, TrustedRegistry,
@@ -17,9 +19,7 @@ use super::install::verify_expected_lock;
 use super::plan::{now_ms, package_state_revision, state_surface_refs, upgrade_operation};
 use super::registry_access::{download_selected_packages, resolve_package_lock, RegistryAccess};
 use super::resolution_attempt::PendingPackageResolutionAttempt;
-use super::store::{
-    InstalledPackageGraph, PackageGraphOperationPhase, PendingPackageGraphOperation,
-};
+use super::store::{PackageGraphOperationPhase, PendingPackageGraphOperation};
 use super::upgrade_validation::{pending_upgrade_dispositions, validate_pending_upgrade};
 use super::{
     installed_matches_lock, package_manager_error, CognitivePackageManager,
@@ -109,9 +109,9 @@ impl CognitivePackageManager {
         let candidate_digest = candidate_lock.descriptor_digest()?;
         verify_expected_lock(&candidate_digest, expected_package_lock_digest)?;
 
-        let graph_store = self.graph_store();
+        let snapshot_store = self.snapshot_store();
         let pending_store = self.pending_store();
-        let existing_graph = graph_store.get(package_id).await?;
+        let existing_graph = snapshot_store.get(package_id).await?;
         let existing_pending = pending_store
             .get(PluginOperationAction::Upgrade, package_id)
             .await?;
@@ -130,7 +130,7 @@ impl CognitivePackageManager {
                     )
                 })?
             }
-            (None, Some(graph)) => graph.package_lock.clone(),
+            (None, Some(graph)) => graph.clone(),
             (None, None) => {
                 return Err(package_manager_error(
                     "use.plugin.package_graph_missing",
@@ -147,13 +147,13 @@ impl CognitivePackageManager {
             ));
         }
 
-        let installed_graphs = graph_store.list().await?;
+        let installed_locks = snapshot_store.list().await?;
         let installed_extensions = self.registry.list().await?;
         let snapshot = self.registry.snapshot().await?;
         let mut dispositions = upgrade_dispositions(
             &prior_lock,
             &candidate_lock,
-            &installed_graphs,
+            &installed_locks,
             &installed_extensions,
             &snapshot,
         )?;
@@ -773,7 +773,7 @@ impl CognitivePackageManager {
             return Err(error);
         }
 
-        graph_store
+        snapshot_store
             .replace(
                 package_id,
                 &prior_lock.descriptor_digest()?,
@@ -1097,7 +1097,7 @@ fn extension_is_exact_published(
 fn upgrade_dispositions(
     prior_lock: &a3s_use_core::PluginPackageLock,
     candidate_lock: &a3s_use_core::PluginPackageLock,
-    installed_graphs: &[InstalledPackageGraph],
+    installed_locks: &[PluginPackageLock],
     installed_extensions: &[InstalledExtension],
     snapshot: &ExtensionRegistrySnapshot,
 ) -> UseResult<BTreeMap<String, UpgradeDisposition>> {
@@ -1168,11 +1168,11 @@ fn upgrade_dispositions(
         .map(|package| package.package_id())
         .collect::<BTreeSet<_>>();
     let mut externally_retained = BTreeSet::new();
-    for graph in installed_graphs
+    for installed_lock in installed_locks
         .iter()
-        .filter(|graph| graph.package_lock.root_package_id != prior_lock.root_package_id)
+        .filter(|lock| lock.root_package_id != prior_lock.root_package_id)
     {
-        for package in &graph.package_lock.packages {
+        for package in &installed_lock.packages {
             if !prior_ids.contains(package.package_id()) {
                 continue;
             }
@@ -1181,7 +1181,7 @@ fn upgrade_dispositions(
                     "use.plugin.package_graph_shared_upgrade_required",
                     format!(
                         "Dependency '{}' is locked by installed root '{}' and cannot be replaced by an uncoordinated graph upgrade.",
-                        package.package_id(), graph.package_lock.root_package_id
+                        package.package_id(), installed_lock.root_package_id
                     ),
                 ));
             }

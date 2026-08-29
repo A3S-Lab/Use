@@ -22,15 +22,20 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
         b"provider binding bytes",
     )
     .unwrap();
+    std::fs::write(
+        paths.state_root().join("installation-snapshot.json"),
+        b"installation snapshot bytes",
+    )
+    .unwrap();
     std::fs::write(paths.state_root().join(".installation-mutation.lock"), b"").unwrap();
 
     let first = temporary.path().join("first.a3s-use-state-backup");
     let manager = StateBackupManager::new(paths.clone());
     let manifest = manager.backup(&first).await.unwrap();
     assert_eq!(manifest.schema, A3S_USE_STATE_BACKUP_SCHEMA);
-    assert_eq!(manifest.file_count, 2);
-    assert_eq!(manifest.entries.len(), 2);
-    assert_eq!(manifest.families.len(), 2);
+    assert_eq!(manifest.file_count, 3);
+    assert_eq!(manifest.entries.len(), 3);
+    assert_eq!(manifest.families.len(), 3);
     assert!(manifest.inventory_digest.starts_with("sha256:"));
     assert_eq!(manifest.authority.registry_generation, 0);
     assert!(manifest.authority.packages.is_empty());
@@ -38,6 +43,10 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
         .entries
         .iter()
         .all(|entry| !entry.path.starts_with('/') && !entry.path.contains("..")));
+    assert!(manifest.entries.iter().any(|entry| {
+        entry.path == "installation-snapshot.json"
+            && entry.family == StateBackupFamily::PackageGraph
+    }));
     let encoded = serde_json::to_string(&manifest).unwrap();
     assert!(!encoded.contains(temporary.path().to_str().unwrap()));
     assert!(!encoded.contains(".installation-mutation.lock"));

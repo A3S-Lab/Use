@@ -41,7 +41,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     let installed = extension_registry.get("acme/root").await.unwrap().unwrap();
     let package_root = installed.receipt.package_root.clone();
     let artifact_generation = installed.receipt.lifecycle_generation.unwrap();
-    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
+    let graph_path = scoped_state(&home, "installation-snapshot.json");
     let graph_before = std::fs::read(&graph_path).unwrap();
     let observed = manager.observe_package("acme/root").await.unwrap();
     assert_eq!(observed.package_generation, Some(artifact_generation));
@@ -696,7 +696,7 @@ fn schema_v3_install_rejects_state_reintroduced_after_cutover_evidence_was_retir
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
     let pending_path = scoped_state(&home, "operations/package-graphs/install/acme/root.json");
-    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
+    let graph_path = scoped_state(&home, "installation-snapshot.json");
 
     let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
     let interrupted = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);

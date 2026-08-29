@@ -50,7 +50,7 @@ Completed in the Use repository:
 - operation plan v4, confirmation, policy and host/provider evidence;
 - manager toolset v4 with install-time Registry selection and plan/apply
   enablement;
-- immutable package generations and dependency graph records;
+- immutable package generations and one unified installation snapshot;
 - dependency-forward install, one cutover, reverse uninstall and upgrade GC;
 - durable Registry cutover replay and exact lifecycle journals;
 - Workspace Grant composition, joint rollback, and drain-before-revoke;
@@ -269,23 +269,24 @@ Priority: P0 release gate
 Status: in progress
 
 - A killed real-process Registry target download resumes from its exact
-  persisted prefix without publishing a receipt, graph, operation, or package
-  root.
-- A killed real-process verified archive extraction leaves no receipt, graph,
+  persisted prefix without publishing a receipt, installation snapshot,
+  operation, or package root.
+- A killed real-process verified archive extraction leaves no receipt,
+  installation snapshot,
   pending operation, or package root; an explicit offline retry revalidates the
   cached target and completes without a network request.
 - A killed real-process immutable package copy leaves its exact pending plan
-  and applying lifecycle journal but no receipt, graph, or route. Offline replay
-  reclaims the actual bounded crash-staging tree, publishes one generation, and
-  removes the pending operation.
+  and applying lifecycle journal but no receipt, installation snapshot, or
+  route. Offline replay reclaims the actual bounded crash-staging tree,
+  publishes one generation, and removes the pending operation.
 - A killed real-process uninstall during physical generation deletion retains
   the exact pending graph and applying journal after route hiding and receipt
   removal. Replay finishes the partial directory and cutover acknowledgement
   without advancing the Registry generation again.
 - A killed real-process nine-node install retains one complete atomically
   published Registry graph and its pending cutover before a dependency journal
-  and the parent graph record complete. Explicit offline replay performs no
-  network request, completes every package journal and the exact parent graph,
+  and the installation snapshot complete. Explicit offline replay performs no
+  network request, completes every package journal and the exact snapshot,
   retires the cutover, and does not advance the Registry generation again.
 - Externally killed managed-host processes cover five-node permission-bearing
   install, upgrade, and uninstall after Registry publish/hide while one
@@ -574,8 +575,9 @@ Status: pending
   accepted-call drain, physical generation removal, and no second Registry
   generation; absence without the exact cutover remains fail-closed;
 - real CLI exit after a complete multi-node Registry publish but before one
-  dependency publication receipt and parent graph persistence, followed by
-  zero-network replay of the exact cutover with no second Registry generation;
+  dependency publication receipt and installation snapshot persistence,
+  followed by zero-network replay of the exact cutover with no second Registry
+  generation;
 - no-op terminal result replay without another host call;
 - completed graph replay without another atomic publish or hide;
 - latest/previous checkpoint diagnostics remain bounded and omit idempotency
@@ -623,7 +625,8 @@ Status: pending
 - Letting packages choose providers, Registries, trust roots, or permissions.
 - Publishing required surfaces with missing evidence.
 - Keeping multiple preview schema/API/storage implementations alive.
-- Guessing recovery state after exact journals or graph records were deleted.
+- Guessing recovery state after exact journals or the installation snapshot
+  was deleted.
 - Building a second workflow lifecycle around `flow.json`.
 
 ## Release definition

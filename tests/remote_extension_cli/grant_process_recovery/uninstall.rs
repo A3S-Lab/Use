@@ -9,7 +9,7 @@ fn killed_managed_uninstall_replays_graph_hide_and_grant_retirement_without_reau
     let repository = TestRepository::with_targets(targets, 113, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let graph_path = managed_state_root(&home).join("package-graphs/acme/worker.json");
+    let graph_path = managed_state_root(&home).join("installation-snapshot.json");
     let snapshot_path = managed_state_root(&home).join("registry.json");
 
     let baseline_marker = temp.path().join("baseline-authorization.marker");
@@ -148,7 +148,14 @@ fn killed_managed_uninstall_replays_graph_hide_and_grant_retirement_without_reau
     );
     assert_completed_lifecycles(&home);
     assert!(!pending_path.exists());
-    assert!(!graph_path.exists());
+    let installation_snapshot = read_json(&graph_path).unwrap();
+    assert_eq!(installation_snapshot["generation"], 2);
+    assert!(installation_snapshot["roots"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
+    assert!(installation_snapshot["packages"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
     for package_id in &expected_package_ids {
         assert!(!managed_state_root(&home)
             .join("extensions")

@@ -40,7 +40,7 @@ current set.
 | Host cancellation request/result | `a3s.use.plugin-host-cancel-request/result.v1` |
 | Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
 | Installed receipt | numeric schema version `5` |
-| Installed package graph | `a3s.use.installed-package-graph.v1` |
+| Installation snapshot | `a3s.use.installation-snapshot.v1` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
 | Pre-lock resolution attempt | `a3s.use.plugin-resolution-attempt.v1` |
 | Pre-plan download attempt | `a3s.use.plugin-download-attempt.v1` |
@@ -390,7 +390,7 @@ bound to one exact `PluginManagedScope` fence and advertises one immutable
 capability digest per manager build. Its private durable records map a Host
 request ID to the exact Use-produced plan, map the operation ID back to that
 request, and retain the terminal Host projection for idempotent replay. Those
-records do not replace the package graph store, enablement operation store,
+records do not replace the installation snapshot, enablement operation store,
 Grant store, lifecycle journal, Registry receipt, or capability snapshot.
 
 Plan lifetime is an admission boundary, not a recovery deadline. An apply for
@@ -408,6 +408,19 @@ phase, `plannedAtMs`, `admittedAtMs`, and durable authorization evidence.
 Cancellation additionally requires its timestamp and request identity. V2 and
 v3 records are unsupported preview state and are rejected rather than upgraded
 or interpreted with implicit defaults.
+
+`a3s.use.installation-snapshot.v1` is the only accepted installed-selection
+record. One `state/installation-snapshot.json` binds the exact installation,
+monotonic generation, resolution host, desired roots, and unified resolved
+package graph. Per-root locks are derived from that graph; duplicate package
+IDs must carry the same exact node, and unreachable nodes are invalid. The
+empty desired set remains a durable generation after the final uninstall.
+
+The preview `state/package-graphs/<publisher>/<package>.json` layout is not
+migrated or read as a second authority. Preserve it for operator review,
+remove or archive the affected scoped installation state, and reinstall its
+desired roots into a clean scope. A detected legacy layout fails with
+`use.installation.snapshot_legacy_state_unsupported` before mutation.
 
 ## Workspace Grants
 

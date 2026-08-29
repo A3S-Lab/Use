@@ -38,7 +38,8 @@ publishes one capability generation, and retires unused generations in reverse.
    commits one complete scoped installation generation, never a collection of
    independently authoritative root-package graphs.
 2. **There is one current cognitive-package format.** Manifest v3, catalog v3,
-   receipt v5, Extension Registry snapshot v2, capability snapshot v3, plan v4,
+   receipt v5, Installation Snapshot v1, Extension Registry snapshot v2,
+   capability snapshot v3, plan v4,
    host protocol v6, managed scope v2, manager toolset v4, pending graph v4,
    pre-lock resolution attempt/diagnostic v1, pre-plan download
    attempt/diagnostic v1, and enablement state/operation v2 are the only
@@ -108,11 +109,12 @@ stale publication generations. A1 now has one canonical `InstallationId` and
 scopes filesystem state, receipts, Registry and capability snapshots, leases,
 backup/restore, and maintenance/mutation locks by that identity. A0 is qualified
 on the declared five-platform CI matrix. The implementation is still not the
-target architecture: the scoped authority remains split across several stores,
-there is no single `InstallationSnapshot`, and a non-A3S agent cannot consume an
-exact leased capability without learning local execution details. A checked item
-elsewhere in this roadmap is implementation evidence; it does not waive the
-convergence gates below.
+target architecture: one `InstallationSnapshot` now owns the desired root set
+and unified resolved graph, but enablement, receipts, Grants, bindings, and
+publication authority remain split across several stores, and a non-A3S agent
+cannot consume an exact leased capability without learning local execution
+details. A checked item elsewhere in this roadmap is implementation evidence;
+it does not waive the convergence gates below.
 
 ### Target responsibility model
 
@@ -208,8 +210,9 @@ Implementation evidence (2026-08-28):
 
 ### A1 - Make the scoped installation the authority
 
-- [ ] Define `InstallationSnapshot` as the single source of truth for one
-  explicit User or Workspace scope and monotonically increasing generation.
+- [x] Define `InstallationSnapshot` as the single installed-selection source
+  of truth for one explicit User or Workspace scope and monotonically
+  increasing generation.
   It contains the desired root set and one resolved graph, rather than one
   authoritative graph file per root package.
 - [ ] Keep verified archives in a global content-addressed Artifact Store, but
@@ -260,11 +263,21 @@ open):
 - Windows publication and SQLite/Flow access use a shared extended-length path
   primitive. Native regressions cover long scoped roots, atomic publication,
   same-text-ID scope-kind isolation, and independent installation locks.
+- `a3s.use.installation-snapshot.v1` is the only installed-selection
+  authority. It binds the exact `InstallationId`, a monotonic generation, one
+  resolution host, a sorted desired root set, and one unique package node per
+  ID. Root locks are derived closures; conflicting shared selections and
+  orphan nodes fail closed. Removing the final root retains an empty next
+  generation so authority never resets.
+- Installed-selection persistence is one atomic
+  `state/installation-snapshot.json` file. The former per-root
+  `state/package-graphs/<publisher>/<package>.json` layout is rejected rather
+  than migrated, and backup/restore inventories accept only the new snapshot.
 - The remaining A1 work is structural, not a hidden compatibility layer:
-  installed graph/root ownership must converge into one `InstallationSnapshot`,
-  immutable installed bytes must move behind the global Artifact Store, route
-  strings must cease carrying identity, and the complete two-installation
-  lifecycle/lease matrix must pass.
+  immutable installed bytes must move behind the global Artifact Store,
+  enablement and publication intent must join the installation generation,
+  route strings must cease carrying identity, and the complete
+  two-installation lifecycle/lease matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store
 
@@ -424,6 +437,7 @@ fixtures are frozen.
 | Signed catalog record | `a3s.use.plugin-catalog.v3` |
 | Installed receipt | schema version 5 |
 | Package lock | `a3s.use.plugin-package-lock.v1` |
+| Installation snapshot | `a3s.use.installation-snapshot.v1` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6`, protocol 6 |
 | Host managed scope | `a3s.use.plugin-managed-scope.v2` |
@@ -631,8 +645,8 @@ rejection. They are not supported decode paths.
   prepare, cutover/retirement, and pre-cutover rollback, with exact
   candidate/prior convergence and terminal journal replay.
 - [x] Real `a3s-use` process exit after a nine-node install Registry publish
-  cutover but before dependency journal and parent graph completion, followed
-  by zero-network exact replay with one complete visible closure and no
+  cutover but before dependency journal and installation snapshot completion,
+  followed by zero-network exact replay with one complete visible closure and no
   capability-generation inflation; and after an uninstall Registry hide
   cutover but before its package hide receipt, followed by exact-plan restart,
   an observed accepted-call drain, and physical removal. Missing generation
@@ -854,8 +868,9 @@ Status: in progress
   replacement matrix. A real `a3s-use` process-kill test now
   proves digest-bound target download resume without partial publication. A
   second real-process test kills installation while a verified high-entry
-  archive is being extracted, proves no receipt, graph, pending operation, or
-  package root was published, and completes an exact zero-network retry from
+  archive is being extracted, proves no receipt, installation snapshot,
+  pending operation, or package root was published, and completes an exact
+  zero-network retry from
   the verified cache. A third real-process test kills the following immutable
   package copy after its pending plan and applying journal are durable, then
   proves retry reclaims the actual bounded crash-staging tree, publishes only
@@ -865,7 +880,7 @@ Status: in progress
   route hiding and receipt removal; exact replay finishes the partial directory,
   completes the journal, and does not inflate the Registry generation. A fifth
   real-process test kills a nine-node install after the complete atomic graph
-  is visible but before one dependency journal and the installed parent graph
+  is visible but before one dependency journal and the installation snapshot
   complete; offline replay uses the retained cutover, performs no network
   request, completes every journal, and keeps the original Registry generation.
   Sixth through eighth externally killed managed-host tests cover install,

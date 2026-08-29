@@ -131,8 +131,9 @@ retirement. Before cutover, package and Grant candidates roll back together.
 
 ## Package uninstall
 
-Uninstall begins from the installed graph record and exact lock. It refuses to
-remove a package still referenced by another installed graph.
+Uninstall begins from the exact root lock derived from the installation
+snapshot. It refuses to remove a package still referenced by another desired
+root in that snapshot.
 
 1. Plan the exact removal closure in reverse dependency order.
 2. Atomically remove its routes from the Registry snapshot.
@@ -141,10 +142,12 @@ remove a package still referenced by another installed graph.
 5. Revoke exact prior Grants.
 6. Stop and remove surfaces in reverse dependency order.
 7. Delete only receipt-owned immutable roots and records.
-8. Remove the installed graph record after all package removals succeed.
+8. Commit the next installation snapshot generation without that root after
+   all package removals succeed. Removing the final root retains an empty
+   snapshot and its monotonic generation.
 
-The engine never scans and deletes “similar” paths. Missing exact graph evidence
-is an error, not permission to infer an uninstall set.
+The engine never scans and deletes “similar” paths. Missing exact installation
+snapshot evidence is an error, not permission to infer an uninstall set.
 
 ## Enable and disable
 
@@ -234,10 +237,11 @@ physical `.lifecycle-staging-*` trees left by an interrupted commit. A staging
 link, special file, unbounded inventory, or linked package parent fails closed.
 The real-process recovery test terminates while a high-entry package is being
 copied into that staging tree. Its exact pending plan and applying lifecycle
-journal remain durable, while the receipt, installed graph, and route remain
-absent. Explicit offline replay reclaims the physical partial tree, repeats the
-same package-commit checkpoint, publishes one Registry generation, completes
-the journal, and removes the pending operation without a network request.
+journal remain durable, while the receipt, installation snapshot, and route
+remain absent. Explicit offline replay reclaims the physical partial tree,
+repeats the same package-commit checkpoint, publishes one Registry generation,
+completes the journal, and removes the pending operation without a network
+request.
 On Windows, active package-staging rename, lifecycle receipt deletion, and
 recursive removal of that bounded abandoned staging tree or a drained immutable
 package generation retry only access-denied, sharing, and lock violations for
@@ -469,8 +473,8 @@ Partial downloads are not offline evidence and never authorize package staging.
 
 A real-process failure test terminates installation after the complete target
 has entered the verified cache but while a high-entry archive is still being
-extracted. At that boundary no package receipt, installed graph, pending graph
-operation, or package root exists. An explicit offline retry revalidates the
+extracted. At that boundary no package receipt, installation snapshot, pending
+graph operation, or package root exists. An explicit offline retry revalidates the
 cached target, performs no network request, and completes the ordinary package
 preparation and publication path. The broader cross-platform extraction,
 reboot, temporary-storage retention, and replacement-race matrix remains a
@@ -569,10 +573,10 @@ The standalone CLI binary additionally has a deterministic real-process
 multi-node install case. After the first dependency is fully prepared, the
 parent holds that dependency's journal lock while the child atomically
 publishes all nine package routes and the durable cutover. The child is killed
-before that dependency's publication receipt and the parent graph record are
+before that dependency's publication receipt and the installation snapshot are
 written. Explicit offline restart performs no network request, reuses the same
-cutover, completes every package journal and the exact installed graph, clears
-the cutover acknowledgement, and leaves the Registry at generation 1.
+cutover, completes every package journal and the exact installation snapshot,
+clears the cutover acknowledgement, and leaves the Registry at generation 1.
 
 The standalone CLI also has a deterministic real-process uninstall case. The
 parent holds the package journal lock while the child
@@ -604,7 +608,8 @@ Recovery rejects:
 - conflicting operation ownership;
 - cutover key reused for another request;
 - unknown schema or unknown fields; and
-- deleted graph evidence needed to determine the closure.
+- deleted installation snapshot or pending graph evidence needed to determine
+  the closure.
 
 The engine does not reconstruct missing authority or guess a cleanup graph.
 An `applying` or `rolling-back` package journal remains active ownership: a
@@ -852,8 +857,8 @@ Required gates include:
 - real CLI uninstall interruption after durable Registry hide but before its
   package receipt, followed by restart drain and exact removal;
 - real CLI multi-node install interruption after durable Registry publication
-  but before dependency journal and parent graph completion, followed by exact
-  zero-network replay without another Registry generation;
+  but before dependency journal and installation snapshot completion, followed
+  by exact zero-network replay without another Registry generation;
 - real-process interruption at every graph/Grant/cutover/drain/removal
   checkpoint;
 - mixed-generation and stale-route prevention;

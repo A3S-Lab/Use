@@ -129,7 +129,8 @@ winner.
 | Lifecycle operations | terminal package lifecycle checkpoint records |
 | Package operations | terminal resolution diagnostics and retained operation history; pending graph/download records are rejected |
 | Knowledge | SQLite main/WAL/SHM files and terminal restore evidence |
-| Package graph and enablement | installed graph, stable enablement state, and completed enablement operations |
+| Installation snapshot | `state/installation-snapshot.json` |
+| Package enablement | stable enablement state and completed enablement operations |
 | Host Manager | reviewed requests, observations, cancellations, and outcomes |
 
 Cross-process lock files and route lease files are excluded. Empty directories

@@ -177,7 +177,7 @@ fn managed_graph_targets(
 }
 
 fn graph_package_versions(graph: &serde_json::Value) -> std::collections::BTreeMap<String, String> {
-    graph["packageLock"]["packages"]
+    graph["packages"]
         .as_array()
         .unwrap()
         .iter()
