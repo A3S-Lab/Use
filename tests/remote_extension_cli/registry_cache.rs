@@ -35,6 +35,8 @@ fn registry_cache_usage_and_confirmed_prune_are_bounded_and_zero_network() {
         .join("state/remote-registries/fixture/sources")
         .join(source_identity)
         .join("verified-targets/sha256");
+    let blob = raw_blob_artifact(&home, &repository.target_sha256);
+    assert!(blob.is_file());
     std::fs::write(cache_directory.join(".target-999-999.tmp"), b"stale").unwrap();
     std::fs::write(
         cache_directory.join(format!(".target-{}.part", "d".repeat(64))),
@@ -47,7 +49,7 @@ fn registry_cache_usage_and_confirmed_prune_are_bounded_and_zero_network() {
     assert!(usage.status.success(), "{usage:?}");
     let usage = json(&usage);
     let cache = &usage["data"]["registryCache"];
-    assert_eq!(cache["schemaVersion"], 2);
+    assert_eq!(cache["schemaVersion"], 3);
     assert_eq!(cache["registryName"], "fixture");
     assert_eq!(cache["targetEntries"], 1);
     assert_eq!(cache["targetBytes"], target_bytes);
@@ -154,6 +156,7 @@ fn registry_cache_usage_and_confirmed_prune_are_bounded_and_zero_network() {
     assert_eq!(cache["after"]["partialEntries"], 0);
     assert_eq!(cache["after"]["partialBytes"], 0);
     assert_eq!(cache["after"]["staleEntries"], 0);
+    assert!(blob.is_file());
     assert!(server.requests().is_empty());
 }
 
@@ -206,7 +209,8 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
         .join(source_identity)
         .join("verified-targets/sha256");
     let partial = cache_directory.join(format!(".target-{}.part", repository.target_sha256));
-    let verified = cache_directory.join(&repository.target_sha256);
+    let observation = source_target_observation(&cache_directory, &repository.target_sha256);
+    let blob = raw_blob_artifact(&home, &repository.target_sha256);
     let pause_after = usize::try_from((archive_bytes / 2).max(1)).unwrap();
     server.pause_response_after(&target_path, pause_after);
     server.clear_requests();
@@ -283,7 +287,8 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
     server.resume_response(&target_path);
     let partial_length = std::fs::metadata(&partial).unwrap().len();
     assert!(partial_length > 0 && partial_length < archive_bytes);
-    assert!(!verified.exists());
+    assert!(!observation.exists());
+    assert!(!blob.exists());
     assert!(!scoped_state(&home, "extensions/acme/root.json").exists());
     assert!(!scoped_state(&home, "installation-snapshot.json").exists());
     assert!(!scoped_state(&home, "operations/package-graphs/install/acme/root.json").exists());
@@ -343,7 +348,8 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
         vec![format!("bytes={partial_length}-")]
     );
     assert!(!partial.exists());
-    assert!(verified.is_file());
+    assert!(observation.is_file());
+    assert!(blob.is_file());
     assert!(scoped_state(&home, "extensions/acme/root.json").is_file());
     assert!(scoped_state(&home, "installation-snapshot.json").is_file());
     let completed_diagnostic = Command::new(binary())

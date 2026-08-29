@@ -5,37 +5,36 @@ use a3s_use_core::UseResult;
 use tokio::fs;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
-use crate::package::{
-    activate_temporary_file, io_error, remove_file_with_windows_retry, sync_parent_directory,
-};
+use crate::package::{io_error, remove_file_with_windows_retry, sync_parent_directory};
 
 use super::{
-    acquire_target_cache_lock, ensure_cache_directory, open_verified_file, secure_file,
-    target_cache_error, validate_regular_metadata, validated_evidence, verify_open_file,
-    TargetCacheLock,
+    acquire_target_cache_lock, ensure_cache_directory, record, secure_file, target_cache_error,
+    validated_evidence, verify_open_file, TargetCacheLock,
 };
+use crate::artifact_store::ArtifactBlob;
 use crate::remote::target_cache_inventory::admit_target_write;
 use crate::remote::VerifiedTargetCachePolicy;
+use crate::ArtifactStore;
 
 const PARTIAL_PREFIX: &str = ".target-";
 const PARTIAL_SUFFIX: &str = ".part";
 
 #[cfg(test)]
-type BeforePromotionHook = Box<dyn FnOnce(&Path) + Send>;
+type BeforeBlobCommitHook = Box<dyn FnOnce(&Path) + Send>;
 
 #[cfg(test)]
-static BEFORE_PROMOTION_HOOKS: std::sync::Mutex<Vec<(PathBuf, BeforePromotionHook)>> =
+static BEFORE_BLOB_COMMIT_HOOKS: std::sync::Mutex<Vec<(PathBuf, BeforeBlobCommitHook)>> =
     std::sync::Mutex::new(Vec::new());
 
-#[cfg(test)]
-fn install_before_promotion_hook(path: PathBuf, hook: BeforePromotionHook) {
-    BEFORE_PROMOTION_HOOKS.lock().unwrap().push((path, hook));
+#[cfg(all(test, unix))]
+fn install_before_blob_commit_hook(path: PathBuf, hook: BeforeBlobCommitHook) {
+    BEFORE_BLOB_COMMIT_HOOKS.lock().unwrap().push((path, hook));
 }
 
 #[cfg(test)]
-fn run_before_promotion_hook(path: &Path) {
+fn run_before_blob_commit_hook(path: &Path) {
     let hook = {
-        let mut hooks = BEFORE_PROMOTION_HOOKS.lock().unwrap();
+        let mut hooks = BEFORE_BLOB_COMMIT_HOOKS.lock().unwrap();
         hooks
             .iter()
             .position(|(hook_path, _)| hook_path == path)
@@ -47,29 +46,30 @@ fn run_before_promotion_hook(path: &Path) {
 }
 
 #[cfg(not(test))]
-fn run_before_promotion_hook(_path: &Path) {}
+fn run_before_blob_commit_hook(_path: &Path) {}
 
 /// One exclusive, digest-bound target-cache download transaction.
 ///
 /// The partial path is deterministic so a later process can resume it. The
 /// cache lock prevents GC or another installer from changing the same cache
-/// while bytes are admitted, appended, verified, promoted, and staged.
+/// while bytes are admitted, appended, verified, globally committed, and staged.
 pub(in crate::remote) struct ResumableTarget {
     _lock: TargetCacheLock,
+    artifact_store: ArtifactStore,
     cache_directory: PathBuf,
-    target_path: PathBuf,
     partial_path: PathBuf,
     expected_length: u64,
     expected_sha256: String,
     offset: u64,
     partial: Option<fs::File>,
-    verified: Option<fs::File>,
+    verified: Option<ArtifactBlob>,
     ready: bool,
 }
 
 impl ResumableTarget {
     pub(in crate::remote) async fn begin(
         datastore: &Path,
+        artifact_store: &ArtifactStore,
         expected_length: u64,
         expected_sha256: &str,
         policy: VerifiedTargetCachePolicy,
@@ -77,37 +77,36 @@ impl ResumableTarget {
         let expected_sha256 = validated_evidence(expected_length, expected_sha256)?;
         let lock = acquire_target_cache_lock(datastore, true)?;
         let cache_directory = ensure_cache_directory(datastore).await?;
-        let target_path = cache_directory.join(&expected_sha256);
         let partial_path = cache_directory.join(partial_name(&expected_sha256));
-
-        if let Some(metadata) = optional_metadata(&target_path).await? {
-            validate_regular_metadata(
-                &target_path,
-                &metadata,
-                expected_length,
-                "use.extension.registry_target_cache_invalid",
-                "The verified target cache entry is not a bounded regular file.",
-            )?;
-            let mut verified = open_verified_file(
-                &target_path,
-                expected_length,
-                "use.extension.registry_target_cache_invalid",
-            )
+        let observation =
+            record::read_observation(&cache_directory, &expected_sha256, expected_length).await?;
+        let global_blob = artifact_store
+            .open_blob(&expected_sha256, expected_length)
             .await?;
-            verify_open_file(
-                &mut verified,
-                None,
-                &target_path,
-                expected_length,
+        if observation.is_some() && global_blob.is_none() {
+            return Err(target_cache_error(
+                "use.extension.registry_target_cache_invalid",
+                "A Registry target observation references a missing global artifact blob.",
+            ));
+        }
+        if let Some(verified) = global_blob {
+            admit_target_write(
+                &cache_directory,
                 &expected_sha256,
-                "use.extension.registry_target_cache_invalid",
+                expected_length,
+                policy,
+                false,
             )
             .await?;
-            admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
+            record::write_observation(&cache_directory, &expected_sha256, expected_length).await?;
+            if let Some(metadata) = optional_metadata(&partial_path).await? {
+                validate_partial_metadata(&partial_path, &metadata, expected_length)?;
+                remove_partial(&partial_path, &cache_directory).await?;
+            }
             return Ok(Self {
                 _lock: lock,
+                artifact_store: artifact_store.clone(),
                 cache_directory,
-                target_path,
                 partial_path,
                 expected_length,
                 expected_sha256,
@@ -129,13 +128,19 @@ impl ResumableTarget {
             }
             None => 0,
         };
-        admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
+        admit_target_write(
+            &cache_directory,
+            &expected_sha256,
+            expected_length,
+            policy,
+            true,
+        )
+        .await?;
 
         if existing_length == expected_length && existing_length > 0 {
             let valid = match partial.as_mut() {
                 Some(partial) => verify_open_file(
                     partial,
-                    None,
                     &partial_path,
                     expected_length,
                     &expected_sha256,
@@ -146,26 +151,24 @@ impl ResumableTarget {
                 None => false,
             };
             if valid {
-                let partial = partial.take().ok_or_else(|| {
+                let mut partial = partial.take().ok_or_else(|| {
                     target_cache_error(
                         "use.extension.registry_target_cache_invalid",
                         "The verified resumable target handle is unavailable.",
                     )
                 })?;
-                let verified = promote_verified_partial(
-                    partial,
-                    partial_path.clone(),
-                    target_path.clone(),
-                    &cache_directory,
-                    expected_length,
-                    &expected_sha256,
-                    "use.extension.registry_target_invalid",
-                )
-                .await?;
+                run_before_blob_commit_hook(&partial_path);
+                let verified = artifact_store
+                    .commit_blob(&mut partial, expected_length, &expected_sha256)
+                    .await?;
+                record::write_observation(&cache_directory, &expected_sha256, expected_length)
+                    .await?;
+                drop(partial);
+                remove_partial(&partial_path, &cache_directory).await?;
                 return Ok(Self {
                     _lock: lock,
+                    artifact_store: artifact_store.clone(),
                     cache_directory,
-                    target_path,
                     partial_path,
                     expected_length,
                     expected_sha256,
@@ -177,7 +180,14 @@ impl ResumableTarget {
             }
             drop(partial.take());
             remove_partial(&partial_path, &cache_directory).await?;
-            admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
+            admit_target_write(
+                &cache_directory,
+                &expected_sha256,
+                expected_length,
+                policy,
+                true,
+            )
+            .await?;
             existing_length = 0;
         }
 
@@ -204,8 +214,8 @@ impl ResumableTarget {
 
         Ok(Self {
             _lock: lock,
+            artifact_store: artifact_store.clone(),
             cache_directory,
-            target_path,
             partial_path,
             expected_length,
             expected_sha256,
@@ -302,7 +312,6 @@ impl ResumableTarget {
         })?;
         if let Err(error) = verify_open_file(
             &mut partial,
-            None,
             &self.partial_path,
             self.expected_length,
             &self.expected_sha256,
@@ -314,18 +323,32 @@ impl ResumableTarget {
             remove_partial(&self.partial_path, &self.cache_directory).await?;
             return Err(error);
         }
-        let verified = promote_verified_partial(
-            partial,
-            self.partial_path.clone(),
-            self.target_path.clone(),
+        run_before_blob_commit_hook(&self.partial_path);
+        let verified = match self
+            .artifact_store
+            .commit_blob(&mut partial, self.expected_length, &self.expected_sha256)
+            .await
+        {
+            Ok(verified) => verified,
+            Err(error) => {
+                self.partial = Some(partial);
+                return Err(error);
+            }
+        };
+        if let Err(error) = record::write_observation(
             &self.cache_directory,
-            self.expected_length,
             &self.expected_sha256,
-            error_code,
+            self.expected_length,
         )
-        .await?;
+        .await
+        {
+            self.partial = Some(partial);
+            return Err(error);
+        }
+        drop(partial);
         self.verified = Some(verified);
         self.ready = true;
+        remove_partial(&self.partial_path, &self.cache_directory).await?;
         Ok(())
     }
 
@@ -345,31 +368,13 @@ impl ResumableTarget {
                 "An unverified resumable target cannot be staged.",
             ));
         }
-        let mut options = fs::OpenOptions::new();
-        options.create_new(true).write(true);
-        let mut destination = options
-            .open(output)
-            .await
-            .map_err(|error| io_error("create verified target staging file", output, error))?;
         let verified = self.verified.as_mut().ok_or_else(|| {
             target_cache_error(
                 "use.extension.registry_target_cache_invalid",
                 "The verified resumable target handle is unavailable.",
             )
         })?;
-        verify_open_file(
-            verified,
-            Some(&mut destination),
-            &self.target_path,
-            self.expected_length,
-            &self.expected_sha256,
-            "use.extension.registry_target_cache_invalid",
-        )
-        .await?;
-        destination
-            .sync_all()
-            .await
-            .map_err(|error| io_error("sync verified target staging file", output, error))
+        verified.stage_into(output).await
     }
 
     fn partial_mut(&mut self) -> UseResult<&mut fs::File> {
@@ -380,38 +385,6 @@ impl ResumableTarget {
             )
         })
     }
-}
-
-async fn promote_verified_partial(
-    partial: fs::File,
-    partial_path: PathBuf,
-    target_path: PathBuf,
-    cache_directory: &Path,
-    expected_length: u64,
-    expected_sha256: &str,
-    error_code: &'static str,
-) -> UseResult<fs::File> {
-    secure_file(&partial, &partial_path).await?;
-    drop(partial);
-    run_before_promotion_hook(&partial_path);
-    activate_temporary_file(
-        partial_path,
-        target_path.clone(),
-        "activate resumed verified target cache",
-    )
-    .await?;
-    let mut verified = open_verified_file(&target_path, expected_length, error_code).await?;
-    verify_open_file(
-        &mut verified,
-        None,
-        &target_path,
-        expected_length,
-        expected_sha256,
-        error_code,
-    )
-    .await?;
-    sync_parent_directory(cache_directory, "verified target cache").await?;
-    Ok(verified)
 }
 
 fn partial_name(digest: &str) -> String {
@@ -506,8 +479,28 @@ mod tests {
 
     use super::*;
 
+    async fn begin_target(
+        datastore: &Path,
+        expected_length: u64,
+        digest: &str,
+        policy: VerifiedTargetCachePolicy,
+    ) -> UseResult<ResumableTarget> {
+        let artifact_store = test_artifact_store(datastore);
+        ResumableTarget::begin(datastore, &artifact_store, expected_length, digest, policy).await
+    }
+
+    fn test_artifact_store(datastore: &Path) -> ArtifactStore {
+        ArtifactStore::from_data_root(&datastore.join("global-data"))
+    }
+
+    fn test_blob_path(datastore: &Path, digest: &str) -> PathBuf {
+        test_artifact_store(datastore)
+            .blob_path(&format!("sha256:{digest}"))
+            .unwrap()
+    }
+
     #[tokio::test]
-    async fn complete_partial_is_verified_and_promoted_without_a_request() {
+    async fn complete_partial_is_committed_without_a_request() {
         let temporary = tempfile::tempdir().unwrap();
         let datastore = temporary.path();
         let cache = datastore.join("verified-targets/sha256");
@@ -518,13 +511,17 @@ mod tests {
         std::fs::write(&partial, body).unwrap();
         let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
 
-        let target = ResumableTarget::begin(datastore, body.len() as u64, &digest, policy)
+        let target = begin_target(datastore, body.len() as u64, &digest, policy)
             .await
             .unwrap();
 
         assert!(target.is_ready());
         assert!(!partial.exists());
-        assert_eq!(std::fs::read(cache.join(digest)).unwrap(), body);
+        assert_eq!(
+            std::fs::read(test_blob_path(datastore, &digest)).unwrap(),
+            body
+        );
+        assert!(record::observation_path(&cache, &digest).is_file());
     }
 
     #[tokio::test]
@@ -537,7 +534,7 @@ mod tests {
         std::fs::write(cache.join(partial_name(&digest)), b"too long").unwrap();
         let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
 
-        let error = ResumableTarget::begin(datastore, 2, &digest, policy)
+        let error = begin_target(datastore, 2, &digest, policy)
             .await
             .err()
             .unwrap();
@@ -545,8 +542,9 @@ mod tests {
         assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
     }
 
+    #[cfg(unix)]
     #[tokio::test]
-    async fn replacement_after_verification_is_not_published_as_verified() {
+    async fn verified_partial_handle_commits_original_bytes_after_path_replacement() {
         let temporary = tempfile::tempdir().unwrap();
         let datastore = temporary.path();
         let cache = datastore.join("verified-targets/sha256");
@@ -555,11 +553,11 @@ mod tests {
         let digest = format!("{:x}", Sha256::digest(body));
         let partial = cache.join(partial_name(&digest));
         let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
-        let mut target = ResumableTarget::begin(datastore, body.len() as u64, &digest, policy)
+        let mut target = begin_target(datastore, body.len() as u64, &digest, policy)
             .await
             .unwrap();
         target.append(body).await.unwrap();
-        install_before_promotion_hook(
+        install_before_blob_commit_hook(
             partial.clone(),
             Box::new(move |path| {
                 std::fs::remove_file(path).unwrap();
@@ -567,28 +565,17 @@ mod tests {
             }),
         );
 
-        let error = target
+        target
             .commit("use.extension.registry_target_invalid")
             .await
-            .expect_err("a post-verification replacement must fail closed");
+            .unwrap();
 
-        assert_eq!(error.code, "use.extension.registry_target_invalid");
-        assert!(!target.is_ready());
-        assert_eq!(std::fs::read(cache.join(&digest)).unwrap(), replacement);
-        drop(target);
-
-        let error = match ResumableTarget::begin(
-            datastore,
-            body.len() as u64,
-            &digest,
-            VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap(),
-        )
-        .await
-        {
-            Ok(_) => panic!("the replaced cache target must remain untrusted"),
-            Err(error) => error,
-        };
-        assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
+        assert!(target.is_ready());
+        assert!(!partial.exists());
+        assert_eq!(
+            std::fs::read(test_blob_path(datastore, &digest)).unwrap(),
+            body
+        );
     }
 
     #[cfg(unix)]
@@ -599,8 +586,8 @@ mod tests {
         let body = b"trusted!";
         let replacement = b"attacker";
         let digest = format!("{:x}", Sha256::digest(body));
-        let target_path = datastore.join("verified-targets/sha256").join(&digest);
-        let mut target = ResumableTarget::begin(
+        let target_path = test_blob_path(datastore, &digest);
+        let mut target = begin_target(
             datastore,
             body.len() as u64,
             &digest,
@@ -625,13 +612,13 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
-    async fn active_verified_target_allows_read_but_denies_external_write_and_removal() {
+    async fn active_global_blob_allows_read_but_denies_external_write_and_removal() {
         let temporary = tempfile::tempdir().unwrap();
         let datastore = temporary.path();
         let body = b"trusted!";
         let digest = format!("{:x}", Sha256::digest(body));
-        let target_path = datastore.join("verified-targets/sha256").join(&digest);
-        let mut target = ResumableTarget::begin(
+        let target_path = test_blob_path(datastore, &digest);
+        let mut target = begin_target(
             datastore,
             body.len() as u64,
             &digest,
@@ -652,12 +639,12 @@ mod tests {
             .unwrap_err();
         assert!(
             matches!(write_error.raw_os_error(), Some(5 | 32 | 33)),
-            "active verified target accepted an external writer: {write_error}"
+            "active global blob accepted an external writer: {write_error}"
         );
         let remove_error = std::fs::remove_file(&target_path).unwrap_err();
         assert!(
             matches!(remove_error.raw_os_error(), Some(5 | 32 | 33)),
-            "active verified target accepted external removal: {remove_error}"
+            "active global blob accepted external removal: {remove_error}"
         );
         let staged = temporary.path().join("staged");
         target.stage_into(&staged).await.unwrap();
@@ -680,9 +667,7 @@ mod tests {
         std::fs::write(&partial, b"retained").unwrap();
         let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
 
-        let target = ResumableTarget::begin(datastore, 16, &digest, policy)
-            .await
-            .unwrap();
+        let target = begin_target(datastore, 16, &digest, policy).await.unwrap();
         assert_eq!(target.offset(), 8);
 
         let write_error = std::fs::OpenOptions::new()
@@ -707,15 +692,15 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
-    async fn transient_scanner_lock_releases_into_verified_promotion() {
+    async fn transient_scanner_lock_releases_into_blob_commit_cleanup() {
         let temporary = tempfile::tempdir().unwrap();
         let datastore = temporary.path();
         let cache = datastore.join("verified-targets/sha256");
         let body = b"scanner retained target";
         let digest = format!("{:x}", Sha256::digest(body));
         let partial = cache.join(partial_name(&digest));
-        let target_path = cache.join(&digest);
-        let mut target = ResumableTarget::begin(
+        let target_path = test_blob_path(datastore, &digest);
+        let mut target = begin_target(
             datastore,
             body.len() as u64,
             &digest,
@@ -725,17 +710,17 @@ mod tests {
         .unwrap();
         target.append(body).await.unwrap();
         let scanner = crate::test_filesystem::open_reading_scanner_without_delete_share(&partial);
-        let mut promotion = Box::pin(target.commit("use.extension.registry_target_invalid"));
+        let mut commit = Box::pin(target.commit("use.extension.registry_target_invalid"));
 
         tokio::select! {
-            result = &mut promotion => {
-                panic!("promotion completed while the scanner denied delete sharing: {result:?}")
+            result = &mut commit => {
+                panic!("commit completed while the scanner denied delete sharing: {result:?}")
             }
             () = tokio::time::sleep(std::time::Duration::from_millis(200)) => {}
         }
 
         drop(scanner);
-        promotion.await.unwrap();
+        commit.await.unwrap();
         assert!(target.is_ready());
         assert!(!partial.exists());
         assert_eq!(std::fs::read(&target_path).unwrap(), body);
@@ -754,9 +739,9 @@ mod tests {
         let body = b"scanner retained target";
         let digest = format!("{:x}", Sha256::digest(body));
         let partial = cache.join(partial_name(&digest));
-        let target_path = cache.join(&digest);
+        let target_path = test_blob_path(datastore, &digest);
         let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
-        let mut target = ResumableTarget::begin(datastore, body.len() as u64, &digest, policy)
+        let mut target = begin_target(datastore, body.len() as u64, &digest, policy)
             .await
             .unwrap();
         target.append(body).await.unwrap();
@@ -772,13 +757,13 @@ mod tests {
         assert_eq!(error.code, "use.extension.io");
         assert!(elapsed >= std::time::Duration::from_secs(2));
         assert!(elapsed < std::time::Duration::from_secs(10));
-        assert!(!target.is_ready());
+        assert!(target.is_ready());
         assert_eq!(std::fs::read(&partial).unwrap(), body);
-        assert!(!target_path.exists());
+        assert_eq!(std::fs::read(&target_path).unwrap(), body);
 
         drop(scanner);
         drop(target);
-        let mut recovered = ResumableTarget::begin(
+        let mut recovered = begin_target(
             datastore,
             body.len() as u64,
             &digest,
@@ -806,8 +791,8 @@ mod tests {
         let corrupt = b"corrupt";
         let digest = format!("{:x}", Sha256::digest(expected));
         let partial = cache.join(partial_name(&digest));
-        let target_path = cache.join(&digest);
-        let mut target = ResumableTarget::begin(
+        let target_path = test_blob_path(datastore, &digest);
+        let mut target = begin_target(
             datastore,
             expected.len() as u64,
             &digest,
@@ -850,7 +835,7 @@ mod tests {
         crate::test_filesystem::create_directory_link(&outside, &cache.join(partial_name(&digest)));
         let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
 
-        let error = ResumableTarget::begin(datastore, 2, &digest, policy)
+        let error = begin_target(datastore, 2, &digest, policy)
             .await
             .err()
             .unwrap();

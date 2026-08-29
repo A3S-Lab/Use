@@ -385,12 +385,15 @@ Fail closed on:
 - changed source identity for an installed receipt; and
 - missing verified catalog evidence in a Registry/TUF receipt.
 
-Online target verification stores archives and separately signed planning
-targets by SHA-256 under the Registry datastore. Writes stream the target,
-verify its signed length and digest, atomically replace the destination, and
-synchronize the file and containing directory. A dedicated target-cache lock
-coordinates readers and writers. Cache paths, entries, and staging names reject
-links, non-regular files, traversal, and unexpected lengths.
+Online target verification keeps resumable partials and canonical observation
+records under the Registry datastore. Only complete signed-length and SHA-256
+verified archives, planning targets, and presentation media enter the global
+sharded Artifact Store. Blob publication is digest-locked, rehashes the held
+partial while copying, synchronizes the staging file, and uses atomic
+no-clobber publication. The source observation is durable only after the blob;
+partial cleanup is last. Dedicated source and digest locks coordinate the two
+ownership domains. Paths, entries, and staging names reject links, non-regular
+files, traversal, and unexpected lengths.
 
 An interrupted online download retains only
 `.target-<sha256>.part` in the same Registry cache. Its regular-file length is
@@ -399,20 +402,19 @@ must carry the exact `Content-Range` and remaining length. If a server ignores
 Range with a complete `200`, the old partial is truncated before the response
 is written. A mismatched range, oversized body, symlink, non-regular partial,
 or final digest mismatch fails closed; unsafe partials are discarded. A fully
-written partial left before promotion is reverified and promoted without a
+written partial left before blob commit is reverified and committed without a
 network request on the next operation.
 
 The resumable partial's final path is opened with no-follow semantics. An
 existing file is opened once before admission and the same handle owns append
 and checkpoint; creation is create-new under the same policy. Final verification
-reads that transaction-owned handle before it is released. Promotion then
-reopens the final path without following its last component, rehashes it, and
-retains that exact verified handle through staging. A replacement between the
-first verification and promotion fails commit rather than publishing ready
-state. On Unix, replacement of the final path after reopen cannot redirect the
-staged bytes away from the retained handle. Windows shares live partial and
-verified-target handles for read access only, so an external writer cannot
-modify, delete, or replace either object while the transaction owns it.
+reads that transaction-owned handle before it is released. Commit copies and
+rehashes that handle into the global Blob tier, reopens the final blob without
+following its last component, and retains that exact verified handle through
+staging. On Unix, replacement of the source partial path cannot redirect the
+committed bytes away from the retained handle. Windows shares live partial and
+blob handles for read access only, so an external writer cannot modify, delete,
+or replace either object while the transaction owns it.
 
 Cached install or upgrade is available only through an explicit offline path.
 It revalidates the locally trusted TUF metadata, including signatures and
@@ -435,44 +437,44 @@ identity and its isolated datastore, so replacement cannot reinterpret old TUF
 metadata or cached targets under new trust. Disable/remove preserve that state;
 restoring the exact identity reuses it without rewriting installed provenance.
 
-Each `TrustedRegistry` carries a typed verified-target cache policy. The
-standalone default permits 4 GiB and 4,096 entries while retaining 256 MiB of
-free space. Verified targets and resumable partials share those byte and entry
-bounds. Target length must fit before any target request. The downloader checks
-the complete target requirement on its temporary staging filesystem and the
-remaining target bytes on the cache filesystem because they may be different
-volumes.
+Each `TrustedRegistry` carries a typed source-cache policy. The standalone
+default permits a 4 GiB logical referenced working set and 4,096 source
+observations plus partials while retaining 256 MiB of source/staging free space.
+Target length must fit before any target request. The downloader checks the
+complete target requirement on its temporary staging filesystem and remaining
+partial bytes on the source filesystem because they may be different volumes.
+These limits are not a global Artifact Store quota.
 
 Each resumable partial is opened without following its final component and the
-same handle remains authoritative through append, checkpoint, and initial
-verification. Promotion then reopens and rehashes the final path and retains
-that verified handle through staging. On Windows these live handles allow
-readers while excluding external mutation and replacement. Native scanner tests
-add a read-only handle that permits the transaction's existing read/write access
-but denies delete sharing: release within the two-second rename retry bound lets
-the same commit finish, while a persistent lock publishes nothing and retains
-the complete partial for rehash, promotion, and staging by a later zero-network
-retry. Invalid-partial cleanup and cache GC removal of stale, partial, and
-verified-target entries use the same bounded blocking delete. Transient scanner
-locks converge; a persistent selected-target lock preserves that entry, while
-any earlier successful deletion remains durable and a later prune rescans the
-residual inventory. Antivirus contention beyond these exact target-promotion
-and cache-removal boundaries and reboot recovery remain release gates.
+same handle remains authoritative through append, checkpoint, verification,
+and global blob commit. The global blob is reopened and rehashed, then retained
+through staging. On Windows these live handles allow readers while excluding
+external mutation and replacement. Native scanner tests add a read-only handle
+that denies delete sharing: release within the two-second cleanup bound lets the
+same commit finish. If it persists after blob and observation publication, the
+operation reports the cleanup error but retains both durable authorities and
+the redundant complete partial for a later zero-network cleanup. Invalid-partial
+cleanup and source-cache removal of stale files, partials, and observations use
+the same bounded blocking delete. Antivirus contention beyond these exact blob
+publication and source-cleanup boundaries and reboot recovery remain release
+gates.
 
 Under the exclusive target-cache lock, admission and confirmed pruning remove
-bounded stale atomic-write files, then resumable partials, then verified targets
-in oldest-modified-time and digest order. The active digest is protected and
-only its remaining bytes are reserved. Directory synchronization follows
-deletion. Inventory rejects unknown names, links, non-regular entries,
-zero/oversized verified targets, oversized partials, and more than 100,000
-scanned entries. Source-bound usage and pruning construct no network transport
+bounded stale atomic-write files, then resumable partials, then source
+observations in oldest-modified-time and digest order. The active digest is
+protected and only its remaining partial bytes are physically reserved.
+Directory synchronization follows deletion. Inventory rejects unknown names,
+links, non-regular entries, malformed observations, oversized partials, and more
+than 100,000 scanned entries. Source-bound usage and pruning construct no network transport
 and validate a retained catalog-cache identity when present.
 
-GC changes only future source-cache availability. It never removes global
-expanded package artifacts, receipts, Grants, bindings, capability state, or
-journals. A later
-explicit offline operation fails closed if GC removed one of its exact targets.
-Partial downloads are not offline evidence and never authorize package staging.
+Source cleanup discards resumable progress and logical observation capacity. It
+never removes global raw blobs or expanded artifacts, receipts, Grants,
+bindings, capability state, or journals. Cached TUF metadata may recreate a
+source observation after rehashing an existing exact blob. Partial downloads
+are not offline evidence and never authorize package staging. Global
+reachability, quota, confirmed GC, audit, quarantine, and verified rehydration
+remain release work.
 
 A real-process failure test terminates installation after the complete target
 has entered the verified cache but while a high-entry archive is still being
@@ -777,9 +779,10 @@ attempts, exact historical provenance selects the observed datastore and the
 projection reports expected/retained archive and separately signed executable-
 planning-target bytes plus per-target missing/partial/complete state without
 taking the cache lock, contacting the Registry, writing, or exposing paths.
-Complete is an exact-length observation at the verified-promotion location,
-not a content rehash; no observed target or partial is planning, apply, or
-recovery authority. Static packages report planning as `not-required`.
+Complete is a canonical source observation plus an owned exact-length global
+blob, not a diagnostic content rehash; no observed target or partial is
+planning, apply, or recovery authority. Static packages report planning as
+`not-required`.
 
 Before Registry/TUF access begins, the process-held package lock protects a
 bounded `a3s.use.plugin-resolution-attempt.v1` record. It binds scope, action,

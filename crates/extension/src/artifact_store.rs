@@ -8,6 +8,10 @@ use tokio::fs;
 
 use crate::package::{io_error, lock_is_contended};
 
+mod blob;
+
+pub(crate) use blob::ArtifactBlob;
+
 const EXPANDED_PACKAGES_DIRECTORY: &str = "expanded-packages";
 const SHA256_DIRECTORY: &str = "sha256";
 const CONTENT_DIRECTORY: &str = "content";
@@ -87,8 +91,10 @@ impl ArtifactStore {
     ) -> UseResult<ArtifactMutationLock> {
         validate_sha256(sha256)?;
         let container = self.expanded_package_container(sha256);
-        self.ensure_container(&container).await?;
-        ArtifactMutationLock::acquire(&container.join(MUTATION_LOCK)).await
+        self.ensure_container(&container, "expanded-package artifact")
+            .await?;
+        ArtifactMutationLock::acquire(&container.join(MUTATION_LOCK), "expanded-package artifact")
+            .await
     }
 
     fn expanded_package_container(&self, sha256: &str) -> PathBuf {
@@ -100,7 +106,7 @@ impl ArtifactStore {
             .join(sha256)
     }
 
-    async fn ensure_container(&self, container: &Path) -> UseResult<()> {
+    pub(super) async fn ensure_container(&self, container: &Path, label: &str) -> UseResult<()> {
         fs::create_dir_all(&self.root)
             .await
             .map_err(|error| io_error("create Artifact Store root", &self.root, error))?;
@@ -120,23 +126,23 @@ impl ArtifactStore {
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(error) => {
                     return Err(io_error(
-                        "create expanded-package Artifact Store directory",
+                        &format!("create {label} Artifact Store directory"),
                         &current,
                         error,
                     ))
                 }
             }
-            validate_real_directory(&current, "expanded-package Artifact Store directory").await?;
+            validate_real_directory(&current, &format!("{label} Artifact Store directory")).await?;
         }
         Ok(())
     }
 }
 
-pub(crate) struct ArtifactMutationLock(File);
+pub(super) struct ArtifactMutationLock(File);
 
 impl ArtifactMutationLock {
-    async fn acquire(path: &Path) -> UseResult<Self> {
-        let file = open_lock_file(path)?;
+    pub(super) async fn acquire(path: &Path, label: &str) -> UseResult<Self> {
+        let file = open_lock_file(path, label)?;
         let deadline = tokio::time::Instant::now() + MUTATION_LOCK_WAIT;
         loop {
             match file.try_lock_exclusive() {
@@ -146,7 +152,7 @@ impl ArtifactMutationLock {
                     if now >= deadline {
                         return Err(artifact_store_error(
                             "use.artifact_store.busy",
-                            "Another process is committing the same expanded-package artifact.",
+                            format!("Another process is committing the same {label}."),
                         ));
                     }
                     tokio::time::sleep(
@@ -154,13 +160,7 @@ impl ArtifactMutationLock {
                     )
                     .await;
                 }
-                Err(error) => {
-                    return Err(io_error(
-                        "acquire expanded-package artifact lock",
-                        path,
-                        error,
-                    ))
-                }
+                Err(error) => return Err(io_error(&format!("acquire {label} lock"), path, error)),
             }
         }
     }
@@ -172,9 +172,9 @@ impl Drop for ArtifactMutationLock {
     }
 }
 
-fn open_lock_file(path: &Path) -> UseResult<File> {
+fn open_lock_file(path: &Path, label: &str) -> UseResult<File> {
     if let Ok(metadata) = std::fs::symlink_metadata(path) {
-        validate_lock_metadata(path, &metadata)?;
+        validate_lock_metadata(path, &metadata, label)?;
     }
     let mut options = OpenOptions::new();
     options.create(true).truncate(false).read(true).write(true);
@@ -195,19 +195,19 @@ fn open_lock_file(path: &Path) -> UseResult<File> {
     }
     let file = options
         .open(path)
-        .map_err(|error| io_error("open expanded-package artifact lock", path, error))?;
+        .map_err(|error| io_error(&format!("open {label} lock"), path, error))?;
     let metadata = std::fs::symlink_metadata(path)
-        .map_err(|error| io_error("inspect expanded-package artifact lock", path, error))?;
-    validate_lock_metadata(path, &metadata)?;
+        .map_err(|error| io_error(&format!("inspect {label} lock"), path, error))?;
+    validate_lock_metadata(path, &metadata, label)?;
     Ok(file)
 }
 
-fn validate_lock_metadata(path: &Path, metadata: &std::fs::Metadata) -> UseResult<()> {
+fn validate_lock_metadata(path: &Path, metadata: &std::fs::Metadata, label: &str) -> UseResult<()> {
     if a3s_use_core::metadata_is_link_or_reparse_point(metadata) || !metadata.is_file() {
         return Err(artifact_store_error(
             "use.artifact_store.ownership_invalid",
             format!(
-                "The expanded-package artifact lock '{}' must be an owned regular file.",
+                "The {label} lock '{}' must be an owned regular file.",
                 path.display()
             ),
         ));
@@ -231,7 +231,7 @@ async fn validate_real_directory(path: &Path, label: &str) -> UseResult<()> {
     Ok(())
 }
 
-fn validate_sha256(sha256: &str) -> UseResult<()> {
+pub(super) fn validate_sha256(sha256: &str) -> UseResult<()> {
     if sha256.len() == 64
         && sha256
             .bytes()
@@ -241,12 +241,12 @@ fn validate_sha256(sha256: &str) -> UseResult<()> {
     } else {
         Err(artifact_store_error(
             "use.artifact_store.digest_invalid",
-            "An expanded-package artifact digest must contain exactly 64 lowercase hexadecimal characters.",
+            "An Artifact Store digest must contain exactly 64 lowercase hexadecimal characters.",
         ))
     }
 }
 
-fn artifact_store_error(code: &'static str, message: impl Into<String>) -> UseError {
+pub(super) fn artifact_store_error(code: &'static str, message: impl Into<String>) -> UseError {
     UseError::new(code, message)
 }
 

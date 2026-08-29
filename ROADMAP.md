@@ -219,10 +219,14 @@ Implementation evidence (2026-08-28):
   Artifact Store while keeping selections, receipts, routes, enablement,
   Grants, provider bindings, and capability publication under an
   `InstallationId`.
-- [ ] Move source-scoped verified archive, executable-planning, and
-  presentation-media bytes behind the global Artifact Store. Keep signed
-  source observations as source-scoped metadata and introduce one global
-  reachability, quota, and garbage-collection policy before deleting bytes.
+- [x] Move verified archive, executable-planning, and presentation-media bytes
+  behind a global sharded Blob tier. Keep canonical source observations and
+  resumable partials in the Registry source datastore. Blob commit is
+  digest-locked, no-clobber, handle-rehashed, and durable before observation
+  publication; source prune never deletes global bytes.
+- [ ] Introduce one global cross-source/cross-installation/cross-operation
+  reachability inventory, quota, and confirmed garbage-collection policy
+  before deleting any raw blob or expanded tree.
 - [ ] Add explicit global artifact audit, quarantine, and verified
   rehydration. Corruption must fail closed and preserve forensic evidence; it
   must not silently replace bytes underneath an admitted generation.
@@ -261,8 +265,9 @@ open):
   snapshot cursor v2 contracts carry the exact installation and reject
   cross-installation loading or lease acquisition. The CLI requires explicit
   scope kind and ID for every installation-scoped command.
-- Registry source configuration, trust roots, TUF metadata/verified targets,
-  and derivable Flow compilation artifacts remain global inputs. Receipts,
+- Registry source configuration, trust roots, TUF metadata, target observations
+  and partials, global artifact blobs, and derivable Flow compilation artifacts
+  remain installation-independent inputs. Receipts,
   routes, enablement, Grants, provider bindings, capability publication,
   backup/restore, and both maintenance and mutation locks are installation
   scoped. Installation backup rejects the global cache families.
@@ -298,11 +303,12 @@ open):
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove
   reachability across every installation and durable operation.
-- The remaining A1 work is structural, not a hidden compatibility layer:
-  source-scoped verified target bytes still need a global blob tier and one
-  safe quota/reference/audit/repair/GC model; enablement and publication intent
-  must join the installation generation; route strings must cease carrying
-  identity; and the complete two-installation lifecycle/lease matrix must pass.
+- The remaining A1 work is structural, not a hidden compatibility layer: the
+  global blob and expanded-tree tiers still need one safe
+  reachability/quota/audit/quarantine/rehydration/GC model; enablement and
+  publication intent must join the installation generation; route strings must
+  cease carrying identity; and the complete two-installation lifecycle/lease
+  matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store
 
@@ -848,19 +854,20 @@ Status: in progress
   restore-history directory moves use the same retry bound. A released
   exclusive file or directory lock converges atomically, and a persistent
   replacement lock leaves the old target intact. Resumable Registry partials
-  now use one final-component no-follow handle from discovery through append,
-  checkpoint, and final pre-promotion verification. Promotion reopens the
-  final path without following it, rehashes it, and retains that exact handle
-  through staging; a deterministic post-verification replacement fails commit.
-  A live Windows partial or verified-target handle permits readers but denies
-  external writes, removal, and replacement, while Unix staging remains bound
-  to the verified handle after a path replacement. Windows-native scanner tests
-  now prove a transient read-only handle that denies delete sharing converges
-  into promotion within the two-second retry bound. A persistent handle stops at
-  the bound without publishing or deleting the complete partial; after release,
-  the next transaction rehashes, promotes, and stages the exact bytes without a
-  network transfer. Invalid-partial cleanup and cache GC deletion of stale,
-  partial, and verified-target entries now use the same bounded blocking retry.
+  use one final-component no-follow handle from discovery through append,
+  checkpoint, verification, and copying into the global Blob tier. Commit
+  rehashes while copying, publishes without clobber under the digest lock,
+  reopens the final blob without following it, and retains that exact handle
+  through staging. The source observation is durable only after the blob, and
+  partial cleanup is last. A live Windows partial or blob handle permits readers
+  but denies external writes, removal, and replacement, while Unix commit and
+  staging remain bound to their held handles after path replacement.
+  Windows-native scanner tests prove a transient no-delete-share handle
+  converges within the two-second cleanup bound. If cleanup stays locked after
+  publication, the next transaction rehashes the durable blob and removes the
+  redundant complete partial without a network transfer. Invalid-partial
+  cleanup and source deletion of stale files, partials, and observations use the
+  same bounded blocking retry; source deletion never removes the global blob.
   Native tests prove transient scanner release converges for each cleanup path;
   a persistent selected-target lock stops at two seconds, preserves that entry,
   and a later prune rescans and finishes after any earlier durable deletions.
@@ -879,8 +886,8 @@ Status: in progress
   candidate artifact, removes its retained-receipt candidate, preserves the
   byte-exact prior receipt and published generation, leaves no temporary
   receipt, and permits exact replay after release. Reboot
-  recovery, antivirus contention beyond these exact target promotion,
-  cache-removal, active package-commit, upgrade-receipt replacement, and
+  recovery, antivirus contention beyond these exact blob publication,
+  source-cache removal, active package-commit, upgrade-receipt replacement, and
   lifecycle-removal boundaries, product-host contention, and the remaining
   platform scenarios stay open.
 - [x] Test real-process uninstall interruption between durable Registry cutover
@@ -888,7 +895,7 @@ Status: in progress
   to prove drain-before-removal and exact generation replay.
 - [ ] Complete the interrupted download, archive extraction, graph/Grant
   cutover, drain, removal, process crash, reboot, remaining antivirus contention
-  outside verified-target promotion, cache removal, active package commit,
+  outside blob publication, source-cache removal, active package commit,
   upgrade-receipt replacement, and lifecycle removal, and reparse-point
   replacement matrix. A real `a3s-use` process-kill test now
   proves digest-bound target download resume without partial publication. A

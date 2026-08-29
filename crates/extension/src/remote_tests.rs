@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
     CatalogPlanningTarget, ExecutablePlanningSurface, PlanningArtifactRef,
@@ -68,6 +68,7 @@ async fn caller_pinned_root_is_idempotent_and_never_downloaded() {
         format!("{:x}", Sha256::digest(&replacement)),
         None,
         datastore,
+        ArtifactStore::from_data_root(&temp.path().join("data")),
     )
     .unwrap();
     let error = replacement_registry
@@ -127,6 +128,7 @@ async fn caller_pinned_root_rejects_empty_oversized_and_mismatched_bytes() {
         format!("{:x}", Sha256::digest(malformed)),
         None,
         temp.path().join("malformed-tuf"),
+        ArtifactStore::from_data_root(&temp.path().join("data")),
     )
     .unwrap();
     let error = malformed_registry
@@ -151,6 +153,7 @@ async fn caller_pinned_root_rejects_empty_oversized_and_mismatched_bytes() {
         &repository.root_sha256,
         Some(temp.path().join("explicit-root.json")),
         temp.path().join("explicit-tuf"),
+        ArtifactStore::from_data_root(&temp.path().join("data")),
     )
     .unwrap();
     let error = explicit.pin_trusted_root(root).await.unwrap_err();
@@ -253,15 +256,14 @@ async fn verified_targets_are_content_addressed_and_reusable_without_network() {
     let online_archive = std::fs::read(online.path()).unwrap();
 
     for digest in [&archive_sha256, &planning_sha256] {
-        let path = datastore
-            .join("verified-targets")
-            .join("sha256")
-            .join(digest);
+        let path = target_observation_path(&datastore, digest);
         assert!(
             path.is_file(),
-            "missing verified target cache {}",
+            "missing Registry target observation {}",
             path.display()
         );
+        let blob = global_blob_path(&trusted, digest);
+        assert!(blob.is_file(), "missing global blob {}", blob.display());
     }
 
     server.clear_requests();
@@ -273,6 +275,97 @@ async fn verified_targets_are_content_addressed_and_reusable_without_network() {
     assert_eq!(cached.planning_bundle(), Some(&expected));
     assert_eq!(std::fs::read(cached.path()).unwrap(), online_archive);
     assert!(server.requests().is_empty());
+}
+
+#[tokio::test]
+async fn registry_sources_share_global_blobs_without_sharing_observations() {
+    let archive = extension_archive(PACKAGE_VERSION);
+    let repository = TestRepository::new(archive.clone(), 13, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let artifact_store = ArtifactStore::from_data_root(&temp.path().join("data"));
+    let first = TrustedRegistry::new(
+        "first",
+        server.base_url(),
+        &repository.root_sha256,
+        None,
+        temp.path().join("first-tuf"),
+        artifact_store.clone(),
+    )
+    .unwrap();
+    let second = TrustedRegistry::new(
+        "second",
+        server.base_url(),
+        &repository.root_sha256,
+        None,
+        temp.path().join("second-tuf"),
+        artifact_store,
+    )
+    .unwrap();
+    refresh_remote_registry(&first).await.unwrap();
+    refresh_remote_registry(&second).await.unwrap();
+    let first_package = prepare_remote_package(&first, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    let digest = first_package.resolved().sha256.clone();
+    let downloaded = first_package.download().await.unwrap();
+    assert_eq!(std::fs::read(downloaded.path()).unwrap(), archive);
+    assert!(target_observation_path(first.datastore(), &digest).is_file());
+    assert!(!target_observation_path(second.datastore(), &digest).exists());
+
+    server.clear_requests();
+    let second_package =
+        prepare_cached_remote_package(&second, "a3s/science", None, "stable", None)
+            .await
+            .unwrap();
+    let downloaded = second_package.download().await.unwrap();
+
+    assert_eq!(std::fs::read(downloaded.path()).unwrap(), archive);
+    assert!(target_observation_path(second.datastore(), &digest).is_file());
+    assert!(global_blob_path(&second, &digest).is_file());
+    assert!(server.requests().is_empty());
+}
+
+#[tokio::test]
+async fn missing_global_blob_does_not_mutate_source_cache_during_cached_staging() {
+    let temp = tempfile::tempdir().unwrap();
+    let datastore = temp.path().join("tuf");
+    let cache = datastore.join("verified-targets/sha256");
+    tokio::fs::create_dir_all(&cache).await.unwrap();
+    let artifact_store = ArtifactStore::from_data_root(&temp.path().join("data"));
+    let registry = TrustedRegistry::new(
+        "fixture",
+        "https://registry.example.test/",
+        "c".repeat(64),
+        None,
+        datastore.clone(),
+        artifact_store.clone(),
+    )
+    .unwrap()
+    .with_target_cache_policy(VerifiedTargetCachePolicy::new(3, 1, 0).unwrap());
+    let retained = b"old";
+    let retained_digest = format!("{:x}", Sha256::digest(retained));
+    let source_path = temp.path().join("retained.part");
+    tokio::fs::write(&source_path, retained).await.unwrap();
+    let mut source = tokio::fs::File::open(&source_path).await.unwrap();
+    drop(
+        artifact_store
+            .commit_blob(&mut source, retained.len() as u64, &retained_digest)
+            .await
+            .unwrap(),
+    );
+    super::target_cache::record::write_observation(&cache, &retained_digest, retained.len() as u64)
+        .await
+        .unwrap();
+
+    let error =
+        super::target_cache::stage_cached_target(&registry, "missing.bin", 3, &"b".repeat(64))
+            .await
+            .unwrap_err();
+
+    assert_eq!(error.code, "use.extension.registry_target_cache_missing");
+    assert!(target_observation_path(&datastore, &retained_digest).is_file());
+    assert!(global_blob_path(&registry, &retained_digest).is_file());
 }
 
 #[tokio::test]
@@ -290,21 +383,18 @@ async fn cached_target_tampering_and_missing_content_fail_closed_without_network
         .unwrap();
     let digest = prepared.resolved().sha256.clone();
     prepared.download().await.unwrap();
-    let cache_path = datastore
-        .join("verified-targets")
-        .join("sha256")
-        .join(&digest);
+    let blob_path = global_blob_path(&trusted, &digest);
 
-    std::fs::write(&cache_path, b"tampered cache bytes").unwrap();
+    std::fs::write(&blob_path, b"tampered cache bytes").unwrap();
     server.clear_requests();
     let prepared = prepare_cached_remote_package(&trusted, "a3s/science", None, "stable", None)
         .await
         .unwrap();
     let error = prepared.download().await.unwrap_err();
-    assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
+    assert_eq!(error.code, "use.artifact_store.blob_invalid");
     assert!(server.requests().is_empty());
 
-    std::fs::remove_file(&cache_path).unwrap();
+    std::fs::remove_file(&blob_path).unwrap();
     let prepared = prepare_cached_remote_package(&trusted, "a3s/science", None, "stable", None)
         .await
         .unwrap();
@@ -314,7 +404,7 @@ async fn cached_target_tampering_and_missing_content_fail_closed_without_network
 }
 
 #[tokio::test]
-async fn verified_target_cache_enforces_entry_retention_during_commit() {
+async fn source_entry_retention_never_deletes_global_blobs() {
     let (repository, _, _, _) = planning_test_repository(false);
     let server = TestServer::start(repository.routes.clone());
     let temp = tempfile::tempdir().unwrap();
@@ -343,21 +433,17 @@ async fn verified_target_cache_enforces_entry_retention_during_commit() {
     assert!(downloaded.planning_bundle().is_some());
     let usage = inspect_verified_target_cache(&trusted).await.unwrap();
     assert_eq!(usage.target_entries, 1);
-    assert!(datastore
-        .join("verified-targets/sha256")
-        .join(&archive_digest)
-        .is_file());
-    assert!(!datastore
-        .join("verified-targets/sha256")
-        .join(&planning_digest)
-        .exists());
+    assert!(target_observation_path(&datastore, &archive_digest).is_file());
+    assert!(!target_observation_path(&datastore, &planning_digest).exists());
+    assert!(global_blob_path(&trusted, &archive_digest).is_file());
+    assert!(global_blob_path(&trusted, &planning_digest).is_file());
 
     server.clear_requests();
     let cached = prepare_cached_remote_package(&trusted, "a3s/science", None, "stable", None)
         .await
         .unwrap();
-    let error = cached.download().await.unwrap_err();
-    assert_eq!(error.code, "use.extension.registry_target_cache_missing");
+    let cached = cached.download().await.unwrap();
+    assert!(cached.planning_bundle().is_some());
     assert!(server.requests().is_empty());
 }
 
@@ -467,6 +553,7 @@ async fn tuf_rejects_wrong_root_and_tampered_target() {
         "f".repeat(64),
         None,
         temp.path().join("wrong-root"),
+        ArtifactStore::from_data_root(&temp.path().join("data")),
     )
     .unwrap();
     let error = prepare_remote_package(&wrong, "a3s/science", None, "stable", None)
@@ -543,14 +630,34 @@ fn trusted_registry(
     repository: &TestRepository,
     datastore: PathBuf,
 ) -> TrustedRegistry {
+    let artifact_store = ArtifactStore::from_data_root(
+        &datastore
+            .parent()
+            .unwrap_or(datastore.as_path())
+            .join("data"),
+    );
     TrustedRegistry::new(
         "fixture",
         server.base_url(),
         &repository.root_sha256,
         None,
         datastore,
+        artifact_store,
     )
     .unwrap()
+}
+
+fn target_observation_path(datastore: &Path, digest: &str) -> PathBuf {
+    datastore
+        .join("verified-targets/sha256")
+        .join(format!("{digest}.json"))
+}
+
+fn global_blob_path(registry: &TrustedRegistry, digest: &str) -> PathBuf {
+    registry
+        .artifact_store()
+        .blob_path(&format!("sha256:{digest}"))
+        .unwrap()
 }
 
 fn planning_test_repository(

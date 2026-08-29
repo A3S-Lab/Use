@@ -136,6 +136,7 @@ async fn different_roots_with_a_shared_dependency_serialize_before_authorization
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let registry = ExtensionRegistry::new(extension_paths(&home));
@@ -381,6 +382,7 @@ async fn a_stale_reviewed_graph_fails_before_authorization_or_installation_effec
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let registry = ExtensionRegistry::new(extension_paths(&home));
@@ -490,6 +492,7 @@ async fn uninstall_revalidates_a_dependency_adopted_as_a_root_without_generation
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let registry = ExtensionRegistry::new(extension_paths(&home));
@@ -607,6 +610,7 @@ async fn upgrade_revalidates_a_dependency_adopted_as_a_root_without_generation_c
         &first_repository.root_sha256,
         None,
         home.join("state/remote-registries/first"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let next_registry = TrustedRegistry::new(
@@ -615,6 +619,7 @@ async fn upgrade_revalidates_a_dependency_adopted_as_a_root_without_generation_c
         &next_repository.root_sha256,
         None,
         home.join("state/remote-registries/next"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let registry = ExtensionRegistry::new(extension_paths(&home));

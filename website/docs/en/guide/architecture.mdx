@@ -79,12 +79,20 @@ The current implementation reuses these existing mechanisms:
 
 Do not add another manager, grant store, Runtime selector, capability registry, or generic execution protocol.
 
+`UsePaths` owns one process-wide Artifact Store. Verified archives, executable
+planning targets, presentation media, and expanded package trees are sharded by
+SHA-256 there and carry no Registry-source or installation authority. Registry
+datastores retain canonical source observations and resumable partials;
+installation snapshots retain selections and lifecycle authority. Source prune
+and scoped uninstall never delete global bytes. Cross-source reachability,
+global quota/GC, audit, quarantine, and verified rehydration remain open.
+
 ## Package dependency boundary
 
 A schema-v3 package declares only package IDs and SemVer ranges. The host owns
 the enabled named Registry set. The standalone host persists it as canonical
 ACL, compare-and-swaps authority changes against a reviewed revision, and
-isolates TUF/cache state by exact source identity. Resolution is bounded and
+isolates TUF metadata, observations, and partials by exact source identity. Resolution is bounded and
 deterministic, rejects cross-Registry ambiguity, and emits one canonical lock
 containing exact versions, content digests, host compatibility, Registry
 URLs/trust roots, and TUF role versions.

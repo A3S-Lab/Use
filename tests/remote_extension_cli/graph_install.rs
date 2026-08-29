@@ -14,6 +14,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let extension_registry = ExtensionRegistry::new(extension_paths(&home));
@@ -284,6 +285,7 @@ async fn enablement_planning_distinguishes_planned_no_change_and_completed_outco
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let extension_registry = ExtensionRegistry::new(extension_paths(&home));
@@ -555,6 +557,7 @@ async fn schema_v3_manager_resolves_dependencies_from_host_injected_registries()
         &root_repository.root_sha256,
         None,
         home.join("state/remote-registries/root"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let dependency_registry = TrustedRegistry::new(
@@ -563,6 +566,7 @@ async fn schema_v3_manager_resolves_dependencies_from_host_injected_registries()
         &dependency_repository.root_sha256,
         None,
         home.join("state/remote-registries/dependency"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let manager =

@@ -69,8 +69,11 @@ package, and only a durable Host outcome reports `Completed`.
   surfaces, package dependencies, permission ceilings, and exact provenance.
 - `InstallationId(kind, id)` now partitions mutable package state, receipts,
   Grants, bindings, capability publication, backup/restore, and locks. Global
-  Registry/TUF and derivable artifact caches own no installation authority;
-  the single-snapshot A1 convergence gate remains open.
+  Registry/TUF inputs and the raw-blob/expanded-tree Artifact Store own no
+  installation authority. Registry sources retain only observations and
+  partials; source prune and scoped uninstall never delete global bytes. The
+  remaining A1 reachability/quota/audit/repair/GC and single-snapshot gates stay
+  open.
 - The bounded resolver freezes one Registry/TUF package lock, prepares
   dependencies forward, publishes one graph snapshot, and retires unused
   packages in reverse.
@@ -179,17 +182,19 @@ package, and only a durable Host outcome reports `Completed`.
   Released file or directory locks converge atomically; a persistent replacement
   lock stops at two seconds without changing the prior target. Resumable
   Registry partials now use one final-component no-follow handle through final
-  verification. Promotion reopens and rehashes the final path, then retains that
-  verified handle through staging. Post-verification replacement fails commit;
-  Unix staging stays bound to the retained handle, and Windows permits readers
-  while denying external writes, removal, and replacement. Windows-native
-  scanner tests now prove that transient no-delete-share contention converges
-  within the two-second promotion bound. Persistent contention publishes
-  nothing and preserves the complete partial for a later zero-network rehash,
-  promotion, and staging retry. Invalid-partial cleanup and stale, partial, and
-  verified-target cache deletion use the same bounded blocking retry. Native
-  tests prove transient convergence and persistent selected-target preservation
-  followed by a residual-inventory rescan. Bounded deletion of lifecycle
+  verification and copying into the global Blob tier. Commit rehashes while
+  copying, publishes without clobber under a digest lock, then reopens and
+  retains the global blob through staging. Canonical source observation
+  publication follows durable blob commit, and partial cleanup is last. Unix
+  commit stays bound to the retained source handle, while Windows permits
+  readers and denies external writes, removal, and replacement. Windows-native
+  scanner tests prove transient no-delete-share contention converges within the
+  two-second cleanup bound. If cleanup remains locked after publication, the
+  durable blob and observation coexist with a redundant complete partial for a
+  later zero-network cleanup retry. Invalid-partial cleanup and stale, partial,
+  and source-observation deletion use the same bounded blocking retry and never
+  delete global blobs. Native tests prove transient convergence and persistent
+  selected-file preservation followed by a residual-inventory rescan. Bounded deletion of lifecycle
   receipts and abandoned artifact staging uses the same retry. Native tests
   prove transient receipt/nested-staging convergence. A persistent reader of a
   complete global artifact never delays
@@ -203,7 +208,7 @@ package, and only a durable Host outcome reports `Completed`.
   retained-receipt candidate state, preserves the exact prior receipt and
   published generation, leaves no temporary receipt, and permits exact replay
   after release. Reboot recovery and antivirus contention
-  beyond these exact promotion, cache-removal, active package-commit,
+  beyond these exact blob-publication, source-cache-removal, active package-commit,
   upgrade-receipt replacement, and lifecycle-removal boundaries remain open.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
@@ -237,7 +242,7 @@ package, and only a durable Host outcome reports `Completed`.
   replayable terminal Host outcomes without generation inflation.
 - Cover interrupted download, archive extraction, cutover, drain, process
   crash, product-host Grant cutover, reboot, remaining antivirus contention
-  outside verified-target promotion, cache removal, and lifecycle removal, and
+  outside blob publication, source-cache removal, and lifecycle removal, and
   reparse-point replacement races.
 
 ### 5. Supply chain and operations — in progress

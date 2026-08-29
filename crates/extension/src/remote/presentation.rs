@@ -328,6 +328,7 @@ async fn fetch_media(
                 repository,
                 &name,
                 registry.datastore(),
+                registry.artifact_store(),
                 &registry.targets_url()?,
                 registry.network_policy(),
                 repository.root().signed.consistent_snapshot,
@@ -339,14 +340,7 @@ async fn fetch_media(
             .await?
         }
         RemoteRegistryAccess::Cached => {
-            stage_cached_target(
-                registry.datastore(),
-                file_name,
-                media.byte_length,
-                digest,
-                registry.target_cache_policy(),
-            )
-            .await?
+            stage_cached_target(registry, file_name, media.byte_length, digest).await?
         }
     };
     Ok(VerifiedCognitivePackageMedia {
@@ -383,6 +377,7 @@ async fn load_target_bytes(
                 repository,
                 target_name,
                 registry.datastore(),
+                registry.artifact_store(),
                 &registry.targets_url()?,
                 registry.network_policy(),
                 repository.root().signed.consistent_snapshot,
@@ -394,14 +389,7 @@ async fn load_target_bytes(
             .await?
         }
         RemoteRegistryAccess::Cached => {
-            stage_cached_target(
-                registry.datastore(),
-                file_name,
-                length,
-                digest,
-                registry.target_cache_policy(),
-            )
-            .await?
+            stage_cached_target(registry, file_name, length, digest).await?
         }
     };
     let bytes = fs::read(&path).await.map_err(|error| {

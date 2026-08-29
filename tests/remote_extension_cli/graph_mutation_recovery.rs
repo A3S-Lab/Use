@@ -33,6 +33,7 @@ async fn interrupted_graph_durably_blocks_enablement_admission_until_recovery() 
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let registry = ExtensionRegistry::new(extension_paths(&home));
@@ -179,6 +180,7 @@ async fn interrupted_enablement_durably_blocks_graph_admission_until_recovery() 
         &repository.root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let registry = ExtensionRegistry::new(extension_paths(&home));

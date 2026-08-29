@@ -2,21 +2,36 @@
 
 Status: development preview
 
-Last updated: 2026-08-23
+Last updated: 2026-08-29
 
 ## Boundary
 
-A3S Use stores online-verified package archives and separately signed
-`planning-v1.json` targets at:
+A3S Use separates source evidence from immutable content. Each Registry source
+stores a small canonical observation and resumable download state at:
 
 ```text
-<registry-datastore>/verified-targets/sha256/<digest>
+<registry-datastore>/verified-targets/sha256/<digest>.json
+<registry-datastore>/verified-targets/sha256/.target-<digest>.part
 ```
 
-The cache is an optimization and an explicit offline input. It is not package
-installation state, a trust root, a receipt, or recovery authority. Removing a
-cache entry cannot change a currently installed package or published capability,
-but it can make a future offline install or upgrade unavailable.
+Only bytes that match the TUF-signed length and SHA-256 are committed to the
+process-wide Artifact Store:
+
+```text
+<data-root>/artifacts/blobs/sha256/<first-two-hex>/<digest>/content
+```
+
+The source cache and global blob tier are optimizations and explicit offline
+inputs. Neither is installation state, a trust root, a receipt, or recovery
+authority. TUF metadata remains the source authority. Removing a source
+observation cannot change an installed package or delete a global blob; exact
+cached TUF metadata may recreate the observation from the reverified blob.
+
+Schema v3 is a pre-release clean cutover. A legacy digest-named raw file in a
+source cache is unowned state and fails closed; it is never silently treated as
+an observation or migrated into the global tier. Stop Use hosts, preserve the
+old datastore if incident evidence matters, then remove only the proven legacy
+cache before repopulating from a trusted Registry.
 
 ## Durable source configuration
 
@@ -28,7 +43,7 @@ The standalone CLI stores at most 64 named sources in canonical
 - pinned bootstrap TUF root SHA-256;
 - enabled state;
 - whether an exact trusted-root file was imported; and
-- the durable verified-target cache policy.
+- the durable source-observation and partial-cache policy.
 
 The first enabled source becomes the default. `install` and `upgrade` select
 that default unless `--registry-name` chooses another enabled source. All other
@@ -67,9 +82,9 @@ New standalone sources and `TrustedRegistry::new` use these per-Registry default
 
 | Bound | Default |
 | --- | ---: |
-| Retained target bytes | 4 GiB |
-| Retained target entries | 4,096 |
-| Free-space reserve | 256 MiB |
+| Logical referenced target bytes | 4 GiB |
+| Source target observations and partials | 4,096 |
+| Source-partial/staging free-space reserve | 256 MiB |
 
 Embedding hosts may supply a validated `VerifiedTargetCachePolicy`. Standalone
 source `add` and `replace` persist the matching policy options. Confirmed cache
@@ -87,10 +102,12 @@ the policy in the reviewed source revision.
 ## Admission and retention
 
 Before a target request, A3S Use rejects a signed target that cannot fit the
-configured byte bound and checks the temporary download filesystem for the
-target plus the free-space reserve. The Registry cache separately reserves the
-remaining bytes after any admitted partial plus the same reserve because the
-cache and temporary staging directory may be different volumes.
+source's logical byte bound. It checks the source partial filesystem for the
+remaining download bytes plus the reserve and checks the operation staging
+filesystem before copying a completed blob. Source observation deletion can
+release logical policy capacity, but it does not claim to release physical
+Artifact Store space. Global blob quota and cross-source reachability GC remain
+an explicit roadmap item.
 
 Interrupted downloads are retained as
 `.target-<sha256>.part`. The partial must be a bounded regular file and its
@@ -99,49 +116,52 @@ exact offset, final byte, total signed length, and remaining content length. A
 complete `200` response is accepted when a server ignores Range, but the old
 partial is truncated first. No partial is staged or exposed as an offline
 target. The complete bytes are re-read through the transaction-owned handle,
-checked against the signed length and SHA-256, synchronized, and atomically
-promoted to `<sha256>`. The final path is then reopened without following its
-last component, rehashed, and retained as the only staging authority.
+checked against the signed length and SHA-256, copied and rehashed into a
+digest-locked global staging file, synchronized, and atomically published
+without replacing an existing blob. A canonical path-free source observation
+is published only after the blob is durable. The source partial is removed
+last. The global file is then reopened without following its last component,
+rehashed, and retained by handle as the only staging authority.
 
 An existing partial is opened once without following its final path before
 cache admission, and that exact handle remains the append/checkpoint authority.
 New partial creation uses the same no-follow policy with create-new semantics.
-On Windows the live handle shares read access for scanners and diagnostics but
-denies external write, delete, and replacement access until the transaction
-releases it after initial verification. A deterministic replacement in the
-release-to-promotion window fails commit during the final-handle rehash. The
+On Windows the live partial and blob handles share read access for scanners and
+diagnostics but deny external write, delete, and replacement access. The
 verified handle remains live through staging: Unix path replacement cannot
-redirect the staged bytes, and Windows continues to allow readers while
-denying external write, delete, and replacement access.
+redirect staged bytes, and every stage operation rehashes the held blob while
+copying it.
 
 Windows promotion retries access-denied, sharing-violation, and lock-violation
-rename failures for at most two seconds on a blocking worker. Native tests model
+publication and cleanup failures for at most two seconds on a blocking worker. Native tests model
 a read-only scanner handle that shares the transaction's existing read/write
 access but withholds delete sharing. Releasing a transient handle lets the same
-commit finish promotion and staging. If the handle persists through the bound,
-commit returns `use.extension.io`, publishes no final target, and retains the
-exact complete partial. After the scanner releases it, retry the same operation;
-`begin` rehashes, promotes, and stages those retained bytes before any target
-request. This is the verified-target promotion qualification, not a claim that
-the full product antivirus and reboot matrix is complete.
+commit finish publication and cleanup. If a scanner prevents final partial
+deletion through the bound, commit returns `use.extension.io` but preserves the
+already durable blob, observation, and exact complete partial. After the scanner
+releases it, retrying rehashes the global blob and removes the redundant partial
+before any target request. This is the verified-target publication
+qualification, not a claim that the full product antivirus and reboot matrix is
+complete.
 
 Under the exclusive target-cache lock, commit removes:
 
 1. bounded stale `.target-<pid>-<time>.tmp` writes;
 2. the oldest inactive `.target-<sha256>.part` downloads;
-3. the oldest verified targets, ordered by modification time and then digest;
+3. the oldest source observations, ordered by modification time and then digest;
 4. only as many entries as required to satisfy byte, entry, and disk-space
    bounds.
 
 On Windows, invalid-partial cleanup and every selected cache deletion use the
 same blocking two-second retry for access-denied, sharing-violation, and
 lock-violation failures. Native tests hold no-delete-share scanner handles over
-stale entries, inactive partials, and verified targets. Transient release lets
-cleanup finish; a persistent selected-target lock returns `use.extension.io` at
-the bound and leaves that entry intact. Deletions completed earlier in the same
-prune remain durable. After releasing the scanner, retry the confirmed prune;
-the new inventory excludes those earlier deletions and finishes the residual
-selection without touching installed package state.
+stale entries, inactive partials, and source observations. Transient release
+lets cleanup finish; a persistent selected-file lock returns
+`use.extension.io` at the bound and leaves that entry intact. Deletions
+completed earlier in the same prune remain durable. After releasing the
+scanner, retry the confirmed prune; the new inventory excludes those earlier
+deletions and finishes the residual selection without touching installed
+package state or global blobs.
 
 The incoming target or partial is protected throughout download, verification,
 promotion, and staging. Every deletion is followed by directory synchronization
@@ -156,10 +176,12 @@ a3s-use registry cache usage \
   --json
 ```
 
-The command performs no network request. Schema v2 JSON reports verified-target,
-resumable-partial, and stale-write entry counts and bytes, available filesystem
-bytes, and the effective policy. If a verified catalog-cache stamp exists, its
-Registry name, URL, and trust-root digest must match the command.
+The command performs no network request. Schema v3 JSON reports source target
+observations and their logical referenced blob bytes, resumable-partial and
+stale-write physical bytes, available source-filesystem bytes, and the effective
+policy. `targetBytes` and `removedTargetBytes` do not mean physical global blob
+storage was consumed or reclaimed. If a verified catalog-cache stamp exists,
+its Registry name, URL, and trust-root digest must match the command.
 
 ## Observe a retained operation
 
@@ -191,13 +213,16 @@ lock and selected archive set under a process-held package lock. The CLI returns
 switches to the operation diagnostic once the pending graph is durable.
 Observation makes no network request or write, exposes no path, and deliberately
 does not take the target-cache lock. It can therefore see a valid partial while
-a retry or transfer is active. Ambiguous complete-plus-partial evidence, links
-or reparse points, non-regular entries, and oversized partials fail closed.
+a retry or transfer is active. A complete observation plus a valid redundant
+partial is reported as complete because blob publication precedes best-effort
+partial cleanup. Dangling or malformed observations, links or reparse points,
+non-regular entries, and oversized partials fail closed.
 
-`complete` is an exact-length observation at the location that only verified
-promotion normally writes. The diagnostic does not rehash an archive or
-planning target and cannot be used as download, planning, apply, or recovery
-authority. A partial is likewise never authority or an offline target. The
+`complete` is a canonical source observation plus an owned exact-length global
+blob. The diagnostic deliberately checks metadata rather than rehashing the
+archive or planning target and cannot be used as download, planning, apply, or
+recovery authority. Every actual blob open, commit, and staging copy rehashes
+the bytes. A partial is likewise never authority or an offline target. The
 attempt survives failure or process exit, and an exact retry replaces it only
 after the prior process lock is released. It is removed only after reviewed
 graph retention. A real killed-process test proves planning-target active and
@@ -229,10 +254,11 @@ a3s-use registry cache prune \
   --json
 ```
 
-Prune is zero-network and reports before/after usage plus removed target,
-partial, and stale-write bytes. Without `--yes`, it makes no change. Missing,
-malformed, linked, non-regular, unowned, or source-mismatched cache state fails
-closed.
+Prune is zero-network and reports before/after usage plus removed source
+observations, partials, and stale writes. Removed target bytes are released
+logical references; prune never removes a global blob. Without `--yes`, it
+makes no change. Missing, malformed, linked, non-regular, unowned, or
+source-mismatched cache state fails closed.
 
 ## Failure response
 
@@ -242,6 +268,8 @@ closed.
 | `use.extension.registry_target_cache_policy_exceeded` | Increase the explicit byte/entry policy or select a smaller signed target. |
 | `use.extension.registry_target_cache_storage_insufficient` | Free space on the reported staging/cache volume or reduce other retained cache data. |
 | `use.extension.registry_target_cache_invalid` | Quarantine the Registry datastore and investigate unexpected or tampered entries. |
+| `use.artifact_store.blob_invalid` | Quarantine the digest path and preserve it for investigation; do not overwrite it in place. Rehydrate only through an explicit verified repair workflow. |
+| `use.artifact_store.ownership_invalid` | Inspect the Artifact Store directory chain for links, reparse points, or unexpected ownership changes. |
 | `use.extension.catalog_cache_invalid` | Quarantine the affected identity datastore. Restore a verified backup of that exact source identity, or replace the source and repopulate its isolated new datastore. |
 | `use.extension.registry_sources_busy` | Retry after the process changing Registry source configuration releases the source lock. |
 | `use.extension.registry_sources_revision_mismatch` | List sources again, review the new revision, and retry the confirmed mutation. |
@@ -249,7 +277,8 @@ closed.
 | `use.extension.registry_sources_invalid` | Quarantine the source ACL and managed root files; restore only a canonical verified backup or recreate the source explicitly. |
 | `use.extension.registry_busy` | Retry after the active cache or metadata operation completes. |
 
-Do not repair a target by renaming arbitrary bytes to their expected digest.
-Refresh it from the exact trusted Registry or use an already verified backup of
-the complete Registry datastore. Cache pruning is not coordinated backup,
+Do not repair a blob by renaming arbitrary bytes to its expected digest. The
+current write path deliberately refuses to replace corrupt global content;
+audit, quarantine, and verified rehydration are separate unfinished controls.
+Source-cache pruning is not global Artifact Store GC, coordinated backup,
 incident response, or whole-product recovery; those remain release gates.

@@ -22,6 +22,7 @@ use tough::{RepositoryLoader, TargetName};
 use url::Url;
 
 use super::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
+use crate::ArtifactStore;
 
 mod cache_policy;
 mod catalog;
@@ -89,6 +90,7 @@ pub struct TrustedRegistry {
     root_sha256: String,
     trusted_root_path: Option<PathBuf>,
     datastore: PathBuf,
+    artifact_store: ArtifactStore,
     target_cache_policy: VerifiedTargetCachePolicy,
     network_policy: RegistryNetworkPolicy,
 }
@@ -118,12 +120,18 @@ pub fn inspect_bootstrap_root(bytes: &[u8]) -> UseResult<PinnedBootstrapRoot> {
 }
 
 impl TrustedRegistry {
+    /// Construct one trusted Registry source with an explicit shared Artifact Store.
+    ///
+    /// Obtain the store from the process-wide `UsePaths`. Registry metadata,
+    /// source observations, and resumable partials remain in `datastore`; fully
+    /// verified target bytes are committed to the injected global store.
     pub fn new(
         name: impl Into<String>,
         base_url: impl AsRef<str>,
         root_sha256: impl AsRef<str>,
         trusted_root_path: Option<PathBuf>,
         datastore: PathBuf,
+        artifact_store: ArtifactStore,
     ) -> UseResult<Self> {
         let name = name.into();
         validate_registry_name(&name)?;
@@ -133,6 +141,12 @@ impl TrustedRegistry {
             return Err(UseError::new(
                 "use.extension.registry_path_invalid",
                 "The TUF metadata datastore must be an absolute path.",
+            ));
+        }
+        if !artifact_store.root().is_absolute() {
+            return Err(UseError::new(
+                "use.artifact_store.path_invalid",
+                "The global Artifact Store path must be absolute.",
             ));
         }
         if trusted_root_path
@@ -150,6 +164,7 @@ impl TrustedRegistry {
             root_sha256,
             trusted_root_path,
             datastore,
+            artifact_store,
             target_cache_policy: VerifiedTargetCachePolicy::default(),
             network_policy: RegistryNetworkPolicy::default(),
         })
@@ -189,6 +204,10 @@ impl TrustedRegistry {
 
     pub fn datastore(&self) -> &Path {
         &self.datastore
+    }
+
+    pub fn artifact_store(&self) -> &ArtifactStore {
+        &self.artifact_store
     }
 
     pub const fn target_cache_policy(&self) -> VerifiedTargetCachePolicy {
@@ -607,12 +626,14 @@ pub async fn inspect_verified_target_cache(
 
 pub(crate) async fn observe_verified_target_cache_entry(
     datastore: &Path,
+    artifact_store: &ArtifactStore,
     registry_name: &str,
     expected_length: u64,
     expected_sha256: &str,
 ) -> UseResult<VerifiedTargetObservation> {
     target_cache::observe_target_cache_entry(
         datastore,
+        artifact_store,
         registry_name,
         expected_length,
         expected_sha256,
@@ -620,9 +641,9 @@ pub(crate) async fn observe_verified_target_cache_entry(
     .await
 }
 
-/// Remove stale writes, resumable partials, and the oldest verified targets
-/// until the configured per-Registry byte, entry, and free-space bounds are
-/// satisfied.
+/// Remove stale writes, resumable partials, and the oldest source observations
+/// until the configured per-Registry logical-byte, entry, and source free-space
+/// bounds are satisfied. Global Artifact Store blobs are never removed.
 pub async fn prune_verified_target_cache(
     registry: &TrustedRegistry,
 ) -> UseResult<VerifiedTargetCachePruneResult> {

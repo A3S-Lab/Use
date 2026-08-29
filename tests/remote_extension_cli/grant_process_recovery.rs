@@ -221,6 +221,7 @@ async fn managed_grant_operation_child() {
         root_sha256,
         None,
         home.join("state/remote-registries/fixture"),
+        use_paths(&home).artifact_store(),
     )
     .unwrap();
     let manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(

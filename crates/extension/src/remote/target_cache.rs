@@ -7,14 +7,14 @@ use fs2::FileExt;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use crate::package::io_error;
 
 use super::target_cache_inventory::{ensure_staging_capacity, inspect_cache, prune_cache};
 use super::{
-    normalize_sha256, TrustedRegistry, VerifiedTargetCachePolicy, VerifiedTargetCachePruneResult,
-    VerifiedTargetCacheUsage, MAX_REMOTE_ARCHIVE_BYTES, VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
+    normalize_sha256, TrustedRegistry, VerifiedTargetCachePruneResult, VerifiedTargetCacheUsage,
+    MAX_REMOTE_ARCHIVE_BYTES, VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
 };
 
 const VERIFIED_TARGETS_DIRECTORY: &str = "verified-targets";
@@ -24,6 +24,7 @@ const TARGET_CACHE_LOCK: &str = ".target-cache.lock";
 mod observation;
 #[cfg(test)]
 mod observation_tests;
+pub(in crate::remote) mod record;
 mod resume;
 
 pub(in crate::remote) use observation::observe_target_cache_entry;
@@ -39,38 +40,29 @@ impl Drop for TargetCacheLock {
 }
 
 pub(super) async fn stage_cached_target(
-    datastore: &Path,
+    registry: &TrustedRegistry,
     file_name: &str,
     expected_length: u64,
     expected_sha256: &str,
-    policy: VerifiedTargetCachePolicy,
 ) -> UseResult<(TempDir, PathBuf)> {
     let expected_sha256 = validated_evidence(expected_length, expected_sha256)?;
     validate_staging_file_name(file_name)?;
-    let _lock = acquire_target_cache_lock(datastore, false)?;
-    let cache_directory = existing_cache_directory(datastore).await?;
-    let source = cache_directory.join(&expected_sha256);
-    let metadata = fs::symlink_metadata(&source).await.map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
+    ensure_datastore_directory(registry.datastore()).await?;
+    let _lock = acquire_target_cache_lock(registry.datastore(), true)?;
+    let cache_directory = ensure_cache_directory(registry.datastore()).await?;
+    let mut blob = registry
+        .artifact_store()
+        .open_blob(&expected_sha256, expected_length)
+        .await?
+        .ok_or_else(|| {
             target_cache_error(
                 "use.extension.registry_target_cache_missing",
                 format!(
-                    "Verified target '{}' is not available in the local Registry cache.",
+                    "Verified target '{}' is not available in the global Artifact Store.",
                     expected_sha256
                 ),
             )
-        } else {
-            io_error("inspect cached Registry target", &source, error)
-        }
-    })?;
-    validate_regular_metadata(
-        &source,
-        &metadata,
-        expected_length,
-        "use.extension.registry_target_cache_invalid",
-        "The cached Registry target is not a bounded regular file.",
-    )?;
-
+        })?;
     let temporary = tokio::task::spawn_blocking(tempfile::tempdir)
         .await
         .map_err(|error| {
@@ -85,27 +77,23 @@ pub(super) async fn stage_cached_target(
                 format!("Failed to create cached target staging: {error}"),
             )
         })?;
-    ensure_staging_capacity(temporary.path(), expected_length, policy).await?;
-    let target = temporary.path().join(file_name);
-    let mut options = fs::OpenOptions::new();
-    options.create_new(true).write(true);
-    let mut output = options
-        .open(&target)
-        .await
-        .map_err(|error| io_error("create cached target staging file", &target, error))?;
-    verify_file(
-        &source,
-        Some(&mut output),
+    ensure_staging_capacity(
+        temporary.path(),
         expected_length,
-        &expected_sha256,
-        "use.extension.registry_target_cache_invalid",
+        registry.target_cache_policy(),
     )
     .await?;
-    output
-        .sync_all()
-        .await
-        .map_err(|error| io_error("sync cached target staging file", &target, error))?;
-    drop(output);
+    super::target_cache_inventory::admit_target_write(
+        &cache_directory,
+        &expected_sha256,
+        expected_length,
+        registry.target_cache_policy(),
+        false,
+    )
+    .await?;
+    record::write_observation(&cache_directory, &expected_sha256, expected_length).await?;
+    let target = temporary.path().join(file_name);
+    blob.stage_into(&target).await?;
     Ok((temporary, target))
 }
 
@@ -162,73 +150,8 @@ fn usage(
     }
 }
 
-async fn verify_file(
-    path: &Path,
-    output: Option<&mut fs::File>,
-    expected_length: u64,
-    expected_sha256: &str,
-    error_code: &'static str,
-) -> UseResult<()> {
-    let mut input = open_verified_file(path, expected_length, error_code).await?;
-    verify_open_file(
-        &mut input,
-        output,
-        path,
-        expected_length,
-        expected_sha256,
-        error_code,
-    )
-    .await
-}
-
-async fn open_verified_file(
-    path: &Path,
-    expected_length: u64,
-    error_code: &'static str,
-) -> UseResult<fs::File> {
-    let metadata = fs::symlink_metadata(path)
-        .await
-        .map_err(|error| io_error("inspect Registry target", path, error))?;
-    validate_regular_metadata(
-        path,
-        &metadata,
-        expected_length,
-        error_code,
-        "The Registry target is not a bounded regular file.",
-    )?;
-    let input = match verified_file_open_options().open(path).await {
-        Ok(input) => input,
-        Err(error) => {
-            if fs::symlink_metadata(path).await.is_ok_and(|metadata| {
-                a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file()
-            }) {
-                return Err(target_cache_error(
-                    error_code,
-                    "The Registry target changed before its bounded handle was opened.",
-                )
-                .with_detail("path", path.display().to_string()));
-            }
-            return Err(io_error("open Registry target", path, error));
-        }
-    };
-    let opened_metadata = input
-        .metadata()
-        .await
-        .map_err(|error| io_error("inspect opened Registry target", path, error))?;
-    validate_regular_metadata(
-        path,
-        &opened_metadata,
-        expected_length,
-        error_code,
-        "The opened Registry target changed before verification.",
-    )?;
-
-    Ok(input)
-}
-
 async fn verify_open_file(
     input: &mut fs::File,
-    mut output: Option<&mut fs::File>,
     path: &Path,
     expected_length: u64,
     expected_sha256: &str,
@@ -274,12 +197,6 @@ async fn verify_open_file(
             ));
         }
         digest.update(&buffer[..read]);
-        if let Some(destination) = output.as_deref_mut() {
-            destination
-                .write_all(&buffer[..read])
-                .await
-                .map_err(|error| io_error("write verified Registry target", path, error))?;
-        }
     }
     let actual_sha256 = format!("{:x}", digest.finalize());
     if length != expected_length || actual_sha256 != expected_sha256 {
@@ -293,22 +210,6 @@ async fn verify_open_file(
         .with_detail("actualSha256", actual_sha256));
     }
     Ok(())
-}
-
-fn verified_file_open_options() -> fs::OpenOptions {
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    options.custom_flags(libc::O_NOFOLLOW);
-    #[cfg(windows)]
-    {
-        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-        const FILE_SHARE_READ: u32 = 0x0000_0001;
-        options
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-            .share_mode(FILE_SHARE_READ);
-    }
-    options
 }
 
 fn validated_evidence(expected_length: u64, expected_sha256: &str) -> UseResult<String> {
@@ -353,14 +254,6 @@ async fn ensure_datastore_directory(datastore: &Path) -> UseResult<()> {
         .await
         .map_err(|error| io_error("create Registry datastore", datastore, error))?;
     inspect_real_directory(datastore, "Registry datastore").await
-}
-
-async fn existing_cache_directory(datastore: &Path) -> UseResult<PathBuf> {
-    let targets = datastore.join(VERIFIED_TARGETS_DIRECTORY);
-    inspect_real_directory(&targets, "verified target cache").await?;
-    let sha256 = targets.join(SHA256_DIRECTORY);
-    inspect_real_directory(&sha256, "SHA-256 target cache").await?;
-    Ok(sha256)
 }
 
 async fn ensure_real_directory(path: &Path, label: &str) -> UseResult<()> {

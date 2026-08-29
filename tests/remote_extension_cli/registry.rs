@@ -302,6 +302,7 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
         &repository.root_sha256,
         None,
         temp.path().join("review-state"),
+        use_paths(temp.path()).artifact_store(),
     )
     .unwrap();
     let reviewed = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
