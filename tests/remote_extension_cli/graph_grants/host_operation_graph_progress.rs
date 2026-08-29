@@ -440,7 +440,10 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
     let uninstalling_host = host.clone();
     let uninstalling = tokio::spawn(async move { uninstalling_host.apply(uninstall_apply).await });
     let mut uninstall_lifecycles_completed = false;
-    for _ in 0..500 {
+    // The two lifecycle workers can take several seconds to start on a cold
+    // Windows runner. Keep this bounded like the replacement lifecycle wait
+    // above, while leaving enough scheduling headroom to observe both journals.
+    for _ in 0..3_000 {
         uninstall_lifecycles_completed = lifecycle_paths.iter().all(|path| {
             std::fs::read(path)
                 .ok()
