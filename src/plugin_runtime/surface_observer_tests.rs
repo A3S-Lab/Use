@@ -39,7 +39,7 @@ impl RuntimeProviderFactory for StaticRuntimeFactory {
 #[tokio::test]
 async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let mut providers = RuntimeClientRegistry::new();
     install_task_binding(&store, &mut providers).await;
     let service_runtime = install_tool_service_binding(&store, &mut providers).await;
@@ -185,7 +185,7 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
 #[tokio::test]
 async fn unbound_surfaces_remain_pending_without_a_default_provider() {
     let temporary = TempDir::new().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), workspace_scope()).unwrap();
     let providers = RuntimeClientRegistry::new();
     let manifest = ExtensionManifest::parse_acl(include_str!(
         "../../crates/extension/fixtures/manifests/plugin-v3.acl"

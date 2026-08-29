@@ -399,7 +399,18 @@ fn coordinator_at(state: &Path, host: Arc<RecordingHosts>) -> PluginLifecycleCoo
         host.clone(),
         host,
     );
-    PluginLifecycleCoordinator::new(PluginLifecycleJournalStore::new(state), hosts)
+    PluginLifecycleCoordinator::new(
+        PluginLifecycleJournalStore::new(
+            state,
+            a3s_use_core::InstallationId::new(
+                a3s_use_core::InstallationKind::Workspace,
+                "research",
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+        hosts,
+    )
 }
 
 fn clock() -> impl Fn() -> u64 {

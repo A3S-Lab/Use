@@ -240,13 +240,13 @@ async fn failed_upgrade_preparation_rolls_back_ambiguous_surfaces_and_blocks_pla
     let host = Arc::new(RecordingHost::default());
     *host.fail_once.lock().await = Some("acme/root:skill-prepare".to_string());
     let candidate = PluginPackageLifecycleUnit::new(
-        coordinator(temp.path(), host.clone()),
+        coordinator(temp.path(), candidate_intent.scope.clone(), host.clone()),
         candidate_intent,
         next_manifest,
     )
     .unwrap();
     let retirement = PluginPackageLifecycleUnit::new(
-        coordinator(temp.path(), host.clone()),
+        coordinator(temp.path(), retirement_intent.scope.clone(), host.clone()),
         retirement_intent,
         prior_manifest,
     )

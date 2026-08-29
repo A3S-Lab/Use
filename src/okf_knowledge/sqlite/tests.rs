@@ -20,7 +20,7 @@ const MANIFEST_DIGEST: &str =
 #[tokio::test]
 async fn stages_promotes_and_queries_cited_concepts_after_restart() {
     let temporary = TempDir::new().unwrap();
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let adapter = Arc::new(sqlite_adapter(temporary.path()));
     let client = OkfKnowledgeClient::new(adapter);
     let files = knowledge_files("1200 requests per second", "45 milliseconds");
     let spec = stage_spec(1, scope(PlanScopeKind::Workspace), "acme/research", &files);
@@ -57,8 +57,7 @@ async fn stages_promotes_and_queries_cited_concepts_after_restart() {
     assert_eq!(read.content.as_bytes(), files[0].content.as_slice());
     assert_eq!(read.byte_count, files[0].content.len());
 
-    let restarted =
-        OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path())));
+    let restarted = OkfKnowledgeClient::new(Arc::new(sqlite_adapter(temporary.path())));
     assert_eq!(restarted.search(&request).await.unwrap(), first);
     assert_eq!(
         restarted
@@ -74,7 +73,7 @@ async fn stages_promotes_and_queries_cited_concepts_after_restart() {
 async fn cited_read_enforces_bounds_and_rejects_database_tampering() {
     let temporary = TempDir::new().unwrap();
     let workspace_scope = scope(PlanScopeKind::Workspace);
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let adapter = Arc::new(sqlite_adapter(temporary.path()));
     let client = OkfKnowledgeClient::new(adapter.clone());
     let files = knowledge_files("bounded source throughput", "bounded source latency");
     let promoted = stage_and_promote(
@@ -176,10 +175,17 @@ async fn cited_read_enforces_bounds_and_rejects_database_tampering() {
 }
 
 #[tokio::test]
-async fn identical_scope_ids_are_isolated_by_scope_kind() {
+async fn installation_bound_adapter_rejects_another_scope_kind() {
     let temporary = TempDir::new().unwrap();
-    let client =
-        OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path())));
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let paths = a3s_use_extension::ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        workspace_scope,
+    )
+    .unwrap();
+    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths(&paths));
+    let client = OkfKnowledgeClient::new(adapter.clone());
     let workspace_files = knowledge_files("workspaceexclusive throughput", "workspace latency");
     let user_files = knowledge_files("user-only throughput", "user latency");
     let workspace = stage_and_promote(
@@ -193,12 +199,17 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
         workspace_files,
     )
     .await;
-    let user = stage_and_promote(
-        &client,
-        stage_spec(1, scope(PlanScopeKind::User), "acme/research", &user_files),
-        user_files,
-    )
-    .await;
+    let user_spec = stage_spec(1, scope(PlanScopeKind::User), "acme/research", &user_files);
+    let error = client
+        .stage(OkfKnowledgeStageRequest::new(user_spec, user_files).unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
+    let error = adapter
+        .usage(&scope(PlanScopeKind::User))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
 
     let workspace_result = client
         .search(
@@ -213,35 +224,16 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
         .await
         .unwrap();
     assert!(!workspace_result.hits.is_empty());
-    let user_result = client
-        .search(
-            &OkfKnowledgeSearchRequest::new(
-                user.receipt.scope.clone(),
-                "workspaceexclusive",
-                5,
-                vec![projection(&user)],
-            )
-            .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert!(user_result.hits.is_empty());
-
-    let error = OkfKnowledgeSearchRequest::new(
-        user.receipt.scope.clone(),
-        "throughput",
-        5,
-        vec![projection(&workspace)],
-    )
-    .unwrap_err();
-    assert_eq!(error.code, "use.okf.knowledge_search_request_invalid");
+    let error = adapter
+        .scope_directory(&scope(PlanScopeKind::User))
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
 }
 
 #[tokio::test]
 async fn promotion_keeps_draining_projections_queryable_until_receipt_owned_removal() {
     let temporary = TempDir::new().unwrap();
-    let client =
-        OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path())));
+    let client = OkfKnowledgeClient::new(Arc::new(sqlite_adapter(temporary.path())));
     let first_files = knowledge_files("first generation throughput", "first latency");
     let first = stage_and_promote(
         &client,
@@ -351,8 +343,7 @@ async fn promotion_keeps_draining_projections_queryable_until_receipt_owned_remo
 #[tokio::test]
 async fn candidate_removal_restores_last_good_queryability() {
     let temporary = TempDir::new().unwrap();
-    let client =
-        OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path())));
+    let client = OkfKnowledgeClient::new(Arc::new(sqlite_adapter(temporary.path())));
     let first_files = knowledge_files("last-good throughput", "last-good latency");
     let first = stage_and_promote(
         &client,
@@ -398,8 +389,7 @@ async fn candidate_removal_restores_last_good_queryability() {
 #[tokio::test]
 async fn stage_replay_is_idempotent_and_conflicting_operation_fails_closed() {
     let temporary = TempDir::new().unwrap();
-    let client =
-        OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path())));
+    let client = OkfKnowledgeClient::new(Arc::new(sqlite_adapter(temporary.path())));
     let files = knowledge_files("stable throughput", "stable latency");
     let spec = stage_spec(1, scope(PlanScopeKind::Workspace), "acme/research", &files);
     let request = || OkfKnowledgeStageRequest::new(spec.clone(), files.clone()).unwrap();
@@ -433,10 +423,7 @@ async fn scope_quota_is_atomic_reusable_after_removal_and_survives_restart() {
         4,
     )
     .unwrap();
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::with_policy(
-        temporary.path(),
-        policy,
-    ));
+    let adapter = Arc::new(sqlite_adapter_with_policy(temporary.path(), policy));
     let client = OkfKnowledgeClient::new(adapter.clone());
     let first = stage_and_promote(&client, first_spec, first_files).await;
 
@@ -478,10 +465,7 @@ async fn scope_quota_is_atomic_reusable_after_removal_and_survives_restart() {
 
     drop(client);
     drop(adapter);
-    let restarted_adapter = Arc::new(SqliteOkfKnowledgeAdapter::with_policy(
-        temporary.path(),
-        policy,
-    ));
+    let restarted_adapter = Arc::new(sqlite_adapter_with_policy(temporary.path(), policy));
     let restarted = OkfKnowledgeClient::new(restarted_adapter.clone());
     stage_and_promote(&restarted, second_spec, second_files).await;
     let after_restart = restarted_adapter.usage(&workspace_scope).await.unwrap();
@@ -493,22 +477,34 @@ async fn scope_quota_is_atomic_reusable_after_removal_and_survives_restart() {
 async fn scope_projection_limit_and_scope_kind_are_independent() {
     let temporary = TempDir::new().unwrap();
     let policy = OkfKnowledgeStoragePolicy::new(1024 * 1024, 1, 1, 4).unwrap();
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::with_policy(
-        temporary.path(),
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let user_scope = scope(PlanScopeKind::User);
+    let roots = a3s_use_extension::UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let workspace_paths = roots.for_installation(workspace_scope.clone()).unwrap();
+    let user_paths = roots.for_installation(user_scope.clone()).unwrap();
+    let workspace_adapter = Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths_with_policy(
+        &workspace_paths,
         policy,
     ));
-    let client = OkfKnowledgeClient::new(adapter.clone());
-    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let user_adapter = Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths_with_policy(
+        &user_paths,
+        policy,
+    ));
+    let workspace_client = OkfKnowledgeClient::new(workspace_adapter.clone());
+    let user_client = OkfKnowledgeClient::new(user_adapter.clone());
     let first_files = knowledge_files("workspace quota", "workspace latency");
     stage_and_promote(
-        &client,
+        &workspace_client,
         stage_spec(1, workspace_scope.clone(), "acme/first", &first_files),
         first_files,
     )
     .await;
 
     let second_files = knowledge_files("workspace overflow", "overflow latency");
-    let error = client
+    let error = workspace_client
         .stage(
             OkfKnowledgeStageRequest::new(
                 stage_spec(1, workspace_scope.clone(), "acme/second", &second_files),
@@ -523,16 +519,15 @@ async fn scope_projection_limit_and_scope_kind_are_independent() {
         "use.okf.knowledge_scope_projection_limit_exceeded"
     );
 
-    let user_scope = scope(PlanScopeKind::User);
     let user_files = knowledge_files("user quota", "user latency");
     stage_and_promote(
-        &client,
+        &user_client,
         stage_spec(1, user_scope.clone(), "acme/second", &user_files),
         user_files,
     )
     .await;
     assert_eq!(
-        adapter
+        workspace_adapter
             .usage(&workspace_scope)
             .await
             .unwrap()
@@ -540,7 +535,7 @@ async fn scope_projection_limit_and_scope_kind_are_independent() {
         1
     );
     assert_eq!(
-        adapter
+        user_adapter
             .usage(&user_scope)
             .await
             .unwrap()
@@ -553,10 +548,7 @@ async fn scope_projection_limit_and_scope_kind_are_independent() {
 async fn removal_bounds_scope_tombstones_and_reclaims_sqlite_pages() {
     let temporary = TempDir::new().unwrap();
     let policy = OkfKnowledgeStoragePolicy::new(1024 * 1024, 4, 1, 2).unwrap();
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::with_policy(
-        temporary.path(),
-        policy,
-    ));
+    let adapter = Arc::new(sqlite_adapter_with_policy(temporary.path(), policy));
     let client = OkfKnowledgeClient::new(adapter.clone());
     let workspace_scope = scope(PlanScopeKind::Workspace);
     let mut receipts = Vec::new();
@@ -587,7 +579,7 @@ async fn removal_bounds_scope_tombstones_and_reclaims_sqlite_pages() {
 async fn storage_accounting_rejects_receipt_row_identity_tampering() {
     let temporary = TempDir::new().unwrap();
     let workspace_scope = scope(PlanScopeKind::Workspace);
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let adapter = Arc::new(sqlite_adapter(temporary.path()));
     let client = OkfKnowledgeClient::new(adapter.clone());
     let files = knowledge_files("tamper-resistant quota", "tamper-resistant latency");
     let staged = client
@@ -638,7 +630,7 @@ async fn storage_accounting_rejects_receipt_row_identity_tampering() {
 async fn audit_and_repair_rebuild_only_the_derived_search_index() {
     let temporary = TempDir::new().unwrap();
     let workspace_scope = scope(PlanScopeKind::Workspace);
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let adapter = Arc::new(sqlite_adapter(temporary.path()));
     let client = OkfKnowledgeClient::new(adapter.clone());
     let files = knowledge_files("auditable throughput", "auditable latency");
     let promoted = stage_and_promote(
@@ -701,7 +693,7 @@ async fn audit_and_repair_rebuild_only_the_derived_search_index() {
 async fn backup_is_scope_bound_verified_and_never_overwrites() {
     let temporary = TempDir::new().unwrap();
     let workspace_scope = scope(PlanScopeKind::Workspace);
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let adapter = Arc::new(sqlite_adapter(temporary.path()));
     let client = OkfKnowledgeClient::new(adapter.clone());
     let files = knowledge_files("backed-up throughput", "backed-up latency");
     stage_and_promote(
@@ -806,7 +798,7 @@ fn storage_policy_rejects_unbounded_or_inconsistent_limits() {
 async fn backend_rejects_linked_database_roots() {
     let temporary = TempDir::new().unwrap();
     let outside = TempDir::new().unwrap();
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let adapter = Arc::new(sqlite_adapter(temporary.path()));
     std::fs::create_dir_all(adapter.root().parent().unwrap()).unwrap();
     crate::test_filesystem::create_directory_link(outside.path(), adapter.root());
     let client = OkfKnowledgeClient::new(adapter);
@@ -923,4 +915,15 @@ pub(super) fn scope(kind: PlanScopeKind) -> PlanScope {
         kind,
         id: "shared-scope".to_owned(),
     }
+}
+
+fn sqlite_adapter(root: &std::path::Path) -> SqliteOkfKnowledgeAdapter {
+    SqliteOkfKnowledgeAdapter::new(root, scope(PlanScopeKind::Workspace)).unwrap()
+}
+
+fn sqlite_adapter_with_policy(
+    root: &std::path::Path,
+    policy: OkfKnowledgeStoragePolicy,
+) -> SqliteOkfKnowledgeAdapter {
+    SqliteOkfKnowledgeAdapter::with_policy(root, scope(PlanScopeKind::Workspace), policy).unwrap()
 }

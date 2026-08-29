@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use a3s_use_core::{PlanScope, PluginPackageId, UseError, UseResult};
+use a3s_use_core::{InstallationId, PlanScope, PluginPackageId, UseError, UseResult};
 use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
 use fs2::FileExt;
 use tokio::fs;
@@ -17,29 +17,45 @@ use super::{PluginLifecycleDiagnostic, PluginLifecycleOperationRecord};
 const MAX_OPERATION_BYTES: u64 = 1024 * 1024;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-/// Durable, cross-process journal for one package-level lifecycle saga.
+/// Durable, cross-process journal for package-level lifecycle sagas in one
+/// exact installation.
 ///
 /// Records contain no Secret values, provider credentials, endpoint tokens,
 /// or package-authored error text. A retry of the same operation resumes the
 /// exact next checkpoint; a different operation for the same scope/package is
-/// rejected until the current operation reaches a terminal record.
+/// rejected until the current operation reaches a terminal record. A request
+/// for another installation is rejected before any path or lock is created.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginLifecycleJournalStore {
+    installation: InstallationId,
     state_root: PathBuf,
     root: PathBuf,
 }
 
 impl PluginLifecycleJournalStore {
-    pub fn new(state_root: impl Into<PathBuf>) -> Self {
-        let state_root = state_root.into();
+    /// Construct a store over an already installation-scoped state root.
+    pub fn new(state_root: impl Into<PathBuf>, installation: InstallationId) -> UseResult<Self> {
+        installation.validate()?;
+        Ok(Self::from_parts(state_root.into(), installation))
+    }
+
+    fn from_parts(state_root: PathBuf, installation: InstallationId) -> Self {
         Self {
+            installation,
             root: state_root.join("operations").join("plugins"),
             state_root,
         }
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.installation_state_root())
+        Self::from_parts(
+            paths.installation_state_root(),
+            paths.installation().clone(),
+        )
+    }
+
+    pub fn installation(&self) -> &InstallationId {
+        &self.installation
     }
 
     pub fn root(&self) -> &Path {
@@ -241,6 +257,7 @@ impl PluginLifecycleJournalStore {
     }
 
     fn package_directory(&self, scope: &PlanScope, package_id: &str) -> UseResult<PathBuf> {
+        self.installation.ensure_same(scope)?;
         if scope.validate().is_err() {
             return Err(path_identity_error());
         }

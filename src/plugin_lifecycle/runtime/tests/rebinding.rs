@@ -15,7 +15,7 @@ async fn confirmed_provider_loss_rebinds_gateway_without_removing_runtime_genera
     let (selection, registry) = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
     let readiness = Arc::new(RecordingReadiness::default());
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         selection,
@@ -86,7 +86,7 @@ async fn same_generation_provider_restart_rebinds_gateway_without_removing_runti
     let (selection, registry) = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
     let readiness = Arc::new(RecordingReadiness::default());
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         selection,
@@ -141,7 +141,7 @@ async fn interrupted_route_detach_preserves_runtime_and_binding_for_exact_replay
     let (selection, registry) = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
     let readiness = Arc::new(RecordingReadiness::default());
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         selection,

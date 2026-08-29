@@ -12,7 +12,9 @@ use crate::okf_knowledge::OkfKnowledgeClient;
 async fn removes_oldest_only_after_exact_plan_confirmation() {
     let temporary = TempDir::new().unwrap();
     let workspace_scope = scope(PlanScopeKind::Workspace);
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let adapter = Arc::new(
+        SqliteOkfKnowledgeAdapter::new(temporary.path(), workspace_scope.clone()).unwrap(),
+    );
     let client = OkfKnowledgeClient::new(adapter.clone());
     let files = knowledge_files("retained throughput", "retained latency");
     stage_and_promote(
@@ -141,7 +143,9 @@ async fn is_scope_isolated_and_fails_closed_on_invalid_candidates() {
     let temporary = TempDir::new().unwrap();
     let workspace_scope = scope(PlanScopeKind::Workspace);
     let user_scope = scope(PlanScopeKind::User);
-    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let adapter = Arc::new(
+        SqliteOkfKnowledgeAdapter::new(temporary.path(), workspace_scope.clone()).unwrap(),
+    );
     let client = OkfKnowledgeClient::new(adapter.clone());
     let files = knowledge_files("isolated throughput", "isolated latency");
     stage_and_promote(

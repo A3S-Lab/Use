@@ -9,7 +9,8 @@ use super::*;
 #[tokio::test]
 async fn store_round_trips_idempotently_and_promotes_one_generation() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     let receipt = receipt(1);
     let staged = binding(&receipt, OkfKnowledgeObservedState::Staged, None, 1_001);
     assert!(store.put(&staged).await.unwrap());
@@ -39,9 +40,16 @@ async fn store_round_trips_idempotently_and_promotes_one_generation() {
 }
 
 #[tokio::test]
-async fn identical_scope_ids_are_isolated_by_scope_kind() {
+async fn installation_bound_store_rejects_another_scope_kind() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let paths = a3s_use_extension::ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        workspace_scope.clone(),
+    )
+    .unwrap();
+    let store = OkfKnowledgeBindingStore::from_extension_paths(&paths);
     let workspace_receipt = receipt(1);
     let workspace = binding(
         &workspace_receipt,
@@ -59,11 +67,9 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
     );
 
     assert!(store.put(&workspace).await.unwrap());
-    assert!(store.put(&user).await.unwrap());
-    assert_ne!(
-        binding_path(&store, &workspace.receipt.scope, 1),
-        binding_path(&store, &user.receipt.scope, 1)
-    );
+    let error = store.put(&user).await.unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
+    assert!(!binding_path(&store, &user.receipt.scope, 1).exists());
     assert_eq!(
         store
             .get(&workspace.receipt.scope, &surface(), 1)
@@ -71,16 +77,18 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
             .unwrap(),
         Some(workspace)
     );
-    assert_eq!(
-        store.get(&user.receipt.scope, &surface(), 1).await.unwrap(),
-        Some(user)
-    );
+    let error = store
+        .get(&user.receipt.scope, &surface(), 1)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.identity_mismatch");
 }
 
 #[tokio::test]
 async fn failed_candidate_retains_last_good_and_next_promotion_switches_atomically() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     let first_receipt = receipt(1);
     let first = binding(
         &first_receipt,
@@ -125,7 +133,8 @@ async fn failed_candidate_retains_last_good_and_next_promotion_switches_atomical
 #[tokio::test]
 async fn removed_latest_generation_suppresses_fallback() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     let first_receipt = receipt(1);
     store
         .put(&binding(
@@ -157,7 +166,8 @@ async fn removed_latest_generation_suppresses_fallback() {
 #[tokio::test]
 async fn store_rejects_stale_and_conflicting_same_generation_writes() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     let first_receipt = receipt(1);
     let promoted = binding(
         &first_receipt,
@@ -225,7 +235,8 @@ async fn store_rejects_stale_and_conflicting_same_generation_writes() {
 #[tokio::test]
 async fn receipt_owned_cleanup_can_remove_an_older_superseded_generation() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     let first_receipt = receipt(1);
     store
         .put(&binding(
@@ -270,7 +281,8 @@ async fn receipt_owned_cleanup_can_remove_an_older_superseded_generation() {
 #[tokio::test]
 async fn next_stage_prunes_retired_tombstones_at_the_generation_bound() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     let first_receipt = receipt(1);
     store
         .put(&binding(
@@ -347,7 +359,8 @@ async fn next_stage_prunes_retired_tombstones_at_the_generation_bound() {
 #[tokio::test]
 async fn store_rejects_missing_selected_generation_and_tampered_json() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     let first_receipt = receipt(1);
     let second_receipt = receipt(2);
     let dangling = binding(
@@ -386,7 +399,8 @@ async fn store_rejects_missing_selected_generation_and_tampered_json() {
 #[tokio::test]
 async fn store_rejects_wrong_scope_and_surface_identity() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     let receipt = receipt(1);
     store
         .put(&binding(
@@ -411,7 +425,7 @@ async fn store_rejects_wrong_scope_and_surface_identity() {
             .await
             .unwrap_err()
             .code,
-        "use.okf.knowledge_binding_path_invalid"
+        "use.installation.identity_mismatch"
     );
     let mut wrong_kind = surface();
     wrong_kind.surface.kind = a3s_use_core::PluginSurfaceKind::Skill;
@@ -426,9 +440,10 @@ async fn store_rejects_wrong_scope_and_surface_identity() {
 }
 
 #[tokio::test]
-async fn store_detects_a_valid_record_moved_to_another_scope_path() {
+async fn store_detects_a_valid_record_with_another_installation_identity() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     let first_receipt = receipt(1);
     store
         .put(&binding(
@@ -442,18 +457,15 @@ async fn store_detects_a_valid_record_moved_to_another_scope_path() {
 
     let mut other_receipt = receipt(1);
     other_receipt.scope.id = "other-scope".to_owned();
-    store
-        .put(&binding(
-            &other_receipt,
-            OkfKnowledgeObservedState::Staged,
-            None,
-            1_001,
-        ))
-        .await
-        .unwrap();
-    fs::copy(
-        binding_path(&store, &other_receipt.scope, 1),
+    let other = binding(
+        &other_receipt,
+        OkfKnowledgeObservedState::Staged,
+        None,
+        1_001,
+    );
+    fs::write(
         binding_path(&store, &scope(PlanScopeKind::Workspace), 1),
+        serde_json::to_vec_pretty(&other).unwrap(),
     )
     .unwrap();
 
@@ -472,7 +484,8 @@ async fn store_detects_a_valid_record_moved_to_another_scope_path() {
 async fn store_rejects_linked_owned_directories() {
     let temporary = TempDir::new().unwrap();
     let outside = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     fs::create_dir_all(store.root().parent().unwrap()).unwrap();
     crate::test_filesystem::create_directory_link(outside.path(), store.root());
 
@@ -492,7 +505,8 @@ async fn store_rejects_linked_owned_directories() {
 #[tokio::test]
 async fn store_fails_closed_at_the_generation_bound() {
     let temporary = TempDir::new().unwrap();
-    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let store =
+        OkfKnowledgeBindingStore::new(temporary.path(), scope(PlanScopeKind::Workspace)).unwrap();
     for generation in 1..=MAX_OKF_KNOWLEDGE_GENERATIONS as u64 {
         let receipt = receipt(generation);
         store

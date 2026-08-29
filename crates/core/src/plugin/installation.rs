@@ -56,6 +56,21 @@ impl InstallationId {
         Ok(())
     }
 
+    /// Require another identity to name this exact installation authority.
+    ///
+    /// Installation-owned stores use this check before deriving paths or
+    /// acquiring locks so a caller cannot introduce a second scope beneath an
+    /// already scoped installation root.
+    pub fn ensure_same(&self, candidate: &Self) -> UseResult<()> {
+        if self.validate().is_err() || candidate.validate().is_err() || self != candidate {
+            return Err(UseError::new(
+                "use.installation.identity_mismatch",
+                "The requested installation does not match the installation-owned resource.",
+            ));
+        }
+        Ok(())
+    }
+
     /// Stable lowercase path segment for this exact kind-and-ID pair.
     pub fn storage_key(&self) -> UseResult<String> {
         self.validate()?;
@@ -136,5 +151,16 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
 
         assert_send_sync::<InstallationId>();
+    }
+
+    #[test]
+    fn exact_installation_identity_is_required() {
+        let installation = InstallationId::new(InstallationKind::Workspace, "shared").unwrap();
+        installation.ensure_same(&installation).unwrap();
+
+        let error = installation
+            .ensure_same(&InstallationId::new(InstallationKind::User, "shared").unwrap())
+            .unwrap_err();
+        assert_eq!(error.code, "use.installation.identity_mismatch");
     }
 }

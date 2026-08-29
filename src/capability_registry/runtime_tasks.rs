@@ -268,7 +268,7 @@ extension "acme/research" {
     async fn exact_binding_projects_one_stable_runtime_task() {
         let temporary = tempfile::tempdir().unwrap();
         let extension = installed_extension(temporary.path());
-        let store = RuntimeBindingStore::new(temporary.path().join("state"));
+        let store = RuntimeBindingStore::new(temporary.path().join("state"), scope()).unwrap();
         let scope = scope();
         let package_digest = format!("sha256:{}", "a".repeat(64));
         let binding = task_binding(&extension, scope.clone(), &package_digest, 7);
@@ -330,7 +330,7 @@ extension "acme/research" {
     async fn mismatched_package_binding_fails_closed_without_projection() {
         let temporary = tempfile::tempdir().unwrap();
         let extension = installed_extension(temporary.path());
-        let store = RuntimeBindingStore::new(temporary.path().join("state"));
+        let store = RuntimeBindingStore::new(temporary.path().join("state"), scope()).unwrap();
         let scope = scope();
         let binding = task_binding(
             &extension,

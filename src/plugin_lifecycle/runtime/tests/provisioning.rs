@@ -14,7 +14,7 @@ async fn gateway_bind_failure_replays_durable_provisioning_without_a_second_runt
     let unused_mcp = Arc::new(FakeRuntime::new(capabilities(&plan, "mcp-runtime")));
     let (selection, registry) = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let readiness = Arc::new(RecordingReadiness {
         fail_tool_binds: AtomicUsize::new(1),
         ..RecordingReadiness::default()
@@ -91,7 +91,7 @@ async fn mcp_initialize_bind_failure_replays_the_exact_pending_generation() {
     let runtime = Arc::new(FakeRuntime::new(capabilities(&plan, "mcp-runtime")));
     let (selection, registry) = selection(vec![plan.clone()], unused_tool, runtime.clone()).await;
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let readiness = Arc::new(RecordingReadiness {
         fail_mcp_binds: AtomicUsize::new(1),
         ..RecordingReadiness::default()
@@ -156,7 +156,7 @@ async fn candidate_rollback_finishes_and_removes_an_interrupted_service_provisio
     let unused_mcp = Arc::new(FakeRuntime::new(capabilities(&plan, "mcp-runtime")));
     let (selection, registry) = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     let readiness = Arc::new(RecordingReadiness {
         fail_tool_binds: AtomicUsize::new(1),
         ..RecordingReadiness::default()
@@ -221,7 +221,7 @@ async fn candidate_rollback_drops_a_pre_apply_marker_without_starting_a_service(
     )
     .unwrap();
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     store.put_provisioning(&pending).await.unwrap();
     let readiness = Arc::new(RecordingReadiness::default());
     let host = RuntimePluginSurfaceLifecycleHost::new(
@@ -294,7 +294,7 @@ async fn restart_reconciles_a_synced_binding_left_with_its_provisioning_receipt(
         .unwrap();
     let binding = RuntimeBindingReceipt::Service(pending.binding_receipt().unwrap());
     let temporary = tempfile::tempdir().unwrap();
-    let store = RuntimeBindingStore::new(temporary.path());
+    let store = RuntimeBindingStore::new(temporary.path(), runtime_installation()).unwrap();
     store.put_provisioning(&pending).await.unwrap();
     store.put(&binding).await.unwrap();
     let readiness = Arc::new(RecordingReadiness::default());

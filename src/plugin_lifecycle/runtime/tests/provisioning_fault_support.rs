@@ -82,7 +82,7 @@ impl FaultFixture {
             package_root(),
             selection,
             registry,
-            RuntimeBindingStore::new(root.join("state")),
+            RuntimeBindingStore::new(root.join("state"), runtime_installation()).unwrap(),
             Arc::new(DurableReadiness::new(root.join("gateway"))),
         );
         Self {

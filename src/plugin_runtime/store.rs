@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use a3s_use_core::{PlanQualifiedSurfaceRef, PlanScope, PluginSurfaceKind, UseError, UseResult};
+use a3s_use_core::{
+    InstallationId, PlanQualifiedSurfaceRef, PlanScope, PluginSurfaceKind, UseError, UseResult,
+};
 use a3s_use_extension::ExtensionPaths;
 use fs2::FileExt;
 use tokio::fs;
@@ -19,23 +21,38 @@ const MAX_BINDING_DIRECTORY_ENTRIES: usize = 96;
 pub const MAX_RUNTIME_BINDING_GENERATIONS: usize = 32;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+/// Durable Runtime evidence owned by one exact installation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeBindingStore {
+    installation: InstallationId,
     state_root: PathBuf,
     root: PathBuf,
 }
 
 impl RuntimeBindingStore {
-    pub fn new(state_root: impl Into<PathBuf>) -> Self {
-        let state_root = state_root.into();
+    /// Construct a store over an already installation-scoped state root.
+    pub fn new(state_root: impl Into<PathBuf>, installation: InstallationId) -> UseResult<Self> {
+        installation.validate()?;
+        Ok(Self::from_parts(state_root.into(), installation))
+    }
+
+    fn from_parts(state_root: PathBuf, installation: InstallationId) -> Self {
         Self {
+            installation,
             root: state_root.join("bindings").join("runtime"),
             state_root,
         }
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.installation_state_root())
+        Self::from_parts(
+            paths.installation_state_root(),
+            paths.installation().clone(),
+        )
+    }
+
+    pub fn installation(&self) -> &InstallationId {
+        &self.installation
     }
 
     pub fn root(&self) -> &Path {
@@ -188,6 +205,7 @@ impl RuntimeBindingStore {
         scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
     ) -> UseResult<PathBuf> {
+        self.installation.ensure_same(scope)?;
         validate_path_identity(scope, surface)?;
         let scope_digest = scope.storage_key().map_err(|_| invalid_path_identity())?;
         let mut segments = surface.package_id.split('/');

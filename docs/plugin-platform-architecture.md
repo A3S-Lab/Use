@@ -516,6 +516,12 @@ against symlink/reparse-point traversal. Atomic replacement syncs the file and
 parent directory where supported. Windows state publication uses extended-length
 native paths where required. Tests must leave no temporary roots or locks.
 
+Runtime, Flow, OKF binding/SQLite, and lifecycle journal stores are constructed
+for one exact `InstallationId`. A scope carried by a receipt, request, or
+recovery record is checked against that installation before path derivation or
+any filesystem effect. The nested kind/key remains integrity evidence for the
+current preview layout; it is not a caller-selectable second storage domain.
+
 The pre-A1 unscoped package/state layout is rejected rather than ignored or
 migrated. Operators must preserve it for review, remove only independently
 proven legacy installation entries, and reinstall into an explicit identity.
