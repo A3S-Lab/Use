@@ -5,11 +5,15 @@ fn schema_v3_install_reclaims_abandoned_package_commit_staging() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
     let package = cognitive_skill_target(temp.path(), "acme/root", "root", Vec::new(), &target);
+    let package_digest = target_package_digest(&package);
     let repository = TestRepository::with_targets(vec![package], 83, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let package_parent = scoped_data(&home, "extensions/acme/root");
-    let abandoned = package_parent.join(".lifecycle-staging-interrupted");
+    let package_parent = expanded_package_artifact(&home, &package_digest)
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let abandoned = package_parent.join(".artifact-staging-interrupted");
     std::fs::create_dir_all(abandoned.join("nested")).unwrap();
     std::fs::write(abandoned.join("nested/partial"), b"partial package copy").unwrap();
 
@@ -23,7 +27,7 @@ fn schema_v3_install_reclaims_abandoned_package_commit_staging() {
             .unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with(".lifecycle-staging-")
+            .starts_with(".artifact-staging-")
     }));
 }
 

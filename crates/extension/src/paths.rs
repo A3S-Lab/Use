@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use a3s_use_core::{InstallationId, UseError, UseResult};
 
+use crate::ArtifactStore;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsePaths {
     data_root: PathBuf,
@@ -52,6 +54,10 @@ impl UsePaths {
 
     pub fn state_root(&self) -> &Path {
         &self.state_root
+    }
+
+    pub fn artifact_store(&self) -> ArtifactStore {
+        ArtifactStore::from_data_root(&self.data_root)
     }
 
     pub fn for_installation(&self, installation: InstallationId) -> UseResult<ExtensionPaths> {
@@ -109,6 +115,7 @@ impl ExtensionPaths {
         reject_unscoped_installation_state(&roots)?;
         let data_root = installation_root(roots.data_root(), &installation, &installation_key);
         let state_root = installation_root(roots.state_root(), &installation, &installation_key);
+        reject_legacy_installation_artifacts(&data_root)?;
         Ok(Self {
             roots,
             installation,
@@ -133,16 +140,12 @@ impl ExtensionPaths {
         &self.installation
     }
 
-    pub fn installation_data_root(&self) -> PathBuf {
-        self.data_root.clone()
+    pub fn artifact_store(&self) -> ArtifactStore {
+        self.roots.artifact_store()
     }
 
     pub fn installation_state_root(&self) -> PathBuf {
         self.state_root.clone()
-    }
-
-    pub(crate) fn extensions_root(&self) -> PathBuf {
-        self.installation_data_root().join("extensions")
     }
 
     pub(crate) fn receipts_root(&self) -> PathBuf {
@@ -151,20 +154,6 @@ impl ExtensionPaths {
 
     pub(crate) fn retained_lifecycle_receipts_root(&self) -> PathBuf {
         self.installation_state_root().join("extension-generations")
-    }
-
-    pub(crate) fn package_parent(&self, package_id: &str) -> PathBuf {
-        append_package_id(self.extensions_root(), package_id)
-    }
-
-    pub(crate) fn lifecycle_package_root(
-        &self,
-        package_id: &str,
-        generation: u64,
-        package_sha256: &str,
-    ) -> PathBuf {
-        self.package_parent(package_id)
-            .join(format!("lifecycle-{generation}-{package_sha256}"))
     }
 
     pub(crate) fn receipt_path(&self, package_id: &str) -> PathBuf {
@@ -201,6 +190,30 @@ impl ExtensionPaths {
             package_id,
         )
         .join(format!("{generation:020}.lock"))
+    }
+}
+
+fn reject_legacy_installation_artifacts(data_root: &Path) -> UseResult<()> {
+    let legacy = data_root.join("extensions");
+    match std::fs::symlink_metadata(&legacy) {
+        Ok(_) => Err(UseError::new(
+            "use.artifact_store.legacy_state_unsupported",
+            format!(
+                "Installation-scoped package bytes '{}' are unsupported.",
+                legacy.display()
+            ),
+        )
+        .with_suggestion(
+            "Preserve the old installation for incident review, remove it with an approved cleanup procedure, then reinstall into the global Artifact Store.",
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(UseError::new(
+            "use.artifact_store.state_inspection_failed",
+            format!(
+                "Installation-scoped package bytes '{}' cannot be inspected: {error}",
+                legacy.display()
+            ),
+        )),
     }
 }
 
@@ -341,12 +354,15 @@ mod tests {
         let data = PathBuf::from(format!("/data/use/installations/workspace/{key}"));
         let state = PathBuf::from(format!("/state/use/installations/workspace/{key}"));
         assert_eq!(paths.installation(), &installation);
-        assert_eq!(paths.installation_data_root(), data);
+        assert_eq!(paths.data_root(), data);
         assert_eq!(paths.installation_state_root(), state);
         assert_eq!(
-            paths.lifecycle_package_root("acme/slack", 7, &"a".repeat(64)),
-            data.join(format!(
-                "extensions/acme/slack/lifecycle-7-{}",
+            paths
+                .artifact_store()
+                .expanded_package_path(&format!("sha256:{}", "a".repeat(64)))
+                .unwrap(),
+            PathBuf::from(format!(
+                "/data/use/artifacts/expanded-packages/sha256/aa/{}/content",
                 "a".repeat(64)
             ))
         );
@@ -404,14 +420,12 @@ mod tests {
         )
         .unwrap();
 
-        assert_ne!(
-            user.installation_data_root(),
-            workspace.installation_data_root()
-        );
+        assert_ne!(user.data_root(), workspace.data_root());
         assert_ne!(
             user.installation_state_root(),
             workspace.installation_state_root()
         );
+        assert_eq!(user.artifact_store(), workspace.artifact_store());
     }
 
     #[test]
@@ -438,5 +452,24 @@ mod tests {
         std::fs::create_dir_all(roots.state_root().join("bindings/runtime")).unwrap();
         let error = roots.for_installation(installation).unwrap_err();
         assert_eq!(error.code, "use.installation.legacy_state_unsupported");
+    }
+
+    #[test]
+    fn installation_scoped_package_bytes_are_rejected_after_artifact_store_cutover() {
+        let temporary = tempfile::tempdir().unwrap();
+        let roots = UsePaths::new(
+            temporary.path().join("data"),
+            temporary.path().join("state"),
+        );
+        let installation = InstallationId::new(
+            a3s_use_core::InstallationKind::Workspace,
+            "workspace/legacy-bytes",
+        )
+        .unwrap();
+        let paths = roots.for_installation(installation.clone()).unwrap();
+        std::fs::create_dir_all(paths.data_root().join("extensions/acme/legacy")).unwrap();
+
+        let error = roots.for_installation(installation).unwrap_err();
+        assert_eq!(error.code, "use.artifact_store.legacy_state_unsupported");
     }
 }

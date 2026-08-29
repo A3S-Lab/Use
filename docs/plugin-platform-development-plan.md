@@ -279,10 +279,10 @@ Status: in progress
   and applying lifecycle journal but no receipt, installation snapshot, or
   route. Offline replay reclaims the actual bounded crash-staging tree,
   publishes one generation, and removes the pending operation.
-- A killed real-process uninstall during physical generation deletion retains
-  the exact pending graph and applying journal after route hiding and receipt
-  removal. Replay finishes the partial directory and cutover acknowledgement
-  without advancing the Registry generation again.
+- Uninstall retires the exact scoped graph, receipt, and route authority while
+  retaining global expanded-package bytes. Replay finishes cutover
+  acknowledgement without advancing the Registry generation again, even when
+  another process holds the shared artifact open for reading.
 - A killed real-process nine-node install retains one complete atomically
   published Registry graph and its pending cutover before a dependency journal
   and the installation snapshot complete. Explicit offline replay performs no
@@ -365,20 +365,19 @@ Status: in progress
   Invalid-partial cleanup and stale/partial/verified-target cache reclamation use
   the same bounded blocking delete; native tests prove transient convergence and
   persistent selected-target preservation followed by an exact rescan retry.
-  Lifecycle receipts, bounded abandoned staging, and drained
-  package-generation trees also use blocking deletion with the same Windows
-  retry. Native tests prove transient receipt and nested-file release lets
-  removal or commit continue, while persistent generation contention preserves
-  the residual tree for exact replay without another Registry generation.
-  Native tests additionally hold the active package-staging directory at its
-  generation rename: transient contention completes the same commit, while a
-  persistent lock fails before receipt or Registry-snapshot mutation, preserves
-  residual staging, and permits exact commit replay after release. Selected
-  upgrade-receipt replacement also has native scanner coverage: transient
-  contention completes the same upgrade, while a persistent lock removes the
-  candidate root and retained receipt, preserves the byte-exact prior receipt
-  and published generation, leaves no temporary receipt, and permits exact
-  replay after release.
+  Lifecycle receipts and bounded abandoned `.artifact-staging-*` trees also use
+  blocking deletion with the same Windows retry. Native tests prove transient
+  receipt and nested-file release lets authority retirement or commit continue,
+  while a persistent reader of a complete global artifact never delays
+  uninstall. Native tests additionally hold the active artifact-staging
+  directory at its content rename: transient contention completes the same
+  commit, while a persistent lock fails before receipt or Registry-snapshot
+  mutation, preserves residual staging, and permits exact commit replay after
+  release. Selected upgrade-receipt replacement also has native scanner
+  coverage: transient contention completes the same upgrade, while a persistent
+  lock retains the valid global candidate artifact, removes retained-receipt
+  candidate state, preserves the byte-exact prior published generation, leaves
+  no temporary receipt, and permits exact replay after release.
 - Expand filesystem coverage to externally raced targets, antivirus contention
   outside verified-target promotion, cache removal, active package commit,
   upgrade-receipt replacement, lifecycle removal, and the shared publication

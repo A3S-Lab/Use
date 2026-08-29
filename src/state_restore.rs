@@ -282,6 +282,7 @@ impl StateRestoreManager {
     /// requires independently retained live Registry and Grant authority.
     pub async fn plan_restore(&self, backup_path: impl AsRef<Path>) -> UseResult<StateRestorePlan> {
         validate_owned_roots(&self.paths)?;
+        let backup_path = resolve_external_path(backup_path.as_ref(), &self.paths)?;
         let backup = StateBackupManager::verify_backup(backup_path).await?;
         validate_backup_platform(&backup)?;
         require_backup_installation(&self.paths, &backup)?;
@@ -833,7 +834,10 @@ fn resolve_external_path(path: &Path, paths: &ExtensionPaths) -> UseResult<PathB
         ))
     })?;
     let resolved = parent.join(file_name);
-    for root in [paths.data_root(), paths.state_root()] {
+    for root in [
+        paths.use_paths().data_root(),
+        paths.use_paths().state_root(),
+    ] {
         let root = match std::fs::canonicalize(root) {
             Ok(root) => root,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

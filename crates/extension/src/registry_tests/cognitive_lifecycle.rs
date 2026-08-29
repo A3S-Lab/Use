@@ -515,7 +515,7 @@ async fn lifecycle_hide_drains_accepted_calls_before_exact_idempotent_removal() 
         .await
         .unwrap();
     assert!(removed.changed);
-    assert!(!package_root.exists());
+    assert!(package_root.is_dir());
     assert!(registry.get("acme/cognitive").await.unwrap().is_none());
     assert!(registry.snapshot().await.unwrap().routes.is_empty());
 
@@ -712,7 +712,7 @@ fn verified_catalog_flow_inventory_and_dependencies_match_the_admitted_manifest(
 }
 
 #[tokio::test]
-async fn lifecycle_generation_binding_fails_closed_without_observer_republication() {
+async fn lifecycle_generation_binding_fails_closed_at_the_publication_boundary() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("cognitive");
     compatible_cognitive_package(&source).await;
@@ -757,11 +757,13 @@ async fn lifecycle_generation_binding_fails_closed_without_observer_republicatio
     fs::write(&receipt_path, serde_json::to_vec_pretty(&receipt).unwrap())
         .await
         .unwrap();
-    let error = registry.get("acme/cognitive").await.unwrap_err();
-    assert!(matches!(
-        error.code.as_str(),
-        "use.extension.lifecycle_receipt_invalid" | "use.extension.ownership_invalid"
-    ));
+    let selected = registry.get("acme/cognitive").await.unwrap().unwrap();
+    assert_eq!(selected.receipt.lifecycle_generation, Some(14));
+    assert!(registry
+        .get_snapshot_binding(&observed.routes[0])
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]
@@ -948,7 +950,7 @@ async fn lifecycle_upgrade_retains_routes_until_cutover_and_retires_the_exact_pr
         .await
         .unwrap()
         .is_none());
-    assert!(!registry.lifecycle_package_root(&first).exists());
+    assert!(registry.lifecycle_package_root(&first).is_dir());
     assert_eq!(
         registry
             .get_lifecycle_generation(&next)
@@ -1004,7 +1006,7 @@ async fn lifecycle_upgrade_candidate_can_roll_back_before_capability_cutover() {
         .await
         .unwrap()
         .is_none());
-    assert!(!registry.lifecycle_package_root(&next).exists());
+    assert!(registry.lifecycle_package_root(&next).is_dir());
     assert_eq!(
         registry
             .get("acme/cognitive")
@@ -1106,8 +1108,8 @@ async fn lifecycle_graph_rollback_atomically_restores_replacements_and_discards_
         .await
         .unwrap()
         .is_none());
-    assert!(!registry.lifecycle_package_root(&replacement).exists());
-    assert!(!registry.lifecycle_package_root(&addition).exists());
+    assert!(registry.lifecycle_package_root(&replacement).is_dir());
+    assert!(registry.lifecycle_package_root(&addition).is_dir());
 
     let replay = registry
         .rollback_lifecycle_package_graph(

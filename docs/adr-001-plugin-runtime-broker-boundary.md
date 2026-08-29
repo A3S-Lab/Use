@@ -48,19 +48,21 @@ provider factory/client contract and passes conformance tests.
 
 ## Surface Placement
 
-The installed package store remains the single source of truth. Installation
-does not scatter authoritative package files into unrelated roots.
+The global content-addressed Artifact Store remains the single source of
+immutable package bytes. Installation authority stays in scoped receipts and
+control state; installation does not scatter authoritative package files into
+unrelated roots or own a private copy of identical content.
 
 | Surface | Canonical storage | Active projection or deployment |
 | --- | --- | --- |
-| Skill | Immutable plugin generation | Receipt-owned managed Skill projection for the authorized scope/session |
+| Skill | Immutable content-addressed package artifact | Receipt-owned managed Skill projection for the authorized scope/session |
 | Tool Task | Signed release/artifact reference plus immutable package metadata | Prepared Runtime Task launcher template; one exact Task per invocation |
 | Tool Service | Signed release/artifact reference plus immutable package metadata | Private Runtime Service plus scoped Gateway binding |
 | Streamable HTTP MCP | Signed release/artifact reference plus immutable package metadata | Runtime Service, health gate, then standard MCP initialize probe |
-| stdio MCP | Immutable package generation | Host-owned supervised stdio session with exact-generation leases |
-| OKF | Immutable OKF v0.2 content in the package generation | Knowledge-host staging, atomic promotion, cited search, drain, and owned removal |
+| stdio MCP | Immutable content-addressed package artifact | Host-owned supervised stdio session with exact-generation leases |
+| OKF | Immutable OKF v0.2 content in the package artifact | Knowledge-host staging, atomic promotion, cited search, drain, and owned removal |
 | A3S Flow | Content-bound Native TypeScript source and export | `a3s-flow` preflight plus exact compiled-binding evidence |
-| UI | Integrity-bound static assets in the immutable generation | Receipt-owned product-host projection with declared backend bindings |
+| UI | Integrity-bound static assets in the immutable artifact | Receipt-owned product-host projection with declared backend bindings |
 
 A managed projection may use a platform-appropriate link, mount, or copied
 cache, but its receipt must bind the source generation and every owned path.

@@ -200,9 +200,6 @@ impl ExtensionRegistry {
                     changed.insert(candidate.package_id(), true);
                 }
             }
-            if super::remove_exact_root(&self.lifecycle_package_root(candidate)).await? {
-                changed.insert(candidate.package_id(), true);
-            }
         }
 
         Ok(candidates
@@ -312,9 +309,6 @@ impl ExtensionRegistry {
             ));
         }
         if self.remove_retained_receipt(prior).await? {
-            changed = true;
-        }
-        if super::remove_exact_root(&self.lifecycle_package_root(candidate)).await? {
             changed = true;
         }
         Ok(ExtensionLifecycleResult {

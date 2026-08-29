@@ -358,12 +358,14 @@ pub(crate) async fn sync_parent_directory(_parent: &Path, _label: &str) -> UseRe
 
 pub(crate) fn owned_package_path(
     paths: &ExtensionPaths,
-    package_id: &str,
     candidate: &Path,
+    package_sha256: &str,
 ) -> bool {
     candidate.is_absolute()
-        && candidate.starts_with(paths.package_parent(package_id))
-        && candidate.parent() == Some(paths.package_parent(package_id).as_path())
+        && candidate
+            == paths
+                .artifact_store()
+                .expanded_package_path_from_sha256(package_sha256)
 }
 
 pub(crate) fn sha256(bytes: &[u8]) -> String {

@@ -2,7 +2,6 @@ use super::*;
 
 const EXTRACTION_PAYLOAD_FILES: usize = 512;
 const EXTRACTION_PAYLOAD_FILE_BYTES: usize = 8 * 1_024;
-const REMOVAL_PAYLOAD_FILES: usize = 2_048;
 
 #[test]
 fn killed_registry_archive_extraction_retries_offline_without_partial_publication() {
@@ -14,6 +13,8 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
         EXTRACTION_PAYLOAD_FILES,
         EXTRACTION_PAYLOAD_FILE_BYTES,
     );
+    let package_digest = target_package_digest(&package);
+    let artifact = expanded_package_artifact(&temp.path().join("home"), &package_digest);
     let repository = TestRepository::with_targets(vec![package], 89, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
@@ -70,7 +71,7 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
     assert!(!scoped_state(&home, "extensions/acme/root.json").exists());
     assert!(!scoped_state(&home, "installation-snapshot.json").exists());
     assert!(!scoped_state(&home, "operations/package-graphs/install/acme/root.json").exists());
-    assert!(!scoped_data(&home, "extensions/acme/root").exists());
+    assert!(!artifact.exists());
 
     server.clear_requests();
     let recovered =
@@ -81,7 +82,7 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
     assert!(verified.is_file());
     assert!(scoped_state(&home, "extensions/acme/root.json").is_file());
     assert!(scoped_state(&home, "installation-snapshot.json").is_file());
-    assert!(scoped_data(&home, "extensions/acme/root").is_dir());
+    assert!(artifact.is_dir());
 }
 
 #[test]
@@ -94,10 +95,14 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
         EXTRACTION_PAYLOAD_FILES,
         EXTRACTION_PAYLOAD_FILE_BYTES,
     );
+    let package_digest = target_package_digest(&package);
     let repository = TestRepository::with_targets(vec![package], 97, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let package_parent = scoped_data(&home, "extensions/acme/root");
+    let package_parent = expanded_package_artifact(&home, &package_digest)
+        .parent()
+        .unwrap()
+        .to_path_buf();
     let pending_path = scoped_state(&home, "operations/package-graphs/install/acme/root.json");
     let receipt_path = scoped_state(&home, "extensions/acme/root.json");
     let graph_path = scoped_state(&home, "installation-snapshot.json");
@@ -163,7 +168,7 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
             .unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with(".lifecycle-staging-")
+            .starts_with(".artifact-staging-")
     }));
     let lifecycle: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&lifecycle_path).unwrap()).unwrap();
@@ -183,10 +188,15 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
 }
 
 #[test]
-fn killed_package_removal_replays_partial_directory_without_generation_inflation() {
+fn uninstall_retires_scope_authority_without_deleting_global_artifact() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
-    let package = skill_target_with_payload(temp.path(), &target, REMOVAL_PAYLOAD_FILES, 1);
+    let package = skill_target_with_payload(
+        temp.path(),
+        &target,
+        EXTRACTION_PAYLOAD_FILES,
+        EXTRACTION_PAYLOAD_FILE_BYTES,
+    );
     let repository = TestRepository::with_targets(vec![package], 101, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
@@ -196,16 +206,12 @@ fn killed_package_removal_replays_partial_directory_without_generation_inflation
     let receipt_path = scoped_state(&home, "extensions/acme/root.json");
     let receipt: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&receipt_path).unwrap()).unwrap();
-    let generation = receipt["lifecycleGeneration"].as_u64().unwrap();
-    let package_sha256 = receipt["packageSha256"].as_str().unwrap();
     let package_root = std::path::PathBuf::from(receipt["packageRoot"].as_str().unwrap());
     let payload_root = package_root.join("payload");
     assert_eq!(
         std::fs::read_dir(&payload_root).unwrap().count(),
-        REMOVAL_PAYLOAD_FILES
+        EXTRACTION_PAYLOAD_FILES
     );
-    let retained_receipt = scoped_state(&home, "extension-generations/acme/root")
-        .join(format!("{generation:020}-{package_sha256}.json"));
     let pending_path = scoped_state(&home, "operations/package-graphs/uninstall/acme/root.json");
     let graph_path = scoped_state(&home, "installation-snapshot.json");
     let snapshot_path = scoped_state(&home, "registry.json");
@@ -221,55 +227,16 @@ fn killed_package_removal_replays_partial_directory_without_generation_inflation
             .as_u64()
             .unwrap();
 
-    let mut interrupted = Command::new(binary())
-        .args(["uninstall", "acme/root", "--json"])
-        .for_test_installation()
-        .env("A3S_USE_HOME", &home)
-        .spawn()
-        .unwrap();
-    let reached_removal = wait_for_partial_package_removal(&payload_root);
-    if !reached_removal {
-        let process_status = interrupted.try_wait().unwrap();
-        let remaining_files = directory_entry_count(&payload_root);
-        let pending = std::fs::read_to_string(&pending_path).ok();
-        let lifecycle = std::fs::read_to_string(&lifecycle_path).ok();
-        let snapshot = std::fs::read_to_string(&snapshot_path).ok();
-        let _ = interrupted.kill();
-        let _ = interrupted.wait();
-        panic!(
-            "uninstall did not pause during physical package removal: status={process_status:?}, remaining_files={remaining_files:?}, pending={pending:?}, lifecycle={lifecycle:?}, snapshot={snapshot:?}"
-        );
-    }
-
-    interrupted.kill().unwrap();
-    interrupted.wait().unwrap();
-    let remaining_files = directory_entry_count(&payload_root).unwrap();
-    assert!(remaining_files > 0 && remaining_files < REMOVAL_PAYLOAD_FILES);
-    assert!(pending_path.is_file());
-    assert!(graph_path.is_file());
-    assert!(!receipt_path.exists());
-    assert!(!retained_receipt.exists());
-    let lifecycle: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&lifecycle_path).unwrap()).unwrap();
-    assert_eq!(lifecycle["status"], "applying");
+    let removed = cognitive_uninstall(&home, "acme/root");
+    assert!(removed.status.success(), "{removed:?}");
+    assert!(package_root.is_dir());
     assert_eq!(
-        lifecycle["receipts"].as_array().unwrap().len() + 1,
-        lifecycle["intent"]["checkpoints"].as_array().unwrap().len()
+        std::fs::read_dir(&payload_root).unwrap().count(),
+        EXTRACTION_PAYLOAD_FILES
     );
-    let snapshot: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&snapshot_path).unwrap()).unwrap();
-    assert_eq!(snapshot["generation"], generation_before + 1);
-    assert!(snapshot["routes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|route| route["packageId"] != "acme/root"));
-    assert_eq!(snapshot["pendingCutovers"].as_array().unwrap().len(), 1);
-
-    let recovered = cognitive_uninstall(&home, "acme/root");
-    assert!(recovered.status.success(), "{recovered:?}");
-    assert!(!package_root.exists());
+    assert!(!receipt_path.exists());
     assert!(!pending_path.exists());
+
     let installation_snapshot: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&graph_path).unwrap()).unwrap();
     assert_eq!(
@@ -294,6 +261,7 @@ fn killed_package_removal_replays_partial_directory_without_generation_inflation
     let snapshot: serde_json::Value =
         serde_json::from_slice(&std::fs::read(snapshot_path).unwrap()).unwrap();
     assert_eq!(snapshot["generation"], generation_before + 1);
+    assert!(snapshot["routes"].as_array().unwrap().is_empty());
     assert!(snapshot["pendingCutovers"]
         .as_array()
         .is_none_or(Vec::is_empty));
@@ -359,7 +327,7 @@ fn lifecycle_staging_payload_count(package_parent: &std::path::Path) -> Option<u
         if !entry
             .file_name()
             .to_string_lossy()
-            .starts_with(".lifecycle-staging-")
+            .starts_with(".artifact-staging-")
         {
             continue;
         }
@@ -375,25 +343,6 @@ fn wait_for_partial_lifecycle_staging(package_parent: &std::path::Path) -> bool 
     while Instant::now() < deadline {
         if lifecycle_staging_payload_count(package_parent)
             .is_some_and(|count| count > 0 && count < EXTRACTION_PAYLOAD_FILES)
-        {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    false
-}
-
-fn directory_entry_count(directory: &std::path::Path) -> Option<usize> {
-    std::fs::read_dir(directory)
-        .ok()
-        .map(|entries| entries.filter_map(Result::ok).count())
-}
-
-fn wait_for_partial_package_removal(payload_root: &std::path::Path) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while Instant::now() < deadline {
-        if directory_entry_count(payload_root)
-            .is_some_and(|count| count > 0 && count < REMOVAL_PAYLOAD_FILES)
         {
             return true;
         }

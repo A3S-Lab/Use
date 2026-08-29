@@ -283,7 +283,10 @@ pub(super) fn resolve_directory(directory: &Path, paths: &ExtensionPaths) -> Use
         ))
     })?;
     validate_directory(&directory)?;
-    for owned_root in [paths.data_root(), paths.state_root()] {
+    for owned_root in [
+        paths.use_paths().data_root(),
+        paths.use_paths().state_root(),
+    ] {
         let owned_root = canonical_or_absolute(owned_root)?;
         if directory == owned_root
             || directory.starts_with(&owned_root)

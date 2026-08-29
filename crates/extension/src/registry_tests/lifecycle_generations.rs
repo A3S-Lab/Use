@@ -72,7 +72,7 @@ async fn lifecycle_candidate_source_drift_leaves_no_retained_state() {
     )
     .await
     .is_err());
-    assert!(!registry.lifecycle_package_root(&next).exists());
+    assert!(registry.lifecycle_package_root(&next).is_dir());
     assert_eq!(
         registry
             .get(first.package_id())

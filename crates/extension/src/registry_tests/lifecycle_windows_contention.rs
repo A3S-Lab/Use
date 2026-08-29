@@ -49,7 +49,7 @@ fn lifecycle_staging_paths(parent: &Path) -> Vec<PathBuf> {
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with(".lifecycle-staging-"))
+                .is_some_and(|name| name.starts_with(".artifact-staging-"))
         })
         .collect()
 }
@@ -251,7 +251,7 @@ async fn lifecycle_upgrade_bounds_a_persistent_receipt_lock_and_rolls_back_befor
     assert!(elapsed >= Duration::from_secs(2));
     assert!(elapsed < Duration::from_secs(10));
     assert_eq!(fs::read(&receipt_path).await.unwrap(), prior_receipt);
-    assert!(!registry.lifecycle_package_root(&next).exists());
+    assert!(registry.lifecycle_package_root(&next).is_dir());
     assert!(!retained_path.exists());
     assert!(temporary_receipt_paths(&receipt_path).is_empty());
     assert_eq!(registry.snapshot().await.unwrap(), snapshot_before_upgrade);
@@ -323,7 +323,7 @@ async fn lifecycle_removal_waits_for_a_transient_scanner_lock_on_the_receipt() {
     let removed = removal.await.unwrap();
     assert!(removed.changed);
     assert!(!receipt_path.exists());
-    assert!(!package_root.exists());
+    assert!(package_root.is_dir());
     let snapshot_after_removal = registry.snapshot().await.unwrap();
     assert_eq!(
         snapshot_after_removal.generation,
@@ -333,7 +333,7 @@ async fn lifecycle_removal_waits_for_a_transient_scanner_lock_on_the_receipt() {
 }
 
 #[tokio::test]
-async fn lifecycle_removal_bounds_a_persistent_scanner_lock_and_replays_the_residual_tree() {
+async fn lifecycle_removal_does_not_delete_or_wait_on_shared_artifact_bytes() {
     let temp = tempfile::tempdir().unwrap();
     let (registry, identity) = hidden_drained_package(temp.path(), 13).await;
     let package_root = registry.lifecycle_package_root(&identity);
@@ -341,38 +341,26 @@ async fn lifecycle_removal_bounds_a_persistent_scanner_lock_and_replays_the_resi
     let scanner = crate::test_filesystem::open_reading_scanner_without_delete_share(&locked_path);
     let snapshot_before_removal = registry.snapshot().await.unwrap();
 
-    let started = std::time::Instant::now();
-    let error = registry
-        .remove_lifecycle_package(&identity, Duration::from_secs(1))
-        .await
-        .expect_err("a persistent scanner lock must stop at the retry bound");
-    let elapsed = started.elapsed();
-
-    assert_eq!(error.code, "use.extension.io");
-    assert!(elapsed >= Duration::from_secs(2));
-    assert!(elapsed < Duration::from_secs(10));
-    assert!(package_root.is_dir());
-    assert!(locked_path.is_file());
-    assert!(registry.get(identity.package_id()).await.unwrap().is_none());
-    let snapshot_after_failure = registry.snapshot().await.unwrap();
-    assert_eq!(
-        snapshot_after_failure.generation,
-        snapshot_before_removal.generation + 1
-    );
-    assert!(snapshot_after_failure.routes.is_empty());
-
-    drop(scanner);
     let removed = registry
         .remove_lifecycle_package(&identity, Duration::from_secs(1))
         .await
         .unwrap();
     assert!(removed.changed);
-    assert!(!package_root.exists());
-    assert_eq!(registry.snapshot().await.unwrap(), snapshot_after_failure);
+    assert!(package_root.is_dir());
+    assert!(locked_path.is_file());
+    assert!(registry.get(identity.package_id()).await.unwrap().is_none());
+    let snapshot_after_removal = registry.snapshot().await.unwrap();
+    assert_eq!(
+        snapshot_after_removal.generation,
+        snapshot_before_removal.generation + 1
+    );
+    assert!(snapshot_after_removal.routes.is_empty());
 
+    drop(scanner);
     let replay = registry
         .remove_lifecycle_package(&identity, Duration::from_secs(1))
         .await
         .unwrap();
     assert!(!replay.changed);
+    assert_eq!(registry.snapshot().await.unwrap(), snapshot_after_removal);
 }

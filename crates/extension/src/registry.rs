@@ -806,7 +806,7 @@ impl ExtensionRegistry {
         }
         let package_id = normalize_package_id(&receipt.package_id)?;
         if receipt.component_id != format!("use/{package_id}")
-            || !owned_package_path(&self.paths, &package_id, &receipt.package_root)
+            || !owned_package_path(&self.paths, &receipt.package_root, expected_package_sha256)
         {
             return Err(UseError::new(
                 "use.extension.ownership_invalid",
@@ -816,6 +816,10 @@ impl ExtensionRegistry {
                 ),
             ));
         }
+        self.paths
+            .artifact_store()
+            .validate_expanded_package_path(expected_package_sha256, &receipt.package_root)
+            .await?;
         let (manifest, manifest_bytes) = read_manifest(&receipt.package_root).await?;
         if manifest.package_id != receipt.package_id
             || manifest.version != receipt.version
@@ -835,19 +839,6 @@ impl ExtensionRegistry {
             receipt.verified_catalog.as_ref(),
             &receipt.selected_surfaces,
         )?;
-        if receipt.package_root
-            != self
-                .paths
-                .lifecycle_package_root(&package_id, generation, expected_package_sha256)
-        {
-            return Err(UseError::new(
-                "use.extension.lifecycle_receipt_invalid",
-                format!(
-                    "Lifecycle receipt for '{}' does not bind its immutable generation.",
-                    package_id
-                ),
-            ));
-        }
         validate_surface_files(&manifest, &receipt.package_root).await?;
         let package_digest = package_sha256(&receipt.package_root).await?;
         if expected_package_sha256 != package_digest {

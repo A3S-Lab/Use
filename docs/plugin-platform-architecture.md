@@ -495,12 +495,20 @@ read into an unbounded mutation queue.
 
 Use separates global immutable/derivable inputs from installation authority.
 The global roots contain Registry source configuration, TUF metadata and
-verified targets, and content-addressed compiled artifacts. They cannot contain
-selection, activation, or authorization state.
+source-scoped verified targets, expanded packages in the global Artifact Store,
+and content-addressed compiled artifacts. They cannot contain selection,
+activation, or authorization state. Expanded content is stored at
+`data/artifacts/expanded-packages/sha256/<prefix>/<digest>/content`; one
+cross-process digest lock makes concurrent installations converge on the same
+complete tree. Registry-source cache metadata and provenance remain
+source-scoped. Raw verified target bytes still need a future global blob tier
+with one reachability, quota, and garbage-collection policy.
+Shared-content corruption currently fails closed; explicit quarantine and
+verified rehydration remain part of that global policy rather than an implicit
+overwrite performed by one installation.
 
 Each `InstallationId(kind, id)` owns separate roots for:
 
-- immutable package generations;
 - selected and retained receipts;
 - pre-plan archive/planning-target attempts, the installation snapshot, and
   pending package-graph operations;
@@ -517,17 +525,24 @@ against symlink/reparse-point traversal. Atomic replacement syncs the file and
 parent directory where supported. Windows state publication uses extended-length
 native paths where required. Tests must leave no temporary roots or locks.
 
+Uninstall, rollback, and failed publication retire only scoped authority. They
+never delete global package content. The coordinated installation backup also
+excludes global artifacts. Unreferenced expanded trees remain until a future
+collector can prove that no installation or durable operation can reach them;
+eager per-installation deletion is unsafe.
+
 Runtime, Flow, OKF binding/SQLite, and lifecycle journal stores are constructed
 for one exact `InstallationId`. A scope carried by a receipt, request, or
 recovery record is checked against that installation before path derivation or
 any filesystem effect. The nested kind/key remains integrity evidence for the
 current preview layout; it is not a caller-selectable second storage domain.
 
-The pre-A1 unscoped package/state layout is rejected rather than ignored or
-migrated. Operators must preserve it for review, remove only independently
-proven legacy installation entries, and reinstall into an explicit identity.
-Global Registry source configuration, trust/TUF caches, and artifact inputs are
-not legacy installation state and remain intact.
+The pre-A1 unscoped package/state layout and installation-scoped package-byte
+directories are rejected rather than ignored or migrated. Operators must
+preserve them for review, remove only independently proven legacy entries, and
+reinstall into an explicit identity backed by the global Artifact Store. Global
+Registry source configuration, trust/TUF caches, and current artifact inputs
+are not legacy installation state and remain intact.
 
 Unknown pre-release state is never migrated. The error instructs cleanup and
 reinstallation with the current build.

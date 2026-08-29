@@ -229,35 +229,37 @@ block planning until the owning operation recovers.
 
 ## Registry concurrency
 
-Lifecycle mutations remain serialized by the cross-process Registry lock.
-Before committing an immutable package generation, Use validates every
-directory from its configured data root to the package namespace without
-following links or reparse points. Under the same lock it removes only bounded,
-physical `.lifecycle-staging-*` trees left by an interrupted commit. A staging
-link, special file, unbounded inventory, or linked package parent fails closed.
-The real-process recovery test terminates while a high-entry package is being
-copied into that staging tree. Its exact pending plan and applying lifecycle
-journal remain durable, while the receipt, installation snapshot, and route
-remain absent. Explicit offline replay reclaims the physical partial tree,
-repeats the same package-commit checkpoint, publishes one Registry generation,
-completes the journal, and removes the pending operation without a network
-request.
-On Windows, active package-staging rename, lifecycle receipt deletion, and
-recursive removal of that bounded abandoned staging tree or a drained immutable
-package generation retry only access-denied, sharing, and lock violations for
-two seconds per blocking mutation. A transient scanner lock over the active
-staging directory, selected upgrade receipt, removal receipt, or nested
-abandoned-staging file lets the same commit or removal continue. A persistent
-active-staging lock returns `use.extension.io` before receipt or
-Registry-snapshot mutation, leaves the residual staging tree, and lets the next
-commit replay exactly after release. A persistent selected-receipt lock returns
-the same error after removing the candidate root and retained receipt; the
-byte-exact prior receipt and published generation remain authoritative, no
-temporary receipt remains, and upgrade replay succeeds after release. A
-persistent lock on a drained generation returns the same error after durable
-route hiding and receipt removal, leaves its exact residual tree, and lets the
-next removal replay finish without another Registry generation. The ownership
-and bounded inventory checks still run before abandoned staging cleanup.
+Lifecycle mutations remain serialized by each installation's cross-process
+Registry lock. Expanded-package commits additionally acquire one global
+per-digest Artifact Store lock, so two installations committing identical bytes
+converge on one complete tree without sharing lifecycle authority. The Artifact
+Store creates and validates every directory in its sharded digest namespace
+without following links or reparse points. While holding the digest lock, the
+commit reclaims only bounded physical `.artifact-staging-*` trees left by an
+interrupted write. A staging link, special file, unbounded inventory, or linked
+artifact ancestor fails closed.
+
+The real-process recovery test terminates while a high-entry package is copied
+into that staging tree. Its exact pending plan and applying lifecycle journal
+remain durable, while the receipt, installation snapshot, and route remain
+absent. Explicit offline replay reclaims the partial tree, repeats the same
+package-commit checkpoint, publishes one Registry generation, completes the
+journal, and removes the pending operation without a network request.
+
+On Windows, active artifact-staging rename, lifecycle receipt deletion, and
+bounded abandoned-staging cleanup retry only access-denied, sharing, and lock
+violations for two seconds per blocking mutation. A transient scanner lock over
+the active staging directory, selected upgrade receipt, removal receipt, or
+nested abandoned-staging file lets the same commit or authority retirement
+continue. A persistent active-staging lock returns `use.extension.io` before
+receipt or Registry-snapshot mutation, leaves the residual staging tree, and
+lets the next commit replay exactly after release. A persistent selected-receipt
+lock leaves the globally valid candidate artifact in place, rolls back retained
+receipt state, preserves the byte-exact prior published generation, and lets
+upgrade replay after release. Uninstall never deletes or waits on shared
+artifact content, including while another process holds a read handle. Global
+bytes remain until a future collector can prove reachability across every
+installation and durable operation.
 Steady-state snapshot and watch reads consume immutable publications without
 that lock. A read may briefly acquire it only for crash reconciliation when
 receipt state and the last publication disagree.
@@ -466,8 +468,9 @@ zero/oversized verified targets, oversized partials, and more than 100,000
 scanned entries. Source-bound usage and pruning construct no network transport
 and validate a retained catalog-cache identity when present.
 
-GC changes only future cache availability. It never removes installed package
-generations, receipts, Grants, bindings, capability state, or journals. A later
+GC changes only future source-cache availability. It never removes global
+expanded package artifacts, receipts, Grants, bindings, capability state, or
+journals. A later
 explicit offline operation fails closed if GC removed one of its exact targets.
 Partial downloads are not offline evidence and never authorize package staging.
 
@@ -677,25 +680,27 @@ never rotates or deletes rollback evidence.
 --json` acquires the same installation-specific exclusive maintenance fence
 used by restore and creates one `a3s.use.state-backup.v2` archive outside the
 live data/state roots. The manifest binds the exact installation, portable
-relative data/state
+relative state
 paths, exact file lengths and SHA-256 digests, read-only and Unix-mode evidence,
 per-family accounting, the Registry generation/projection digest, and sorted
 installed-receipt digests. No clock value or source root enters the manifest,
 so unchanged state produces identical archive bytes on the same platform.
 
-Creation inventories the allowlisted roots, copies each regular file while
+Creation inventories the allowlisted control-state root, copies each regular file while
 rechecking its length and digest, then rebuilds the complete inventory before
 non-overwriting publication. Lock files are excluded. Active restore markers,
 pending Registry cutovers, nonterminal lifecycle/Grant/package/enablement or
-Runtime provisioning evidence, resumable partials, atomic-write leftovers,
-lifecycle package staging, unknown top-level families, non-portable names,
-links/reparse points, and special files fail closed. `state verify-backup`
+Runtime provisioning evidence, atomic-write leftovers, installation data
+payloads, unknown top-level families, non-portable names, links/reparse points,
+and special files fail closed. `state verify-backup`
 checks the canonical manifest, header digest, exact archive length, and every
 concatenated payload digest without extraction, network access, or local state.
 
-The archive contains raw package and state bytes and is sensitive operational
-data. Its hashes detect corruption; they do not authenticate a publisher or
-recreate missing authority. `state backup-retention` fully verifies each managed
+The archive contains raw control state and is sensitive operational data. The
+global Artifact Store and Registry/TUF caches are excluded, so restore requires
+the exact live artifacts referenced by retained authority. Its hashes detect
+corruption; they do not authenticate a publisher or recreate missing authority.
+`state backup-retention` fully verifies each managed
 archive under the publication directory lock, returns a path-free oldest-first
 canonical plan, requires its unchanged digest plus explicit confirmation, and
 retains at least two verified recovery generations. `state plan-restore` and

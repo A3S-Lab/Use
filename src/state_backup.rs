@@ -47,7 +47,6 @@ pub enum StateBackupRoot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum StateBackupFamily {
-    PackageContent,
     Registry,
     RetainedGenerations,
     Grants,
@@ -283,8 +282,8 @@ impl StateBackupManager {
 }
 
 pub(crate) fn validate_owned_roots(paths: &ExtensionPaths) -> UseResult<()> {
-    let data_root = canonical_or_absolute(paths.data_root())?;
-    let state_root = canonical_or_absolute(paths.state_root())?;
+    let data_root = canonical_or_absolute(paths.use_paths().data_root())?;
+    let state_root = canonical_or_absolute(paths.use_paths().state_root())?;
     if data_root == state_root
         || data_root.starts_with(&state_root)
         || state_root.starts_with(&data_root)
@@ -375,7 +374,10 @@ fn resolve_destination(destination: &Path, paths: &ExtensionPaths) -> UseResult<
         ));
     }
     let resolved = parent.join(file_name);
-    for owned_root in [paths.data_root(), paths.state_root()] {
+    for owned_root in [
+        paths.use_paths().data_root(),
+        paths.use_paths().state_root(),
+    ] {
         let owned_root = canonical_or_absolute(owned_root)?;
         if resolved.starts_with(&owned_root) {
             return Err(state_backup_path_invalid(
