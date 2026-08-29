@@ -109,7 +109,7 @@ The implementation and fixtures exercise the product model directly:
   accepted calls, and retires exact prior generations.
 - [`RuntimeTaskDispatcher`](src/plugin_runtime/task_dispatch.rs) reopens the
   exact v4 Task binding and provider selected at review time, while capability
-  snapshot v4 publishes only matching release-backed Tasks with complete
+  snapshot v5 publishes only matching release-backed Tasks with complete
   installation and lifecycle identity.
 - [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs) stages,
   promotes, searches, reads, and removes scope-isolated OKF projections with
@@ -178,7 +178,7 @@ and Grant journals, and does not advance the Registry generation again. Five
 real `CognitivePackageHostManager` protocol children additionally cover the
 complete reviewed apply set after the Registry server is stopped. Install,
 upgrade, and uninstall are killed at the corresponding five-node graph
-publish/hide boundaries. Disable is killed after the root route is hidden and
+publish/hide boundaries. Disable is killed after the root package binding is hidden and
 Grant cutover commits while an accepted-call lease blocks drain; enable is
 killed after Registry publication while its candidate Grant remains prepared.
 Restart consumes the durable reviewed plan and confirmation; install and
@@ -310,16 +310,16 @@ let lease = capabilities
 
 The cursor binds the Installation Snapshot generation and digest, capability
 revision, Registry revision, and sorted exact package generations. Acquisition
-takes every package route lease in canonical order and rechecks both immutable
-authorities after the complete batch is held.
+takes every package-generation lease in canonical order and rechecks both
+immutable authorities after the complete batch is held.
 A hidden, stale, mixed, contended, or digest-mismatched generation returns no
-lease; an enabled legacy route without immutable lifecycle evidence fails
+lease; an enabled legacy package binding without immutable lifecycle evidence fails
 closed. The non-clone RAII lease is `Send + Sync`, so A3S Code can retain it in
 a Run scope while Use lifecycle retirement waits for accepted work to drain.
-Dropping it only releases synchronous route locks; asynchronous cleanup remains
-explicitly owned by the Use lifecycle coordinator.
+Dropping it only releases synchronous generation locks; asynchronous cleanup
+remains explicitly owned by the Use lifecycle coordinator.
 
-The `capability snapshot --json` schema v4 remains the outer CLI envelope. It
+The `capability snapshot --json` schema v5 remains the outer CLI envelope. It
 exposes the Installation Snapshot generation and digest, while the complete
 in-process cursor is deliberately not appended to that independently released
 schema. Managed-MCP, Skill identity, and UI
@@ -417,7 +417,7 @@ entries before reinstalling with explicit scope flags. These entries include
 the old global `data/extensions`, installation-scoped
 `data/installations/<kind>/<key>/extensions`, and old state-level `extensions`,
 `registry.json`, generation, Grant, binding, lifecycle, Knowledge, graph,
-enablement, Host Manager, route-lock, and mutation-lock paths. Preserve global
+enablement, Host Manager, route-lock/generation-lease, and mutation-lock paths. Preserve global
 `registries.acl`, Registry trust roots, TUF metadata/targets, and
 `data/artifacts`; they are inputs shared by installations.
 
@@ -877,6 +877,12 @@ extension "acme/research" {
 }
 ```
 
+The `route` attribute is optional and is retained only as a human-facing CLI
+alias. It is not required to be unique and never owns installation state,
+accepted-call leases, cursor package identity, or Tool/MCP host names. Automation
+should address packages by `<publisher>/<name>` and surfaces by canonical kind
+and surface ID; ambiguous alias lookup fails closed.
+
 | Surface | Package contribution | Readiness owner |
 | --- | --- | --- |
 | Tool | Package-local native Task or digest-pinned Task/Service release | Signed planning launcher plus the native provider, or an explicitly selected Runtime |
@@ -955,7 +961,8 @@ Current Registry rules:
   semantics and must retain the same provider ID, build, normalized
   capabilities, and enforcement. The final policy decision must also remain
   unchanged.
-- Installed schema-v5 receipts retain the exact installation ID and signed planning bundle for
+- Installed schema-v6 receipts retain the exact installation ID, optional
+  non-owning CLI alias, and signed planning bundle for
   every executable package. Enablement can therefore be reviewed again after
   restart without consulting a mutable Registry, while catalog, manifest, and
   installed package bytes are still revalidated.
@@ -1003,7 +1010,7 @@ Current Registry rules:
   zero-network retry from the revalidated cache.
 - The following real-process package-copy interruption retains its exact
   pending plan and applying journal but no receipt, installation snapshot, or
-  route. Offline replay reclaims the physical `.artifact-staging-*` residue
+  package publication. Offline replay reclaims the physical `.artifact-staging-*` residue
   and publishes the reviewed generation exactly once.
 - Real-process uninstall interruption replays the exact lifecycle identity,
   finishes scoped receipt and authority retirement, preserves global artifact
@@ -1155,7 +1162,7 @@ Only the following cognitive-package protocol line is accepted:
 | Package manifest | schema version `3` |
 | Registry source configuration | ACL schema version `1` |
 | Signed catalog record | `a3s.use.plugin-catalog.v3` |
-| Installed receipt | schema version `5` |
+| Installed receipt | schema version `6` |
 | Installation snapshot | `a3s.use.installation-snapshot.v2` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6` (protocol `6`) |
@@ -1174,10 +1181,10 @@ Only the following cognitive-package protocol line is accepted:
 | Pre-plan download diagnostic | `a3s.use.plugin-download-attempt-diagnostic.v1` |
 | Enablement recovery projection | `a3s.use.cognitive-package-enablement-projection.v3` |
 | Enablement operation | `a3s.use.cognitive-package-enablement-operation.v3` |
-| Extension Registry snapshot | schema version `2` |
-| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v2` |
-| Capability snapshot | schema version `4` |
-| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v3` |
+| Extension Registry snapshot | schema version `3` |
+| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v3` |
+| Capability snapshot | schema version `5` |
+| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
@@ -1228,9 +1235,9 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Typed managed Host Manager | `CognitivePackageHostManager` implements host protocol v6 with explicit User/Workspace scope-kind binding, exact capability/fence validation, persisted plan/apply replay, selected-surface evidence, durable operation observation/watch, pre-admission cancellation, Registry provenance revalidation, zero-network install/upgrade apply from the exact planning cache, graph and enablement delegation, and fail-closed expired-plan recovery from Use-owned admission/completion evidence. Operation storage distinguishes repeated lifecycle operation IDs by exact plan digest while retaining legacy lookup aliases, and a terminal outcome is replayed only while its Use-owned graph, lifecycle completion, and package state still match. Same textual IDs in different scope kinds retain distinct Host plans and replay records and reject substitution. Killed real Host protocol install, upgrade, uninstall, disable, and enable applies recover with the Registry offline, converge exact Grants without generation inflation, and persist one terminal outcome; injection into each external managed host remains open |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
 | Mixed native/managed provider planning | Implemented in Use and the shared A3S host path: unbound drafts, assigned-provider preflight, host policy, canonical Grant-bound final selection, durable planning bundles/Grant snapshots/provider generations, exact apply-time reconstruction, restart replay, and provider-drift rejection are tested |
-| Exact published-generation Knowledge lease | Implemented in the Use Registry and SQLite Knowledge host. Acquisition binds the complete capability projection to the installed package, manifest, OKF bundle, lifecycle generation, and route lock; one lease retains that generation across cited search/read, rejects new calls after hide, participates in drain, and fails closed on package or retained-content drift. A3S Code consumption remains an external integration task |
+| Exact published-generation Knowledge lease | Implemented in the Use Registry and SQLite Knowledge host. Acquisition binds the complete capability projection to the installed package, manifest, OKF bundle, lifecycle generation, and generation lock; one lease retains that generation across cited search/read, rejects new calls after hide, participates in drain, and fails closed on package or retained-content drift. A3S Code consumption remains an external integration task |
 | Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
-| Managed Runtime receipt lifecycle | Self-contained release-backed Task templates support restart-safe exact-generation dispatch, receipt-owned provider reconnection, stale-generation rejection, and accepted-call drain. Capability snapshot v4 publishes only exact installation/package/generation-matched Task bindings with stable host tool identities. Service preparation now syncs a v1 provisioning receipt before Runtime apply, advances it through exact Runtime and Gateway evidence, and commits the v3 binding before deleting pending recovery authority. Tool and HTTP MCP bind failures, pre-apply rollback, candidate cleanup, and the final-binding/pending-receipt crash window replay without a second Runtime effect or residue. A test-binary subprocess matrix exits at all six nested provisioning windows for both Tool and HTTP MCP, then proves exact replay, terminal idempotence, and residue-free Gateway/Runtime removal. Typed endpoints, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are contract-tested. A3S CLI `main` commit `563e7e139740e845369f9102a2d47026733797a8` qualifies four real Linux Tool and MCP processes through production Box mapping, retained N/N+1 routing, standard MCP initialize, Gateway and lifecycle-host restart, drain, exact removal, and zero-residue checks. Confirmed same-generation provider loss now retires only the stale Gateway route and old binding receipt before exact Runtime reapply and publication of a newly allocated Gateway endpoint; interrupted route removal retains replay authority without stopping or removing the Runtime unit. Scoped Code Exec Task discovery and leased invocation are qualified at A3S CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7` and CI run [32797862154](https://github.com/A3S-Lab/CLI/actions/runs/32797862154). Real provider-process kill qualification, non-Linux providers, and cross-platform product-host recovery remain open |
+| Managed Runtime receipt lifecycle | Self-contained release-backed Task templates support restart-safe exact-generation dispatch, receipt-owned provider reconnection, stale-generation rejection, and accepted-call drain. Capability snapshot v5 publishes only exact installation/package/generation-matched Task bindings with stable host tool identities. Service preparation now syncs a v1 provisioning receipt before Runtime apply, advances it through exact Runtime and Gateway evidence, and commits the v3 binding before deleting pending recovery authority. Tool and HTTP MCP bind failures, pre-apply rollback, candidate cleanup, and the final-binding/pending-receipt crash window replay without a second Runtime effect or residue. A test-binary subprocess matrix exits at all six nested provisioning windows for both Tool and HTTP MCP, then proves exact replay, terminal idempotence, and residue-free Gateway/Runtime removal. Typed endpoints, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are contract-tested. A3S CLI `main` commit `563e7e139740e845369f9102a2d47026733797a8` qualifies four real Linux Tool and MCP processes through production Box mapping, retained N/N+1 routing, standard MCP initialize, Gateway and lifecycle-host restart, drain, exact removal, and zero-residue checks. Confirmed same-generation provider loss now retires only the stale Gateway route and old binding receipt before exact Runtime reapply and publication of a newly allocated Gateway endpoint; interrupted route removal retains replay authority without stopping or removing the Runtime unit. Scoped Code Exec Task discovery and leased invocation are qualified at A3S CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7` and CI run [32797862154](https://github.com/A3S-Lab/CLI/actions/runs/32797862154). Real provider-process kill qualification, non-Linux providers, and cross-platform product-host recovery remain open |
 | Scope-bounded OKF quota, retention, tombstone GC, SQLite compaction, and usage diagnostics | Implemented in the standalone Knowledge backend |
 | Scope-local OKF integrity audit, verified database backup and rotation, derived FTS repair, and authority-bound database/binding restore | Verified backups now use exact-scope, bounded oldest-first retention with canonical plan-digest confirmation, last-backup preservation, directory locking, stale-plan rejection, and fail-closed candidate validation. Restore is real-process tested, including missing database and missing exact-subset binding recovery, conflict rejection, main/WAL/SHM retention, binding-file and filesystem/journal process-exit windows, durable maintenance blocking, path-free restore-status diagnostics at every window, and terminal read-only replay. Missing Registry/package/lifecycle/Grant authority, clean-machine, coordinated cross-family, and whole-product recovery remain open |
 | Coordinated whole-installation backup, retention, and reviewed restore | Backup and retention are implemented under the exclusive maintenance fence with deterministic path-free manifests, exact Registry/receipt authority digests, allowlisted control-state families, explicit global Artifact Store exclusion, scan/copy/rescan consistency, full payload verification, exact-plan retention, and two-generation preservation. Same-version/OS/architecture restore now requires exact independently retained Registry, Artifact, and Grant authority, an explicit verified rollback archive, path-free digest confirmation, link/reparse-safe candidate staging, seven durable journal phases, 15 subprocess-exit recovery boundaries, terminal replay, read-only status, and bounded crash-recoverable history. Missing-authority and clean-machine recovery plus cross-platform operational disaster-recovery drills remain open |

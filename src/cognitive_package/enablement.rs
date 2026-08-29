@@ -1006,7 +1006,7 @@ pub(super) fn project_installed_state(
         ));
     }
     let bindings = snapshot
-        .routes
+        .packages
         .iter()
         .filter(|binding| binding.package_id == extension.receipt.package_id)
         .collect::<Vec<_>>();

@@ -14,7 +14,7 @@
 One A3S cognitive package may contain Tool, MCP, OKF, Flow, Skill, and UI
 contributions. Those contributions cross independent stores and hosts: package
 storage, Workspace Grants, Runtime, Gateway, A3S Flow, Knowledge, static
-projection, route leases, and the capability Registry.
+projection, generation leases, and the capability Registry.
 
 Treating each contribution as independently installable would split identity,
 trust, version, permission review, upgrade, and uninstall ownership. Treating
@@ -58,8 +58,8 @@ commit immutable package generation installed-disabled
 ```text
 bind exact prior and candidate locks in plan v4
 → prepare Add/Replace candidates dependency-forward
-→ publish candidates and remove obsolete routes once
-→ mark prior receipts hidden after exact route absence
+→ publish candidates and remove obsolete package bindings once
+→ mark prior receipts hidden after exact binding absence
 → drain calls admitted by the prior snapshot
 → revoke prior Grants
 → remove Replace/Remove generations reverse-prior-lock
@@ -139,7 +139,7 @@ own the cutover. Reusing an idempotency key for different content fails before
 mutation.
 
 Prior receipt retirement is explicitly separate. A prior generation can be
-marked hidden only after its exact route is absent; otherwise retirement fails
+marked hidden only after its exact package binding is absent; otherwise retirement fails
 before mutation.
 
 ## Durability and recovery
@@ -173,7 +173,7 @@ Implemented in Use:
 
 - manifest-v3 six-surface inventory and dependency schedule;
 - lifecycle intent/operation v2 journals;
-- immutable content-addressed package artifacts and exact-generation route leases;
+- immutable content-addressed package artifacts and exact-generation leases;
 - dependency-forward graph install and reverse uninstall;
 - prior/candidate lock-bound upgrade with Add/Replace/Remove/Retain;
 - durable Registry cutover request/evidence/replay/acknowledgement;

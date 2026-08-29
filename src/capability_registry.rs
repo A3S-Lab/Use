@@ -59,7 +59,7 @@ use crate::{
     plugin_runtime::RuntimeBindingStore,
 };
 
-pub const CAPABILITY_REGISTRY_SCHEMA_VERSION: u32 = 4;
+pub const CAPABILITY_REGISTRY_SCHEMA_VERSION: u32 = 5;
 pub const UI_DEPENDENCY_EVIDENCE_SCHEMA: &str = "a3s.use.ui-dependency-evidence.v1";
 #[cfg(feature = "extensions")]
 const PLANNER_EVIDENCE_SCHEMA_VERSION: u32 = 1;
@@ -412,7 +412,8 @@ pub struct PluginPlannerEvidence {
 #[serde(rename_all = "camelCase")]
 pub struct CapabilityBinding {
     pub id: String,
-    pub route: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
     pub version: String,
     pub origin: CapabilityOrigin,
     pub enabled: bool,
@@ -533,7 +534,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
         };
         Ok(CapabilityBinding {
             id: "use/browser".to_string(),
-            route: "browser".to_string(),
+            alias: Some("browser".to_string()),
             version: env!("CARGO_PKG_VERSION").to_string(),
             origin: CapabilityOrigin::BuiltIn,
             enabled: true,
@@ -562,7 +563,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
     {
         Ok(CapabilityBinding {
             id: "use/browser".to_string(),
-            route: "browser".to_string(),
+            alias: Some("browser".to_string()),
             version: env!("CARGO_PKG_VERSION").to_string(),
             origin: CapabilityOrigin::BuiltIn,
             enabled: false,
@@ -603,7 +604,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
         surfaces.push("mcp".to_string());
         Ok(CapabilityBinding {
             id: "use/ocr".to_string(),
-            route: "ocr".to_string(),
+            alias: Some("ocr".to_string()),
             version: env!("CARGO_PKG_VERSION").to_string(),
             origin: CapabilityOrigin::BuiltIn,
             enabled: true,
@@ -635,7 +636,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
     {
         Ok(CapabilityBinding {
             id: "use/ocr".to_string(),
-            route: "ocr".to_string(),
+            alias: Some("ocr".to_string()),
             version: env!("CARGO_PKG_VERSION").to_string(),
             origin: CapabilityOrigin::BuiltIn,
             enabled: false,
@@ -663,7 +664,7 @@ fn box_capability() -> CapabilityBinding {
     let diagnostic = crate::component_route::box_diagnostic();
     CapabilityBinding {
         id: "use/box".to_string(),
-        route: "box".to_string(),
+        alias: Some("box".to_string()),
         version: env!("CARGO_PKG_VERSION").to_string(),
         origin: CapabilityOrigin::BuiltIn,
         enabled: diagnostic.readiness == Readiness::Ready,
@@ -904,9 +905,9 @@ async fn project_extensions(
     snapshot: &a3s_use_extension::ExtensionRegistrySnapshot,
     installation: Option<&InstallationSnapshot>,
 ) -> UseResult<Option<Vec<CapabilityBinding>>> {
-    let mut capabilities = Vec::with_capacity(snapshot.routes.len());
-    for route in &snapshot.routes {
-        let Some(extension) = registry.get_snapshot_binding(route).await? else {
+    let mut capabilities = Vec::with_capacity(snapshot.packages.len());
+    for binding in &snapshot.packages {
+        let Some(extension) = registry.get_snapshot_binding(binding).await? else {
             return Ok(None);
         };
         let receipt = &extension.receipt;
@@ -915,15 +916,15 @@ async fn project_extensions(
             .into_iter()
             .map(str::to_string)
             .collect::<Vec<_>>();
-        if receipt.package_id != route.package_id
-            || receipt.component_id != route.component_id
-            || receipt.route != route.route
-            || receipt.version != route.version
-            || receipt.package_root != route.package_root
-            || receipt.manifest_sha256 != route.manifest_sha256
-            || receipt.lifecycle_generation != route.lifecycle_generation
-            || receipt.enabled != route.enabled
-            || surfaces != route.surfaces
+        if receipt.package_id != binding.package_id
+            || receipt.component_id != binding.component_id
+            || receipt.route_alias != binding.route_alias
+            || receipt.version != binding.version
+            || receipt.package_root != binding.package_root
+            || receipt.manifest_sha256 != binding.manifest_sha256
+            || receipt.lifecycle_generation != binding.lifecycle_generation
+            || receipt.enabled != binding.enabled
+            || surfaces != binding.surfaces
         {
             return Ok(None);
         }
@@ -936,7 +937,7 @@ async fn project_extensions(
                 {
                     return Err(UseError::new(
                         "use.capability.installation_snapshot_invalid",
-                        "A lifecycle-managed route disagrees with its installation package selection.",
+                        "A lifecycle-managed package disagrees with its installation selection.",
                     ));
                 }
                 selection.enabled
@@ -944,7 +945,7 @@ async fn project_extensions(
             None if receipt.verified_catalog.is_some() => {
                 return Err(UseError::new(
                     "use.capability.installation_snapshot_invalid",
-                    "A lifecycle-managed capability route is absent from the installation snapshot.",
+                    "A lifecycle-managed capability package is absent from the installation snapshot.",
                 ));
             }
             None => receipt.enabled,
@@ -1220,7 +1221,7 @@ async fn project_extension_for_host_with_evidence(
         plugin_planner_evidence(extension, context.desired_enabled, reconciliation.as_ref())?;
     Ok(CapabilityBinding {
         id: receipt.component_id.clone(),
-        route: receipt.route.clone(),
+        alias: receipt.route_alias.clone(),
         version: receipt.version.clone(),
         origin: CapabilityOrigin::Extension,
         enabled: active,
@@ -1691,8 +1692,8 @@ extension "acme/workflow" {
             schema_version: a3s_use_extension::EXTENSION_RECEIPT_SCHEMA_VERSION,
             installation: crate::test_installation(),
             package_id: manifest.package_id.clone(),
-            component_id: format!("use/{}", manifest.route),
-            route: manifest.route.clone(),
+            component_id: format!("use/{}", manifest.package_id),
+            route_alias: manifest.route_alias.clone(),
             version: manifest.version.clone(),
             package_root,
             manifest_sha256: "0".repeat(64),
@@ -1713,7 +1714,7 @@ extension "acme/workflow" {
     async fn built_ins_are_projected_without_extension_identity() {
         let installation = crate::test_installation();
         let snapshot = snapshot(installation.clone()).await.unwrap();
-        assert_eq!(snapshot.schema_version, 4);
+        assert_eq!(snapshot.schema_version, 5);
         assert_eq!(snapshot.installation, installation);
         assert!(snapshot.installation_generation.is_none());
         assert!(snapshot.installation_snapshot_digest.is_none());
@@ -1733,7 +1734,7 @@ extension "acme/workflow" {
         assert!(snapshot
             .capabilities
             .iter()
-            .filter(|capability| capability.route == "office")
+            .filter(|capability| capability.alias.as_deref() == Some("office"))
             .all(|capability| capability.origin == CapabilityOrigin::Extension));
         #[cfg(feature = "browser")]
         {

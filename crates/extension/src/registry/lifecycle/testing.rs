@@ -1,7 +1,7 @@
 use a3s_use_core::{PluginPackageLock, UseResult};
 
 use super::{ExtensionLifecycleIdentity, ExtensionLifecycleResult};
-use crate::registry::{ExtensionRegistry, ExtensionRouteLease};
+use crate::registry::{ExtensionGenerationLease, ExtensionRegistry};
 
 impl ExtensionRegistry {
     pub(crate) async fn publish_lifecycle_package_for_host_version(
@@ -42,18 +42,18 @@ impl ExtensionRegistry {
             .packages)
     }
 
-    pub(crate) async fn acquire_lifecycle_route_for_host_version(
+    pub(crate) async fn acquire_lifecycle_alias_for_host_version(
         &self,
-        route: &str,
+        alias: &str,
         host_version: &str,
-    ) -> UseResult<Option<ExtensionRouteLease>> {
+    ) -> UseResult<Option<ExtensionGenerationLease>> {
         let Some(candidate) = self
-            .find_route_for_host_version(route, host_version)
+            .resolve_alias_for_host_version(alias, host_version)
             .await?
         else {
             return Ok(None);
         };
-        self.acquire_extension_lease_for_host_version(candidate, Some(route), host_version)
+        self.acquire_extension_generation_for_host_version(candidate, Some(alias), host_version)
             .await
     }
 }

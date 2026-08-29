@@ -350,8 +350,8 @@ verify prior lock + candidate lock
 → retain exact non-authoritative download attempt
 → download and prepare only Add/Replace nodes
 → retain reviewed pending graph and remove the download attempt
-→ atomically publish candidate routes and remove obsolete routes
-→ mark prior generations hidden only after route absence is proven
+→ atomically publish candidate package bindings and remove obsolete bindings
+→ mark prior generations hidden only after binding absence is proven
 → drain calls admitted by the prior snapshot
 → revoke exact prior Grants
 → remove prior generations in reverse prior-lock order
@@ -367,7 +367,7 @@ mixed or unreviewed graph.
 derive exact root lock from installation snapshot
 → atomically hide the removal closure
 → checkpoint Grant cutover
-→ drain each prior route
+→ drain each prior package generation
 → revoke exact Grants
 → remove surfaces and packages in reverse
 → commit the next installation snapshot generation without that root
@@ -403,8 +403,8 @@ fallback publisher. Durable cutover records remain in the Registry until the
 package and Grant journals own the same evidence.
 
 Retirement is a different operation. It may update a prior receipt only when
-the exact prior route is already absent. If the route is present, retirement
-fails before mutation.
+the exact prior package binding is already absent. If the binding is present,
+retirement fails before mutation.
 
 ## Crash recovery
 
@@ -430,7 +430,7 @@ a replacement plan, generation, source, Grant, or cutover.
 
 The Runtime Broker uses typed provider objects and exact selection evidence.
 Runtime bindings, Flow bindings, Knowledge projections, static projections,
-and route leases retain package generation identity. An N+1 candidate cannot
+and generation leases retain package generation identity. An N+1 candidate cannot
 overwrite N before snapshot cutover.
 
 A release-backed Runtime Task receipt is a durable invocation template, not an
@@ -449,7 +449,14 @@ authority is removed. Restart therefore replays the same Runtime/Gateway
 effect, reconciles the safe both-files window, or completes candidate cleanup;
 it never infers a unit or route from package files.
 
-Capability snapshot schema v4 contains the exact `InstallationId`, current
+Registry publication is keyed by the installation-scoped package lifecycle
+identity, and each capability adds its canonical surface kind and ID. The
+manifest `route` value is an optional human alias only: duplicate aliases may
+coexist, alias ambiguity fails closed, and aliases never influence generation
+locks, canonical cursor package keys, or Tool/MCP host names. The snapshot
+revision still commits the full presentation projection.
+
+Capability snapshot schema v5 contains the exact `InstallationId`, current
 Installation Snapshot generation and digest, package/surface identity,
 generation, desired/observed state, readiness, dependencies, and evidence
 digests. A release-backed Tool Task enters
@@ -462,7 +469,7 @@ generation plus revision and can hot-refresh resident hosts without polling
 package directories.
 
 The additive `mcpServers` projection preserves every published extension MCP
-surface instead of collapsing a package to one route. Each entry binds its
+surface instead of collapsing a package to one alias. Each entry binds its
 canonical surface ID, collision-resistant host name, activation, exact package
 lifecycle identity, and recomputed file-evidence digest. Stdio entries expose
 only the package-relative executable and bounded arguments. Streamable HTTP
@@ -474,13 +481,13 @@ Mismatched or missing Runtime/Gateway initialize evidence leaves the surface
 unpublished.
 
 For admission that spans more than one package, the injected
-`CapabilityRegistry` derives `a3s.use.capability-snapshot-cursor.v3`. It binds
+`CapabilityRegistry` derives `a3s.use.capability-snapshot-cursor.v4`. It binds
 the exact installation, Installation Snapshot generation and digest, and
 capability revision to the Extension Registry digest and sorted package,
-manifest, and lifecycle generations. Acquisition takes every shared route
+manifest, and lifecycle generations. Acquisition takes every shared generation
 lease in canonical order and rechecks both snapshot authorities only after the
 complete batch is held. A concurrent cutover, hidden or contended generation,
-digest drift, or enabled non-lifecycle route yields no partial lease. The
+digest drift, or enabled non-lifecycle package yields no partial lease. The
 non-clone `CapabilitySnapshotLease` is `Send + Sync`; Code may own it for a Run
 without receiving package mutation authority. Rust `Drop` releases only the
 synchronous locks, while Use keeps asynchronous drain and retirement in its

@@ -153,10 +153,10 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
         .unwrap()
         .generation
         + 1;
-    let route_lock = exclusive_lock(
+    let generation_lock = exclusive_lock(
         &paths
             .state_root()
-            .join("route-locks/acme/worker")
+            .join("generation-leases/acme/worker")
             .join(format!("{next_generation:020}.lock")),
     );
     let applying_host = host.clone();
@@ -199,8 +199,8 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
     .await
     .expect("graph operation observation blocked behind publication")
     .unwrap();
-    FileExt::unlock(&route_lock).unwrap();
-    drop(route_lock);
+    FileExt::unlock(&generation_lock).unwrap();
+    drop(generation_lock);
     assert_eq!(observed.status.phase, PluginHostOperationPhase::Publishing);
     assert_eq!(
         observed.status.cancellability,

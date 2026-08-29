@@ -109,7 +109,7 @@ impl ExtensionRegistry {
                         .await?;
                     let snapshot = read_registry_snapshot(&self.paths).await?;
                     if retained.is_empty() {
-                        if snapshot.routes.iter().any(|binding| {
+                        if snapshot.packages.iter().any(|binding| {
                             binding.enabled
                                 && binding_matches_identity(&self.paths, binding, identity)
                         }) {
@@ -118,13 +118,16 @@ impl ExtensionRegistry {
                             ));
                         }
                     } else if retained.len() == 1 {
-                        let package_routes = snapshot
-                            .routes
+                        let package_bindings = snapshot
+                            .packages
                             .iter()
                             .filter(|binding| binding.package_id == identity.package_id())
                             .collect::<Vec<_>>();
-                        if package_routes.len() != 1
-                            || !published_binding_matches_extension(package_routes[0], &retained[0])
+                        if package_bindings.len() != 1
+                            || !published_binding_matches_extension(
+                                package_bindings[0],
+                                &retained[0],
+                            )
                         {
                             return Err(lifecycle_state_error(
                                 "A replayed upgrade candidate must preserve the exact retained generation as the Registry snapshot commit point.",
@@ -155,7 +158,7 @@ impl ExtensionRegistry {
                 verify_package_integrity(&current).await?;
                 let published = read_registry_snapshot(&self.paths).await?;
                 if !published
-                    .routes
+                    .packages
                     .iter()
                     .any(|binding| published_binding_matches_extension(binding, &current))
                 {
@@ -184,20 +187,6 @@ impl ExtensionRegistry {
             }
         }
 
-        let installed = self.list().await?;
-        if let Some(conflict) = installed.iter().find(|extension| {
-            extension.receipt.package_id != identity.package_id
-                && extension.receipt.route == candidate.manifest.route
-        }) {
-            return Err(UseError::new(
-                "use.extension.route_conflict",
-                format!(
-                    "Route '{}' is already owned by extension '{}'.",
-                    candidate.manifest.route, conflict.receipt.package_id
-                ),
-            ));
-        }
-
         validate_candidate_source(candidate).await?;
         let target = self.lifecycle_package_root(identity);
         commit_candidate_root(
@@ -224,7 +213,7 @@ impl ExtensionRegistry {
             installation: self.installation().clone(),
             package_id: identity.package_id.clone(),
             component_id: format!("use/{}", identity.package_id),
-            route: candidate.manifest.route.clone(),
+            route_alias: candidate.manifest.route_alias.clone(),
             version: candidate.manifest.version.clone(),
             package_root: target.clone(),
             manifest_sha256: identity.manifest_sha256().to_string(),
@@ -255,7 +244,7 @@ impl ExtensionRegistry {
         }
 
         // Candidate commit is staging, not publication. Keeping every new
-        // generation out of the immutable route snapshot prevents a later
+        // generation out of the immutable package snapshot prevents a later
         // graph node from replacing the prior closure before the one atomic
         // dependency-graph cutover.
         let snapshot = read_registry_snapshot(&self.paths).await?;
@@ -288,7 +277,7 @@ impl ExtensionRegistry {
     }
 
     /// Publish a fully prepared dependency closure through one Registry
-    /// snapshot cutover. Receipt updates remain invisible to route admission
+    /// snapshot cutover. Receipt updates remain invisible to generation admission
     /// until the complete enabled set is durably projected.
     pub async fn publish_lifecycle_packages(
         &self,
@@ -371,7 +360,7 @@ impl ExtensionRegistry {
     }
 
     /// Hide an exact dependency closure through one Registry snapshot. A
-    /// replay after later package cleanup returns the same route-free
+    /// replay after later package cleanup returns the same unpublished
     /// snapshot evidence without incrementing the generation.
     pub async fn hide_lifecycle_package_graph_with_evidence(
         &self,
@@ -396,8 +385,8 @@ impl ExtensionRegistry {
     }
 
     /// Mark one prior generation hidden after an atomic graph cutover has
-    /// already removed its exact Registry route. This operation never owns a
-    /// visibility cutover and fails before mutation if the route is present.
+    /// already removed its exact Registry package binding. This operation never
+    /// owns a visibility cutover and fails before mutation if the binding is present.
     pub async fn retire_hidden_lifecycle_package(
         &self,
         identity: &ExtensionLifecycleIdentity,
@@ -426,7 +415,7 @@ impl ExtensionRegistry {
         identity: &ExtensionLifecycleIdentity,
         timeout: Duration,
     ) -> UseResult<ExtensionLifecycleResult> {
-        crate::route_lock::deadline_after(timeout)?;
+        crate::generation_lease::deadline_after(timeout)?;
         let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let extension = self.exact_lifecycle_extension(identity).await?;
         if extension.receipt.enabled {
@@ -436,7 +425,7 @@ impl ExtensionRegistry {
         }
         let published = read_registry_snapshot(&self.paths).await?;
         let snapshot = if published
-            .routes
+            .packages
             .iter()
             .any(|binding| binding_matches_identity(&self.paths, binding, identity))
         {
@@ -445,7 +434,7 @@ impl ExtensionRegistry {
         } else {
             published
         };
-        let _drain = crate::route_lock::acquire_drain_lock(
+        let _drain = crate::generation_lease::acquire_drain_lock(
             &self
                 .paths
                 .lifecycle_package_lock_path(identity.package_id(), identity.generation()),
@@ -464,7 +453,7 @@ impl ExtensionRegistry {
         identity: &ExtensionLifecycleIdentity,
         timeout: Duration,
     ) -> UseResult<UninstallResult> {
-        crate::route_lock::deadline_after(timeout)?;
+        crate::generation_lease::deadline_after(timeout)?;
         let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let selected = self.get(identity.package_id()).await?;
         let selected_is_exact = selected
@@ -478,7 +467,7 @@ impl ExtensionRegistry {
             let retained = self.get_lifecycle_generation(identity).await?;
             let published = read_registry_snapshot(&self.paths).await?;
             let published_binding = published
-                .routes
+                .packages
                 .iter()
                 .find(|binding| binding_matches_identity(&self.paths, binding, identity));
             if published_binding.is_some_and(|binding| binding.enabled) {
@@ -503,7 +492,7 @@ impl ExtensionRegistry {
                     "The retained cognitive-package generation must be hidden before removal.",
                 ));
             }
-            let _drain = crate::route_lock::acquire_drain_lock(
+            let _drain = crate::generation_lease::acquire_drain_lock(
                 &self
                     .paths
                     .lifecycle_package_lock_path(identity.package_id(), identity.generation()),
@@ -515,7 +504,7 @@ impl ExtensionRegistry {
                 let installed = self.list().await?;
                 let repaired = self.publish_snapshot_locked(&installed).await?;
                 if repaired
-                    .routes
+                    .packages
                     .iter()
                     .any(|binding| binding_matches_identity(&self.paths, binding, identity))
                 {
@@ -556,7 +545,7 @@ impl ExtensionRegistry {
                 "The cognitive package must be hidden before its immutable generation is removed.",
             ));
         }
-        let _drain = crate::route_lock::acquire_drain_lock(
+        let _drain = crate::generation_lease::acquire_drain_lock(
             &self
                 .paths
                 .lifecycle_package_lock_path(identity.package_id(), identity.generation()),
@@ -668,7 +657,7 @@ impl ExtensionRegistry {
                 })?;
                 validate_locked_extension(locked, &retained, host_version)?;
                 if !retained.receipt.enabled
-                    || !snapshot_before.routes.iter().any(|binding| {
+                    || !snapshot_before.packages.iter().any(|binding| {
                         binding.enabled && published_binding_matches_extension(binding, &retained)
                     })
                 {
@@ -714,7 +703,7 @@ impl ExtensionRegistry {
                 };
                 candidate_snapshot_complete &= extension.as_ref().is_some_and(|extension| {
                     extension.receipt.enabled
-                        && snapshot_before.routes.iter().any(|binding| {
+                        && snapshot_before.packages.iter().any(|binding| {
                             binding.enabled
                                 && published_binding_matches_extension(binding, extension)
                         })
@@ -738,8 +727,8 @@ impl ExtensionRegistry {
             } else {
                 self.get_lifecycle_generation(identity).await?
             };
-            let package_routes = snapshot_before
-                .routes
+            let package_bindings = snapshot_before
+                .packages
                 .iter()
                 .filter(|binding| binding.package_id == identity.package_id())
                 .collect::<Vec<_>>();
@@ -747,25 +736,25 @@ impl ExtensionRegistry {
                 Some(extension) => {
                     exact_receipt(identity, &extension.receipt)?;
                     verify_package_integrity(&extension).await?;
-                    let exact_published = package_routes.iter().any(|binding| {
+                    let exact_published = package_bindings.iter().any(|binding| {
                         binding.enabled
                             && binding_matches_identity(self.paths(), binding, identity)
                     });
-                    let route_free_uninstall_replay = package_lock.is_none()
+                    let unpublished_uninstall_replay = package_lock.is_none()
                         && !selected_is_exact
-                        && package_routes.is_empty();
+                        && package_bindings.is_empty();
                     if extension.receipt.enabled {
                         if !exact_published
                             && !candidate_snapshot_complete
-                            && !route_free_uninstall_replay
+                            && !unpublished_uninstall_replay
                         {
                             return Err(lifecycle_graph_error(
                                 "An enabled removed dependency is absent before candidate graph cutover.",
                             ));
                         }
-                    } else if !package_routes.is_empty() {
+                    } else if !package_bindings.is_empty() {
                         return Err(lifecycle_graph_error(
-                            "A hidden removed dependency still has a Registry snapshot route.",
+                            "A hidden removed dependency still has a Registry package binding.",
                         ));
                     }
                     removed_extensions.push(RemovedLifecyclePackage {
@@ -775,7 +764,7 @@ impl ExtensionRegistry {
                     });
                 }
                 None
-                    if package_routes.is_empty()
+                    if package_bindings.is_empty()
                         && (candidate_snapshot_complete || package_lock.is_none()) =>
                 {
                     // A crash may occur after the exact removal journal deletes
@@ -784,7 +773,7 @@ impl ExtensionRegistry {
                 }
                 _ => {
                     return Err(lifecycle_graph_error(
-                        "A removed dependency is neither its exact selected or retained generation nor a completed route-free replay.",
+                        "A removed dependency is neither its exact selected or retained generation nor a completed unpublished replay.",
                     ))
                 }
             }
@@ -797,14 +786,14 @@ impl ExtensionRegistry {
                     .zip(&extensions)
                     .all(|(identity, extension)| {
                         extension.receipt.enabled
-                            && snapshot_before.routes.iter().any(|binding| {
+                            && snapshot_before.packages.iter().any(|binding| {
                                 binding.enabled
                                     && binding_matches_identity(self.paths(), binding, identity)
                             })
                     });
             let removed_match = removed.iter().all(|identity| {
                 !snapshot_before
-                    .routes
+                    .packages
                     .iter()
                     .any(|binding| binding_matches_identity(self.paths(), binding, identity))
             });

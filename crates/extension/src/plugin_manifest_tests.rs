@@ -48,6 +48,15 @@ fn registry_management_route_is_reserved_from_cognitive_packages() {
 }
 
 #[test]
+fn schema_v3_route_is_an_optional_non_owning_alias() {
+    let source = NAMED_SURFACE_MANIFEST.replace("  route          = \"research\"\n", "");
+    let manifest = ExtensionManifest::parse_acl(&source).unwrap();
+
+    assert_eq!(manifest.package_id, "acme/research");
+    assert_eq!(manifest.route_alias, None);
+}
+
+#[test]
 fn parses_schema_v3_named_multi_surfaces() {
     let manifest = ExtensionManifest::parse_acl(NAMED_SURFACE_MANIFEST).unwrap();
 

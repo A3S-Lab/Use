@@ -211,7 +211,7 @@ async fn capabilities(args: &[String]) -> UseResult<CommandOutput> {
     let ocr = ocr_diagnostic();
     let (extension_generation, extensions) = extension_capabilities(installation).await?;
     Ok(CommandOutput::success(
-        "Built-in routes: browser, box, ocr",
+        "Built-in CLI aliases: browser, box, ocr",
         serde_json::json!({
             "domains": [
                 {
@@ -613,10 +613,13 @@ fn extension_diagnostic(extension: &crate::extension_cli::ExtensionView) -> Doma
     } else if extension.enabled {
         (
             Readiness::Ready,
-            format!(
-                "Extension '{}' is ready on route '{}'.",
-                extension.package_id, extension.route
-            ),
+            match extension.alias.as_deref() {
+                Some(alias) => format!(
+                    "Extension '{}' is ready with CLI alias '{}'.",
+                    extension.package_id, alias
+                ),
+                None => format!("Extension '{}' is ready.", extension.package_id),
+            },
             Vec::new(),
         )
     } else {
@@ -633,7 +636,7 @@ fn extension_diagnostic(extension: &crate::extension_cli::ExtensionView) -> Doma
         )
     };
     DomainDiagnostic {
-        domain: extension.route.clone(),
+        domain: extension.component_id.clone(),
         readiness,
         provider: Some(extension.package_id.clone()),
         version: Some(extension.version.clone()),

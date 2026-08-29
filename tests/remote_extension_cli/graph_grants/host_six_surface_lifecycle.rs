@@ -473,7 +473,7 @@ async fn assert_six_surface_assets(
 ) {
     let registry = ExtensionRegistry::new(paths.clone());
     let lease = registry
-        .acquire_published_route(ROUTE)
+        .acquire_published_alias(ROUTE)
         .await
         .unwrap()
         .expect("the complete package route must be published");

@@ -136,7 +136,7 @@ extension "acme/research" {
 }
 ```
 
-当前只接受 schema v3。它定义可重复命名表面、包依赖、必需且有大小限制的 UTF-8 `README.md`，以及无环 readiness graph。过时的预览 manifest 和 receipt 会被拒绝，并提示清理后重新安装。所有路径都相对包根目录；激活前会拒绝路径穿越、链接、归档歧义、route 冲突、超限包、provenance 漂移和宿主版本不兼容。
+当前只接受 schema v3。它定义可重复命名表面、包依赖、必需且有大小限制的 UTF-8 `README.md`，以及无环 readiness graph。过时的预览 manifest 和 receipt 会被拒绝，并提示清理后重新安装。所有路径都相对包根目录；激活前会拒绝路径穿越、链接、归档歧义、超限包、provenance 漂移和宿主版本不兼容。可选 `route` 只是人类可读别名：允许重复，显式解析遇到歧义时会 fail closed。
 
 仓库包含可执行 [`plugin-v3.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl)、知识 [`plugin-v3-okf.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3-okf.acl)，以及包含六类表面的 [`plugin-v3-cognitive`](https://github.com/A3S-Lab/Use/tree/main/crates/extension/fixtures/packages/plugin-v3-cognitive) fixture。
 
@@ -171,7 +171,7 @@ Canonical `a3s.use.plugin-package-lock.v1` 会冻结每个选定版本与依赖�
 
 - **package ID**：稳定生命周期身份，例如 `acme/research`。
 - **generation**：一次不可变安装内容；升级产生新 generation。
-- **route**：展示与 dispatch 别名，不拥有包。
+- **route**：可选展示/CLI 别名，允许重复且绝不拥有包。
 - **receipt**：记录该 generation 拥有的文件、投影与资源。
 - **grant**：将主体、scope、权限和精确 generation 绑定。
 

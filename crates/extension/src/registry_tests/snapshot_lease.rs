@@ -6,7 +6,9 @@ async fn snapshot_lease_pins_the_complete_published_generation_atomically() {
     let alpha_root = temporary.path().join("alpha");
     let beta_root = temporary.path().join("beta");
     cognitive_package_with_dependencies(&alpha_root, "acme/alpha", "alpha", &[]).await;
-    cognitive_package_with_dependencies(&beta_root, "acme/beta", "beta", &[]).await;
+    // Aliases are intentionally duplicated: package generations own the
+    // publication, while a human alias is only an explicitly resolved index.
+    cognitive_package_with_dependencies(&beta_root, "acme/beta", "alpha", &[]).await;
     let alpha = ExtensionLifecyclePackage::prepare_local_for_host_version(
         "acme/alpha",
         &alpha_root,
@@ -39,6 +41,23 @@ async fn snapshot_lease_pins_the_complete_published_generation_atomically() {
         .await
         .unwrap();
 
+    let alias_error = registry.resolve_published_alias("alpha").await.unwrap_err();
+    assert_eq!(alias_error.code, "use.extension.alias_ambiguous");
+    assert_eq!(
+        alias_error.details["packageIds"],
+        serde_json::json!(["acme/alpha", "acme/beta"])
+    );
+    assert!(registry
+        .acquire_published_lifecycle_generation(&alpha_identity)
+        .await
+        .unwrap()
+        .is_some());
+    assert!(registry
+        .acquire_published_lifecycle_generation(&beta_identity)
+        .await
+        .unwrap()
+        .is_some());
+
     let snapshot = registry.snapshot().await.unwrap();
     let cursor = snapshot.cursor().unwrap();
     assert_eq!(cursor.schema, EXTENSION_SNAPSHOT_CURSOR_SCHEMA);
@@ -53,6 +72,14 @@ async fn snapshot_lease_pins_the_complete_published_generation_atomically() {
             .collect::<Vec<_>>(),
         ["acme/alpha", "acme/beta"]
     );
+    let cursor_json = serde_json::to_value(&cursor).unwrap();
+    assert!(cursor_json.get("route").is_none());
+    assert!(cursor_json.get("routeAlias").is_none());
+    assert!(cursor_json["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|package| package.get("route").is_none() && package.get("routeAlias").is_none()));
 
     let lease = registry
         .acquire_published_snapshot(&cursor)
@@ -156,7 +183,7 @@ async fn snapshot_lease_rejects_stale_and_digest_mismatched_cursors() {
 }
 
 #[test]
-fn snapshot_cursor_rejects_noncanonical_unleasable_routes() {
+fn snapshot_cursor_rejects_noncanonical_unleasable_packages() {
     let canonical = ExtensionSnapshotCursor {
         schema: EXTENSION_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
         installation: a3s_use_core::InstallationId::new(
@@ -167,34 +194,34 @@ fn snapshot_cursor_rejects_noncanonical_unleasable_routes() {
         generation: 1,
         revision: format!("sha256:{}", "a".repeat(64)),
         packages: Vec::new(),
-        unleasable_routes: vec!["alpha".to_owned()],
+        unleasable_packages: vec!["acme/alpha".to_owned()],
     };
     canonical.validate().unwrap();
 
     let mut empty = canonical.clone();
-    empty.unleasable_routes = vec![String::new()];
+    empty.unleasable_packages = vec![String::new()];
     assert_eq!(
         empty.validate().unwrap_err().code,
         "use.extension.snapshot_cursor_invalid"
     );
 
     let mut duplicate = canonical.clone();
-    duplicate.unleasable_routes = vec!["alpha".to_owned(), "alpha".to_owned()];
+    duplicate.unleasable_packages = vec!["acme/alpha".to_owned(), "acme/alpha".to_owned()];
     assert_eq!(
         duplicate.validate().unwrap_err().code,
         "use.extension.snapshot_cursor_invalid"
     );
 
     let mut unsorted = canonical.clone();
-    unsorted.unleasable_routes = vec!["beta".to_owned(), "alpha".to_owned()];
+    unsorted.unleasable_packages = vec!["acme/beta".to_owned(), "acme/alpha".to_owned()];
     assert_eq!(
         unsorted.validate().unwrap_err().code,
         "use.extension.snapshot_cursor_invalid"
     );
 
     let mut unbounded = canonical;
-    unbounded.unleasable_routes = (0..=a3s_use_core::MAX_PLUGIN_PLAN_ITEMS)
-        .map(|index| format!("route-{index:05}"))
+    unbounded.unleasable_packages = (0..=a3s_use_core::MAX_PLUGIN_PLAN_ITEMS)
+        .map(|index| format!("acme/package-{index:05}"))
         .collect();
     assert_eq!(
         unbounded.validate().unwrap_err().code,
@@ -203,16 +230,16 @@ fn snapshot_cursor_rejects_noncanonical_unleasable_routes() {
 }
 
 #[tokio::test]
-async fn snapshot_lease_fails_closed_for_callable_legacy_routes() {
+async fn snapshot_lease_fails_closed_for_callable_legacy_packages() {
     let registry = registry(tempfile::tempdir().unwrap().path());
     let snapshot = ExtensionRegistrySnapshot {
         schema_version: super::super::REGISTRY_SCHEMA_VERSION,
         installation: registry.installation().clone(),
         generation: 9,
-        routes: vec![ExtensionRouteBinding {
+        packages: vec![ExtensionPackageBinding {
             package_id: "acme/legacy".to_owned(),
-            component_id: "use/acme-legacy".to_owned(),
-            route: "legacy".to_owned(),
+            component_id: "use/acme/legacy".to_owned(),
+            route_alias: Some("legacy".to_owned()),
             version: "1.0.0".to_owned(),
             package_root: PathBuf::from("/managed/acme/legacy"),
             manifest_sha256: "a".repeat(64),
@@ -225,7 +252,7 @@ async fn snapshot_lease_fails_closed_for_callable_legacy_routes() {
     };
     let cursor = snapshot.cursor().unwrap();
     assert!(!cursor.is_fully_leasable());
-    assert_eq!(cursor.unleasable_routes, ["legacy"]);
+    assert_eq!(cursor.unleasable_packages, ["acme/legacy"]);
     let error = registry
         .acquire_published_snapshot(&cursor)
         .await

@@ -51,9 +51,9 @@ ownership boundaries stabilize.
 | Package aggregate | One manifest generation owns Tool, MCP, OKF, Flow, Skill, and UI surfaces; dependency preparation and retirement are ordered around one cutover. | Correct foundation. A surface must not become an independently installed mini-package. |
 | Trust and planning | TUF provenance, exact SemVer locks, read-only planning, explicit confirmation, generation compare-and-swap, and crash replay are enforced. | Correct foundation. Keep source transport, trust evidence, and package identity separate. |
 | Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. Source observations and resumable partials remain source-scoped; global reachability, quota, quarantine, rehydration, and garbage collection are not implemented. | Partially correct. Add one cross-installation inventory and explicit audit/repair/GC policy before deleting or replacing shared bytes. |
-| Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, routes, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. | Critical debt. A2 must make related control facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
+| Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. | Critical debt. A2 must make related control facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
 | Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
-| Identity | Package and generation keys exist, but route strings still select, lock, conflict-check, and dispatch capabilities. | High debt. Route becomes an optional alias indexed to a canonical package/surface/generation identity. |
+| Identity | Registry ownership, accepted-call leases, cursors, and Tool/MCP host names use scoped package/generation/surface keys. The optional manifest `route` is retained only as a human alias; duplicates are legal and explicit alias lookup rejects ambiguity. | Corrected A1 foundation. Aliases may improve presentation but must never enter ownership or cursor identity. |
 | Observation cost | Registry watch polls at a fixed interval, and normal snapshot projection can reopen and rehash package assets. | High scalability debt. Materialize one immutable Capability Index at cutover, publish generation notifications, and reserve full hashing for admission, audit, or detected drift. |
 | Built-ins and providers | Browser, OCR, Box, Runtime, Flow, and UI are still named directly by the facade and capability projection. | High coupling. A4 must classify true bootstrap providers explicitly and move ordinary domains to injected providers or first-party packages. |
 | Code structure and language | `Plugin`, `Extension`, and `CognitivePackage` overlap; several production modules exceed 1,000 lines because persistence, orchestration, projection, and protocol concerns still meet in one file. | Medium structural debt. Rename once at a coordinated contract cutover and split files when A2/A4 move ownership; do not add forwarding facades or parallel registries. |
@@ -86,7 +86,7 @@ Global Artifact Store · scoped control state · immutable capability index
 ```
 
 `InstallationId(kind, id)` is the authority boundary. Every desired package
-selection lives in its `InstallationSnapshot`; each receipt, route, enablement
+selection lives in its `InstallationSnapshot`; each receipt, Registry package binding, enablement
 recovery projection, Grant, provider binding, and capability projection belongs
 to that exact User or Workspace installation. Host
 projections and deployed units are receipt-owned derived state; packages do not
@@ -99,7 +99,7 @@ the remaining control facts and applied observations.
 Snapshot v2 gives every selected package one monotonic state generation,
 desired enablement bit, and exact selected-surface closure. Enable/disable
 commits that package state through compare-and-swap while advancing the global
-installation generation. The receipt, Registry route, and
+installation generation. The receipt, Registry package binding, and
 `cognitive-package-enablement-projection.v3` record are materialization and
 recovery evidence. They are validated against the snapshot and cannot select
 desired state independently.
@@ -177,11 +177,11 @@ code accepts one preview baseline only:
 | --- | --- |
 | Manifest | ACL schema 3 |
 | Catalog | `a3s.use.plugin-catalog.v3` |
-| Receipt | numeric schema 5 |
+| Receipt | numeric schema 6 |
 | Installation snapshot | `a3s.use.installation-snapshot.v2` |
-| Extension Registry snapshot | numeric schema 2 |
-| Capability snapshot | numeric schema 4 |
-| Extension/capability cursor | `a3s.use.extension-snapshot-cursor.v2` / `a3s.use.capability-snapshot-cursor.v3` |
+| Extension Registry snapshot | numeric schema 3 |
+| Capability snapshot | numeric schema 5 |
+| Extension/capability cursor | `a3s.use.extension-snapshot-cursor.v3` / `a3s.use.capability-snapshot-cursor.v4` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6`, protocol 6 |
 | Host managed scope | `a3s.use.plugin-managed-scope.v2` |
@@ -204,6 +204,14 @@ capability checks remain mandatory package-manager correctness rules.
 Manifest schema 3 describes one npm-like package generation with optional
 package dependencies and named Tool, MCP, OKF, Flow, Skill, and UI surfaces.
 The surface graph and package graph must both be acyclic.
+
+The optional ACL `route` attribute is a presentation/CLI alias. It may be
+duplicated, is never a generation-cursor package key or physical lease key,
+and cannot influence Tool/MCP host identity. The cursor revision still commits
+the complete projection, including aliases, for snapshot consistency.
+Canonical automation uses the scoped package ID plus lifecycle generation and,
+where needed, surface kind and surface ID. Explicit lookup of a duplicated
+alias fails as ambiguous.
 
 | Surface | Readiness evidence |
 | --- | --- |
@@ -258,8 +266,8 @@ search/inspect verified metadata
 
 Upgrade carries both the prior and candidate lock. The candidate lock cannot
 authorize retirement of the prior installed selection. A prior generation may
-be marked hidden only after its exact route is absent from the published
-Registry.
+be marked hidden only after its exact package binding is absent from the
+published Registry.
 
 Every external mutation uses stable operation, package, surface, and
 generation idempotency evidence. Before publication, recovery may roll back
@@ -275,10 +283,10 @@ until drain completes.
 
 Embedding hosts use `CapabilityRegistry` with the same injected
 `ExtensionRegistry` that owns planning and cutover. A typed
-`a3s.use.capability-snapshot-cursor.v3` binds the exact installation, current
+`a3s.use.capability-snapshot-cursor.v4` binds the exact installation, current
 Installation Snapshot generation and digest, complete capability revision,
 authoritative Registry revision, and canonically sorted immutable package
-identities. Acquiring the cursor obtains every shared package route lease and
+identities. Acquiring the cursor obtains every shared package-generation lease and
 then re-reads both authorities. If any identity is hidden, stale,
 mixed, contended, digest-mismatched, or lacks lifecycle evidence, the whole
 attempt fails and Rust RAII releases any earlier locks. No partial lease can

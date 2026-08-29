@@ -6,7 +6,7 @@ description: Responsibility boundaries across A3S Use, the shared Plugin Manager
 # Architecture
 
 This is the architecture of the development preview, not a description of a
-released product. Only manifest v3, catalog v3, receipt v5, plan v4, host
+released product. Only manifest v3, catalog v3, receipt v6, plan v4, host
 protocol v6, managed scope v2, and manager tools v4 are current
 cognitive-package inputs.
 
@@ -53,15 +53,15 @@ The target architecture separates package management, workload scheduling, and h
 
 ## Ownership
 
-| Component             | Owns                                                                                                                         | Does not own                                               |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Umbrella host         | Revision-addressed ACL Registry sources, trust roots, enabled/default state, policy, confirmation, secrets, and providers    | Package storage or a second lifecycle manager              |
-| Shared Plugin Manager | Catalog, policy, plan/apply, operation replay, and parent saga                                                               | Package archive format or provider scheduling internals    |
-| A3S Use               | Package verification, immutable generations, receipts, grants, binding evidence, route leases, and capability reconciliation | Generic scheduling, UI rendering, or an agent RPC protocol |
-| A3S Runtime           | Task/Service workloads and provider capability                                                                               | Package parsing, trust roots, or user authorization        |
-| A3S Flow              | Workflow compilation, durable execution, replay, storage, and observation                                                    | Package resolution or a parallel `flow.json` lifecycle     |
-| A3S Code/Knowledge    | Skill session registry, sandboxed UI, OKF registry/index, and product experience                                             | Package transactions or Runtime provider registration      |
-| Package process       | Its own CLI, HTTP, and MCP vocabulary                                                                                        | Host policy or ambient authority                           |
+| Component             | Owns                                                                                                                              | Does not own                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Umbrella host         | Revision-addressed ACL Registry sources, trust roots, enabled/default state, policy, confirmation, secrets, and providers         | Package storage or a second lifecycle manager              |
+| Shared Plugin Manager | Catalog, policy, plan/apply, operation replay, and parent saga                                                                    | Package archive format or provider scheduling internals    |
+| A3S Use               | Package verification, immutable generations, receipts, grants, binding evidence, generation leases, and capability reconciliation | Generic scheduling, UI rendering, or an agent RPC protocol |
+| A3S Runtime           | Task/Service workloads and provider capability                                                                                    | Package parsing, trust roots, or user authorization        |
+| A3S Flow              | Workflow compilation, durable execution, replay, storage, and observation                                                         | Package resolution or a parallel `flow.json` lifecycle     |
+| A3S Code/Knowledge    | Skill session registry, sandboxed UI, OKF registry/index, and product experience                                                  | Package transactions or Runtime provider registration      |
+| Package process       | Its own CLI, HTTP, and MCP vocabulary                                                                                             | Host policy or ambient authority                           |
 
 ## Single sources of truth
 
@@ -135,7 +135,7 @@ surface enable:   prepare surfaces forward → publish once
 surface disable:  hide → drain → stop surfaces in reverse
 ```
 
-Runtime Tool/MCP, immutable Flow/Skill/UI evidence, and OKF Knowledge adapters are implemented. The standalone host provides a bundled SQLite/FTS5 backend with complete User/Workspace isolation, transactional generation cutover, exact projection-authorized search, and concept/source-digest citations. It also composes the real A3S Flow preflight host only from an explicit absolute compiler path. The P0 schema-v3 package/capability hosts commit a verified generation as installed-disabled, publish or hide exact-generation snapshots, drain route leases, and remove only receipt-owned roots. The dependency foundation adds exact retained-node verification, crash-safe atomic graph publication, durable admission/lock records, and journal recovery after partial install or uninstall. Signed remote standalone CLI installs use this graph. A3S Code's Plugin Manager composes executable Tool Tasks, stdio MCP, the real A3S Flow preflight host, Skill, and UI through the public lifecycle factory; CLI and TUI consume one watcher and hot-plug exact generations. Managed A3S Code Knowledge Workspace/session carriers, Runtime Service/Gateway composition, durable Flow run routing, and prior Runtime generation retirement remain in progress, so this foundation does not claim a complete production saga.
+Runtime Tool/MCP, immutable Flow/Skill/UI evidence, and OKF Knowledge adapters are implemented. The standalone host provides a bundled SQLite/FTS5 backend with complete User/Workspace isolation, transactional generation cutover, exact projection-authorized search, and concept/source-digest citations. It also composes the real A3S Flow preflight host only from an explicit absolute compiler path. The P0 schema-v3 package/capability hosts commit a verified generation as installed-disabled, publish or hide exact-generation snapshots, drain generation leases, and remove only receipt-owned roots. The dependency foundation adds exact retained-node verification, crash-safe atomic graph publication, durable admission/lock records, and journal recovery after partial install or uninstall. Signed remote standalone CLI installs use this graph. A3S Code's Plugin Manager composes executable Tool Tasks, stdio MCP, the real A3S Flow preflight host, Skill, and UI through the public lifecycle factory; CLI and TUI consume one watcher and hot-plug exact generations. Managed A3S Code Knowledge Workspace/session carriers, Runtime Service/Gateway composition, durable Flow run routing, and prior Runtime generation retirement remain in progress, so this foundation does not claim a complete production saga.
 
 Embedding hosts implement `CognitivePackageLifecycleFactory` to supply their exact Runtime, Gateway, A3S Flow, Skill/UI, and A3S Knowledge adapters. They reuse Use's resolver, graph journal, and capability cutover rather than creating another package manager. The standalone factory supports executable Tasks, stdio MCP, immutable Skill/UI projection, local SQLite/FTS5 OKF Knowledge, and A3S Flow only when configured with an absolute native TypeScript compiler path. It fails before publication for required Service, HTTP MCP, or unconfigured Flow owners. `CognitivePackageManager::new` stays provider-free; `from_env` is the explicit CLI composition.
 

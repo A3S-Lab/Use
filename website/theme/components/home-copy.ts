@@ -244,7 +244,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       {
         title: "授权绑定代际",
-        body: "Grant、Runtime binding、route lease 与能力快照指向同一包代际。",
+        body: "Grant、Runtime binding、generation lease 与能力快照指向同一包代际。",
       },
     ],
     platformKicker: "PLATFORM GATES",
@@ -431,7 +431,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       {
         title: "Bind authority to a generation",
-        body: "Grants, Runtime bindings, route leases, and snapshots point to the same package generation.",
+        body: "Grants, Runtime bindings, generation leases, and snapshots point to the same package generation.",
       },
     ],
     platformKicker: "PLATFORM GATES",

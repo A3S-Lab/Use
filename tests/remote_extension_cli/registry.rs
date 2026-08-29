@@ -497,7 +497,7 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
         .as_array()
         .unwrap()
         .iter()
-        .find(|capability| capability["route"] == "knowledge")
+        .find(|capability| capability["alias"] == "knowledge")
         .unwrap_or_else(|| panic!("missing Knowledge capability: {snapshot:#}"));
     assert_eq!(capability["enabled"], true);
     assert_eq!(capability["knowledge"][0]["generation"], 1);

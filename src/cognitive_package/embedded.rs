@@ -300,29 +300,29 @@ pub(super) async fn acquire_capability_lease(
             "The capability snapshot changed while the cognitive lease was being acquired.",
         ));
     }
-    let route = snapshot
-        .routes
+    let binding = snapshot
+        .packages
         .iter()
-        .find(|route| route.package_id == package_id && route.enabled)
+        .find(|binding| binding.package_id == package_id && binding.enabled)
         .ok_or_else(|| {
             embedded_error(
                 "use.plugin.embedded_capability_hidden",
                 "The exact cognitive package generation is no longer published.",
             )
         })?;
-    let generation = route.lifecycle_generation.ok_or_else(|| {
+    let generation = binding.lifecycle_generation.ok_or_else(|| {
         embedded_error(
             "use.plugin.embedded_capability_evidence_invalid",
-            "The published cognitive package route omitted its lifecycle generation.",
+            "The published cognitive package binding omitted its lifecycle generation.",
         )
     })?;
-    if route.version != version
-        || route.package_sha256.as_deref() != package_digest.strip_prefix("sha256:")
-        || route.manifest_sha256 != manifest_digest.trim_start_matches("sha256:")
+    if binding.version != version
+        || binding.package_sha256.as_deref() != package_digest.strip_prefix("sha256:")
+        || binding.manifest_sha256 != manifest_digest.trim_start_matches("sha256:")
     {
         return Err(embedded_error(
             "use.plugin.embedded_capability_snapshot_drift",
-            "The capability snapshot route differs from the selected package generation.",
+            "The capability snapshot binding differs from the selected package generation.",
         ));
     }
 

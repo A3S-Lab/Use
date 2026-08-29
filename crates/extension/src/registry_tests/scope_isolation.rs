@@ -130,11 +130,11 @@ async fn equal_textual_ids_in_different_kinds_select_independent_generations() {
         .await
         .unwrap();
     let user_after = user_registry.snapshot().await.unwrap();
-    assert_eq!(user_after.routes.len(), 1);
-    assert!(!user_after.routes[0].enabled);
+    assert_eq!(user_after.packages.len(), 1);
+    assert!(!user_after.packages[0].enabled);
     let workspace_after = workspace_registry.snapshot().await.unwrap();
     assert_eq!(workspace_after.cursor().unwrap(), workspace_cursor);
-    assert!(workspace_after.routes[0].enabled);
+    assert!(workspace_after.packages[0].enabled);
 }
 
 #[tokio::test]
@@ -230,7 +230,7 @@ async fn installations_share_identical_artifacts_without_sharing_lifecycle_autho
         .snapshot()
         .await
         .unwrap()
-        .routes
+        .packages
         .iter()
         .any(|route| route.enabled && route.lifecycle_generation == Some(9)));
 }

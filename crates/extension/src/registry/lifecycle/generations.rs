@@ -12,7 +12,7 @@ use crate::package::{
     io_error, remove_file_with_windows_retry, sync_parent_directory, write_receipt,
 };
 use crate::registry::{
-    verify_package_integrity, ExtensionReceipt, ExtensionRegistry, ExtensionRouteBinding,
+    verify_package_integrity, ExtensionPackageBinding, ExtensionReceipt, ExtensionRegistry,
     InstalledExtension,
 };
 use crate::ExtensionPaths;
@@ -67,7 +67,7 @@ impl ExtensionRegistry {
         let mut mutations = Vec::new();
 
         for candidate in candidates {
-            if snapshot_before.routes.iter().any(|binding| {
+            if snapshot_before.packages.iter().any(|binding| {
                 binding.enabled && binding_matches_identity(self.paths(), binding, candidate)
             }) {
                 return Err(lifecycle_state_error(
@@ -77,7 +77,7 @@ impl ExtensionRegistry {
             let selected = self.get(candidate.package_id()).await?;
             match prior_by_package.get(candidate.package_id()).copied() {
                 Some(prior) => {
-                    if !snapshot_before.routes.iter().any(|binding| {
+                    if !snapshot_before.packages.iter().any(|binding| {
                         binding.enabled && binding_matches_identity(self.paths(), binding, prior)
                     }) {
                         return Err(lifecycle_state_error(
@@ -180,7 +180,7 @@ impl ExtensionRegistry {
         };
         for candidate in candidates {
             if snapshot
-                .routes
+                .packages
                 .iter()
                 .any(|binding| binding_matches_identity(self.paths(), binding, candidate))
             {
@@ -189,11 +189,11 @@ impl ExtensionRegistry {
                 ));
             }
             if let Some(prior) = prior_by_package.get(candidate.package_id()).copied() {
-                if !snapshot.routes.iter().any(|binding| {
+                if !snapshot.packages.iter().any(|binding| {
                     binding.enabled && binding_matches_identity(self.paths(), binding, prior)
                 }) {
                     return Err(lifecycle_state_error(
-                        "Graph rollback did not restore an exact prior snapshot route.",
+                        "Graph rollback did not restore an exact prior package binding.",
                     ));
                 }
                 if self.remove_retained_receipt(prior).await? {
@@ -256,11 +256,11 @@ impl ExtensionRegistry {
         let _lock = crate::package::RegistryLock::acquire_for_mutation(self.paths()).await?;
         let published = crate::registry_io::read_registry_snapshot(self.paths()).await?;
         if published
-            .routes
+            .packages
             .iter()
             .any(|binding| binding_matches_identity(self.paths(), binding, candidate))
             || !published
-                .routes
+                .packages
                 .iter()
                 .any(|binding| binding_matches_identity(self.paths(), binding, prior))
         {
@@ -300,7 +300,7 @@ impl ExtensionRegistry {
         let installed = self.list().await?;
         let snapshot = self.publish_snapshot_locked(&installed).await?;
         if !snapshot
-            .routes
+            .packages
             .iter()
             .any(|binding| binding_matches_identity(self.paths(), binding, prior))
         {
@@ -375,7 +375,7 @@ impl ExtensionRegistry {
         allowed.enabled = replacement.enabled;
         if allowed != *replacement {
             return Err(lifecycle_identity_error(
-                "A retained lifecycle update may change only route visibility.",
+                "A retained lifecycle update may change only package visibility.",
             ));
         }
         let path = self.retained_receipt_path(identity);
@@ -529,7 +529,7 @@ pub(super) fn identity_from_receipt(
 
 pub(super) fn binding_matches_identity(
     paths: &ExtensionPaths,
-    binding: &ExtensionRouteBinding,
+    binding: &ExtensionPackageBinding,
     identity: &ExtensionLifecycleIdentity,
 ) -> bool {
     binding.package_id == identity.package_id()

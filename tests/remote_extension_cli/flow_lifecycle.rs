@@ -90,7 +90,7 @@ fn missing_flow_compiler_fails_preflight_without_publishing_capabilities() {
         .as_array()
         .is_some_and(|capabilities| capabilities
             .iter()
-            .all(|capability| capability["route"] != "flow-suite")));
+            .all(|capability| capability["alias"] != "flow-suite")));
 
     write_fake_flow_compiler(&missing);
     let retried = flow_registry_command(&server, &repository, &home, &missing, "install", "1.0.0");
@@ -242,7 +242,7 @@ fn flow_capability(home: &Path) -> Option<serde_json::Value> {
         .as_array()
         .unwrap()
         .iter()
-        .find(|capability| capability["route"] == "flow-suite")
+        .find(|capability| capability["alias"] == "flow-suite")
         .cloned()
 }
 

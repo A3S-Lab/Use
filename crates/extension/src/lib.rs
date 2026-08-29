@@ -16,6 +16,7 @@ mod test_filesystem;
 mod artifact_store;
 mod atomic_file;
 mod digest;
+mod generation_lease;
 mod package;
 #[cfg(test)]
 mod package_tests;
@@ -28,7 +29,6 @@ mod registry_io;
 mod registry_sources;
 mod release_bundle;
 mod remote;
-mod route_lock;
 mod source;
 mod state_maintenance;
 mod surface_files;
@@ -56,12 +56,12 @@ pub use plugin_manifest::{
     ToolSurface, ToolTaskSource, ToolTaskSurface, ToolWorkload,
 };
 pub use registry::{
-    validate_catalog_manifest_binding, ExtensionLifecycleGraphPublication,
-    ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionLifecycleResult,
-    ExtensionLifecycleRollbackResult, ExtensionReceipt, ExtensionRegistry,
-    ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot, ExtensionRouteBinding,
-    ExtensionRouteLease, ExtensionSnapshotCursor, ExtensionSnapshotLease, ExtensionSnapshotPackage,
-    ExtensionTrust, InstalledExtension, UninstallResult, EXTENSION_RECEIPT_SCHEMA_VERSION,
+    validate_catalog_manifest_binding, ExtensionGenerationLease,
+    ExtensionLifecycleGraphPublication, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
+    ExtensionLifecycleResult, ExtensionLifecycleRollbackResult, ExtensionPackageBinding,
+    ExtensionReceipt, ExtensionRegistry, ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot,
+    ExtensionSnapshotCursor, ExtensionSnapshotLease, ExtensionSnapshotPackage, ExtensionTrust,
+    InstalledExtension, UninstallResult, EXTENSION_RECEIPT_SCHEMA_VERSION,
     EXTENSION_REGISTRY_CUTOVER_SCHEMA, EXTENSION_SNAPSHOT_CURSOR_SCHEMA,
     MAX_PENDING_REGISTRY_CUTOVERS,
 };
@@ -141,7 +141,10 @@ pub struct ExtensionManifest {
     pub schema_version: u32,
     pub package_id: String,
     pub version: String,
-    pub route: String,
+    /// Optional human-facing CLI alias. It is never package, surface, or
+    /// lifecycle ownership identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_alias: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requires_use: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -495,10 +498,14 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     let version = string_attribute(block, "version")?;
     semver::Version::parse(&version)
         .map_err(|error| manifest_error(format!("Invalid extension version: {error}")))?;
-    let route = string_attribute(block, "route")?;
-    if !valid_segment(&route) || RESERVED_ROUTES.contains(&route.as_str()) {
+    let route_alias = optional_string_attribute(block, "route")?;
+    if route_alias
+        .as_deref()
+        .is_some_and(|alias| !valid_route_alias(alias))
+    {
         return Err(manifest_error(format!(
-            "Extension route '{route}' is invalid or reserved."
+            "Extension route alias '{}' is invalid or reserved.",
+            route_alias.as_deref().unwrap_or_default()
         )));
     }
     let action_names = list_attribute(block, "actions")?;
@@ -600,7 +607,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         schema_version,
         package_id,
         version,
-        route,
+        route_alias,
         requires_use,
         dependencies,
         repository,
@@ -827,6 +834,10 @@ fn parse_risk_class(value: &str) -> UseResult<RiskClass> {
 fn valid_package_id(value: &str) -> bool {
     let segments = value.split('/').collect::<Vec<_>>();
     segments.len() == 2 && segments.into_iter().all(valid_segment)
+}
+
+pub(crate) fn valid_route_alias(value: &str) -> bool {
+    valid_segment(value) && !RESERVED_ROUTES.contains(&value)
 }
 
 fn valid_segment(value: &str) -> bool {

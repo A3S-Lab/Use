@@ -27,7 +27,7 @@ const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 fn published_generation_lease_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
 
-    assert_send_sync::<ExtensionRouteLease>();
+    assert_send_sync::<ExtensionGenerationLease>();
     assert_send_sync::<ExtensionSnapshotLease>();
 }
 

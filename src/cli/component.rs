@@ -119,7 +119,7 @@ async fn status(id: &str, args: &[String]) -> UseResult<CommandOutput> {
     if let Some(extension) = installed_extension_for_id(managed_scope_argument(args)?, id).await? {
         return Ok(CommandOutput {
             human: format!(
-                "Extension '{}' is {} on route '{}'.",
+                "Extension '{}' is {}{}.",
                 extension.package_id,
                 if !extension.compatible {
                     "incompatible"
@@ -128,7 +128,11 @@ async fn status(id: &str, args: &[String]) -> UseResult<CommandOutput> {
                 } else {
                     "disabled"
                 },
-                extension.route
+                extension
+                    .alias
+                    .as_deref()
+                    .map(|alias| format!(" with CLI alias '{alias}'"))
+                    .unwrap_or_default()
             ),
             json: serde_json::json!({
                 "schemaVersion": 1,
@@ -352,7 +356,7 @@ async fn uninstall(id: &str, args: &[String]) -> UseResult<CommandOutput> {
             },
             serde_json::json!({
                 "component": format!("use/{}", result.package_id),
-                "route": extension.route,
+                "alias": extension.alias,
                 "changed": result.changed,
                 "packageGraph": result.package_graph,
                 "pluginManager": result.plugin_manager

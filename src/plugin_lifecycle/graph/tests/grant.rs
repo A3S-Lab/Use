@@ -878,7 +878,7 @@ pub(super) fn tool_manifest(version: &str) -> ExtensionManifest {
     let mut manifest = ExtensionManifest::parse_acl(TOOL_MANIFEST).unwrap();
     manifest.package_id = "acme/root".to_string();
     manifest.version = version.to_string();
-    manifest.route = "root".to_string();
+    manifest.route_alias = Some("root".to_string());
     manifest.dependencies.clear();
     manifest.tools.retain(|surface| surface.id == "convert");
     manifest.mcp_servers.clear();

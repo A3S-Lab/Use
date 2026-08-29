@@ -104,7 +104,7 @@ Status: in progress
   reconnection, stale-generation rejection, and an accepted-call Registry
   lease held through capture and cleanup.
 - [x] Publish exact installation/package/generation-matched Runtime Tool Tasks
-  through capability snapshot schema v4; omit missing or mismatched bindings.
+  through capability snapshot schema v5; omit missing or mismatched bindings.
 - [x] Require explicit owner evidence for every required Tool, MCP, Flow, OKF,
   Skill, and UI surface before atomically publishing the capability generation.
 - [x] Persist `a3s.use.runtime-service-provisioning.v1` before apply, retain
@@ -164,7 +164,7 @@ Acceptance:
 - [x] Bound per-surface generations and scope-wide tombstones, reclaim removed
   index pages, truncate the WAL, and expose typed usage evidence.
 - [x] Expose exact published-generation leases that participate in package
-  route drain before Knowledge retirement.
+  generation drain before Knowledge retirement.
 - [x] Add A3S Code Workspace and session carriers for exact OKF projections.
 - [x] Prove leased prior-generation query semantics through managed hosts.
 - Preserve complete User/Workspace scope in every database, request, citation,
@@ -187,7 +187,7 @@ Acceptance:
 Acceptance:
 
 - UI cannot access undeclared hosts, processes, files, secrets, or network;
-- uninstall leaves no receipt-owned projection, state, route, or binding.
+- uninstall leaves no receipt-owned projection, state, package publication, or binding.
 
 ## Workstream B — A3S Code CLI/TUI convergence
 
@@ -195,7 +195,7 @@ Priority: P0
 Status: in progress
 
 - [x] Expose the Use-owned typed capability/Registry cursor and an injected,
-  all-or-nothing exact-generation snapshot lease. Keep CLI snapshot schema v2
+  all-or-nothing exact-generation snapshot lease. Keep CLI snapshot schema v5
   unchanged and leave Run scope ownership to Code.
 - [x] Implement one shared typed Plugin Manager application service over the
   production Host Manager, including stable listing/search identities, all
@@ -277,9 +277,9 @@ Status: in progress
   cached target and completes without a network request.
 - A killed real-process immutable package copy leaves its exact pending plan
   and applying lifecycle journal but no receipt, installation snapshot, or
-  route. Offline replay reclaims the actual bounded crash-staging tree,
+  package binding. Offline replay reclaims the actual bounded crash-staging tree,
   publishes one generation, and removes the pending operation.
-- Uninstall retires the exact scoped graph, receipt, and route authority while
+- Uninstall retires the exact scoped graph, receipt, and package-binding authority while
   retaining global expanded-package bytes. Replay finishes cutover
   acknowledgement without advancing the Registry generation again, even when
   another process holds the shared artifact open for reading.
@@ -544,7 +544,7 @@ Status: pending
 - retained dependency exactness;
 - Add/Replace/Remove/Retain upgrade;
 - cutover replay, completion acknowledgement, and key conflict;
-- route absence before retirement;
+- package-binding absence before retirement;
 - drain before Grant/package removal;
 - pre-cutover joint rollback and post-cutover retirement recovery;
 - failed Flow compiler preflight leaves no published binding or active named

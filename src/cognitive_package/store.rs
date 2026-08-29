@@ -764,7 +764,7 @@ mod tests {
         let (_, name) = package_id.split_once('/').unwrap();
         manifest.package_id = package_id.to_string();
         manifest.version = version.to_string();
-        manifest.route = name.to_string();
+        manifest.route_alias = Some(name.to_string());
         if let Some(repository) = &mut manifest.repository {
             repository.url = format!("https://github.com/acme/{name}");
         }

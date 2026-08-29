@@ -6,7 +6,7 @@ description: A3S Use、共享 Plugin Manager、Runtime Broker 与 A3S 宿主之�
 # 架构
 
 本文描述的是开发预览版架构，不是已发布产品。当前认知包输入只有 manifest
-v3、catalog v3、receipt v5、plan v4、host protocol v6、managed scope v2 和
+v3、catalog v3、receipt v6、plan v4、host protocol v6、managed scope v2 和
 manager tools v4。
 
 Host protocol v6 独立绑定 User/Workspace kind 与 textual scope ID，并将 package
@@ -53,7 +53,7 @@ CLI 或 Agent 调用不会隐含 confirmation。TUI 迁移及 Code 侧 manager M
 | --------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
 | Umbrella host         | revision-addressed ACL Registry source、trust root、enabled/default 状态、policy、确认、secret 与 provider | 包存储与第二套 lifecycle manager              |
 | Shared Plugin Manager | catalog、policy、plan/apply、operation replay 与父级 saga                                                  | package archive 格式或 provider 内部调度      |
-| A3S Use               | 包验证、不可变 generation、receipt、grant、binding evidence、route lease 与 capability reconciliation      | 通用 scheduler、UI renderer 或 agent RPC 协议 |
+| A3S Use               | 包验证、不可变 generation、receipt、grant、binding evidence、generation lease 与 capability reconciliation | 通用 scheduler、UI renderer 或 agent RPC 协议 |
 | A3S Runtime           | Task/Service workload 与 provider capability                                                               | 包解析、信任根与用户授权                      |
 | A3S Flow              | 工作流编译、持久执行、重放、存储与 observation                                                             | 包解析或并行的 `flow.json` 生命周期           |
 | A3S Code/Knowledge    | Skill session registry、sandboxed UI、OKF registry/index 与用户体验                                        | 包安装事务与 Runtime provider 注册            |
@@ -122,7 +122,7 @@ surface enable：   前向准备 surface → 一次发布
 surface disable：  hide → drain → 反向停止 surface
 ```
 
-Runtime Tool/MCP、immutable Flow/Skill/UI evidence 与 OKF Knowledge adapter 已实现。standalone host 还提供 bundled SQLite/FTS5 后端，具备完整 User/Workspace 隔离、事务化 generation cutover、精确 projection 授权搜索，以及 concept/source-digest citation。P0 schema-v3 package/capability host 可把已验证 generation 提交为 installed-disabled，发布或隐藏 exact-generation snapshot，排空 route lease，并只移除 receipt-owned root。依赖基础又增加了精确 retained-node 校验、crash-safe 原子图发布、durable admission/lock record，以及 partial install/uninstall 后的 journal recovery；signed remote standalone CLI 已使用该图。A3S Code 的 Plugin Manager 现已通过 public lifecycle factory 组合 executable Tool Task、stdio MCP、真实 A3S Flow preflight host、Skill 与 UI；CLI 与 TUI 共用一个 watcher 并热插拔精确 generation。A3S Code 托管的 Knowledge Workspace/session carrier、Runtime Service/Gateway 组合、持久 Flow run routing 与旧 Runtime generation 退休仍在进行，因此该基础不代表完整 production saga 已交付。
+Runtime Tool/MCP、immutable Flow/Skill/UI evidence 与 OKF Knowledge adapter 已实现。standalone host 还提供 bundled SQLite/FTS5 后端，具备完整 User/Workspace 隔离、事务化 generation cutover、精确 projection 授权搜索，以及 concept/source-digest citation。P0 schema-v3 package/capability host 可把已验证 generation 提交为 installed-disabled，发布或隐藏 exact-generation snapshot，排空 generation lease，并只移除 receipt-owned root。依赖基础又增加了精确 retained-node 校验、crash-safe 原子图发布、durable admission/lock record，以及 partial install/uninstall 后的 journal recovery；signed remote standalone CLI 已使用该图。A3S Code 的 Plugin Manager 现已通过 public lifecycle factory 组合 executable Tool Task、stdio MCP、真实 A3S Flow preflight host、Skill 与 UI；CLI 与 TUI 共用一个 watcher 并热插拔精确 generation。A3S Code 托管的 Knowledge Workspace/session carrier、Runtime Service/Gateway 组合、持久 Flow run routing 与旧 Runtime generation 退休仍在进行，因此该基础不代表完整 production saga 已交付。
 
 Embedding host 实现 `CognitivePackageLifecycleFactory`，提供精确的 Runtime、Gateway、A3S Flow、Skill/UI 与 A3S Knowledge adapter，并复用 Use 的 resolver、graph journal 和 capability cutover，而不是创建另一个 package manager。standalone factory 支持 executable Task、stdio MCP、immutable Skill/UI projection 与本地 SQLite/FTS5 OKF Knowledge；必需的 Service、HTTP MCP 或 Flow owner 未注入时，会在发布前失败。Code 会显式注入 Flow host，但这不会为其他 embedding 创建 fallback。
 

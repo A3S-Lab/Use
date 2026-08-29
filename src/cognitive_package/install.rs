@@ -513,12 +513,12 @@ impl CognitivePackageManager {
                     "A retained dependency is missing from the installed closure.",
                 )
             })?;
-            let published = snapshot.routes.iter().any(|route| {
-                route.package_id == extension.receipt.package_id
-                    && route.enabled
-                    && route.lifecycle_generation == extension.receipt.lifecycle_generation
-                    && route.package_sha256 == extension.receipt.package_sha256
-                    && route.manifest_sha256 == extension.receipt.manifest_sha256
+            let published = snapshot.packages.iter().any(|binding| {
+                binding.package_id == extension.receipt.package_id
+                    && binding.enabled
+                    && binding.lifecycle_generation == extension.receipt.lifecycle_generation
+                    && binding.package_sha256 == extension.receipt.package_sha256
+                    && binding.manifest_sha256 == extension.receipt.manifest_sha256
             });
             if !published {
                 return Err(package_manager_error(

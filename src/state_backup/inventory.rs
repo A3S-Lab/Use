@@ -22,12 +22,12 @@ const STATE_DIRECTORIES: &[&str] = &[
     "bindings",
     "extension-generations",
     "extensions",
+    "generation-leases",
     "grants",
     "knowledge",
     "operations",
     "package-enablement",
     "plugin-host-manager",
-    "route-locks",
 ];
 
 const STATE_FILES: &[&str] = &["installation-snapshot.json", "registry.json"];
@@ -494,8 +494,8 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
             "knowledge" => Ok(StateBackupFamily::Knowledge),
             "package-enablement" => Ok(StateBackupFamily::Enablement),
             "plugin-host-manager" => Ok(StateBackupFamily::HostManager),
-            "route-locks" => Err(state_backup_invalid(
-                "The backup manifest must not contain route lock files.",
+            "generation-leases" => Err(state_backup_invalid(
+                "The backup manifest must not contain generation lease files.",
             )),
             _ => Err(state_backup_layout_unsupported(
                 "The backup manifest contains an unknown state family.",

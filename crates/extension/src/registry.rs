@@ -15,13 +15,13 @@ use sha2::{Digest, Sha256};
 use tokio::fs;
 
 use super::digest::package_sha256;
+use super::generation_lease::{deadline_after, open_generation_lock};
 use super::package::{
     io_error, lock_is_contended, owned_package_path, read_manifest, sha256, validate_surface_files,
     RegistryLock,
 };
 use super::registry_io::{read_registry_snapshot, write_registry_snapshot};
 use super::remote::ResolvedRemotePackage;
-use super::route_lock::{deadline_after, open_route_lock};
 use super::state_maintenance::StateMaintenanceLock;
 use super::{ExtensionManifest, ExtensionPaths};
 
@@ -42,8 +42,8 @@ pub use snapshot_lease::{
     EXTENSION_SNAPSHOT_CURSOR_SCHEMA,
 };
 
-pub const EXTENSION_RECEIPT_SCHEMA_VERSION: u32 = 5;
-pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 2;
+pub const EXTENSION_RECEIPT_SCHEMA_VERSION: u32 = 6;
+pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 3;
 const WATCH_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,7 +61,10 @@ pub struct ExtensionReceipt {
     pub installation: InstallationId,
     pub package_id: String,
     pub component_id: String,
-    pub route: String,
+    /// Optional human-facing alias retained from the admitted manifest.
+    /// Package ownership is carried only by the scoped lifecycle identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_alias: Option<String>,
     pub version: String,
     pub package_root: PathBuf,
     pub manifest_sha256: String,
@@ -226,11 +229,12 @@ impl InstalledExtension {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtensionRouteBinding {
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionPackageBinding {
     pub package_id: String,
     pub component_id: String,
-    pub route: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_alias: Option<String>,
     pub version: String,
     #[serde(default)]
     pub package_root: PathBuf,
@@ -247,7 +251,7 @@ pub struct ExtensionRegistrySnapshot {
     pub schema_version: u32,
     pub installation: InstallationId,
     pub generation: u64,
-    pub routes: Vec<ExtensionRouteBinding>,
+    pub packages: Vec<ExtensionPackageBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_cutovers: Vec<ExtensionRegistryCutoverRecord>,
 }
@@ -259,7 +263,7 @@ impl ExtensionRegistrySnapshot {
             schema_version: REGISTRY_SCHEMA_VERSION,
             installation,
             generation: 0,
-            routes: Vec::new(),
+            packages: Vec::new(),
             pending_cutovers: Vec::new(),
         }
         .validated()
@@ -282,13 +286,13 @@ impl ExtensionRegistrySnapshot {
             schema_version: u32,
             installation: &'a InstallationId,
             generation: u64,
-            routes: &'a [ExtensionRouteBinding],
+            packages: &'a [ExtensionPackageBinding],
         }
         let projection = CapabilityProjection {
             schema_version: self.schema_version,
             installation: &self.installation,
             generation: self.generation,
-            routes: &self.routes,
+            packages: &self.packages,
         };
         let mut bytes = Vec::new();
         let mut serializer =
@@ -303,18 +307,18 @@ impl ExtensionRegistrySnapshot {
     }
 }
 
-pub struct ExtensionRouteLease {
+pub struct ExtensionGenerationLease {
     extension: InstalledExtension,
     file: File,
 }
 
-impl ExtensionRouteLease {
+impl ExtensionGenerationLease {
     pub fn extension(&self) -> &InstalledExtension {
         &self.extension
     }
 
     /// Revalidate the immutable package bytes while retaining the existing
-    /// route lease. Lifecycle cutover may publish a newer generation while a
+    /// generation lease. Lifecycle cutover may publish a newer generation while a
     /// caller is draining this lease, but package or manifest drift must
     /// still fail closed before a host returns cited content.
     pub async fn verify_integrity(&self) -> UseResult<()> {
@@ -322,7 +326,7 @@ impl ExtensionRouteLease {
     }
 }
 
-impl Drop for ExtensionRouteLease {
+impl Drop for ExtensionGenerationLease {
     fn drop(&mut self) {
         let _ = FileExt::unlock(&self.file);
     }
@@ -367,7 +371,7 @@ impl ExtensionRegistry {
         read_registry_snapshot(&self.paths).await
     }
 
-    /// Return the immutable route projection currently visible to consumers.
+    /// Return the immutable package-generation projection visible to consumers.
     ///
     /// The published projection is compared with ownership-validated receipts
     /// without blocking lifecycle writers. A mismatch is rebuilt under the
@@ -379,7 +383,7 @@ impl ExtensionRegistry {
         // crash reconciliation.
         let published = read_registry_snapshot(&self.paths).await?;
         match self.list().await {
-            Ok(installed) if published.routes == route_bindings(&installed) => {
+            Ok(installed) if published.packages == package_bindings(&installed) => {
                 return Ok(published)
             }
             // A lifecycle writer may remove a receipt between the optimistic
@@ -408,8 +412,8 @@ impl ExtensionRegistry {
         };
         let installed = self.list().await?;
         let published = read_registry_snapshot(&self.paths).await?;
-        let routes = route_bindings(&installed);
-        if published.routes == routes {
+        let packages = package_bindings(&installed);
+        if published.packages == packages {
             return Ok(published);
         }
         // Receipt writes belonging to a schema-v3 graph publication are not a
@@ -418,7 +422,7 @@ impl ExtensionRegistry {
         // Never let an observer publish an installed-disabled candidate or
         // infer another lifecycle generation from partially written receipts;
         // the durable lifecycle journal must replay the exact reviewed batch.
-        if lifecycle_bindings(&published.routes) != lifecycle_bindings(&routes) {
+        if lifecycle_bindings(&published.packages) != lifecycle_bindings(&packages) {
             return Ok(published);
         }
         self.publish_snapshot_locked(&installed).await
@@ -500,7 +504,6 @@ impl ExtensionRegistry {
             installed.push(self.load_receipt(&path).await?);
         }
         installed.sort_by(|left, right| left.receipt.package_id.cmp(&right.receipt.package_id));
-        ensure_unique_routes(&installed)?;
         Ok(installed)
     }
 
@@ -519,7 +522,7 @@ impl ExtensionRegistry {
     /// generation rather than the primary candidate receipt.
     pub async fn get_snapshot_binding(
         &self,
-        binding: &ExtensionRouteBinding,
+        binding: &ExtensionPackageBinding,
     ) -> UseResult<Option<InstalledExtension>> {
         let package_sha256 = binding.package_sha256.as_deref().ok_or_else(|| {
             UseError::new(
@@ -552,22 +555,23 @@ impl ExtensionRegistry {
         Ok(installed_dependents(&installed, &package_id))
     }
 
-    /// Pin the exact currently published cognitive-package generation for a
-    /// host-owned dispatch. The lease participates in lifecycle drain and
-    /// never launches package-owned processes outside the surface lifecycle.
-    pub async fn acquire_published_route(
+    /// Resolve a human-facing alias and pin its exact published package
+    /// generation. Duplicate aliases fail with an explicit ambiguity error;
+    /// callers that already hold canonical identity must use
+    /// [`Self::acquire_published_lifecycle_generation`].
+    pub async fn acquire_published_alias(
         &self,
-        route: &str,
-    ) -> UseResult<Option<ExtensionRouteLease>> {
+        alias: &str,
+    ) -> UseResult<Option<ExtensionGenerationLease>> {
         let Some(candidate) = self
-            .find_route_for_host_version(route, env!("CARGO_PKG_VERSION"))
+            .resolve_alias_for_host_version(alias, env!("CARGO_PKG_VERSION"))
             .await?
         else {
             return Ok(None);
         };
-        self.acquire_extension_lease_for_host_version(
+        self.acquire_extension_generation_for_host_version(
             candidate,
-            Some(route),
+            Some(alias),
             env!("CARGO_PKG_VERSION"),
         )
         .await
@@ -578,37 +582,40 @@ impl ExtensionRegistry {
     /// Managed hosts use this form when a capability projection already
     /// carries the reviewed package digest, manifest digest, and lifecycle
     /// generation. The lease participates in the same lifecycle drain as a
-    /// route dispatch. It returns `None` when the exact generation is missing,
+    /// alias dispatch. It returns `None` when the exact generation is missing,
     /// no longer published, incompatible with this host, or already draining.
     pub async fn acquire_published_lifecycle_generation(
         &self,
         identity: &ExtensionLifecycleIdentity,
-    ) -> UseResult<Option<ExtensionRouteLease>> {
+    ) -> UseResult<Option<ExtensionGenerationLease>> {
         let Some(candidate) = self.get_lifecycle_generation(identity).await? else {
             return Ok(None);
         };
-        self.acquire_extension_lease_for_host_version(candidate, None, env!("CARGO_PKG_VERSION"))
-            .await
+        self.acquire_extension_generation_for_host_version(
+            candidate,
+            None,
+            env!("CARGO_PKG_VERSION"),
+        )
+        .await
     }
 
     /// Resolve the exact currently published cognitive-package generation
     /// without acquiring a dispatch lease.
-    pub async fn find_published_route(&self, route: &str) -> UseResult<Option<InstalledExtension>> {
-        self.find_route_for_host_version(route, env!("CARGO_PKG_VERSION"))
+    pub async fn resolve_published_alias(
+        &self,
+        alias: &str,
+    ) -> UseResult<Option<InstalledExtension>> {
+        self.resolve_alias_for_host_version(alias, env!("CARGO_PKG_VERSION"))
             .await
     }
 
-    async fn find_route_for_host_version(
+    async fn resolve_alias_for_host_version(
         &self,
-        route: &str,
+        alias: &str,
         host_version: &str,
     ) -> UseResult<Option<InstalledExtension>> {
         let published = read_registry_snapshot(&self.paths).await?;
-        let Some(binding) = published
-            .routes
-            .iter()
-            .find(|binding| binding.enabled && binding.route == route)
-        else {
+        let Some(binding) = unique_published_alias_binding(&published, alias)? else {
             return Ok(None);
         };
         let Some(extension) = self.get_snapshot_binding(binding).await? else {
@@ -620,26 +627,31 @@ impl ExtensionRegistry {
         .then_some(extension))
     }
 
-    async fn acquire_extension_lease_for_host_version(
+    async fn acquire_extension_generation_for_host_version(
         &self,
         candidate: InstalledExtension,
-        expected_route: Option<&str>,
+        expected_alias: Option<&str>,
         host_version: &str,
-    ) -> UseResult<Option<ExtensionRouteLease>> {
-        let path = lifecycle_route_lock_path(&self.paths, &candidate.receipt)?;
-        let file = open_route_lock(&path)?;
+    ) -> UseResult<Option<ExtensionGenerationLease>> {
+        let path = lifecycle_generation_lock_path(&self.paths, &candidate.receipt)?;
+        let file = open_generation_lock(&path)?;
         match FileExt::try_lock_shared(&file) {
             Ok(()) => {}
             Err(error) if lock_is_contended(&error) => return Ok(None),
-            Err(error) => return Err(io_error("acquire extension route lease", &path, error)),
+            Err(error) => return Err(io_error("acquire extension generation lease", &path, error)),
         }
 
         // Re-read after locking so a concurrent disable cannot admit a call
-        // using stale route metadata.
+        // using stale publication metadata.
         let published = read_registry_snapshot(&self.paths).await?;
-        let Some(binding) = published.routes.iter().find(|binding| {
-            binding.enabled && published_binding_matches_extension(binding, &candidate)
-        }) else {
+        let binding = match expected_alias {
+            Some(alias) => unique_published_alias_binding(&published, alias)?
+                .filter(|binding| published_binding_matches_generation(binding, &candidate)),
+            None => published.packages.iter().find(|binding| {
+                binding.enabled && published_binding_matches_generation(binding, &candidate)
+            }),
+        };
+        let Some(binding) = binding else {
             let _ = FileExt::unlock(&file);
             return Ok(None);
         };
@@ -647,24 +659,21 @@ impl ExtensionRegistry {
             let _ = FileExt::unlock(&file);
             return Ok(None);
         };
-        if !extension.receipt.enabled
-            || !extension.supports_use_version(host_version)
-            || expected_route.is_some_and(|route| extension.receipt.route != route)
-        {
+        if !extension.receipt.enabled || !extension.supports_use_version(host_version) {
             let _ = FileExt::unlock(&file);
             return Ok(None);
         }
         verify_package_integrity(&extension).await?;
-        Ok(Some(ExtensionRouteLease { extension, file }))
+        Ok(Some(ExtensionGenerationLease { extension, file }))
     }
 
     async fn publish_snapshot_locked(
         &self,
         installed: &[InstalledExtension],
     ) -> UseResult<ExtensionRegistrySnapshot> {
-        let routes = route_bindings(installed);
+        let packages = package_bindings(installed);
         let current = read_registry_snapshot(&self.paths).await?;
-        if current.routes == routes {
+        if current.packages == packages {
             return Ok(current);
         }
         let snapshot = ExtensionRegistrySnapshot {
@@ -676,7 +685,7 @@ impl ExtensionRegistry {
                     "The extension registry generation is exhausted.",
                 )
             })?,
-            routes,
+            packages,
             pending_cutovers: current.pending_cutovers,
         };
         write_registry_snapshot(&self.paths, &snapshot).await?;
@@ -823,7 +832,7 @@ impl ExtensionRegistry {
         let (manifest, manifest_bytes) = read_manifest(&receipt.package_root).await?;
         if manifest.package_id != receipt.package_id
             || manifest.version != receipt.version
-            || manifest.route != receipt.route
+            || manifest.route_alias != receipt.route_alias
             || sha256(&manifest_bytes) != receipt.manifest_sha256
         {
             return Err(UseError::new(
@@ -900,13 +909,13 @@ async fn verify_package_integrity(extension: &InstalledExtension) -> UseResult<(
     Ok(())
 }
 
-fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding> {
+fn package_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionPackageBinding> {
     installed
         .iter()
-        .map(|extension| ExtensionRouteBinding {
+        .map(|extension| ExtensionPackageBinding {
             package_id: extension.receipt.package_id.clone(),
             component_id: extension.receipt.component_id.clone(),
-            route: extension.receipt.route.clone(),
+            route_alias: extension.receipt.route_alias.clone(),
             version: extension.receipt.version.clone(),
             package_root: extension.receipt.package_root.clone(),
             manifest_sha256: extension.receipt.manifest_sha256.clone(),
@@ -978,9 +987,9 @@ pub(super) fn validate_surface_selection(
 }
 
 fn lifecycle_bindings(
-    routes: &[ExtensionRouteBinding],
-) -> BTreeMap<&str, (u64, &str, &str, &str, &str, bool)> {
-    routes
+    packages: &[ExtensionPackageBinding],
+) -> BTreeMap<&str, (u64, &str, &str, &str, bool)> {
+    packages
         .iter()
         .filter_map(|binding| {
             let generation = binding.lifecycle_generation?;
@@ -992,7 +1001,6 @@ fn lifecycle_bindings(
                     binding.manifest_sha256.as_str(),
                     package_sha256,
                     binding.version.as_str(),
-                    binding.route.as_str(),
                     binding.enabled,
                 ),
             ))
@@ -1001,26 +1009,70 @@ fn lifecycle_bindings(
 }
 
 fn published_binding_matches_extension(
-    binding: &ExtensionRouteBinding,
+    binding: &ExtensionPackageBinding,
     extension: &InstalledExtension,
 ) -> bool {
-    binding == &route_bindings(std::slice::from_ref(extension))[0]
+    binding == &package_bindings(std::slice::from_ref(extension))[0]
 }
 
-fn lifecycle_route_lock_path(
+fn published_binding_matches_generation(
+    binding: &ExtensionPackageBinding,
+    extension: &InstalledExtension,
+) -> bool {
+    binding.enabled
+        && binding.package_id == extension.receipt.package_id
+        && binding.package_root == extension.receipt.package_root
+        && binding.manifest_sha256 == extension.receipt.manifest_sha256
+        && binding.package_sha256 == extension.receipt.package_sha256
+        && binding.lifecycle_generation == extension.receipt.lifecycle_generation
+}
+
+fn unique_published_alias_binding<'a>(
+    snapshot: &'a ExtensionRegistrySnapshot,
+    alias: &str,
+) -> UseResult<Option<&'a ExtensionPackageBinding>> {
+    if !crate::valid_route_alias(alias) {
+        return Err(UseError::new(
+            "use.extension.alias_invalid",
+            "Extension aliases must be lowercase, non-reserved identifier segments.",
+        ));
+    }
+    let matches = snapshot
+        .packages
+        .iter()
+        .filter(|binding| binding.enabled && binding.route_alias.as_deref() == Some(alias))
+        .collect::<Vec<_>>();
+    if matches.len() > 1 {
+        return Err(UseError::new(
+            "use.extension.alias_ambiguous",
+            format!("Extension alias '{alias}' resolves to multiple packages."),
+        )
+        .with_detail(
+            "packageIds",
+            matches
+                .iter()
+                .map(|binding| binding.package_id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .with_suggestion("Select the cognitive package by its canonical publisher/name ID."));
+    }
+    Ok(matches.into_iter().next())
+}
+
+fn lifecycle_generation_lock_path(
     paths: &ExtensionPaths,
     receipt: &ExtensionReceipt,
 ) -> UseResult<PathBuf> {
     if receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION {
         return Err(UseError::new(
             "use.extension.lifecycle_receipt_invalid",
-            "An extension receipt has inconsistent route-lease generation evidence.",
+            "An extension receipt has inconsistent generation-lease evidence.",
         ));
     }
     let generation = receipt.lifecycle_generation.ok_or_else(|| {
         UseError::new(
             "use.extension.lifecycle_receipt_invalid",
-            "A cognitive-package receipt omitted its route-lease generation.",
+            "A cognitive-package receipt omitted its generation-lease identity.",
         )
     })?;
     Ok(paths.lifecycle_package_lock_path(&receipt.package_id, generation))
@@ -1221,26 +1273,6 @@ fn catalog_package_error(message: impl Into<String>) -> UseError {
 
 fn plan_evidence_error(message: impl Into<String>) -> UseError {
     UseError::new("use.extension.plan_evidence_missing", message)
-}
-
-fn ensure_unique_routes(installed: &[InstalledExtension]) -> UseResult<()> {
-    for (index, extension) in installed.iter().enumerate() {
-        if let Some(conflict) = installed[index + 1..]
-            .iter()
-            .find(|candidate| candidate.receipt.route == extension.receipt.route)
-        {
-            return Err(UseError::new(
-                "use.extension.route_conflict",
-                format!(
-                    "Route '{}' is claimed by '{}' and '{}'.",
-                    extension.receipt.route,
-                    extension.receipt.package_id,
-                    conflict.receipt.package_id
-                ),
-            ));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

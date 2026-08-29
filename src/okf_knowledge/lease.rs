@@ -1,5 +1,5 @@
 use a3s_use_core::{OkfCapabilityProjection, PlanScope, UseError, UseResult};
-use a3s_use_extension::{ExtensionLifecycleIdentity, ExtensionRegistry, ExtensionRouteLease};
+use a3s_use_extension::{ExtensionGenerationLease, ExtensionLifecycleIdentity, ExtensionRegistry};
 
 use super::{
     OkfKnowledgeCitation, OkfKnowledgeClient, OkfKnowledgeReadResponse, OkfKnowledgeSearchRequest,
@@ -8,7 +8,7 @@ use super::{
 
 /// Host-side acquisition service for one exact published OKF generation.
 ///
-/// The underlying Registry route lease participates in lifecycle drain. A
+/// The underlying Registry generation lease participates in lifecycle drain. A
 /// newer cutover may be published while an existing lease is in use, but
 /// receipt-owned retirement cannot remove that generation until the lease is
 /// dropped. New acquisitions for hidden, revoked, or stale generations fail
@@ -47,19 +47,19 @@ impl OkfKnowledgeLeaseProvider {
             &projection.manifest_digest,
             projection.generation,
         )?;
-        let Some(route_lease) = self
+        let Some(generation_lease) = self
             .registry
             .acquire_published_lifecycle_generation(&identity)
             .await?
         else {
             return Ok(None);
         };
-        validate_route_binding(&route_lease, projection)?;
-        route_lease.verify_integrity().await?;
+        validate_generation_binding(&generation_lease, projection)?;
+        generation_lease.verify_integrity().await?;
         Ok(Some(OkfKnowledgeLease {
             projection: projection.clone(),
             client: self.client.clone(),
-            route_lease,
+            generation_lease,
         }))
     }
 }
@@ -70,7 +70,7 @@ impl OkfKnowledgeLeaseProvider {
 pub struct OkfKnowledgeLease {
     projection: OkfCapabilityProjection,
     client: OkfKnowledgeClient,
-    route_lease: ExtensionRouteLease,
+    generation_lease: ExtensionGenerationLease,
 }
 
 impl OkfKnowledgeLease {
@@ -88,7 +88,7 @@ impl OkfKnowledgeLease {
         query: impl Into<String>,
         limit: usize,
     ) -> UseResult<OkfKnowledgeSearchResponse> {
-        self.route_lease.verify_integrity().await?;
+        self.generation_lease.verify_integrity().await?;
         let request = OkfKnowledgeSearchRequest::new(
             self.projection.scope.clone(),
             query,
@@ -96,7 +96,7 @@ impl OkfKnowledgeLease {
             vec![self.projection.clone()],
         )?;
         let result = self.client.search(&request).await;
-        self.route_lease.verify_integrity().await?;
+        self.generation_lease.verify_integrity().await?;
         result
     }
 
@@ -107,7 +107,7 @@ impl OkfKnowledgeLease {
         citation: &OkfKnowledgeCitation,
         max_bytes: usize,
     ) -> UseResult<OkfKnowledgeReadResponse> {
-        self.route_lease.verify_integrity().await?;
+        self.generation_lease.verify_integrity().await?;
         let request = super::OkfKnowledgeReadRequest::new(
             self.projection.scope.clone(),
             self.projection.clone(),
@@ -115,16 +115,16 @@ impl OkfKnowledgeLease {
             max_bytes,
         )?;
         let result = self.client.read(&request).await;
-        self.route_lease.verify_integrity().await?;
+        self.generation_lease.verify_integrity().await?;
         result
     }
 }
 
-fn validate_route_binding(
-    route_lease: &ExtensionRouteLease,
+fn validate_generation_binding(
+    generation_lease: &ExtensionGenerationLease,
     projection: &OkfCapabilityProjection,
 ) -> UseResult<()> {
-    let extension = route_lease.extension();
+    let extension = generation_lease.extension();
     let receipt = &extension.receipt;
     if receipt.package_id != projection.surface.package_id
         || receipt.lifecycle_generation != Some(projection.generation)

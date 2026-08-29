@@ -38,7 +38,7 @@ pub(super) async fn validate_live_authority(
             "The live installed receipts do not match the backup authority.",
         ));
     }
-    validate_snapshot_receipts(&snapshot.routes, paths, live).await?;
+    validate_snapshot_receipts(&snapshot.packages, paths, live).await?;
     digest_entries(&live_authority)
 }
 
@@ -82,7 +82,7 @@ async fn read_receipt_authority(
 }
 
 async fn validate_snapshot_receipts(
-    routes: &[a3s_use_extension::ExtensionRouteBinding],
+    packages: &[a3s_use_extension::ExtensionPackageBinding],
     paths: &ExtensionPaths,
     live: &[StateBackupEntry],
 ) -> UseResult<()> {
@@ -101,14 +101,14 @@ async fn validate_snapshot_receipts(
         })?;
         receipts.insert(receipt.package_id.clone(), receipt);
     }
-    if routes.len() != receipts.len() {
+    if packages.len() != receipts.len() {
         return Err(authority_mismatch(
-            "The live Registry routes and installed receipts have not converged.",
+            "The live Registry packages and installed receipts have not converged.",
         ));
     }
-    for route in routes {
-        let receipt = receipts.get(&route.package_id).ok_or_else(|| {
-            authority_mismatch("A live Registry route has no exact installed receipt.")
+    for package in packages {
+        let receipt = receipts.get(&package.package_id).ok_or_else(|| {
+            authority_mismatch("A live Registry package has no exact installed receipt.")
         })?;
         let surfaces = receipt
             .selected_surfaces
@@ -118,18 +118,18 @@ async fn validate_snapshot_receipts(
             .into_iter()
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        if route.component_id != receipt.component_id
-            || route.route != receipt.route
-            || route.version != receipt.version
-            || route.package_root != receipt.package_root
-            || route.manifest_sha256 != receipt.manifest_sha256
-            || route.package_sha256 != receipt.package_sha256
-            || route.lifecycle_generation != receipt.lifecycle_generation
-            || route.enabled != receipt.enabled
-            || route.surfaces != surfaces
+        if package.component_id != receipt.component_id
+            || package.route_alias != receipt.route_alias
+            || package.version != receipt.version
+            || package.package_root != receipt.package_root
+            || package.manifest_sha256 != receipt.manifest_sha256
+            || package.package_sha256 != receipt.package_sha256
+            || package.lifecycle_generation != receipt.lifecycle_generation
+            || package.enabled != receipt.enabled
+            || package.surfaces != surfaces
         {
             return Err(authority_mismatch(
-                "A live Registry route differs from its exact installed receipt.",
+                "A live Registry package differs from its exact installed receipt.",
             ));
         }
     }

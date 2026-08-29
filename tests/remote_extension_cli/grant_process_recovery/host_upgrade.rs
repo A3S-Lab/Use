@@ -126,10 +126,10 @@ fn killed_host_protocol_upgrade_apply_replays_offline_without_reauthorization() 
         pending_path.is_file()
             && graph_path.is_file()
             && snapshot["generation"] == 2
-            && snapshot["routes"]
+            && snapshot["packages"]
                 .as_array()
-                .is_some_and(|routes| routes.len() == DEPENDENCY_COUNT + 1)
-            && route_package_ids(&snapshot) == expected_package_ids
+                .is_some_and(|packages| packages.len() == DEPENDENCY_COUNT + 1)
+            && published_package_ids(&snapshot) == expected_package_ids
             && snapshot["pendingCutovers"]
                 .as_array()
                 .is_some_and(|cutovers| cutovers.len() == 1)
@@ -212,5 +212,5 @@ fn killed_host_protocol_upgrade_apply_replays_offline_without_reauthorization() 
     assert!(snapshot["pendingCutovers"]
         .as_array()
         .is_none_or(Vec::is_empty));
-    assert_eq!(route_package_ids(&snapshot), expected_package_ids);
+    assert_eq!(published_package_ids(&snapshot), expected_package_ids);
 }

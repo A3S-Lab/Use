@@ -4,20 +4,17 @@ use a3s_use_core::{InstallationId, UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ExtensionLifecycleIdentity, ExtensionRegistry, ExtensionRegistrySnapshot, ExtensionRouteLease,
-    InstalledExtension,
+    ExtensionGenerationLease, ExtensionLifecycleIdentity, ExtensionRegistry,
+    ExtensionRegistrySnapshot, InstalledExtension,
 };
 
-pub const EXTENSION_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.extension-snapshot-cursor.v2";
+pub const EXTENSION_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.extension-snapshot-cursor.v3";
 
 /// Exact immutable package generation selected by one Registry publication.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionSnapshotPackage {
     pub package_id: String,
-    pub component_id: String,
-    pub route: String,
-    pub version: String,
     pub lifecycle_generation: u64,
     pub package_digest: String,
     pub manifest_digest: String,
@@ -25,11 +22,6 @@ pub struct ExtensionSnapshotPackage {
 
 impl ExtensionSnapshotPackage {
     fn lifecycle_identity(&self) -> UseResult<ExtensionLifecycleIdentity> {
-        if self.component_id.is_empty() || self.route.is_empty() || self.version.is_empty() {
-            return Err(snapshot_cursor_error(
-                "A snapshot package omitted its component, route, or version identity.",
-            ));
-        }
         ExtensionLifecycleIdentity::new(
             &self.package_id,
             self.package_digest.clone(),
@@ -47,9 +39,6 @@ impl ExtensionSnapshotPackage {
     fn matches_extension(&self, extension: &InstalledExtension) -> bool {
         let receipt = &extension.receipt;
         receipt.package_id == self.package_id
-            && receipt.component_id == self.component_id
-            && receipt.route == self.route
-            && receipt.version == self.version
             && receipt.lifecycle_generation == Some(self.lifecycle_generation)
             && receipt.package_sha256.as_deref() == self.package_digest.strip_prefix("sha256:")
             && receipt.manifest_sha256
@@ -63,7 +52,7 @@ impl ExtensionSnapshotPackage {
 /// Stable resume and lease-acquisition cursor for one Registry publication.
 ///
 /// `revision` binds the complete Registry projection, including disabled
-/// routes. `packages` is the sorted set of callable immutable generations that
+/// packages and human aliases. `packages` is the sorted set of callable immutable generations that
 /// must all be leased before a host may admit work against this cursor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -74,7 +63,7 @@ pub struct ExtensionSnapshotCursor {
     pub revision: String,
     pub packages: Vec<ExtensionSnapshotPackage>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unleasable_routes: Vec<String>,
+    pub unleasable_packages: Vec<String>,
 }
 
 impl ExtensionSnapshotCursor {
@@ -83,11 +72,16 @@ impl ExtensionSnapshotCursor {
             || self.installation.validate().is_err()
             || !valid_canonical_sha256(&self.revision)
             || self.packages.len() > MAX_PLUGIN_PLAN_ITEMS
-            || self.unleasable_routes.len() > MAX_PLUGIN_PLAN_ITEMS
+            || self.unleasable_packages.len() > MAX_PLUGIN_PLAN_ITEMS
             || self.packages.windows(2).any(|pair| pair[0] >= pair[1])
-            || self.unleasable_routes.iter().any(String::is_empty)
+            || self.unleasable_packages.iter().any(|package_id| {
+                !matches!(
+                    super::normalize_package_id(package_id),
+                    Ok(normalized) if normalized == *package_id
+                )
+            })
             || self
-                .unleasable_routes
+                .unleasable_packages
                 .windows(2)
                 .any(|pair| pair[0] >= pair[1])
         {
@@ -110,11 +104,20 @@ impl ExtensionSnapshotCursor {
                 "The extension snapshot cursor contains duplicate package identities.",
             ));
         }
+        if self.packages.iter().any(|package| {
+            self.unleasable_packages
+                .binary_search(&package.package_id)
+                .is_ok()
+        }) {
+            return Err(snapshot_cursor_error(
+                "The extension snapshot cursor contains overlapping leasable and unleasable package identities.",
+            ));
+        }
         Ok(())
     }
 
     pub fn is_fully_leasable(&self) -> bool {
-        self.unleasable_routes.is_empty()
+        self.unleasable_packages.is_empty()
     }
 }
 
@@ -124,35 +127,33 @@ impl ExtensionRegistrySnapshot {
     pub fn cursor(&self) -> UseResult<ExtensionSnapshotCursor> {
         self.validate()?;
         let mut packages = Vec::new();
-        let mut unleasable_routes = Vec::new();
-        for route in self.routes.iter().filter(|route| route.enabled) {
-            let (Some(lifecycle_generation), Some(package_sha256)) =
-                (route.lifecycle_generation, route.package_sha256.as_deref())
-            else {
-                unleasable_routes.push(route.route.clone());
+        let mut unleasable_packages = Vec::new();
+        for binding in self.packages.iter().filter(|binding| binding.enabled) {
+            let (Some(lifecycle_generation), Some(package_sha256)) = (
+                binding.lifecycle_generation,
+                binding.package_sha256.as_deref(),
+            ) else {
+                unleasable_packages.push(binding.package_id.clone());
                 continue;
             };
             let package = ExtensionSnapshotPackage {
-                package_id: route.package_id.clone(),
-                component_id: route.component_id.clone(),
-                route: route.route.clone(),
-                version: route.version.clone(),
+                package_id: binding.package_id.clone(),
                 lifecycle_generation,
                 package_digest: format!("sha256:{package_sha256}"),
-                manifest_digest: format!("sha256:{}", route.manifest_sha256),
+                manifest_digest: format!("sha256:{}", binding.manifest_sha256),
             };
             package.lifecycle_identity()?;
             packages.push(package);
         }
         packages.sort();
-        unleasable_routes.sort();
+        unleasable_packages.sort();
         let cursor = ExtensionSnapshotCursor {
             schema: EXTENSION_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
             installation: self.installation.clone(),
             generation: self.generation,
             revision: self.descriptor_digest()?,
             packages,
-            unleasable_routes,
+            unleasable_packages,
         };
         cursor.validate()?;
         Ok(cursor)
@@ -161,11 +162,11 @@ impl ExtensionRegistrySnapshot {
 
 /// All-or-nothing RAII lease for every callable package in one publication.
 ///
-/// Dropping the value synchronously releases its shared route locks. Lifecycle
+/// Dropping the value synchronously releases its shared generation locks. Lifecycle
 /// cleanup remains explicit and asynchronous in its owning coordinator.
 pub struct ExtensionSnapshotLease {
     cursor: ExtensionSnapshotCursor,
-    leases: Vec<ExtensionRouteLease>,
+    leases: Vec<ExtensionGenerationLease>,
 }
 
 impl ExtensionSnapshotLease {
@@ -182,7 +183,7 @@ impl ExtensionSnapshotLease {
     }
 
     pub fn packages(&self) -> impl ExactSizeIterator<Item = &InstalledExtension> {
-        self.leases.iter().map(ExtensionRouteLease::extension)
+        self.leases.iter().map(ExtensionGenerationLease::extension)
     }
 
     pub async fn verify_integrity(&self) -> UseResult<()> {
@@ -207,9 +208,9 @@ impl ExtensionRegistry {
     /// Acquire every callable package generation selected by `expected`.
     ///
     /// Acquisition is deterministic and all-or-nothing. The Registry
-    /// publication is checked before and after all route locks are held, so a
+    /// publication is checked before and after all generation locks are held, so a
     /// concurrent cutover can never return a mixed-generation lease. `None`
-    /// means the cursor is stale, a route was hidden, or drain already owns a
+    /// means the cursor is stale, a package was hidden, or drain already owns a
     /// required generation.
     pub async fn acquire_published_snapshot(
         &self,
@@ -225,11 +226,11 @@ impl ExtensionRegistry {
         if !expected.is_fully_leasable() {
             return Err(UseError::new(
                 "use.extension.snapshot_unleasable",
-                "The published extension snapshot contains a callable route without immutable lifecycle generation evidence.",
+                "The published extension snapshot contains a callable package without immutable lifecycle generation evidence.",
             )
-            .with_detail("routes", expected.unleasable_routes.clone())
+            .with_detail("packageIds", expected.unleasable_packages.clone())
             .with_suggestion(
-                "Reinstall the route as a current cognitive package before using exact-generation admission.",
+                "Reinstall the package before using exact-generation admission.",
             ));
         }
 

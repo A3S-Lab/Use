@@ -186,7 +186,7 @@ impl ExtensionPaths {
 
     pub(crate) fn lifecycle_package_lock_path(&self, package_id: &str, generation: u64) -> PathBuf {
         append_package_id(
-            self.installation_state_root().join("route-locks"),
+            self.installation_state_root().join("generation-leases"),
             package_id,
         )
         .join(format!("{generation:020}.lock"))
@@ -239,6 +239,7 @@ const LEGACY_STATE_ENTRIES: &[&str] = &[
     "package-graphs",
     "plugin-host-manager",
     "registry.json",
+    "generation-leases",
     "route-locks",
 ];
 
@@ -380,7 +381,7 @@ mod tests {
         );
         assert_eq!(
             paths.lifecycle_package_lock_path("acme/slack", 7),
-            state.join("route-locks/acme/slack/00000000000000000007.lock")
+            state.join("generation-leases/acme/slack/00000000000000000007.lock")
         );
         assert_eq!(paths.registry_snapshot_path(), state.join("registry.json"));
         assert_eq!(

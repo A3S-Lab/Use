@@ -40,7 +40,7 @@ async fn lifecycle_graph_publication_is_one_cutover_and_recovers_partial_receipt
             .unwrap();
     }
     let before = registry.snapshot().await.unwrap();
-    assert!(before.routes.iter().all(|route| !route.enabled));
+    assert!(before.packages.iter().all(|package| !package.enabled));
 
     // Model a process crash after one receipt was enabled but before the
     // complete dependency closure reached the snapshot commit point.
@@ -52,12 +52,12 @@ async fn lifecycle_graph_publication_is_one_cutover_and_recovers_partial_receipt
     let guarded = registry.snapshot().await.unwrap();
     assert_eq!(guarded, before);
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("base", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("base", "0.3.0")
         .await
         .unwrap()
         .is_none());
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("root", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("root", "0.3.0")
         .await
         .unwrap()
         .is_none());
@@ -73,14 +73,14 @@ async fn lifecycle_graph_publication_is_one_cutover_and_recovers_partial_receipt
         .all(|result| result.registry_generation == before.generation + 1));
     let after = registry.snapshot().await.unwrap();
     assert_eq!(after.generation, before.generation + 1);
-    assert!(after.routes.iter().all(|route| route.enabled));
+    assert!(after.packages.iter().all(|package| package.enabled));
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("base", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("base", "0.3.0")
         .await
         .unwrap()
         .is_some());
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("root", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("root", "0.3.0")
         .await
         .unwrap()
         .is_some());
@@ -139,7 +139,7 @@ async fn lifecycle_graph_hide_returns_exact_stable_snapshot_evidence_in_one_cuto
         .await
         .unwrap();
     let before = registry.snapshot().await.unwrap();
-    assert!(before.routes.iter().all(|route| route.enabled));
+    assert!(before.packages.iter().all(|package| package.enabled));
 
     let hidden = registry
         .hide_lifecycle_package_graph_with_evidence(&identities)
@@ -152,7 +152,7 @@ async fn lifecycle_graph_hide_returns_exact_stable_snapshot_evidence_in_one_cuto
         hidden.registry_snapshot_digest,
         after.descriptor_digest().unwrap()
     );
-    assert!(after.routes.is_empty());
+    assert!(after.packages.is_empty());
     for identity in &identities {
         assert!(
             !registry
@@ -287,7 +287,7 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
     assert!(registry.get("acme/base").await.unwrap().unwrap().enabled());
     assert!(!registry.get("acme/root").await.unwrap().unwrap().enabled());
     let base_lease = registry
-        .acquire_lifecycle_route_for_host_version("base", host_version)
+        .acquire_lifecycle_alias_for_host_version("base", host_version)
         .await
         .unwrap()
         .unwrap();
@@ -334,12 +334,12 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
     let after = registry.snapshot().await.unwrap();
     assert_eq!(after.generation, before.generation + 1);
     assert!(after
-        .routes
+        .packages
         .iter()
-        .all(|route| route.package_id != "acme/base"));
-    assert!(after.routes.iter().any(|route| {
-        route.package_id == "acme/root"
-            && route.lifecycle_generation == Some(candidate_root_identity.generation())
+        .all(|package| package.package_id != "acme/base"));
+    assert!(after.packages.iter().any(|package| {
+        package.package_id == "acme/root"
+            && package.lifecycle_generation == Some(candidate_root_identity.generation())
     }));
     assert!(registry.get("acme/base").await.unwrap().is_none());
     assert!(registry
