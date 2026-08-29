@@ -5,10 +5,9 @@ use std::time::Duration;
 use a3s_use_core::UseResult;
 use fs2::FileExt;
 
-use super::{artifact_store_error, open_lock_file, ArtifactStore};
+use super::{artifact_store_error, open_lock_file, ArtifactStore, REACHABILITY_LOCK};
 use crate::package::{io_error, lock_is_contended};
 
-const REACHABILITY_LOCK: &str = ".reachability.lock";
 const REACHABILITY_LOCK_WAIT: Duration = Duration::from_secs(2);
 const REACHABILITY_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 
@@ -32,6 +31,7 @@ pub struct ArtifactReferenceAdmission {
 #[must_use = "dropping the guard allows durable artifact references to resume"]
 pub struct ArtifactCollectionGuard {
     file: File,
+    root: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,7 +59,10 @@ impl ArtifactStore {
             .await?;
         acquire_reachability_lock(self, ReachabilityLockMode::Exclusive)
             .await
-            .map(|file| ArtifactCollectionGuard { file })
+            .map(|file| ArtifactCollectionGuard {
+                file,
+                root: self.root().to_path_buf(),
+            })
     }
 }
 
@@ -69,6 +72,18 @@ impl ArtifactReferenceAdmission {
             return Err(artifact_store_error(
                 "use.artifact_store.admission_mismatch",
                 "An artifact reference admission belongs to a different global store.",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl ArtifactCollectionGuard {
+    pub(crate) fn ensure_store(&self, store: &ArtifactStore) -> UseResult<()> {
+        if self.root != store.root() {
+            return Err(artifact_store_error(
+                "use.artifact_store.collection_mismatch",
+                "An artifact collection guard belongs to a different global store.",
             ));
         }
         Ok(())

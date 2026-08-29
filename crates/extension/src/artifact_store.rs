@@ -9,15 +9,25 @@ use tokio::fs;
 use crate::package::{io_error, lock_is_contended};
 
 mod blob;
+mod inventory;
 mod reachability;
 
 pub(crate) use blob::ArtifactBlob;
+pub use inventory::{
+    ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState, ArtifactStoreInventory,
+    ARTIFACT_STORE_INVENTORY_SCHEMA,
+};
 pub use reachability::{ArtifactCollectionGuard, ArtifactReferenceAdmission};
 
+const BLOBS_DIRECTORY: &str = "blobs";
 const EXPANDED_PACKAGES_DIRECTORY: &str = "expanded-packages";
 const SHA256_DIRECTORY: &str = "sha256";
 const CONTENT_DIRECTORY: &str = "content";
 const MUTATION_LOCK: &str = ".mutation.lock";
+const REACHABILITY_LOCK: &str = ".reachability.lock";
+pub(crate) const ARTIFACT_STAGING_PREFIX: &str = ".artifact-staging-";
+pub(crate) const MAX_ARTIFACT_CONTAINER_ENTRIES: usize = 128;
+pub(crate) const MAX_ARTIFACT_TREE_ENTRIES: usize = crate::package::MAX_PACKAGE_FILES * 2;
 const MUTATION_LOCK_WAIT: Duration = Duration::from_secs(2);
 const MUTATION_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 
@@ -89,8 +99,10 @@ impl ArtifactStore {
 
     pub(crate) async fn acquire_expanded_package_mutation(
         &self,
+        admission: &ArtifactReferenceAdmission,
         sha256: &str,
     ) -> UseResult<ArtifactMutationLock> {
+        admission.ensure_store(self)?;
         validate_sha256(sha256)?;
         let container = self.expanded_package_container(sha256);
         self.ensure_container(&container, "expanded-package artifact")
@@ -287,6 +299,8 @@ mod tests {
         assert_send_sync::<ArtifactStore>();
         assert_send_sync::<ArtifactReferenceAdmission>();
         assert_send_sync::<ArtifactCollectionGuard>();
+        assert_send_sync::<ArtifactStoreInventory>();
+        assert_send_sync::<ArtifactInventoryEntry>();
     }
 
     #[tokio::test]
@@ -326,5 +340,140 @@ mod tests {
 
         let error = admission.ensure_store(&second).unwrap_err();
         assert_eq!(error.code, "use.artifact_store.admission_mismatch");
+    }
+
+    #[tokio::test]
+    async fn physical_inventory_is_path_free_deterministic_and_kind_aware() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::from_data_root(&temporary.path().join("data"));
+        let blob_sha256 = "a".repeat(64);
+        let package_sha256 = "b".repeat(64);
+        let blob = store.blob_path(&format!("sha256:{blob_sha256}")).unwrap();
+        let package = store
+            .expanded_package_path(&format!("sha256:{package_sha256}"))
+            .unwrap();
+        std::fs::create_dir_all(blob.parent().unwrap()).unwrap();
+        std::fs::write(&blob, b"blob").unwrap();
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::write(package.join("a3s-use-extension.acl"), b"extension").unwrap();
+        std::fs::create_dir_all(package.join("nested")).unwrap();
+        std::fs::write(package.join("nested/README.md"), b"readme").unwrap();
+        let collection = store.acquire_collection().await.unwrap();
+
+        let inventory = store.inspect_inventory(&collection).await.unwrap();
+
+        assert_eq!(inventory.schema, ARTIFACT_STORE_INVENTORY_SCHEMA);
+        assert_eq!(inventory.entries.len(), 2);
+        assert_eq!(inventory.entries[0].kind, ArtifactKind::Blob);
+        assert_eq!(inventory.entries[0].digest, format!("sha256:{blob_sha256}"));
+        assert_eq!(inventory.entries[0].state, ArtifactPhysicalState::Complete);
+        assert_eq!(inventory.entries[0].content_bytes, 4);
+        assert_eq!(inventory.entries[0].content_files, 1);
+        assert_eq!(inventory.entries[1].kind, ArtifactKind::ExpandedPackage);
+        assert_eq!(
+            inventory.entries[1].digest,
+            format!("sha256:{package_sha256}")
+        );
+        assert_eq!(inventory.entries[1].state, ArtifactPhysicalState::Complete);
+        assert_eq!(inventory.entries[1].content_bytes, 15);
+        assert_eq!(inventory.entries[1].content_files, 2);
+        let json = serde_json::to_string(&inventory).unwrap();
+        let temporary_path = temporary.path().to_string_lossy();
+        assert!(!json.contains(temporary_path.as_ref() as &str));
+    }
+
+    #[tokio::test]
+    async fn physical_inventory_reports_bounded_abandoned_staging_without_promoting_it() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::from_data_root(&temporary.path().join("data"));
+        let sha256 = "c".repeat(64);
+        let content = store.blob_path(&format!("sha256:{sha256}")).unwrap();
+        let container = content.parent().unwrap();
+        std::fs::create_dir_all(container).unwrap();
+        std::fs::write(container.join(".artifact-staging-test.tmp"), b"partial").unwrap();
+        let collection = store.acquire_collection().await.unwrap();
+
+        let inventory = store.inspect_inventory(&collection).await.unwrap();
+
+        assert_eq!(inventory.entries.len(), 1);
+        assert_eq!(
+            inventory.entries[0].state,
+            ArtifactPhysicalState::Incomplete
+        );
+        assert_eq!(inventory.entries[0].content_bytes, 0);
+        assert_eq!(inventory.entries[0].content_files, 0);
+        assert_eq!(inventory.entries[0].staging_entries, 1);
+        assert_eq!(inventory.entries[0].staging_bytes, 7);
+    }
+
+    #[tokio::test]
+    async fn physical_inventory_requires_the_exact_collection_store() {
+        let temporary = tempfile::tempdir().unwrap();
+        let first = ArtifactStore::from_data_root(&temporary.path().join("first"));
+        let second = ArtifactStore::from_data_root(&temporary.path().join("second"));
+        let collection = first.acquire_collection().await.unwrap();
+
+        let error = second.inspect_inventory(&collection).await.unwrap_err();
+
+        assert_eq!(error.code, "use.artifact_store.collection_mismatch");
+    }
+
+    #[tokio::test]
+    async fn physical_inventory_rejects_unowned_container_entries() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::from_data_root(&temporary.path().join("data"));
+        let sha256 = "d".repeat(64);
+        let content = store.blob_path(&format!("sha256:{sha256}")).unwrap();
+        let container = content.parent().unwrap();
+        std::fs::create_dir_all(container).unwrap();
+        std::fs::write(container.join("unexpected"), b"unowned").unwrap();
+        let collection = store.acquire_collection().await.unwrap();
+
+        let error = store.inspect_inventory(&collection).await.unwrap_err();
+
+        assert_eq!(error.code, "use.artifact_store.ownership_invalid");
+    }
+
+    #[tokio::test]
+    async fn physical_inventory_rejects_an_unbounded_digest_container() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::from_data_root(&temporary.path().join("data"));
+        let sha256 = "f".repeat(64);
+        let content = store.blob_path(&format!("sha256:{sha256}")).unwrap();
+        let container = content.parent().unwrap();
+        std::fs::create_dir_all(container).unwrap();
+        for index in 0..=MAX_ARTIFACT_CONTAINER_ENTRIES {
+            std::fs::write(
+                container.join(format!("{ARTIFACT_STAGING_PREFIX}{index}.tmp")),
+                b"partial",
+            )
+            .unwrap();
+        }
+        let collection = store.acquire_collection().await.unwrap();
+
+        let error = store.inspect_inventory(&collection).await.unwrap_err();
+
+        assert_eq!(error.code, "use.artifact_store.inventory_limit_exceeded");
+    }
+
+    #[cfg(any(unix, windows))]
+    #[tokio::test]
+    async fn physical_inventory_rejects_links_in_expanded_content() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::from_data_root(&temporary.path().join("data"));
+        let sha256 = "e".repeat(64);
+        let content = store
+            .expanded_package_path(&format!("sha256:{sha256}"))
+            .unwrap();
+        let external = temporary.path().join("external");
+        std::fs::create_dir_all(&content).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        std::fs::write(external.join("payload"), b"outside").unwrap();
+        crate::test_filesystem::create_directory_link(&external, &content.join("linked"));
+        let collection = store.acquire_collection().await.unwrap();
+
+        let error = store.inspect_inventory(&collection).await.unwrap_err();
+
+        assert_eq!(error.code, "use.artifact_store.ownership_invalid");
     }
 }

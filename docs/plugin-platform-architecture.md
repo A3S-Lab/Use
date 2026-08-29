@@ -515,9 +515,12 @@ complete content identity. Registry-source observations, partials, metadata,
 and provenance remain source-scoped. A store-bound shared admission is required
 when source observations, lifecycle receipts, installation snapshots, or
 durable operations publish Artifact Store references; exclusive maintenance
-therefore cannot race a new reference. The raw-blob and expanded-tree tiers
-still need one cross-source and cross-installation inventory, quota, and
-confirmed garbage-collection policy. Shared-content corruption currently fails closed;
+therefore cannot race a new reference. The exclusive guard now also authorizes
+a deterministic, path-free, bounded physical inventory of canonical content
+and abandoned staging across both tiers. That report is not a reference graph,
+digest audit, or deletion plan. The tiers still need one cross-source,
+cross-installation, and cross-operation reachability view, quota, and confirmed
+garbage-collection policy. Shared-content corruption currently fails closed;
 explicit quarantine and verified rehydration remain part of that global policy
 rather than an implicit overwrite performed by one source or installation.
 

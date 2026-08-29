@@ -50,7 +50,7 @@ ownership boundaries stabilize.
 | --- | --- | --- |
 | Package aggregate | One manifest generation owns Tool, MCP, OKF, Flow, Skill, and UI surfaces; dependency preparation and retirement are ordered around one cutover. | Correct foundation. A surface must not become an independently installed mini-package. |
 | Trust and planning | TUF provenance, exact SemVer locks, read-only planning, explicit confirmation, generation compare-and-swap, and crash replay are enforced. | Correct foundation. Keep source transport, trust evidence, and package identity separate. |
-| Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. Source observations and resumable partials remain source-scoped; global reachability, quota, quarantine, rehydration, and garbage collection are not implemented. | Partially correct. Add one cross-installation inventory and explicit audit/repair/GC policy before deleting or replacing shared bytes. |
+| Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. A guarded, bounded physical inventory reports canonical content and abandoned staging without paths or deletion authority. Source observations and resumable partials remain source-scoped; global reference aggregation, quota, quarantine, rehydration, and garbage collection are not implemented. | Partially correct. Derive one cross-installation reachability view and explicit audit/repair/GC policy before deleting or replacing shared bytes. |
 | Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. | Critical debt. A2 must make related control facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
 | Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
 | Identity | Registry ownership, accepted-call leases, cursors, and Tool/MCP host names use scoped package/generation/surface keys. The optional manifest `route` is retained only as a human alias; duplicates are legal and explicit alias lookup rejects ambiguity. | Corrected A1 foundation. Aliases may improve presentation but must never enter ownership or cursor identity. |
@@ -122,10 +122,14 @@ boundary now serializes durable raw-target observations, lifecycle receipts,
 installation snapshots, and pending graph operations against future
 maintenance. Admissions bind to the exact Artifact Store and precede
 subordinate source or installation locks; incomplete downloads do not hold the
-boundary while waiting on the network. No collector may delete shared raw or
-expanded bytes until one global inventory can prove reachability across every
-installation and durable operation, enforce quota, quarantine corruption, and
-rehydrate verified bytes without replacing an admitted generation in place.
+boundary while waiting on the network. Under its store-bound exclusive guard,
+the v1 physical inventory now enumerates both tiers deterministically, separates
+canonical content from abandoned staging, accounts files and bytes, and rejects
+unowned or unbounded layout. It deliberately does not rehash content or infer
+references. No collector may delete shared raw or expanded bytes until a
+separate global reachability view covers every source, installation, and durable
+operation, enforces quota, quarantines corruption, and rehydrates verified bytes
+without replacing an admitted generation in place.
 
 Every Runtime, Flow, OKF binding/SQLite, and lifecycle journal store captures
 one `InstallationId` at construction. Scope fields retained in receipts and

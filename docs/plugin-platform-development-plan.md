@@ -445,9 +445,11 @@ Status: pending
 - [x] Define Registry source-observation/partial logical byte, entry, and
   free-space bounds, deterministic retention, stale-write cleanup, usage, and
   confirmed source cleanup. This never deletes a global blob.
-- Define global raw-blob and expanded-tree reachability, quota, audit,
-  quarantine, verified rehydration, and confirmed GC across every source,
-  installation, and durable operation.
+- [x] Add a guarded, bounded, path-free physical inventory for raw blobs,
+  expanded trees, and abandoned staging; reject unknown or unsafe layout.
+- Define cross-state reachability, quota, audit, quarantine, verified
+  rehydration, and confirmed GC across every source, installation, and durable
+  operation. The physical inventory alone grants no deletion authority.
 - Treat the implemented standalone OKF scope quota/GC, integrity audit,
   non-overwriting verified database backup, exact-plan oldest-first backup
   rotation, derived FTS repair, and authority-bound database plus

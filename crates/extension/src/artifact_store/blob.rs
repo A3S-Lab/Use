@@ -8,15 +8,12 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use super::{
     artifact_store_error, validate_real_directory, validate_sha256, ArtifactMutationLock,
-    ArtifactReferenceAdmission, ArtifactStore, CONTENT_DIRECTORY, MUTATION_LOCK, SHA256_DIRECTORY,
+    ArtifactReferenceAdmission, ArtifactStore, ARTIFACT_STAGING_PREFIX, BLOBS_DIRECTORY,
+    CONTENT_DIRECTORY, MAX_ARTIFACT_CONTAINER_ENTRIES, MUTATION_LOCK, SHA256_DIRECTORY,
 };
 use crate::package::{
     io_error, remove_file_with_windows_retry, sync_parent_directory, unique_suffix,
 };
-
-const BLOBS_DIRECTORY: &str = "blobs";
-const ARTIFACT_STAGING_PREFIX: &str = ".artifact-staging-";
-const MAX_BLOB_CONTAINER_ENTRIES: usize = 128;
 
 /// One verified handle to immutable bytes in the global Artifact Store.
 ///
@@ -358,7 +355,7 @@ async fn reclaim_abandoned_staging(container: &Path) -> UseResult<()> {
         .map_err(|error| io_error("read artifact blob entry", container, error))?
     {
         entries_seen = entries_seen.saturating_add(1);
-        if entries_seen > MAX_BLOB_CONTAINER_ENTRIES {
+        if entries_seen > MAX_ARTIFACT_CONTAINER_ENTRIES {
             return Err(artifact_store_error(
                 "use.artifact_store.inventory_limit_exceeded",
                 "An artifact blob container exceeds its bounded entry inventory.",

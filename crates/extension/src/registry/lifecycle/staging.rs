@@ -3,14 +3,9 @@ use std::path::Path;
 use a3s_use_core::{UseError, UseResult};
 use tokio::fs;
 
-use crate::package::{
-    io_error, remove_dir_all_with_windows_retry, sync_parent_directory, MAX_PACKAGE_FILES,
-};
-
-pub(super) const ARTIFACT_STAGING_PREFIX: &str = ".artifact-staging-";
-
-const MAX_ARTIFACT_CONTAINER_ENTRIES: usize = 128;
-const MAX_ARTIFACT_STAGING_TREE_ENTRIES: usize = MAX_PACKAGE_FILES * 2;
+pub(super) use crate::artifact_store::ARTIFACT_STAGING_PREFIX;
+use crate::artifact_store::{MAX_ARTIFACT_CONTAINER_ENTRIES, MAX_ARTIFACT_TREE_ENTRIES};
+use crate::package::{io_error, remove_dir_all_with_windows_retry, sync_parent_directory};
 
 /// Reclaim incomplete writes while the caller holds the digest mutation lock.
 ///
@@ -78,7 +73,7 @@ async fn validate_abandoned_staging_tree(root: &Path) -> UseResult<()> {
             .map_err(|error| io_error("read abandoned artifact staging entry", &directory, error))?
         {
             entries_seen = entries_seen.saturating_add(1);
-            if entries_seen > MAX_ARTIFACT_STAGING_TREE_ENTRIES {
+            if entries_seen > MAX_ARTIFACT_TREE_ENTRIES {
                 return Err(UseError::new(
                     "use.artifact_store.inventory_limit_exceeded",
                     "An abandoned artifact staging tree exceeds its bounded entry inventory.",
