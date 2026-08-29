@@ -116,8 +116,8 @@ classified as Add, Replace, Remove, or Retain.
 ```text
 download Add/Replace only
 → prepare Add/Replace dependency-forward
-→ publish candidates and remove obsolete routes atomically
-→ mark prior receipts hidden after route absence is proven
+→ publish candidates and remove obsolete package bindings atomically
+→ mark prior receipts hidden after binding absence is proven
 → drain calls admitted by the prior snapshot
 → revoke exact prior Grants
 → remove Replace/Remove generations reverse-prior-lock
@@ -136,9 +136,9 @@ snapshot. It refuses to remove a package still referenced by another desired
 root in that snapshot.
 
 1. Plan the exact removal closure in reverse dependency order.
-2. Atomically remove its routes from the Registry snapshot.
+2. Atomically remove its package bindings from the Registry snapshot.
 3. Record package-keyed hide evidence and Grant cutover.
-4. Drain route leases for every removed generation.
+4. Drain generation leases for every removed generation.
 5. Revoke exact prior Grants.
 6. Stop and remove surfaces in reverse dependency order.
 7. Delete only receipt-owned immutable roots and records.
@@ -154,7 +154,7 @@ snapshot evidence is an error, not permission to infer an uninstall set.
 Enablement changes desired visibility without changing package bytes or the
 dependency lock. The package selection inside Installation Snapshot v2 owns
 the monotonic state generation, desired enablement, and exact selected-surface
-closure. Receipts and routes are applied observations; the v3 enablement file
+closure. Receipts and Registry package bindings are applied observations; the v3 enablement file
 is a snapshot-generation-bound recovery projection, not another desired-state
 store.
 
@@ -202,23 +202,29 @@ Visibility mutation is owned by cutover-aware host methods. Each returns:
 - Registry generation before and after; and
 - exact immutable snapshot digest.
 
-Capability snapshot v4 and cursor v3 then join that Registry evidence with the
+Capability snapshot v5 and cursor v4 then join that Registry evidence with the
 same stable Installation Snapshot generation and digest. Publication requires
 the snapshot's desired enablement and selected surfaces as well as matching
-receipt, route, provider, and readiness observations. A receipt or route can
+receipt, package-binding, provider, and readiness observations. A receipt or binding can
 therefore never publish a capability that the installation generation did not
 select.
 
 Host traits do not contain a fallback publisher. A host unable to prove the
 cutover cannot implement the current trait.
 
+The manifest `route` value is an optional human alias, not cutover authority.
+Duplicate aliases are permitted; explicit alias lookup rejects ambiguity.
+Package generation locks, cursor package entries, retirement, and host surface
+names remain keyed by canonical scoped package/generation/surface identity;
+the snapshot revision separately commits the complete presentation projection.
+
 The Registry persists bounded replay records until both package and Grant
 journals own the evidence. Reusing an idempotency key with a different request
 fails before mutation.
 
 Prior-generation receipt retirement is separate from visibility mutation. It
-requires the exact prior route to be absent. If the route is still present,
-retirement fails before changing the receipt.
+requires the exact prior package binding to be absent. If the binding is still
+present, retirement fails before changing the receipt.
 
 ## Workspace Grants
 
@@ -254,7 +260,7 @@ artifact ancestor fails closed.
 
 The real-process recovery test terminates while a high-entry package is copied
 into that staging tree. Its exact pending plan and applying lifecycle journal
-remain durable, while the receipt, installation snapshot, and route remain
+remain durable, while the receipt, installation snapshot, and package binding remain
 absent. Explicit offline replay reclaims the partial tree, repeats the same
 package-commit checkpoint, publishes one Registry generation, completes the
 journal, and removes the pending operation without a network request.
@@ -299,7 +305,8 @@ and release descriptors before lifecycle admission. Required provider failure
 stays unpublished; there is no `PATH` lookup, unsigned native fallback, or
 provider substitution.
 
-The installed schema-v5 receipt retains the exact installation ID and signed
+The installed schema-v6 receipt retains the exact installation ID, optional
+non-owning alias, and signed
 planning bundle after
 validating it against catalog, manifest, and package bytes. A host can therefore
 plan enablement after restart without fetching mutable Registry metadata. It
@@ -344,9 +351,9 @@ physically distinct.
 Run admission across multiple projected packages uses the higher-level typed
 snapshot cursor. It binds capability generation and revision to the complete
 Registry digest and sorted package-generation identities. The host acquires
-every route lease in canonical order, then rechecks the publication while all
+every generation lease in canonical order, then rechecks the publication while all
 leases remain held. A cutover at any point yields no lease rather than a mixed
-batch. An enabled route without a schema-v3 lifecycle generation is explicitly
+batch. An enabled package binding without lifecycle generation evidence is explicitly
 unleasable and cannot enter this exact-generation admission path.
 
 ### UI and Skill
@@ -590,7 +597,7 @@ kill qualification remains a separate product-host gate.
 The standalone CLI binary additionally has a deterministic real-process
 multi-node install case. After the first dependency is fully prepared, the
 parent holds that dependency's journal lock while the child atomically
-publishes all nine package routes and the durable cutover. The child is killed
+publishes all nine package bindings and the durable cutover. The child is killed
 before that dependency's publication receipt and the installation snapshot are
 written. Explicit offline restart performs no network request, reuses the same
 cutover, completes every package journal and the exact installation snapshot,
@@ -600,14 +607,14 @@ The standalone CLI also has a deterministic real-process uninstall case. The
 parent holds the package journal lock while the child
 durably hides the Registry graph. This proves the child can be killed before
 its package hide receipt. On restart, the same pending plan and cutover request
-are replayed; a held prior-generation route lease proves recovery stops at
+are replayed; a held prior-generation lease proves recovery stops at
 accepted-call drain before it removes the retained generation. Releasing the
 lease completes the journal and physical removal without advancing the
 Registry generation again.
 
 A second real-process uninstall case uses a high-entry immutable generation
 and terminates while its directory is physically being removed. By that point
-the route is hidden and both selected and retained receipts are absent, while
+the package binding is hidden and both selected and retained receipts are absent, while
 the exact pending graph and applying journal remain. Restart uses the original
 lifecycle identity to finish the partial directory, complete the package
 checkpoint and cutover acknowledgement, and remove pending state without
@@ -882,7 +889,7 @@ Required gates include:
   by exact zero-network replay without another Registry generation;
 - real-process interruption at every graph/Grant/cutover/drain/removal
   checkpoint;
-- mixed-generation and stale-route prevention;
+- mixed-generation and stale-binding prevention;
 - exact completed-result replay; and
 - complete real-process lifecycle on each supported platform.
 

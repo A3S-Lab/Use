@@ -857,12 +857,12 @@ impl CognitivePackageManager {
                 })?;
             if !installed_matches_lock(&extension, &package.catalog)?
                 || !extension.receipt.enabled
-                || !snapshot.routes.iter().any(|route| {
-                    route.package_id == extension.receipt.package_id
-                        && route.enabled
-                        && route.lifecycle_generation == extension.receipt.lifecycle_generation
-                        && route.package_sha256 == extension.receipt.package_sha256
-                        && route.manifest_sha256 == extension.receipt.manifest_sha256
+                || !snapshot.packages.iter().any(|binding| {
+                    binding.package_id == extension.receipt.package_id
+                        && binding.enabled
+                        && binding.lifecycle_generation == extension.receipt.lifecycle_generation
+                        && binding.package_sha256 == extension.receipt.package_sha256
+                        && binding.manifest_sha256 == extension.receipt.manifest_sha256
                 })
             {
                 return Err(package_manager_error(
@@ -940,11 +940,11 @@ impl CognitivePackageManager {
             .load_active(&intent.scope, &intent.package_id)
             .await?
             .is_some_and(|record| record.intent == *intent);
-        let route_absent = self
+        let binding_absent = self
             .registry
             .snapshot()
             .await?
-            .routes
+            .packages
             .iter()
             .all(|binding| {
                 binding.package_id != intent.package_id
@@ -957,13 +957,13 @@ impl CognitivePackageManager {
                             .strip_prefix("sha256:")
                             .unwrap_or_default()
             });
-        if exact_journal && route_absent {
+        if exact_journal && binding_absent {
             Ok(())
         } else {
             Err(package_manager_error(
                 "use.plugin.package_graph_reconcile_required",
                 format!(
-                    "Missing removed package '{}' has no exact route-free upgrade journal to replay.",
+                    "Missing removed package '{}' has no exact publication-free upgrade journal to replay.",
                     intent.package_id
                 ),
             ))
@@ -1089,12 +1089,12 @@ fn extension_is_exact_published(
     extension: &InstalledExtension,
 ) -> bool {
     extension.receipt.enabled
-        && snapshot.routes.iter().any(|route| {
-            route.package_id == extension.receipt.package_id
-                && route.enabled
-                && route.lifecycle_generation == extension.receipt.lifecycle_generation
-                && route.package_sha256 == extension.receipt.package_sha256
-                && route.manifest_sha256 == extension.receipt.manifest_sha256
+        && snapshot.packages.iter().any(|binding| {
+            binding.package_id == extension.receipt.package_id
+                && binding.enabled
+                && binding.lifecycle_generation == extension.receipt.lifecycle_generation
+                && binding.package_sha256 == extension.receipt.package_sha256
+                && binding.manifest_sha256 == extension.receipt.manifest_sha256
         })
 }
 

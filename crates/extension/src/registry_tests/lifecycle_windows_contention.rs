@@ -220,7 +220,7 @@ async fn lifecycle_upgrade_waits_for_a_transient_scanner_lock_on_the_selected_re
     assert!(temporary_receipt_paths(&receipt_path).is_empty());
     assert_eq!(registry.snapshot().await.unwrap(), snapshot_before_upgrade);
     assert_eq!(
-        registry.snapshot().await.unwrap().routes[0].lifecycle_generation,
+        registry.snapshot().await.unwrap().packages[0].lifecycle_generation,
         Some(prior.generation())
     );
 }
@@ -329,7 +329,7 @@ async fn lifecycle_removal_waits_for_a_transient_scanner_lock_on_the_receipt() {
         snapshot_after_removal.generation,
         snapshot_before_removal.generation + 1
     );
-    assert!(snapshot_after_removal.routes.is_empty());
+    assert!(snapshot_after_removal.packages.is_empty());
 }
 
 #[tokio::test]
@@ -354,7 +354,7 @@ async fn lifecycle_removal_does_not_delete_or_wait_on_shared_artifact_bytes() {
         snapshot_after_removal.generation,
         snapshot_before_removal.generation + 1
     );
-    assert!(snapshot_after_removal.routes.is_empty());
+    assert!(snapshot_after_removal.packages.is_empty());
 
     drop(scanner);
     let replay = registry

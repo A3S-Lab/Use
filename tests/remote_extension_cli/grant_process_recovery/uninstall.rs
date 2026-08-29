@@ -43,7 +43,10 @@ fn killed_managed_uninstall_replays_graph_hide_and_grant_retirement_without_reau
     };
     let baseline_snapshot = read_json(&snapshot_path).unwrap();
     assert_eq!(baseline_snapshot["generation"], 1);
-    assert_eq!(route_package_ids(&baseline_snapshot), expected_package_ids);
+    assert_eq!(
+        published_package_ids(&baseline_snapshot),
+        expected_package_ids
+    );
 
     let pending_path =
         managed_state_root(&home).join("operations/package-graphs/uninstall/acme/worker.json");
@@ -80,7 +83,7 @@ fn killed_managed_uninstall_replays_graph_hide_and_grant_retirement_without_reau
         pending_path.is_file()
             && graph_path.is_file()
             && snapshot["generation"] == 2
-            && snapshot["routes"].as_array().is_some_and(Vec::is_empty)
+            && snapshot["packages"].as_array().is_some_and(Vec::is_empty)
             && snapshot["pendingCutovers"]
                 .as_array()
                 .is_some_and(|cutovers| cutovers.len() == 1)
@@ -165,7 +168,7 @@ fn killed_managed_uninstall_replays_graph_hide_and_grant_retirement_without_reau
 
     let snapshot = read_json(&snapshot_path).unwrap();
     assert_eq!(snapshot["generation"], 2);
-    assert!(snapshot["routes"].as_array().is_some_and(Vec::is_empty));
+    assert!(snapshot["packages"].as_array().is_some_and(Vec::is_empty));
     assert!(snapshot["pendingCutovers"]
         .as_array()
         .is_none_or(Vec::is_empty));

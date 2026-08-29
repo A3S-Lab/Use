@@ -35,8 +35,9 @@ calendar-package/
 Only the manifest and `README.md` names are fixed. Every contribution path is
 manifest-owned, package-relative, normalized, and content-bound. Use rejects
 path traversal, links, duplicate normalized paths, archive ambiguity, size
-overflows, content drift, route collisions, and incompatible host or target
-ranges before publication.
+overflows, content drift, and incompatible host or target ranges before
+publication. Optional human aliases may collide; explicit ambiguous alias
+lookup fails closed and canonical package/surface identity remains authoritative.
 
 The source repository URL and immutable revision are provenance. They are not
 instructions to fetch or execute source code.

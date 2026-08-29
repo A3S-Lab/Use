@@ -88,11 +88,7 @@ pub(super) async fn mcp_evidence_from_store(
                 continue;
             }
         };
-        let server_name = mcp_server_name(
-            &extension.receipt.package_id,
-            &extension.receipt.route,
-            &surface.id,
-        );
+        let server_name = mcp_server_name(&extension.receipt.package_id, &surface.id);
         if !names.insert(server_name.clone()) {
             return Err(UseError::new(
                 "use.capability.mcp_name_conflict",
@@ -195,13 +191,13 @@ pub(super) async fn mcp_evidence_from_store(
     })
 }
 
-fn mcp_server_name(package_id: &str, route: &str, surface_id: &str) -> String {
+fn mcp_server_name(package_id: &str, surface_id: &str) -> String {
     let identity = format!("{package_id}\0{surface_id}");
     let digest = format!("{:x}", Sha256::digest(identity.as_bytes()));
     let suffix = digest.get(..16).unwrap_or(&digest);
     format!(
         "use_mcp_{}_{}_{}",
-        readable_segment(route),
+        readable_segment(package_id.rsplit('/').next().unwrap_or(package_id)),
         readable_segment(surface_id),
         suffix
     )
@@ -351,7 +347,7 @@ extension "acme/research" {
             installation: crate::test_installation(),
             package_id: manifest.package_id.clone(),
             component_id: format!("use/{}", manifest.package_id),
-            route: manifest.route.clone(),
+            route_alias: manifest.route_alias.clone(),
             version: manifest.version.clone(),
             package_root: package_root.to_path_buf(),
             manifest_sha256: format!("{:x}", Sha256::digest(source.as_bytes())),

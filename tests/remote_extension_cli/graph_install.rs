@@ -8,7 +8,7 @@ async fn capability_intent_evidence(
     let route_enabled = snapshot
         .capabilities
         .iter()
-        .find(|capability| capability.route == route)
+        .find(|capability| capability.alias.as_deref() == Some(route))
         .map(|capability| capability.enabled);
     let cursor_generation = snapshot.cursor().installation_generation;
     (
@@ -199,7 +199,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     );
     assert_eq!(disabled.state.observed, PluginObservedState::Installed);
     assert!(extension_registry
-        .find_published_route("root")
+        .resolve_published_alias("root")
         .await
         .unwrap()
         .is_none());
@@ -281,7 +281,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         "use.plugin.package_generation_changed"
     );
     assert!(extension_registry
-        .find_published_route("root")
+        .resolve_published_alias("root")
         .await
         .unwrap()
         .is_none());
@@ -301,7 +301,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     assert_eq!(enabled.state.desired, PluginDesiredState::Enabled);
     assert_eq!(enabled.state.observed, PluginObservedState::Ready);
     assert!(extension_registry
-        .find_published_route("root")
+        .resolve_published_alias("root")
         .await
         .unwrap()
         .is_some());

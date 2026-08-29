@@ -113,7 +113,7 @@ impl PluginPackageLifecycleHost for ExtensionPackageLifecycleHost {
 }
 
 /// Production atomic capability adapter backed by the immutable registry
-/// snapshot and the package route lease.
+/// snapshot and the package generation lease.
 #[derive(Debug, Clone)]
 pub struct ExtensionCapabilityLifecycleHost {
     registry: ExtensionRegistry,
@@ -723,7 +723,7 @@ mod tests {
         assert_eq!(selected.receipt.lifecycle_generation, Some(2));
         assert!(!selected.receipt.enabled);
         assert_eq!(
-            registry.snapshot().await.unwrap().routes[0].lifecycle_generation,
+            registry.snapshot().await.unwrap().packages[0].lifecycle_generation,
             Some(1)
         );
         assert!(registry

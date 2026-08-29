@@ -9,52 +9,52 @@ use super::package::{io_error, lock_is_contended};
 
 const DRAIN_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-pub(super) struct RouteDrainGuard {
+pub(super) struct GenerationDrainGuard {
     file: File,
 }
 
-impl Drop for RouteDrainGuard {
+impl Drop for GenerationDrainGuard {
     fn drop(&mut self) {
         let _ = FileExt::unlock(&self.file);
     }
 }
 
-pub(super) fn open_route_lock(path: &Path) -> UseResult<File> {
+pub(super) fn open_generation_lock(path: &Path) -> UseResult<File> {
     let parent = path.parent().ok_or_else(|| {
         UseError::new(
             "use.extension.lock_invalid",
-            "The extension route lock has no parent directory.",
+            "The extension generation lock has no parent directory.",
         )
     })?;
     std::fs::create_dir_all(parent)
-        .map_err(|error| io_error("create extension route lock directory", parent, error))?;
+        .map_err(|error| io_error("create extension generation lock directory", parent, error))?;
     OpenOptions::new()
         .create(true)
         .truncate(false)
         .read(true)
         .write(true)
         .open(path)
-        .map_err(|error| io_error("open extension route lock", path, error))
+        .map_err(|error| io_error("open extension generation lock", path, error))
 }
 
 pub(super) async fn acquire_drain_lock(
     path: &Path,
     timeout: Duration,
-) -> UseResult<RouteDrainGuard> {
-    let file = open_route_lock(path)?;
+) -> UseResult<GenerationDrainGuard> {
+    let file = open_generation_lock(path)?;
     let deadline = deadline_after(timeout)?;
     loop {
         match FileExt::try_lock_exclusive(&file) {
-            Ok(()) => return Ok(RouteDrainGuard { file }),
+            Ok(()) => return Ok(GenerationDrainGuard { file }),
             Err(error) if lock_is_contended(&error) => {
                 let now = Instant::now();
                 if now >= deadline {
                     let timeout_ms = timeout.as_millis().min(u64::MAX as u128) as u64;
                     return Err(UseError::new(
                         "use.extension.drain_timeout",
-                        "The extension route was disabled, but accepted calls did not drain before the timeout.",
+                        "The extension generation was hidden, but accepted calls did not drain before the timeout.",
                     )
-                    .with_detail("routeDisabled", true)
+                    .with_detail("generationHidden", true)
                     .with_detail("timeoutMs", timeout_ms)
                     .with_suggestion(
                         "Wait for in-flight calls to finish, then retry the lifecycle operation.",

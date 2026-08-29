@@ -77,7 +77,7 @@ async fn capability_snapshot_unifies_built_ins_without_rpc_envelopes() {
     assert_eq!(ocr["origin"], "built-in");
     assert!(capabilities
         .iter()
-        .all(|capability| capability["route"] != "office"));
+        .all(|capability| capability["alias"] != "office"));
     #[cfg(feature = "ocr")]
     {
         assert_eq!(ocr["enabled"], true);

@@ -8,8 +8,8 @@ use super::model::{
 use super::ExtensionRegistry;
 use crate::package::RegistryLock;
 use crate::registry::{
-    route_bindings, ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot, InstalledExtension,
-    MAX_PENDING_REGISTRY_CUTOVERS, REGISTRY_SCHEMA_VERSION,
+    package_bindings, ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot,
+    InstalledExtension, MAX_PENDING_REGISTRY_CUTOVERS, REGISTRY_SCHEMA_VERSION,
 };
 use crate::registry_io::{read_registry_snapshot, write_registry_snapshot};
 
@@ -292,8 +292,8 @@ impl ExtensionRegistry {
             return Err(registry_cutover_capacity());
         }
         request.require_current_generation(current.generation)?;
-        let routes = route_bindings(installed);
-        if routes == current.routes {
+        let packages = package_bindings(installed);
+        if packages == current.packages {
             return Err(registry_cutover_conflict(
                 "A new durable cutover request did not change Registry visibility.",
             ));
@@ -308,7 +308,7 @@ impl ExtensionRegistry {
             schema_version: REGISTRY_SCHEMA_VERSION,
             installation: self.installation().clone(),
             generation,
-            routes,
+            packages,
             pending_cutovers: current.pending_cutovers,
         };
         let snapshot_digest = snapshot.descriptor_digest()?;

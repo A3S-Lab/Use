@@ -56,8 +56,11 @@ fn killed_host_protocol_enable_apply_replays_publication_and_grant_cutover() {
     };
     let baseline_snapshot = read_json(&snapshot_path).unwrap();
     assert_eq!(baseline_snapshot["generation"], 2);
-    assert_eq!(route_package_ids(&baseline_snapshot), expected_package_ids);
-    assert!(!enabled_route_package_ids(&baseline_snapshot).contains(PACKAGE_ID));
+    assert_eq!(
+        published_package_ids(&baseline_snapshot),
+        expected_package_ids
+    );
+    assert!(!enabled_published_package_ids(&baseline_snapshot).contains(PACKAGE_ID));
 
     let apply_request = runtime.block_on(plan_host_enablement_apply(
         &host,
@@ -116,7 +119,7 @@ fn killed_host_protocol_enable_apply_replays_publication_and_grant_cutover() {
             },
         );
         snapshot["generation"] == 3
-            && route_package_ids(&snapshot) == expected_package_ids
+            && published_package_ids(&snapshot) == expected_package_ids
             && snapshot["pendingCutovers"]
                 .as_array()
                 .is_some_and(|cutovers| cutovers.len() == 1)
@@ -278,8 +281,11 @@ fn killed_host_protocol_enable_apply_replays_publication_and_grant_cutover() {
     assert!(!authorization_marker.exists());
     let snapshot = read_json(&snapshot_path).unwrap();
     assert_eq!(snapshot["generation"], 3);
-    assert_eq!(route_package_ids(&snapshot), expected_package_ids);
-    assert_eq!(enabled_route_package_ids(&snapshot), expected_package_ids);
+    assert_eq!(published_package_ids(&snapshot), expected_package_ids);
+    assert_eq!(
+        enabled_published_package_ids(&snapshot),
+        expected_package_ids
+    );
     assert!(snapshot["pendingCutovers"]
         .as_array()
         .is_none_or(Vec::is_empty));

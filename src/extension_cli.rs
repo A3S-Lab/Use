@@ -16,7 +16,7 @@ mod manager;
 pub(crate) struct ExtensionView {
     pub package_id: String,
     pub component_id: String,
-    pub route: String,
+    pub alias: Option<String>,
     pub version: String,
     pub requires_use: Option<String>,
     pub repository: Option<serde_json::Value>,
@@ -98,9 +98,9 @@ pub(crate) fn external_package_id(id: &str) -> Option<&str> {
     }
 }
 
-pub(crate) fn external_route(id: &str) -> Option<&str> {
-    let route = id.strip_prefix("use/").unwrap_or(id);
-    (valid_segment(route) && !route.contains('/')).then_some(route)
+pub(crate) fn external_alias(id: &str) -> Option<&str> {
+    let alias = id.strip_prefix("use/").unwrap_or(id);
+    (valid_segment(alias) && !alias.contains('/')).then_some(alias)
 }
 
 pub(crate) async fn installed_extension_for_id(
@@ -110,13 +110,29 @@ pub(crate) async fn installed_extension_for_id(
     if let Some(package_id) = external_package_id(id) {
         return installed_extension(installation, package_id).await;
     }
-    let Some(route) = external_route(id) else {
+    let Some(alias) = external_alias(id) else {
         return Ok(None);
     };
-    Ok(installed_extensions(installation)
+    let matches = installed_extensions(installation)
         .await?
         .into_iter()
-        .find(|extension| extension.route == route))
+        .filter(|extension| extension.alias.as_deref() == Some(alias))
+        .collect::<Vec<_>>();
+    if matches.len() > 1 {
+        return Err(UseError::new(
+            "use.extension.alias_ambiguous",
+            format!("Extension alias '{alias}' resolves to multiple packages."),
+        )
+        .with_detail(
+            "packageIds",
+            matches
+                .iter()
+                .map(|extension| extension.package_id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .with_suggestion("Select the cognitive package by its canonical publisher/name ID."));
+    }
+    Ok(matches.into_iter().next())
 }
 
 pub(crate) async fn extension_capabilities(
@@ -129,7 +145,7 @@ pub(crate) async fn extension_capabilities(
         .map(|extension| {
             serde_json::json!({
                 "id": extension.package_id,
-                "route": extension.route,
+                "alias": extension.alias,
                 "version": extension.version,
                 "requiresUse": extension.requires_use,
                 "repository": extension.repository,
@@ -161,7 +177,7 @@ pub(crate) async fn extension_list(installation: InstallationId) -> UseResult<Co
                 format!(
                     "{}\t{}\t{}\t{}",
                     extension.package_id,
-                    extension.route,
+                    extension.alias.as_deref().unwrap_or("-"),
                     extension.version,
                     if !extension.compatible {
                         "incompatible"
@@ -195,14 +211,14 @@ pub(crate) async fn extension_inspect(
     let lifecycle = extension_lifecycle_diagnostic(installation, package_id).await?;
     Ok(CommandOutput::success(
         format!(
-            "Extension '{}' is {} on route '{}'.",
+            "Extension '{}' is {}{}.",
             extension.package_id,
             if extension.enabled {
                 "enabled"
             } else {
                 "disabled"
             },
-            extension.route
+            alias_suffix(extension.alias.as_deref())
         ),
         serde_json::json!({
             "extension": extension_value(&extension),
@@ -396,7 +412,10 @@ pub(crate) fn external_component_value(
 ) -> serde_json::Value {
     serde_json::json!({
         "id": if full_id { &extension.component_id } else { &extension.package_id },
-        "description": format!("External Use domain on route '{}'.", extension.route),
+        "description": match extension.alias.as_deref() {
+            Some(alias) => format!("External Use capability with CLI alias '{alias}'."),
+            None => "External Use capability without a CLI alias.".to_string(),
+        },
         "presence": "managed",
         "health": if !extension.compatible {
             "incompatible"
@@ -410,7 +429,7 @@ pub(crate) fn external_component_value(
         "repository": extension.repository,
         "path": extension.package_root,
         "packageSha256": extension.package_sha256,
-        "route": extension.route,
+        "alias": extension.alias,
         "enabled": extension.enabled,
         "compatible": extension.compatible,
         "surfaces": extension.surfaces,
@@ -423,7 +442,7 @@ fn extension_value(extension: &ExtensionView) -> serde_json::Value {
     serde_json::json!({
         "packageId": extension.package_id,
         "componentId": extension.component_id,
-        "route": extension.route,
+        "alias": extension.alias,
         "version": extension.version,
         "requiresUse": extension.requires_use,
         "repository": extension.repository,
@@ -443,6 +462,12 @@ fn valid_segment(value: &str) -> bool {
         && characters.all(|character| {
             character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
         })
+}
+
+fn alias_suffix(alias: Option<&str>) -> String {
+    alias
+        .map(|alias| format!(" with CLI alias '{alias}'"))
+        .unwrap_or_default()
 }
 
 #[cfg(feature = "extensions")]
@@ -619,9 +644,9 @@ async fn current_registry_snapshot(installation: InstallationId) -> UseResult<se
 #[cfg(not(feature = "extensions"))]
 async fn current_registry_snapshot(_installation: InstallationId) -> UseResult<serde_json::Value> {
     Ok(serde_json::json!({
-        "schemaVersion": 1,
+        "schemaVersion": 3,
         "generation": 0,
-        "routes": []
+        "packages": []
     }))
 }
 
@@ -702,7 +727,7 @@ fn extension_view(extension: a3s_use_extension::InstalledExtension) -> UseResult
     Ok(ExtensionView {
         package_id: extension.receipt.package_id,
         component_id: extension.receipt.component_id,
-        route: extension.receipt.route,
+        alias: extension.receipt.route_alias,
         version: extension.receipt.version,
         requires_use,
         repository,

@@ -1,7 +1,7 @@
 # A3S Use Plugin Contract Reference
 
 Status: development preview
-Last updated: 2026-08-22
+Last updated: 2026-08-29
 
 ## Scope
 
@@ -39,7 +39,7 @@ current set.
 | Host operation watch request | `a3s.use.plugin-host-operation-watch-request.v1` |
 | Host cancellation request/result | `a3s.use.plugin-host-cancel-request/result.v1` |
 | Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
-| Installed receipt | numeric schema version `5` |
+| Installed receipt | numeric schema version `6` |
 | Installation snapshot | `a3s.use.installation-snapshot.v2` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
 | Pre-lock resolution attempt | `a3s.use.plugin-resolution-attempt.v1` |
@@ -57,10 +57,10 @@ current set.
 | Enablement operation | `a3s.use.cognitive-package-enablement-operation.v3` |
 | Workspace Grant | `a3s.use.plugin-workspace-grant.v1` |
 | Registry cutover | `a3s.use.registry-cutover.v1` |
-| Extension Registry snapshot | numeric schema version `2` |
-| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v2` |
-| Capability snapshot | numeric schema version `4` |
-| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v3` |
+| Extension Registry snapshot | numeric schema version `3` |
+| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v3` |
+| Capability snapshot | numeric schema version `5` |
+| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
@@ -99,7 +99,7 @@ Required package-level fields:
 - canonical `<publisher>/<name>` package ID;
 - `schema_version = 3`;
 - SemVer `version`;
-- canonical route;
+- optional lowercase `route` alias for human CLI selection;
 - `requires_use` that includes the current 0.3 host line and excludes pre-0.3
   hosts;
 - sorted risk actions;
@@ -107,6 +107,14 @@ Required package-level fields:
 - at least one named Tool, MCP, OKF, Flow, Skill, or UI surface.
 
 The package root also requires a bounded, regular UTF-8 `README.md`.
+
+The canonical package ID owns installation and lifecycle state. The optional
+`route` alias is not unique and does not enter receipt ownership, generation
+lease paths, cursor package keys, or Tool/MCP host names. The cursor revision
+still commits the full projection for snapshot consistency. Explicit alias
+lookup fails with `use.extension.alias_ambiguous` when more than one published
+package uses the same alias. Canonical package/surface selection remains
+unambiguous.
 
 Package dependencies are named `dependency` blocks containing only a canonical
 package ID and SemVer requirement. A dependency cannot select a URL, Registry,
@@ -146,7 +154,7 @@ host-side lease pins its lifecycle generation and installed package integrity
 for the complete retrieval. Staged content is not live evidence. Only an exact
 promoted binding may enter the capability snapshot.
 
-Capability snapshot schema v4 binds the exact installation generation and
+Capability snapshot schema v5 binds the exact installation generation and
 snapshot digest and applies the
 same rule to Runtime Tool Tasks. A
 `toolTasks` entry is emitted only for a published, non-interactive,
@@ -159,7 +167,7 @@ created its first Installation Snapshot; an empty snapshot retained after the
 final uninstall still has a generation and digest.
 
 Rust embedding hosts acquire a complete generation through
-`a3s.use.capability-snapshot-cursor.v3`. The cursor binds the installation,
+`a3s.use.capability-snapshot-cursor.v4`. The cursor binds the installation,
 Installation Snapshot generation and digest, capability and Registry
 revisions, plus the sorted package, manifest, and lifecycle identities.
 The returned RAII lease is all-or-nothing and must be retained for the full
@@ -428,7 +436,7 @@ empty desired set remains a durable generation after the final uninstall.
 projection, not desired-state authority. It binds the exact Installation
 Snapshot generation and digest that it materializes. A completed
 `a3s.use.cognitive-package-enablement-operation.v3` retains reviewed-plan and
-replay evidence, while receipts and Registry routes record provider effects.
+replay evidence, while receipts and Registry package bindings record provider effects.
 Loading, observation, replay, and capability projection all fail closed when
 that evidence disagrees with the snapshot's package state or selected surfaces.
 
@@ -472,8 +480,8 @@ canonical SHA-256 evidence for each checkpoint.
 
 Capability visibility methods always return exact immutable snapshot cutover
 evidence. Host traits have no fallback publication API. A separate retirement
-method may mark a prior receipt hidden only after the exact Registry route is
-already absent; otherwise it fails before mutation.
+method may mark a prior receipt hidden only after the exact Registry package
+binding is already absent; otherwise it fails before mutation.
 
 Current disk records are bounded, canonical, path-owned, and atomically
 replaced. Loading rejects:

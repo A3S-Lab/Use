@@ -49,7 +49,10 @@ fn killed_host_protocol_uninstall_apply_replays_without_reauthorization() {
     };
     let baseline_snapshot = read_json(&snapshot_path).unwrap();
     assert_eq!(baseline_snapshot["generation"], 1);
-    assert_eq!(route_package_ids(&baseline_snapshot), expected_package_ids);
+    assert_eq!(
+        published_package_ids(&baseline_snapshot),
+        expected_package_ids
+    );
 
     let apply_request = runtime.block_on(plan_host_uninstall_apply(
         &host,
@@ -90,7 +93,7 @@ fn killed_host_protocol_uninstall_apply_replays_without_reauthorization() {
         pending_path.is_file()
             && graph_path.is_file()
             && snapshot["generation"] == 2
-            && snapshot["routes"].as_array().is_some_and(Vec::is_empty)
+            && snapshot["packages"].as_array().is_some_and(Vec::is_empty)
             && snapshot["pendingCutovers"]
                 .as_array()
                 .is_some_and(|cutovers| cutovers.len() == 1)
@@ -173,7 +176,7 @@ fn killed_host_protocol_uninstall_apply_replays_without_reauthorization() {
     assert!(!authorization_marker.exists());
     let snapshot = read_json(&snapshot_path).unwrap();
     assert_eq!(snapshot["generation"], 2);
-    assert!(snapshot["routes"].as_array().is_some_and(Vec::is_empty));
+    assert!(snapshot["packages"].as_array().is_some_and(Vec::is_empty));
     assert!(snapshot["pendingCutovers"]
         .as_array()
         .is_none_or(Vec::is_empty));

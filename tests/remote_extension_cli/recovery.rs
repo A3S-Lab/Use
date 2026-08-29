@@ -161,8 +161,8 @@ fn schema_v3_upgrade_replays_removed_node_cleanup_without_generation_inflation()
     let obsolete_sha256 = obsolete_installed["packageSha256"].as_str().unwrap();
     let obsolete_retained_receipt = scoped_state(&home, "extension-generations/acme/obsolete")
         .join(format!("{obsolete_generation:020}-{obsolete_sha256}.json"));
-    let route_lock = exclusive_lock(
-        &scoped_state(&home, "route-locks/acme/obsolete")
+    let generation_lock = exclusive_lock(
+        &scoped_state(&home, "generation-leases/acme/obsolete")
             .join(format!("{obsolete_generation:020}.lock")),
     );
 
@@ -202,11 +202,13 @@ fn schema_v3_upgrade_replays_removed_node_cleanup_without_generation_inflation()
             return false;
         };
         receipt["enabled"] == false
-            && snapshot["routes"].as_array().is_some_and(|routes| {
-                routes
+            && snapshot["packages"].as_array().is_some_and(|packages| {
+                packages
                     .iter()
-                    .all(|route| route["packageId"] != "acme/obsolete")
-                    && routes.iter().any(|route| route["packageId"] == "acme/root")
+                    .all(|package| package["packageId"] != "acme/obsolete")
+                    && packages
+                        .iter()
+                        .any(|package| package["packageId"] == "acme/root")
             })
     });
     if !reached_removed_drain {
@@ -217,15 +219,15 @@ fn schema_v3_upgrade_replays_removed_node_cleanup_without_generation_inflation()
         let pending = std::fs::read_to_string(&pending_path).ok();
         let _ = interrupted.kill();
         let _ = interrupted.wait();
-        FileExt::unlock(&route_lock).unwrap();
+        FileExt::unlock(&generation_lock).unwrap();
         panic!(
             "upgrade did not reach the removed dependency drain checkpoint: status={process_status:?}, snapshot={snapshot:?}, selected_receipt={selected_receipt:?}, retained_receipt={retained_receipt:?}, pending={pending:?}"
         );
     }
     interrupted.kill().unwrap();
     interrupted.wait().unwrap();
-    FileExt::unlock(&route_lock).unwrap();
-    drop(route_lock);
+    FileExt::unlock(&generation_lock).unwrap();
+    drop(generation_lock);
 
     let generation_after_cutover =
         serde_json::from_slice::<serde_json::Value>(&std::fs::read(&snapshot_path).unwrap())
@@ -290,8 +292,8 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
 
     let lifecycle_path = lifecycle_journal_path(&home, "acme/root");
     let lifecycle_lock = exclusive_lock(&lifecycle_path.with_file_name(".operation.lock"));
-    let route_lock = exclusive_lock(
-        &scoped_state(&home, "route-locks/acme/root")
+    let generation_lock = exclusive_lock(
+        &scoped_state(&home, "generation-leases/acme/root")
             .join(format!("{lifecycle_generation:020}.lock")),
     );
     let mut interrupted = Command::new(binary())
@@ -313,8 +315,10 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
                 snapshot["pendingCutovers"]
                     .as_array()
                     .is_some_and(|cutovers| cutovers.len() == 1)
-                    && snapshot["routes"].as_array().is_some_and(|routes| {
-                        routes.iter().all(|route| route["packageId"] != "acme/root")
+                    && snapshot["packages"].as_array().is_some_and(|packages| {
+                        packages
+                            .iter()
+                            .all(|package| package["packageId"] != "acme/root")
                     })
             });
         pending_path.exists()
@@ -331,7 +335,7 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
         let _ = interrupted.kill();
         let _ = interrupted.wait();
         FileExt::unlock(&lifecycle_lock).unwrap();
-        FileExt::unlock(&route_lock).unwrap();
+        FileExt::unlock(&generation_lock).unwrap();
         panic!(
             "uninstall did not reach the cutover-before-receipt checkpoint: status={process_status:?}, snapshot={snapshot:?}, selected={selected:?}, retained={retained:?}, pending={pending:?}"
         );
@@ -393,7 +397,7 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
         let pending = std::fs::read_to_string(&pending_path).ok();
         let _ = recovery.kill();
         let _ = recovery.wait();
-        FileExt::unlock(&route_lock).unwrap();
+        FileExt::unlock(&generation_lock).unwrap();
         panic!(
             "restarted uninstall did not resume at accepted-call drain: status={process_status:?}, lifecycle={lifecycle:?}, snapshot={snapshot:?}, retained={retained:?}, pending={pending:?}"
         );
@@ -412,7 +416,7 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
     {
         let _ = recovery.kill();
         let _ = recovery.wait();
-        FileExt::unlock(&route_lock).unwrap();
+        FileExt::unlock(&generation_lock).unwrap();
         panic!(
             "restarted uninstall crossed the drain boundary early: status={process_status:?}, pending={pending_during_drain}, retained={retained_during_drain}, generation={generation_during_drain:?}"
         );
@@ -450,8 +454,8 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
         diagnostic["registry"]["operationCutover"]["status"],
         "recorded"
     );
-    FileExt::unlock(&route_lock).unwrap();
-    drop(route_lock);
+    FileExt::unlock(&generation_lock).unwrap();
+    drop(generation_lock);
 
     let recovered = recovery.wait_with_output().unwrap();
     assert!(recovered.status.success(), "{recovered:?}");

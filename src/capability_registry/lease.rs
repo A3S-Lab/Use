@@ -3,23 +3,20 @@ use std::sync::Arc;
 
 #[cfg(feature = "extensions")]
 use a3s_use_core::InstallationSnapshot;
-use a3s_use_core::{InstallationId, UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS};
+use a3s_use_core::{InstallationId, PluginPackageId, UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS};
 use serde::{Deserialize, Serialize};
 #[cfg(not(feature = "extensions"))]
 use sha2::{Digest, Sha256};
 
 use super::CapabilityRegistrySnapshot;
 
-pub const CAPABILITY_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.capability-snapshot-cursor.v3";
+pub const CAPABILITY_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.capability-snapshot-cursor.v4";
 
 /// Exact Use-owned package generation projected into a capability snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CapabilityPackageGeneration {
     pub package_id: String,
-    pub component_id: String,
-    pub route: String,
-    pub version: String,
     pub lifecycle_generation: u64,
     pub package_digest: String,
     pub manifest_digest: String,
@@ -43,7 +40,7 @@ pub struct CapabilitySnapshotCursor {
     pub registry_revision: String,
     pub packages: Vec<CapabilityPackageGeneration>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unleasable_routes: Vec<String>,
+    pub unleasable_packages: Vec<String>,
 }
 
 impl CapabilitySnapshotCursor {
@@ -60,7 +57,7 @@ impl CapabilitySnapshotCursor {
             revision: revision.to_owned(),
             registry_revision: upstream.registry_revision,
             packages: upstream.packages,
-            unleasable_routes: upstream.unleasable_routes,
+            unleasable_packages: upstream.unleasable_packages,
         };
         cursor.validate()?;
         Ok(cursor)
@@ -80,11 +77,14 @@ impl CapabilitySnapshotCursor {
             || !valid_lower_sha256(&self.revision)
             || !valid_canonical_sha256(&self.registry_revision)
             || self.packages.len() > MAX_PLUGIN_PLAN_ITEMS
-            || self.unleasable_routes.len() > MAX_PLUGIN_PLAN_ITEMS
+            || self.unleasable_packages.len() > MAX_PLUGIN_PLAN_ITEMS
             || self.packages.windows(2).any(|pair| pair[0] >= pair[1])
-            || self.unleasable_routes.iter().any(String::is_empty)
             || self
-                .unleasable_routes
+                .unleasable_packages
+                .iter()
+                .any(|package_id| PluginPackageId::parse(package_id.clone()).is_err())
+            || self
+                .unleasable_packages
                 .windows(2)
                 .any(|pair| pair[0] >= pair[1])
         {
@@ -95,10 +95,7 @@ impl CapabilitySnapshotCursor {
         let mut package_ids = std::collections::BTreeSet::new();
         for package in &self.packages {
             if package.lifecycle_generation == 0
-                || package.package_id.is_empty()
-                || package.component_id.is_empty()
-                || package.route.is_empty()
-                || package.version.is_empty()
+                || PluginPackageId::parse(package.package_id.clone()).is_err()
                 || !valid_canonical_sha256(&package.package_digest)
                 || !valid_canonical_sha256(&package.manifest_digest)
                 || !package_ids.insert(package.package_id.as_str())
@@ -108,11 +105,20 @@ impl CapabilitySnapshotCursor {
                 ));
             }
         }
+        if self.packages.iter().any(|package| {
+            self.unleasable_packages
+                .binary_search(&package.package_id)
+                .is_ok()
+        }) {
+            return Err(cursor_error(
+                "The capability snapshot cursor contains overlapping leasable and unleasable package identities.",
+            ));
+        }
         Ok(())
     }
 
     pub fn is_fully_leasable(&self) -> bool {
-        self.unleasable_routes.is_empty()
+        self.unleasable_packages.is_empty()
     }
 
     #[cfg(feature = "extensions")]
@@ -123,7 +129,7 @@ impl CapabilitySnapshotCursor {
         self.generation == extension.generation
             && self.installation == extension.installation
             && self.registry_revision == extension.revision
-            && self.unleasable_routes == extension.unleasable_routes
+            && self.unleasable_packages == extension.unleasable_packages
             && self.packages
                 == extension
                     .packages
@@ -240,7 +246,7 @@ pub(super) struct CapabilityUpstreamEvidence {
     generation: u64,
     registry_revision: String,
     packages: Vec<CapabilityPackageGeneration>,
-    unleasable_routes: Vec<String>,
+    unleasable_packages: Vec<String>,
 }
 
 impl CapabilityUpstreamEvidence {
@@ -271,7 +277,7 @@ impl CapabilityUpstreamEvidence {
                 .iter()
                 .map(CapabilityPackageGeneration::from)
                 .collect(),
-            unleasable_routes: cursor.unleasable_routes,
+            unleasable_packages: cursor.unleasable_packages,
         })
     }
 
@@ -287,7 +293,7 @@ impl CapabilityUpstreamEvidence {
                 Sha256::digest(b"a3s.use.extension-snapshot.empty.v1\0")
             ),
             packages: Vec::new(),
-            unleasable_routes: Vec::new(),
+            unleasable_packages: Vec::new(),
         }
     }
 }
@@ -297,9 +303,6 @@ impl From<&a3s_use_extension::ExtensionSnapshotPackage> for CapabilityPackageGen
     fn from(package: &a3s_use_extension::ExtensionSnapshotPackage) -> Self {
         Self {
             package_id: package.package_id.clone(),
-            component_id: package.component_id.clone(),
-            route: package.route.clone(),
-            version: package.version.clone(),
             lifecycle_generation: package.lifecycle_generation,
             package_digest: package.package_digest.clone(),
             manifest_digest: package.manifest_digest.clone(),
@@ -343,14 +346,11 @@ mod tests {
             registry_revision: format!("sha256:{}", "b".repeat(64)),
             packages: vec![CapabilityPackageGeneration {
                 package_id: "acme/guide".to_owned(),
-                component_id: "use/acme-guide".to_owned(),
-                route: "guide".to_owned(),
-                version: "1.0.0".to_owned(),
                 lifecycle_generation: 11,
                 package_digest: format!("sha256:{}", "c".repeat(64)),
                 manifest_digest: format!("sha256:{}", "d".repeat(64)),
             }],
-            unleasable_routes: Vec::new(),
+            unleasable_packages: Vec::new(),
         }
     }
 
@@ -386,32 +386,33 @@ mod tests {
             "use.capability.snapshot_cursor_invalid"
         );
 
-        let mut empty_route = cursor();
-        empty_route.unleasable_routes.push(String::new());
+        let mut empty_package = cursor();
+        empty_package.unleasable_packages.push(String::new());
         assert_eq!(
-            empty_route.validate().unwrap_err().code,
+            empty_package.validate().unwrap_err().code,
             "use.capability.snapshot_cursor_invalid"
         );
 
-        let mut duplicate_route = cursor();
-        duplicate_route.unleasable_routes = vec!["legacy".to_owned(), "legacy".to_owned()];
+        let mut duplicate_package = cursor();
+        duplicate_package.unleasable_packages =
+            vec!["acme/legacy".to_owned(), "acme/legacy".to_owned()];
         assert_eq!(
-            duplicate_route.validate().unwrap_err().code,
+            duplicate_package.validate().unwrap_err().code,
             "use.capability.snapshot_cursor_invalid"
         );
 
-        let mut unbounded_routes = cursor();
-        unbounded_routes.unleasable_routes = (0..=MAX_PLUGIN_PLAN_ITEMS)
-            .map(|index| format!("route-{index:05}"))
+        let mut unbounded_packages = cursor();
+        unbounded_packages.unleasable_packages = (0..=MAX_PLUGIN_PLAN_ITEMS)
+            .map(|index| format!("acme/package-{index:05}"))
             .collect();
         assert_eq!(
-            unbounded_routes.validate().unwrap_err().code,
+            unbounded_packages.validate().unwrap_err().code,
             "use.capability.snapshot_cursor_invalid"
         );
     }
 
     #[test]
-    fn internal_cursor_is_omitted_from_capability_snapshot_v4_json() {
+    fn internal_cursor_is_omitted_from_capability_snapshot_v5_json() {
         let cursor = cursor();
         let snapshot = CapabilityRegistrySnapshot {
             schema_version: super::super::CAPABILITY_REGISTRY_SCHEMA_VERSION,
@@ -424,7 +425,7 @@ mod tests {
             cursor,
         };
         let json = serde_json::to_value(snapshot).unwrap();
-        assert_eq!(json["schemaVersion"], 4);
+        assert_eq!(json["schemaVersion"], 5);
         assert_eq!(json["installationGeneration"], 5);
         assert_eq!(json["generation"], 7);
         assert!(json.get("cursor").is_none());

@@ -7,7 +7,7 @@ use tokio::fs;
 use super::digest::package_fingerprint;
 use super::package::{io_error, read_manifest, validate_surface_files};
 
-pub const RELEASE_BUNDLE_SCHEMA_VERSION: u32 = 1;
+pub const RELEASE_BUNDLE_SCHEMA_VERSION: u32 = 2;
 
 /// One optional extension package shipped inside a verified A3S Use release.
 ///
@@ -15,13 +15,14 @@ pub const RELEASE_BUNDLE_SCHEMA_VERSION: u32 = 1;
 /// to install it. Its expanded-package digest is included in the outer A3S
 /// review plan and rechecked by A3S Use immediately before activation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseBundlePackage {
     pub schema_version: u32,
     pub package_id: String,
     pub component_id: String,
     pub version: String,
-    pub route: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_alias: Option<String>,
     pub package_sha256: String,
     pub file_count: u64,
     pub byte_count: u64,
@@ -41,6 +42,10 @@ impl ReleaseBundlePackage {
             ));
         }
         if self.component_id != format!("use/{}", self.package_id)
+            || self
+                .route_alias
+                .as_deref()
+                .is_some_and(|alias| !super::valid_route_alias(alias))
             || self.package_sha256.len() != 64
             || !self
                 .package_sha256
@@ -89,7 +94,7 @@ pub async fn inspect_release_bundle(package_root: &Path) -> UseResult<ReleaseBun
         component_id: format!("use/{}", manifest.package_id),
         package_id: manifest.package_id,
         version: manifest.version,
-        route: manifest.route,
+        route_alias: manifest.route_alias,
         package_sha256: fingerprint.sha256,
         file_count: fingerprint.file_count,
         byte_count: fingerprint.byte_count,

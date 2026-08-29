@@ -154,7 +154,7 @@ fn run_standalone_plugin_manager_cli_scenario() {
         .as_array()
         .unwrap()
         .is_empty());
-    assert!(extension_routes(&home).is_empty());
+    assert!(extension_aliases(&home).is_empty());
 
     let unconfirmed = plugin_command(
         &home,
@@ -168,7 +168,7 @@ fn run_standalone_plugin_manager_cli_scenario() {
     );
     assert!(!unconfirmed.status.success(), "{unconfirmed:?}");
     assert_eq!(json(&unconfirmed)["error"]["code"], "use.cli.invalid_usage");
-    assert!(extension_routes(&home).is_empty());
+    assert!(extension_aliases(&home).is_empty());
 
     let mismatched_digest = format!("sha256:{}", "f".repeat(64));
     let mismatched = plugin_command(
@@ -187,7 +187,7 @@ fn run_standalone_plugin_manager_cli_scenario() {
         json(&mismatched)["error"]["code"],
         "use.plugin.host_plan_mismatch"
     );
-    assert!(extension_routes(&home).is_empty());
+    assert!(extension_aliases(&home).is_empty());
 
     server.clear_requests();
     let installed = apply_plan(&home, &install_operation_id, &install_plan_digest);
@@ -295,11 +295,11 @@ fn run_standalone_plugin_manager_cli_scenario() {
         "uninstall"
     );
     let (uninstall_operation_id, uninstall_plan_digest) = plan_identity(&uninstall_plan);
-    assert_eq!(extension_routes(&home), vec!["worker-cli".to_string()]);
+    assert_eq!(extension_aliases(&home), vec!["worker-cli".to_string()]);
     let uninstalled = apply_plan(&home, &uninstall_operation_id, &uninstall_plan_digest);
     assert!(uninstalled.status.success(), "{uninstalled:?}");
     assert_eq!(json(&uninstalled)["data"]["state"]["desired"], "absent");
-    assert!(extension_routes(&home).is_empty());
+    assert!(extension_aliases(&home).is_empty());
     assert!(server.requests().is_empty());
 }
 
@@ -339,16 +339,16 @@ fn plan_identity(plan: &serde_json::Value) -> (String, String) {
     )
 }
 
-fn extension_routes(home: &std::path::Path) -> Vec<String> {
+fn extension_aliases(home: &std::path::Path) -> Vec<String> {
     let mut snapshot = Command::new(binary());
     snapshot.args(["extension", "snapshot", "--json"]);
     append_test_installation_args(&mut snapshot);
     let snapshot = snapshot.env("A3S_USE_HOME", home).output().unwrap();
     assert!(snapshot.status.success(), "{snapshot:?}");
-    json(&snapshot)["data"]["registry"]["routes"]
+    json(&snapshot)["data"]["registry"]["packages"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|route| route["route"].as_str().unwrap().to_owned())
+        .map(|package| package["routeAlias"].as_str().unwrap().to_owned())
         .collect()
 }

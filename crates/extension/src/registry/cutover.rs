@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use a3s_use_core::{UseError, UseResult};
+use a3s_use_core::{UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS};
 use serde::{Deserialize, Serialize};
 
 use super::{ExtensionRegistrySnapshot, REGISTRY_SCHEMA_VERSION};
@@ -73,6 +73,38 @@ impl ExtensionRegistrySnapshot {
                 "The Registry contains too many unfinished cutover records.",
             ));
         }
+        if self.packages.len() > MAX_PLUGIN_PLAN_ITEMS
+            || self
+                .packages
+                .windows(2)
+                .any(|pair| pair[0].package_id >= pair[1].package_id)
+            || self.packages.iter().any(|binding| {
+                !matches!(
+                    super::normalize_package_id(&binding.package_id),
+                    Ok(package_id) if package_id == binding.package_id
+                ) || binding.component_id != format!("use/{}", binding.package_id)
+                    || binding.version.is_empty()
+                    || binding.package_root.as_os_str().is_empty()
+                    || !valid_lower_sha256(&binding.manifest_sha256)
+                    || binding
+                        .package_sha256
+                        .as_deref()
+                        .is_some_and(|digest| !valid_lower_sha256(digest))
+                    || binding.lifecycle_generation == Some(0)
+                    || binding
+                        .route_alias
+                        .as_deref()
+                        .is_some_and(|alias| !crate::valid_route_alias(alias))
+                    || binding.surfaces.iter().any(String::is_empty)
+                    || binding.surfaces.iter().collect::<BTreeSet<_>>().len()
+                        != binding.surfaces.len()
+            })
+        {
+            return Err(UseError::new(
+                "use.extension.registry_invalid",
+                "The Registry package projection has invalid canonical identity, bounds, or ordering.",
+            ));
+        }
         let mut keys = BTreeSet::new();
         for record in &self.pending_cutovers {
             record.validate()?;
@@ -96,4 +128,11 @@ fn valid_canonical_sha256(value: &str) -> bool {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
     })
+}
+
+fn valid_lower_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }

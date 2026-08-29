@@ -82,7 +82,7 @@ Embedding hosts acquire `OkfKnowledgeLease` from
 `OkfKnowledgeLeaseProvider` using one complete `OkfCapabilityProjection`. The
 provider accepts the request only when the exact package, manifest, lifecycle
 generation, and OKF bundle are still published by the Registry. The retained
-route lease participates in lifecycle drain.
+generation lease participates in lifecycle drain.
 
 Search returns `a3s.use.okf-knowledge-citation.v1` citations. A subsequent
 `a3s.use.okf-knowledge-read-request.v1` must present the unchanged projection,
@@ -93,7 +93,7 @@ actual Markdown SHA-256, UTF-8 validity, and byte count before returning
 
 A cutover or hide rejects new leases for the prior generation. Work already
 holding that generation may finish search/read while retirement waits for its
-route lock. Installed package drift and retained database content drift fail
+generation lock. Installed package drift and retained database content drift fail
 closed. These typed APIs do not expose an Ontology review graph, source tree,
 or an unbounded package filesystem reader.
 

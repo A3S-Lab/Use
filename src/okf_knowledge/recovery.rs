@@ -6,7 +6,7 @@ use a3s_use_core::{
     OkfKnowledgeObservedState, PlanQualifiedSurfaceRef, PlanScope, UseError, UseResult,
 };
 use a3s_use_extension::{
-    ExtensionLifecycleIdentity, ExtensionPaths, ExtensionRegistry, ExtensionRouteLease,
+    ExtensionGenerationLease, ExtensionLifecycleIdentity, ExtensionPaths, ExtensionRegistry,
     InstalledExtension, StoredWorkspaceGrant, WorkspaceGrantStore,
 };
 use olpc_cjson::CanonicalFormatter;
@@ -616,7 +616,7 @@ impl OkfKnowledgeRecoveryManager {
         }
 
         let mut packages = BTreeMap::<String, PackageAuthority>::new();
-        let mut route_leases = Vec::new();
+        let mut generation_leases = Vec::new();
         for binding in bindings {
             if binding.observation.state == OkfKnowledgeObservedState::Removed {
                 continue;
@@ -643,7 +643,7 @@ impl OkfKnowledgeRecoveryManager {
                     })?;
                 validate_installed_binding(lease.extension(), binding)?;
                 let installed = lease.extension().clone();
-                route_leases.push(lease);
+                generation_leases.push(lease);
                 installed
             } else {
                 let installed = self
@@ -774,7 +774,7 @@ impl OkfKnowledgeRecoveryManager {
                 .count(),
             selected_projections: selected.len(),
             missing_bindings,
-            _route_leases: route_leases,
+            _generation_leases: generation_leases,
         })
     }
 }
@@ -807,7 +807,7 @@ struct AuthorityResult {
     removed_tombstones: usize,
     selected_projections: usize,
     missing_bindings: usize,
-    _route_leases: Vec<ExtensionRouteLease>,
+    _generation_leases: Vec<ExtensionGenerationLease>,
 }
 
 fn selected_from_inventory(

@@ -303,7 +303,7 @@ async fn read_authority(paths: &ExtensionPaths) -> UseResult<StateBackupAuthorit
             "The Registry contains an unacknowledged capability cutover.",
         ));
     }
-    for binding in &snapshot.routes {
+    for binding in &snapshot.packages {
         if registry.get_snapshot_binding(binding).await?.is_none() {
             return Err(state_backup_invalid(
                 "The published Registry projection is missing its exact retained package receipt.",
@@ -311,12 +311,12 @@ async fn read_authority(paths: &ExtensionPaths) -> UseResult<StateBackupAuthorit
         }
     }
     let installed = registry.list().await?;
-    let expected_routes = installed
+    let expected_packages = installed
         .iter()
-        .map(|extension| a3s_use_extension::ExtensionRouteBinding {
+        .map(|extension| a3s_use_extension::ExtensionPackageBinding {
             package_id: extension.receipt.package_id.clone(),
             component_id: extension.receipt.component_id.clone(),
-            route: extension.receipt.route.clone(),
+            route_alias: extension.receipt.route_alias.clone(),
             version: extension.receipt.version.clone(),
             package_root: extension.receipt.package_root.clone(),
             manifest_sha256: extension.receipt.manifest_sha256.clone(),
@@ -330,7 +330,7 @@ async fn read_authority(paths: &ExtensionPaths) -> UseResult<StateBackupAuthorit
                 .collect(),
         })
         .collect::<Vec<_>>();
-    if snapshot.routes != expected_routes {
+    if snapshot.packages != expected_packages {
         return Err(state_backup_nonterminal(
             "The installed receipts and published Registry projection have not converged.",
         ));

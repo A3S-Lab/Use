@@ -107,7 +107,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
         installation: crate::test_installation(),
         package_id: manifest.package_id.clone(),
         component_id: "use/acme/guide".to_owned(),
-        route: manifest.route.clone(),
+        route_alias: manifest.route_alias.clone(),
         version: manifest.version.clone(),
         package_root: temp.path().to_path_buf(),
         manifest_sha256,
@@ -168,7 +168,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
             revision: "e".repeat(64),
             registry_revision: format!("sha256:{}", "f".repeat(64)),
             packages: Vec::new(),
-            unleasable_routes: Vec::new(),
+            unleasable_packages: Vec::new(),
         },
     };
     let installed = installed_plugin_plan_evidence_from_snapshot(&snapshot, &extension).unwrap();

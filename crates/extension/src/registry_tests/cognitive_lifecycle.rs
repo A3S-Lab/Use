@@ -178,7 +178,7 @@ async fn lifecycle_snapshot_cannot_steal_the_reviewed_atomic_cutover() {
     let staged_observation = registry.snapshot().await.unwrap();
     assert_eq!(staged_observation, before);
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("cognitive", "0.3.0")
         .await
         .unwrap()
         .is_none());
@@ -204,7 +204,7 @@ async fn lifecycle_snapshot_cannot_steal_the_reviewed_atomic_cutover() {
     assert!(published.extension.receipt.enabled);
     assert_eq!(published.extension.receipt.lifecycle_generation, Some(7));
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("cognitive", "0.3.0")
         .await
         .unwrap()
         .is_some());
@@ -248,7 +248,7 @@ async fn lifecycle_snapshot_does_not_reconcile_during_state_restore_maintenance(
 
     let snapshot_path = registry.paths().registry_snapshot_path();
     let mut stale = registry.snapshot().await.unwrap();
-    stale.routes[0].surfaces.pop();
+    stale.packages[0].surfaces.pop();
     crate::registry_io::write_registry_snapshot(registry.paths(), &stale)
         .await
         .unwrap();
@@ -288,7 +288,7 @@ async fn lifecycle_snapshot_does_not_reconcile_during_state_restore_maintenance(
 
     let repaired = registry.snapshot().await.unwrap();
     assert_eq!(repaired.generation, stale.generation + 1);
-    assert_ne!(repaired.routes, stale.routes);
+    assert_ne!(repaired.packages, stale.packages);
 }
 
 #[tokio::test]
@@ -437,12 +437,12 @@ async fn lifecycle_graph_requires_the_exact_published_retained_dependency() {
     assert_eq!(published.len(), 1);
     assert!(published[0].extension.enabled());
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("base", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("base", "0.3.0")
         .await
         .unwrap()
         .is_some());
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("root", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("root", "0.3.0")
         .await
         .unwrap()
         .is_some());
@@ -472,7 +472,7 @@ async fn lifecycle_hide_drains_accepted_calls_before_exact_idempotent_removal() 
         .await
         .unwrap();
     let lease = registry
-        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("cognitive", "0.3.0")
         .await
         .unwrap()
         .unwrap();
@@ -481,7 +481,7 @@ async fn lifecycle_hide_drains_accepted_calls_before_exact_idempotent_removal() 
     assert!(hidden.changed);
     assert!(!hidden.extension.receipt.enabled);
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("cognitive", "0.3.0")
         .await
         .unwrap()
         .is_none());
@@ -517,7 +517,7 @@ async fn lifecycle_hide_drains_accepted_calls_before_exact_idempotent_removal() 
     assert!(removed.changed);
     assert!(package_root.is_dir());
     assert!(registry.get("acme/cognitive").await.unwrap().is_none());
-    assert!(registry.snapshot().await.unwrap().routes.is_empty());
+    assert!(registry.snapshot().await.unwrap().packages.is_empty());
 
     let replay = registry
         .remove_lifecycle_package(&identity, Duration::from_secs(1))
@@ -735,7 +735,7 @@ async fn lifecycle_generation_binding_fails_closed_at_the_publication_boundary()
     let snapshot_path = registry.paths().registry_snapshot_path();
     let mut snapshot: serde_json::Value =
         serde_json::from_slice(&fs::read(&snapshot_path).await.unwrap()).unwrap();
-    snapshot["routes"][0]["lifecycleGeneration"] = serde_json::json!(99);
+    snapshot["packages"][0]["lifecycleGeneration"] = serde_json::json!(99);
     fs::write(
         &snapshot_path,
         serde_json::to_vec_pretty(&snapshot).unwrap(),
@@ -743,9 +743,9 @@ async fn lifecycle_generation_binding_fails_closed_at_the_publication_boundary()
     .await
     .unwrap();
     let observed = registry.snapshot().await.unwrap();
-    assert_eq!(observed.routes[0].lifecycle_generation, Some(99));
+    assert_eq!(observed.packages[0].lifecycle_generation, Some(99));
     assert!(registry
-        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .acquire_lifecycle_alias_for_host_version("cognitive", "0.3.0")
         .await
         .unwrap()
         .is_none());
@@ -760,7 +760,7 @@ async fn lifecycle_generation_binding_fails_closed_at_the_publication_boundary()
     let selected = registry.get("acme/cognitive").await.unwrap().unwrap();
     assert_eq!(selected.receipt.lifecycle_generation, Some(14));
     assert!(registry
-        .get_snapshot_binding(&observed.routes[0])
+        .get_snapshot_binding(&observed.packages[0])
         .await
         .unwrap()
         .is_none());
@@ -798,13 +798,13 @@ async fn lifecycle_commit_replay_defers_receipt_cutover_to_the_journal() {
     // Model a second crash after receipt replacement but before snapshot
     // publication. Replaying the package checkpoint restores staged state,
     // while only the lifecycle journal may publish the reviewed cutover.
-    assert!(registry.snapshot().await.unwrap().routes.is_empty());
+    assert!(registry.snapshot().await.unwrap().packages.is_empty());
     let replay = registry
         .commit_lifecycle_package(&identity, &candidate)
         .await
         .unwrap();
     assert!(!replay.changed);
-    assert!(registry.snapshot().await.unwrap().routes.is_empty());
+    assert!(registry.snapshot().await.unwrap().packages.is_empty());
 
     let cutover_key = format!("sha256:{}", "f".repeat(64));
     let publication = registry
@@ -812,11 +812,11 @@ async fn lifecycle_commit_replay_defers_receipt_cutover_to_the_journal() {
         .await
         .unwrap();
     assert_eq!(publication.registry_generation, 1);
-    assert_eq!(registry.snapshot().await.unwrap().routes.len(), 1);
+    assert_eq!(registry.snapshot().await.unwrap().packages.len(), 1);
 }
 
 #[tokio::test]
-async fn lifecycle_upgrade_retains_routes_until_cutover_and_retires_the_exact_prior_generation() {
+async fn lifecycle_upgrade_retains_packages_until_cutover_and_retires_the_exact_prior_generation() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("cognitive");
     compatible_cognitive_package(&source).await;
@@ -870,7 +870,7 @@ async fn lifecycle_upgrade_retains_routes_until_cutover_and_retires_the_exact_pr
     );
     let staged_snapshot = registry.snapshot().await.unwrap();
     let staged_binding = registry
-        .get_snapshot_binding(&staged_snapshot.routes[0])
+        .get_snapshot_binding(&staged_snapshot.packages[0])
         .await
         .unwrap()
         .unwrap();
@@ -878,7 +878,7 @@ async fn lifecycle_upgrade_retains_routes_until_cutover_and_retires_the_exact_pr
     assert!(staged_binding.receipt.enabled);
     assert_eq!(
         registry
-            .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+            .acquire_lifecycle_alias_for_host_version("cognitive", "0.3.0")
             .await
             .unwrap()
             .unwrap()
@@ -916,7 +916,7 @@ async fn lifecycle_upgrade_retains_routes_until_cutover_and_retires_the_exact_pr
     drop(next_lease);
     assert_eq!(
         registry
-            .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+            .acquire_lifecycle_alias_for_host_version("cognitive", "0.3.0")
             .await
             .unwrap()
             .unwrap()
@@ -1018,7 +1018,7 @@ async fn lifecycle_upgrade_candidate_can_roll_back_before_capability_cutover() {
         Some(21)
     );
     assert_eq!(
-        registry.snapshot().await.unwrap().routes[0].lifecycle_generation,
+        registry.snapshot().await.unwrap().packages[0].lifecycle_generation,
         Some(21)
     );
 }
@@ -1070,8 +1070,8 @@ async fn lifecycle_graph_rollback_atomically_restores_replacements_and_discards_
         .unwrap();
     let staged = registry.snapshot().await.unwrap();
     assert_eq!(staged, published_before);
-    assert_eq!(staged.routes.len(), 1);
-    assert_eq!(staged.routes[0].lifecycle_generation, Some(41));
+    assert_eq!(staged.packages.len(), 1);
+    assert_eq!(staged.packages[0].lifecycle_generation, Some(41));
 
     let results = registry
         .rollback_lifecycle_package_graph(
@@ -1089,9 +1089,9 @@ async fn lifecycle_graph_rollback_atomically_restores_replacements_and_discards_
     );
     assert!(results.iter().all(|result| result.changed));
     let restored = registry.snapshot().await.unwrap();
-    assert_eq!(restored.routes.len(), 1);
-    assert_eq!(restored.routes[0].lifecycle_generation, Some(41));
-    assert!(restored.routes[0].enabled);
+    assert_eq!(restored.packages.len(), 1);
+    assert_eq!(restored.packages[0].lifecycle_generation, Some(41));
+    assert!(restored.packages[0].enabled);
     assert_eq!(
         registry
             .get("acme/root")

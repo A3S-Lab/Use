@@ -185,7 +185,7 @@ pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
         idempotency_key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication>;
 
-    /// Atomically hide an uninstall closure and return one route-snapshot
+    /// Atomically hide an uninstall closure and return one package-snapshot
     /// cutover. Package-specific hide checkpoints use the returned evidence;
     /// drain and exact removal continue through their typed hosts.
     async fn hide_capabilities_with_cutover(

@@ -134,7 +134,7 @@ winner.
 | Package enablement | snapshot-bound recovery projections and completed enablement operations |
 | Host Manager | reviewed requests, observations, cancellations, and outcomes |
 
-Cross-process lock files and route lease files are excluded. Empty directories
+Cross-process lock files and generation lease files are excluded. Empty directories
 do not create manifest entries.
 
 Global `registries.acl`, Registry trust roots, TUF metadata, verified target and

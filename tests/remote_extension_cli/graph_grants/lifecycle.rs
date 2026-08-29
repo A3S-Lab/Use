@@ -468,10 +468,10 @@ async fn permission_bearing_enablement_scenario() {
     assert_granted(&home, manager.scope(), &package_digest, &permissions).await;
     assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
 
-    let route_lock = exclusive_lock(
+    let generation_lock = exclusive_lock(
         &extension_paths(&home)
             .state_root()
-            .join("route-locks/acme/worker")
+            .join("generation-leases/acme/worker")
             .join(format!("{lifecycle_generation:020}.lock")),
     );
     let interrupted_manager = manager.clone();
@@ -520,14 +520,14 @@ async fn permission_bearing_enablement_scenario() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     if !reached_cutover_drain {
-        FileExt::unlock(&route_lock).unwrap();
-        drop(route_lock);
+        FileExt::unlock(&generation_lock).unwrap();
+        drop(generation_lock);
         let outcome = interrupted.await;
         panic!("disable did not reach the cutover-before-drain checkpoint: {outcome:?}");
     }
     assert_granted(&home, manager.scope(), &package_digest, &permissions).await;
     assert!(extension_registry
-        .find_published_route("worker-v1")
+        .resolve_published_alias("worker-v1")
         .await
         .unwrap()
         .is_none());
@@ -543,8 +543,8 @@ async fn permission_bearing_enablement_scenario() {
 
     interrupted.abort();
     let _ = interrupted.await;
-    FileExt::unlock(&route_lock).unwrap();
-    drop(route_lock);
+    FileExt::unlock(&generation_lock).unwrap();
+    drop(generation_lock);
 
     let restarted = CognitivePackageManager::with_authorization(
         extension_registry.clone(),
@@ -621,7 +621,7 @@ async fn permission_bearing_enablement_scenario() {
         WorkspaceGrantLifecyclePhase::Prepared
     );
     assert!(extension_registry
-        .find_published_route("worker-v1")
+        .resolve_published_alias("worker-v1")
         .await
         .unwrap()
         .is_none());
@@ -653,7 +653,7 @@ async fn permission_bearing_enablement_scenario() {
     );
     assert_granted(&home, restarted.scope(), &package_digest, &permissions).await;
     assert!(extension_registry
-        .find_published_route("worker-v1")
+        .resolve_published_alias("worker-v1")
         .await
         .unwrap()
         .is_some());

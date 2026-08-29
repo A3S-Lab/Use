@@ -84,7 +84,7 @@ async fn lifecycle_candidate_source_drift_leaves_no_retained_state() {
         Some(first.generation())
     );
     assert_eq!(
-        registry.snapshot().await.unwrap().routes[0].lifecycle_generation,
+        registry.snapshot().await.unwrap().packages[0].lifecycle_generation,
         Some(first.generation())
     );
 }

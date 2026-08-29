@@ -155,7 +155,7 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
     if snapshot_path.exists() {
         let snapshot: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&snapshot_path).unwrap()).unwrap();
-        assert!(snapshot["routes"].as_array().unwrap().is_empty());
+        assert!(snapshot["packages"].as_array().unwrap().is_empty());
     }
 
     server.clear_requests();
@@ -183,11 +183,13 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
     let snapshot: serde_json::Value =
         serde_json::from_slice(&std::fs::read(snapshot_path).unwrap()).unwrap();
     assert_eq!(snapshot["generation"], 1);
-    assert!(snapshot["routes"]
+    assert!(snapshot["packages"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|route| { route["packageId"] == "acme/root" && route["lifecycleGeneration"] == 1 }));
+        .any(|package| {
+            package["packageId"] == "acme/root" && package["lifecycleGeneration"] == 1
+        }));
 }
 
 #[test]
@@ -264,7 +266,7 @@ fn uninstall_retires_scope_authority_without_deleting_global_artifact() {
     let snapshot: serde_json::Value =
         serde_json::from_slice(&std::fs::read(snapshot_path).unwrap()).unwrap();
     assert_eq!(snapshot["generation"], generation_before + 1);
-    assert!(snapshot["routes"].as_array().unwrap().is_empty());
+    assert!(snapshot["packages"].as_array().unwrap().is_empty());
     assert!(snapshot["pendingCutovers"]
         .as_array()
         .is_none_or(Vec::is_empty));

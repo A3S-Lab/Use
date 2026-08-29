@@ -386,9 +386,11 @@ fn schema_v3_cli_upgrade_removes_an_unreferenced_dependency_node() {
         serde_json::from_slice(&std::fs::read(scoped_state(&home, "registry.json")).unwrap())
             .unwrap();
     assert_eq!(snapshot["generation"], generation_before + 1);
-    assert!(snapshot["routes"].as_array().is_some_and(|routes| routes
-        .iter()
-        .all(|route| route["packageId"] != "acme/obsolete")));
+    assert!(snapshot["packages"]
+        .as_array()
+        .is_some_and(|packages| packages
+            .iter()
+            .all(|package| package["packageId"] != "acme/obsolete")));
     let graph: serde_json::Value = serde_json::from_slice(
         &std::fs::read(scoped_state(&home, "installation-snapshot.json")).unwrap(),
     )
@@ -489,9 +491,11 @@ fn schema_v3_cli_upgrade_retains_a_removed_node_owned_by_another_root() {
     let snapshot: serde_json::Value =
         serde_json::from_slice(&std::fs::read(scoped_state(&home, "registry.json")).unwrap())
             .unwrap();
-    assert!(snapshot["routes"].as_array().is_some_and(|routes| routes
-        .iter()
-        .any(|route| route["packageId"] == "acme/obsolete" && route["enabled"] == true)));
+    assert!(snapshot["packages"]
+        .as_array()
+        .is_some_and(|packages| packages
+            .iter()
+            .any(|package| package["packageId"] == "acme/obsolete" && package["enabled"] == true)));
 }
 
 #[test]

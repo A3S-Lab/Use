@@ -92,9 +92,9 @@ fn killed_graph_publication_replays_exact_cutover_offline_without_generation_inf
         pending_path.is_file()
             && !graph_path.exists()
             && snapshot["generation"] == 1
-            && snapshot["routes"]
+            && snapshot["packages"]
                 .as_array()
-                .is_some_and(|routes| routes.len() == GRAPH_DEPENDENCY_COUNT + 1)
+                .is_some_and(|packages| packages.len() == GRAPH_DEPENDENCY_COUNT + 1)
             && snapshot["pendingCutovers"]
                 .as_array()
                 .is_some_and(|cutovers| cutovers.len() == 1)
@@ -120,10 +120,10 @@ fn killed_graph_publication_replays_exact_cutover_offline_without_generation_inf
     let snapshot = read_json(&snapshot_path).unwrap();
     assert_eq!(snapshot["generation"], 1);
     assert_eq!(
-        snapshot["routes"].as_array().unwrap().len(),
+        snapshot["packages"].as_array().unwrap().len(),
         GRAPH_DEPENDENCY_COUNT + 1
     );
-    assert_eq!(route_package_ids(&snapshot), expected_package_ids);
+    assert_eq!(published_package_ids(&snapshot), expected_package_ids);
     assert_eq!(snapshot["pendingCutovers"].as_array().unwrap().len(), 1);
     assert_eq!(lifecycle_status(&held_journal).as_deref(), Some("applying"));
     assert!(pending_path.is_file());
@@ -196,10 +196,13 @@ fn killed_graph_publication_replays_exact_cutover_offline_without_generation_inf
     let recovered_snapshot = read_json(&snapshot_path).unwrap();
     assert_eq!(recovered_snapshot["generation"], 1);
     assert_eq!(
-        recovered_snapshot["routes"].as_array().unwrap().len(),
+        recovered_snapshot["packages"].as_array().unwrap().len(),
         GRAPH_DEPENDENCY_COUNT + 1
     );
-    assert_eq!(route_package_ids(&recovered_snapshot), expected_package_ids);
+    assert_eq!(
+        published_package_ids(&recovered_snapshot),
+        expected_package_ids
+    );
     assert!(recovered_snapshot["pendingCutovers"]
         .as_array()
         .is_none_or(Vec::is_empty));
@@ -253,12 +256,12 @@ fn file_length(path: &std::path::Path) -> Option<u64> {
     std::fs::metadata(path).ok().map(|metadata| metadata.len())
 }
 
-fn route_package_ids(snapshot: &serde_json::Value) -> std::collections::BTreeSet<String> {
-    snapshot["routes"]
+fn published_package_ids(snapshot: &serde_json::Value) -> std::collections::BTreeSet<String> {
+    snapshot["packages"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|route| route["packageId"].as_str().unwrap().to_owned())
+        .map(|package| package["packageId"].as_str().unwrap().to_owned())
         .collect()
 }
 

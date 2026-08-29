@@ -98,7 +98,7 @@ fn unified_capability_snapshot_projects_builtin_skills() {
     }
     assert!(capabilities
         .iter()
-        .all(|capability| capability["route"] != "office"));
+        .all(|capability| capability["alias"] != "office"));
     assert!(value.get("jsonrpc").is_none());
 }
 
@@ -1040,7 +1040,7 @@ fn browser_upgrade_command_delegates_to_the_external_driver() {
 
 #[cfg(feature = "ocr")]
 #[test]
-fn built_in_ocr_projects_the_canonical_code_route_and_skill() {
+fn built_in_ocr_projects_the_canonical_code_alias_and_skill() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");
 
@@ -1058,7 +1058,7 @@ fn built_in_ocr_projects_the_canonical_code_route_and_skill() {
         .iter()
         .find(|capability| capability["id"] == "use/ocr")
         .unwrap();
-    assert_eq!(ocr["route"], "ocr");
+    assert_eq!(ocr["alias"], "ocr");
     assert_eq!(ocr["origin"], "built-in");
     assert_eq!(ocr["enabled"], true);
     assert_eq!(ocr["mcp"]["target"], "ocr-native");

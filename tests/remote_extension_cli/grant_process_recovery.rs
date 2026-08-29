@@ -435,22 +435,24 @@ fn file_length(path: &Path) -> Option<u64> {
     std::fs::metadata(path).ok().map(|metadata| metadata.len())
 }
 
-fn route_package_ids(snapshot: &serde_json::Value) -> std::collections::BTreeSet<String> {
-    snapshot["routes"]
+fn published_package_ids(snapshot: &serde_json::Value) -> std::collections::BTreeSet<String> {
+    snapshot["packages"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|route| route["packageId"].as_str().unwrap().to_owned())
+        .map(|package| package["packageId"].as_str().unwrap().to_owned())
         .collect()
 }
 
-fn enabled_route_package_ids(snapshot: &serde_json::Value) -> std::collections::BTreeSet<String> {
-    snapshot["routes"]
+fn enabled_published_package_ids(
+    snapshot: &serde_json::Value,
+) -> std::collections::BTreeSet<String> {
+    snapshot["packages"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|route| route["enabled"] == true)
-        .map(|route| route["packageId"].as_str().unwrap().to_owned())
+        .filter(|package| package["enabled"] == true)
+        .map(|package| package["packageId"].as_str().unwrap().to_owned())
         .collect()
 }
 

@@ -110,14 +110,14 @@ impl ExtensionRegistry {
             return Err(registry_cutover_capacity());
         }
         let published_binding = published
-            .routes
+            .packages
             .iter()
             .find(|binding| binding_matches_identity(&self.paths, binding, identity));
         let published_exact = published_binding.is_some();
         let published_enabled = published_binding.is_some_and(|binding| binding.enabled);
         if require_already_hidden && published_exact {
             return Err(lifecycle_state_error(
-                "A prior generation can be retired only after atomic graph cutover removes its Registry route.",
+                "A prior generation can be retired only after atomic graph cutover removes its Registry package binding.",
             ));
         }
         if !selected_is_exact && (enabled || published_exact) {
@@ -129,7 +129,7 @@ impl ExtensionRegistry {
             && !enabled
             && !published_exact
             && published
-                .routes
+                .packages
                 .iter()
                 .any(|binding| binding.package_id == identity.package_id())
         {

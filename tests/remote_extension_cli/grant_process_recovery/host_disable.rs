@@ -72,9 +72,9 @@ fn killed_host_protocol_disable_apply_replays_hide_drain_and_grant_retirement() 
     drop(server);
     assert!(!authorization_marker.exists());
 
-    let route_lock = exclusive_lock(
+    let generation_lock = exclusive_lock(
         &managed_state_root(&home)
-            .join("route-locks/acme/worker")
+            .join("generation-leases/acme/worker")
             .join(format!("{lifecycle_generation:020}.lock")),
     );
     let mut interrupted = spawn_host_apply_child(&home, &apply_request_path, &authorization_marker);
@@ -84,7 +84,7 @@ fn killed_host_protocol_disable_apply_replays_hide_drain_and_grant_retirement() 
         let snapshot = read_json(&snapshot_path);
         let grant = find_grant_operation(&home, "disable").map(|(_, journal)| journal);
         let output = terminate_child(interrupted);
-        FileExt::unlock(&route_lock).unwrap();
+        FileExt::unlock(&generation_lock).unwrap();
         panic!(
             "Host disable did not reach Grant cutover before drain: status={process_status:?}, snapshot={snapshot:?}, grant={grant:?}, child={}",
             child_output(&output)
@@ -95,8 +95,8 @@ fn killed_host_protocol_disable_apply_replays_hide_drain_and_grant_retirement() 
             return false;
         };
         snapshot["generation"] == 2
-            && route_package_ids(&snapshot) == expected_packages
-            && enabled_route_package_ids(&snapshot) == expected_enabled_packages
+            && published_package_ids(&snapshot) == expected_packages
+            && enabled_published_package_ids(&snapshot) == expected_enabled_packages
             && snapshot["pendingCutovers"]
                 .as_array()
                 .is_some_and(|cutovers| cutovers.len() == 1)
@@ -108,7 +108,7 @@ fn killed_host_protocol_disable_apply_replays_hide_drain_and_grant_retirement() 
         let lifecycle = lifecycle_summary(&managed_lifecycle_journal_path(&home, PACKAGE_ID));
         let grant = grant_phase(&grant_operation_path);
         let output = terminate_child(interrupted);
-        FileExt::unlock(&route_lock).unwrap();
+        FileExt::unlock(&generation_lock).unwrap();
         panic!(
             "Host disable did not reach hidden/draining cutover: status={process_status:?}, snapshot={snapshot:?}, lifecycle={lifecycle:?}, grant={grant:?}, child={}",
             child_output(&output)
@@ -117,8 +117,8 @@ fn killed_host_protocol_disable_apply_replays_hide_drain_and_grant_retirement() 
 
     let output = terminate_child(interrupted);
     assert!(!output.status.success(), "child unexpectedly completed");
-    FileExt::unlock(&route_lock).unwrap();
-    drop(route_lock);
+    FileExt::unlock(&generation_lock).unwrap();
+    drop(generation_lock);
     assert!(!authorization_marker.exists());
     assert_eq!(observe_grant(&home, &prior_digest), prior_grant);
     let grant_journal = read_json(&grant_operation_path).unwrap();
@@ -209,9 +209,9 @@ fn killed_host_protocol_disable_apply_replays_hide_drain_and_grant_retirement() 
     assert!(!authorization_marker.exists());
     let snapshot = read_json(&snapshot_path).unwrap();
     assert_eq!(snapshot["generation"], 2);
-    assert_eq!(route_package_ids(&snapshot), expected_packages);
+    assert_eq!(published_package_ids(&snapshot), expected_packages);
     assert_eq!(
-        enabled_route_package_ids(&snapshot),
+        enabled_published_package_ids(&snapshot),
         expected_enabled_packages
     );
     assert!(snapshot["pendingCutovers"]
