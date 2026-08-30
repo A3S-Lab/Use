@@ -98,6 +98,12 @@ the remaining control facts and applied observations. ADR-003 fixes the
 transaction, outbox, backup, and migration boundaries: the SQLite/WAL backend
 may be qualified before activation, but every authoritative reader switches as
 one cutover and live WAL files are never copied as backup payloads.
+The current private Control Store kernel qualifies only an installation-bound
+schema-v1 database, bounded blocking executor, and canonical offline-verifiable
+export on otherwise clean state. Production lifecycle code does not construct
+it, so it neither mirrors nor replaces the current JSON authority; aggregate
+commands, outbox processing, and the coordinated reader/writer cutover remain
+A2 work.
 
 Snapshot v2 gives every selected package one monotonic state generation,
 desired enablement bit, and exact selected-surface closure. Enable/disable

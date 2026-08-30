@@ -29,6 +29,9 @@ pub mod cli;
 #[cfg(feature = "extensions")]
 pub mod cognitive_package;
 mod component_route;
+#[cfg(feature = "extensions")]
+#[cfg_attr(not(test), allow(dead_code))]
+mod control_store;
 mod extension_cli;
 mod first_use;
 #[cfg(feature = "extensions")]
