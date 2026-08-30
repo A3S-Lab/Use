@@ -40,6 +40,31 @@ pub(super) async fn validate_initialized(state_root: &Path, database_path: &Path
     require_initialized(state_root, database_path).await
 }
 
+/// Resolve platform path aliases before opening SQLite with `NOFOLLOW`.
+///
+/// macOS exposes temporary paths through `/var`, which is an operating-system
+/// symlink to `/private/var`. SQLite intentionally rejects any symlink in a
+/// `NOFOLLOW` filename, including ancestors. The maintenance boundary and root
+/// inventory validate the logical root first; opening its physical equivalent
+/// preserves final-database link protection without rejecting that platform
+/// alias.
+pub(super) async fn physical_database_path(
+    state_root: &Path,
+    database_path: &Path,
+) -> UseResult<std::path::PathBuf> {
+    validate_database_identity(state_root, database_path)?;
+    validate_owned_directory(state_root).await?;
+    let physical_root = fs::canonicalize(state_root).await.map_err(|error| {
+        io_error(
+            "resolve physical Control Store state root",
+            state_root,
+            error,
+        )
+    })?;
+    validate_owned_directory(&physical_root).await?;
+    Ok(physical_root.join(CONTROL_STORE_DATABASE_FILE))
+}
+
 #[derive(Debug, Default)]
 struct RootInventory {
     database: bool,

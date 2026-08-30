@@ -43,7 +43,7 @@ impl ControlStore {
         installation.validate()?;
         let state_root = state_root.into();
         let database_path = state_root.join(CONTROL_STORE_DATABASE_FILE);
-        let executor = ControlStoreExecutor::new(database_path.clone())?;
+        let executor = ControlStoreExecutor::new()?;
         Ok(Self {
             installation,
             state_root,
@@ -64,7 +64,12 @@ impl ControlStore {
             .acquire_exclusive()
             .await?;
         filesystem::prepare_initialization(&self.state_root, &self.database_path).await?;
-        let metadata = self.executor.initialize(self.installation.clone()).await?;
+        let physical_database_path =
+            filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
+        let metadata = self
+            .executor
+            .initialize(physical_database_path, self.installation.clone())
+            .await?;
         filesystem::validate_initialized(&self.state_root, &self.database_path).await?;
         Ok(metadata)
     }
@@ -74,7 +79,12 @@ impl ControlStore {
             .acquire_shared()
             .await?;
         filesystem::require_initialized(&self.state_root, &self.database_path).await?;
-        let inspection = self.executor.inspect(self.installation.clone()).await?;
+        let physical_database_path =
+            filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
+        let inspection = self
+            .executor
+            .inspect(physical_database_path, self.installation.clone())
+            .await?;
         filesystem::validate_initialized(&self.state_root, &self.database_path).await?;
         Ok(inspection)
     }
@@ -84,7 +94,12 @@ impl ControlStore {
             .acquire_shared()
             .await?;
         filesystem::require_initialized(&self.state_root, &self.database_path).await?;
-        let export = self.executor.export(self.installation.clone()).await?;
+        let physical_database_path =
+            filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
+        let export = self
+            .executor
+            .export(physical_database_path, self.installation.clone())
+            .await?;
         filesystem::validate_initialized(&self.state_root, &self.database_path).await?;
         Ok(export)
     }

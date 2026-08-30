@@ -15,14 +15,17 @@ pub(super) struct ControlStoreExecutor {
 
 enum ControlStoreRequest {
     Initialize {
+        database_path: PathBuf,
         installation: InstallationId,
         response: oneshot::Sender<UseResult<ControlStoreMetadata>>,
     },
     Inspect {
+        database_path: PathBuf,
         installation: InstallationId,
         response: oneshot::Sender<UseResult<ControlStoreInspection>>,
     },
     Export {
+        database_path: PathBuf,
         installation: InstallationId,
         response: oneshot::Sender<UseResult<Vec<u8>>>,
     },
@@ -34,11 +37,11 @@ enum ControlStoreRequest {
 }
 
 impl ControlStoreExecutor {
-    pub(super) fn new(database_path: PathBuf) -> UseResult<Self> {
+    pub(super) fn new() -> UseResult<Self> {
         let (sender, receiver) = mpsc::channel(MAX_QUEUED_CONTROL_STORE_OPERATIONS);
         std::thread::Builder::new()
             .name("a3s-use-control-store".to_string())
-            .spawn(move || run_worker(database_path, receiver))
+            .spawn(move || run_worker(receiver))
             .map_err(|error| {
                 executor_error(format!(
                     "The Control Store worker could not be started: {error}"
@@ -49,10 +52,12 @@ impl ControlStoreExecutor {
 
     pub(super) async fn initialize(
         &self,
+        database_path: PathBuf,
         installation: InstallationId,
     ) -> UseResult<ControlStoreMetadata> {
         let (response, receiver) = oneshot::channel();
         self.send(ControlStoreRequest::Initialize {
+            database_path,
             installation,
             response,
         })
@@ -62,10 +67,12 @@ impl ControlStoreExecutor {
 
     pub(super) async fn inspect(
         &self,
+        database_path: PathBuf,
         installation: InstallationId,
     ) -> UseResult<ControlStoreInspection> {
         let (response, receiver) = oneshot::channel();
         self.send(ControlStoreRequest::Inspect {
+            database_path,
             installation,
             response,
         })
@@ -73,9 +80,14 @@ impl ControlStoreExecutor {
         receive(receiver).await
     }
 
-    pub(super) async fn export(&self, installation: InstallationId) -> UseResult<Vec<u8>> {
+    pub(super) async fn export(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+    ) -> UseResult<Vec<u8>> {
         let (response, receiver) = oneshot::channel();
         self.send(ControlStoreRequest::Export {
+            database_path,
             installation,
             response,
         })
@@ -105,22 +117,25 @@ impl ControlStoreExecutor {
     }
 }
 
-fn run_worker(database_path: PathBuf, mut receiver: mpsc::Receiver<ControlStoreRequest>) {
+fn run_worker(mut receiver: mpsc::Receiver<ControlStoreRequest>) {
     while let Some(request) = receiver.blocking_recv() {
         match request {
             ControlStoreRequest::Initialize {
+                database_path,
                 installation,
                 response,
             } => {
                 let _ = response.send(schema::initialize(&database_path, &installation));
             }
             ControlStoreRequest::Inspect {
+                database_path,
                 installation,
                 response,
             } => {
                 let _ = response.send(schema::inspect(&database_path, &installation));
             }
             ControlStoreRequest::Export {
+                database_path,
                 installation,
                 response,
             } => {

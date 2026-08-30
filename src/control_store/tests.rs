@@ -88,6 +88,27 @@ async fn initialization_rejects_a_linked_database_without_following_it() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn initialization_resolves_an_ancestor_alias_before_nofollow_open() {
+    use std::os::unix::fs::symlink;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let physical_parent = tempfile::tempdir().unwrap();
+    let alias = temporary.path().join("state-alias");
+    symlink(physical_parent.path(), &alias).unwrap();
+    let state_root = alias.join("installation");
+    let store = ControlStore::new(&state_root, installation(InstallationKind::Workspace)).unwrap();
+
+    store.initialize().await.unwrap();
+
+    assert!(physical_parent
+        .path()
+        .join("installation")
+        .join(CONTROL_STORE_DATABASE_FILE)
+        .is_file());
+}
+
 #[tokio::test]
 async fn deterministic_export_is_canonical_scope_bound_and_offline_verifiable() {
     let temporary = tempfile::tempdir().unwrap();
