@@ -3,7 +3,12 @@ use std::path::PathBuf;
 use a3s_use_core::{InstallationId, UseError, UseResult};
 use tokio::sync::{mpsc, oneshot};
 
-use super::export::{self, VerifiedControlStoreExport};
+use super::aggregate;
+use super::export::{self, ControlStoreExport, VerifiedControlStoreExport};
+use super::model::{
+    ClaimedControlEffect, ControlEffectClaim, ControlEffectObservation, ControlEffectRecord,
+    ControlGeneration, ControlOperationRecord, ControlTransition, ReviewedControlOperation,
+};
 use super::schema::{self, ControlStoreInspection, ControlStoreMetadata};
 
 pub(super) const MAX_QUEUED_CONTROL_STORE_OPERATIONS: usize = 16;
@@ -33,6 +38,71 @@ enum ControlStoreRequest {
         bytes: Vec<u8>,
         installation: InstallationId,
         response: oneshot::Sender<UseResult<VerifiedControlStoreExport>>,
+    },
+    RegisterOperation {
+        database_path: PathBuf,
+        installation: InstallationId,
+        reviewed: ReviewedControlOperation,
+        response: oneshot::Sender<UseResult<ControlOperationRecord>>,
+    },
+    CancelOperation {
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+        plan_digest: String,
+        result_digest: String,
+        cancelled_at_ms: u64,
+        response: oneshot::Sender<UseResult<ControlOperationRecord>>,
+    },
+    CommitTransition {
+        database_path: PathBuf,
+        installation: InstallationId,
+        transition: ControlTransition,
+        response: oneshot::Sender<UseResult<ControlGeneration>>,
+    },
+    Operation {
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+        response: oneshot::Sender<UseResult<Option<ControlOperationRecord>>>,
+    },
+    CurrentGeneration {
+        database_path: PathBuf,
+        installation: InstallationId,
+        response: oneshot::Sender<UseResult<Option<ControlGeneration>>>,
+    },
+    Effects {
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+        response: oneshot::Sender<UseResult<Vec<ControlEffectRecord>>>,
+    },
+    ClaimNextEffect {
+        database_path: PathBuf,
+        installation: InstallationId,
+        claim: ControlEffectClaim,
+        response: oneshot::Sender<UseResult<Option<ClaimedControlEffect>>>,
+    },
+    RecordEffectObservation {
+        database_path: PathBuf,
+        installation: InstallationId,
+        observation: ControlEffectObservation,
+        response: oneshot::Sender<UseResult<bool>>,
+    },
+    CompleteOperation {
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+        plan_digest: String,
+        result_digest: String,
+        completed_at_ms: u64,
+        response: oneshot::Sender<UseResult<ControlOperationRecord>>,
+    },
+    Restore {
+        database_path: PathBuf,
+        installation: InstallationId,
+        export: ControlStoreExport,
+        response: oneshot::Sender<UseResult<ControlStoreMetadata>>,
     },
 }
 
@@ -110,6 +180,188 @@ impl ControlStoreExecutor {
         receive(receiver).await
     }
 
+    pub(super) async fn register_operation(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        reviewed: ReviewedControlOperation,
+    ) -> UseResult<ControlOperationRecord> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::RegisterOperation {
+            database_path,
+            installation,
+            reviewed,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn cancel_operation(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+        plan_digest: String,
+        result_digest: String,
+        cancelled_at_ms: u64,
+    ) -> UseResult<ControlOperationRecord> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::CancelOperation {
+            database_path,
+            installation,
+            operation_id,
+            plan_digest,
+            result_digest,
+            cancelled_at_ms,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn commit_transition(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        transition: ControlTransition,
+    ) -> UseResult<ControlGeneration> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::CommitTransition {
+            database_path,
+            installation,
+            transition,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn operation(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+    ) -> UseResult<Option<ControlOperationRecord>> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::Operation {
+            database_path,
+            installation,
+            operation_id,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn current_generation(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+    ) -> UseResult<Option<ControlGeneration>> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::CurrentGeneration {
+            database_path,
+            installation,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn effects(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+    ) -> UseResult<Vec<ControlEffectRecord>> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::Effects {
+            database_path,
+            installation,
+            operation_id,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn claim_next_effect(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        claim: ControlEffectClaim,
+    ) -> UseResult<Option<ClaimedControlEffect>> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::ClaimNextEffect {
+            database_path,
+            installation,
+            claim,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn record_effect_observation(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        observation: ControlEffectObservation,
+    ) -> UseResult<bool> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::RecordEffectObservation {
+            database_path,
+            installation,
+            observation,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn complete_operation(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+        plan_digest: String,
+        result_digest: String,
+        completed_at_ms: u64,
+    ) -> UseResult<ControlOperationRecord> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::CompleteOperation {
+            database_path,
+            installation,
+            operation_id,
+            plan_digest,
+            result_digest,
+            completed_at_ms,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn restore(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        export: ControlStoreExport,
+    ) -> UseResult<ControlStoreMetadata> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::Restore {
+            database_path,
+            installation,
+            export,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
     async fn send(&self, request: ControlStoreRequest) -> UseResult<()> {
         self.sender.send(request).await.map_err(|_| {
             executor_error("The Control Store worker stopped before accepting the operation.")
@@ -132,15 +384,28 @@ fn run_worker(mut receiver: mpsc::Receiver<ControlStoreRequest>) {
                 installation,
                 response,
             } => {
-                let _ = response.send(schema::inspect(&database_path, &installation));
+                let result =
+                    schema::inspect(&database_path, &installation).and_then(|inspection| {
+                        let (metadata, authority) =
+                            aggregate::export_snapshot(&database_path, &installation)?;
+                        if metadata != inspection.metadata {
+                            return Err(a3s_use_core::UseError::new(
+                                "use.control_store.concurrent_change",
+                                "The Control Store changed while its aggregate was inspected.",
+                            ));
+                        }
+                        export::encode(&metadata, authority)?;
+                        Ok(inspection)
+                    });
+                let _ = response.send(result);
             }
             ControlStoreRequest::Export {
                 database_path,
                 installation,
                 response,
             } => {
-                let result = schema::inspect(&database_path, &installation)
-                    .and_then(|inspection| export::encode(&inspection.metadata));
+                let result = aggregate::export_snapshot(&database_path, &installation)
+                    .and_then(|(metadata, authority)| export::encode(&metadata, authority));
                 let _ = response.send(result);
             }
             ControlStoreRequest::VerifyExport {
@@ -149,6 +414,133 @@ fn run_worker(mut receiver: mpsc::Receiver<ControlStoreRequest>) {
                 response,
             } => {
                 let _ = response.send(export::verify(&bytes, &installation));
+            }
+            ControlStoreRequest::RegisterOperation {
+                database_path,
+                installation,
+                reviewed,
+                response,
+            } => {
+                let _ = response.send(aggregate::register_operation(
+                    &database_path,
+                    &installation,
+                    &reviewed,
+                ));
+            }
+            ControlStoreRequest::CancelOperation {
+                database_path,
+                installation,
+                operation_id,
+                plan_digest,
+                result_digest,
+                cancelled_at_ms,
+                response,
+            } => {
+                let _ = response.send(aggregate::cancel_operation(
+                    &database_path,
+                    &installation,
+                    &operation_id,
+                    &plan_digest,
+                    &result_digest,
+                    cancelled_at_ms,
+                ));
+            }
+            ControlStoreRequest::CommitTransition {
+                database_path,
+                installation,
+                transition,
+                response,
+            } => {
+                let _ = response.send(aggregate::commit_transition(
+                    &database_path,
+                    &installation,
+                    &transition,
+                ));
+            }
+            ControlStoreRequest::Operation {
+                database_path,
+                installation,
+                operation_id,
+                response,
+            } => {
+                let _ = response.send(aggregate::operation(
+                    &database_path,
+                    &installation,
+                    &operation_id,
+                ));
+            }
+            ControlStoreRequest::CurrentGeneration {
+                database_path,
+                installation,
+                response,
+            } => {
+                let _ = response.send(aggregate::current_generation(&database_path, &installation));
+            }
+            ControlStoreRequest::Effects {
+                database_path,
+                installation,
+                operation_id,
+                response,
+            } => {
+                let _ = response.send(aggregate::effects(
+                    &database_path,
+                    &installation,
+                    &operation_id,
+                ));
+            }
+            ControlStoreRequest::ClaimNextEffect {
+                database_path,
+                installation,
+                claim,
+                response,
+            } => {
+                let _ = response.send(aggregate::claim_next_effect(
+                    &database_path,
+                    &installation,
+                    &claim,
+                ));
+            }
+            ControlStoreRequest::RecordEffectObservation {
+                database_path,
+                installation,
+                observation,
+                response,
+            } => {
+                let _ = response.send(aggregate::record_effect_observation(
+                    &database_path,
+                    &installation,
+                    &observation,
+                ));
+            }
+            ControlStoreRequest::CompleteOperation {
+                database_path,
+                installation,
+                operation_id,
+                plan_digest,
+                result_digest,
+                completed_at_ms,
+                response,
+            } => {
+                let _ = response.send(aggregate::complete_operation(
+                    &database_path,
+                    &installation,
+                    &operation_id,
+                    &plan_digest,
+                    &result_digest,
+                    completed_at_ms,
+                ));
+            }
+            ControlStoreRequest::Restore {
+                database_path,
+                installation,
+                export,
+                response,
+            } => {
+                let _ = response.send(aggregate::restore_export(
+                    &database_path,
+                    &installation,
+                    &export,
+                ));
             }
         }
     }

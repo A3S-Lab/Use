@@ -1,0 +1,53 @@
+pub(super) const CONTROL_INSTALLATION_DDL: &str = "CREATE TABLE control_installation(singleton INTEGER PRIMARY KEY CHECK(singleton = 1), scope_kind TEXT NOT NULL CHECK(scope_kind IN ('user', 'workspace')), scope_id TEXT NOT NULL CHECK(length(scope_id) BETWEEN 1 AND 256), current_generation INTEGER NOT NULL CHECK(current_generation >= 0), published_capability_generation INTEGER NOT NULL CHECK(published_capability_generation >= 0)) STRICT";
+
+pub(super) const CONTROL_OPERATION_DDL: &str = "CREATE TABLE control_operation(operation_id TEXT PRIMARY KEY CHECK(length(operation_id) BETWEEN 1 AND 256), plan_digest TEXT NOT NULL CHECK(length(plan_digest) = 71 AND substr(plan_digest, 1, 7) = 'sha256:' AND substr(plan_digest, 8) NOT GLOB '*[^0-9a-f]*'), authorization_digest TEXT NOT NULL CHECK(length(authorization_digest) = 71 AND substr(authorization_digest, 1, 7) = 'sha256:' AND substr(authorization_digest, 8) NOT GLOB '*[^0-9a-f]*'), action TEXT NOT NULL CHECK(action IN ('install', 'upgrade', 'enable', 'disable', 'uninstall')), root_package_id TEXT NOT NULL CHECK(length(root_package_id) BETWEEN 3 AND 256), expected_generation INTEGER NOT NULL CHECK(expected_generation >= 0), target_generation INTEGER NOT NULL CHECK(target_generation = expected_generation + 1), expected_capability_generation INTEGER NOT NULL CHECK(expected_capability_generation >= 0), target_capability_generation INTEGER NOT NULL CHECK(target_capability_generation = expected_capability_generation + 1), reviewed_at_ms INTEGER NOT NULL CHECK(reviewed_at_ms > 0), status TEXT NOT NULL CHECK(status IN ('reviewed', 'effects-pending', 'completed', 'rejected', 'cancelled')), committed_at_ms INTEGER, completed_at_ms INTEGER, result_digest TEXT, CHECK((status = 'reviewed' AND committed_at_ms IS NULL AND completed_at_ms IS NULL AND result_digest IS NULL) OR (status = 'effects-pending' AND committed_at_ms >= reviewed_at_ms AND completed_at_ms IS NULL AND result_digest IS NULL) OR (status IN ('completed', 'rejected') AND committed_at_ms >= reviewed_at_ms AND completed_at_ms >= committed_at_ms AND length(result_digest) = 71 AND substr(result_digest, 1, 7) = 'sha256:' AND substr(result_digest, 8) NOT GLOB '*[^0-9a-f]*') OR (status = 'cancelled' AND committed_at_ms IS NULL AND completed_at_ms >= reviewed_at_ms AND length(result_digest) = 71 AND substr(result_digest, 1, 7) = 'sha256:' AND substr(result_digest, 8) NOT GLOB '*[^0-9a-f]*'))) STRICT";
+
+pub(super) const CONTROL_GENERATION_DDL: &str = "CREATE TABLE control_generation(generation INTEGER PRIMARY KEY CHECK(generation > 0), operation_id TEXT NOT NULL UNIQUE REFERENCES control_operation(operation_id), snapshot_json BLOB NOT NULL CHECK(length(snapshot_json) BETWEEN 1 AND 16777216), snapshot_digest TEXT NOT NULL CHECK(length(snapshot_digest) = 71 AND substr(snapshot_digest, 1, 7) = 'sha256:' AND substr(snapshot_digest, 8) NOT GLOB '*[^0-9a-f]*'), committed_at_ms INTEGER NOT NULL CHECK(committed_at_ms > 0)) STRICT";
+
+pub(super) const SELECTED_PACKAGE_DDL: &str = "CREATE TABLE selected_package(generation INTEGER NOT NULL REFERENCES control_generation(generation), package_id TEXT NOT NULL CHECK(length(package_id) BETWEEN 3 AND 256), state_generation INTEGER NOT NULL CHECK(state_generation > 0), enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)), package_json BLOB NOT NULL CHECK(length(package_json) BETWEEN 1 AND 1048576), package_digest TEXT NOT NULL CHECK(length(package_digest) = 71 AND substr(package_digest, 1, 7) = 'sha256:' AND substr(package_digest, 8) NOT GLOB '*[^0-9a-f]*'), PRIMARY KEY(generation, package_id)) STRICT";
+
+pub(super) const INSTALLATION_ROOT_DDL: &str = "CREATE TABLE installation_root(generation INTEGER NOT NULL, package_id TEXT NOT NULL, installed_at_ms INTEGER NOT NULL CHECK(installed_at_ms > 0), PRIMARY KEY(generation, package_id), FOREIGN KEY(generation, package_id) REFERENCES selected_package(generation, package_id)) STRICT";
+
+pub(super) const PACKAGE_DEPENDENCY_DDL: &str = "CREATE TABLE package_dependency(generation INTEGER NOT NULL, package_id TEXT NOT NULL, dependency_package_id TEXT NOT NULL CHECK(dependency_package_id <> package_id), version_requirement TEXT NOT NULL CHECK(length(version_requirement) BETWEEN 1 AND 256), selected_version TEXT NOT NULL CHECK(length(selected_version) BETWEEN 1 AND 256), PRIMARY KEY(generation, package_id, dependency_package_id), FOREIGN KEY(generation, package_id) REFERENCES selected_package(generation, package_id), FOREIGN KEY(generation, dependency_package_id) REFERENCES selected_package(generation, package_id)) STRICT";
+
+pub(super) const SELECTED_SURFACE_DDL: &str = "CREATE TABLE selected_surface(generation INTEGER NOT NULL, package_id TEXT NOT NULL, surface_kind TEXT NOT NULL CHECK(surface_kind IN ('flow', 'mcp', 'okf', 'skill', 'tool', 'ui')), surface_id TEXT NOT NULL CHECK(length(surface_id) BETWEEN 1 AND 256), PRIMARY KEY(generation, package_id, surface_kind, surface_id), FOREIGN KEY(generation, package_id) REFERENCES selected_package(generation, package_id)) STRICT";
+
+pub(super) const CONTROL_GRANT_DDL: &str = "CREATE TABLE control_grant(generation INTEGER NOT NULL, package_id TEXT NOT NULL, grant_json BLOB NOT NULL CHECK(length(grant_json) BETWEEN 1 AND 1048576), grant_digest TEXT NOT NULL CHECK(length(grant_digest) = 71 AND substr(grant_digest, 1, 7) = 'sha256:' AND substr(grant_digest, 8) NOT GLOB '*[^0-9a-f]*'), PRIMARY KEY(generation, package_id), FOREIGN KEY(generation, package_id) REFERENCES selected_package(generation, package_id)) STRICT";
+
+pub(super) const PROVIDER_BINDING_DDL: &str = "CREATE TABLE provider_binding(generation INTEGER NOT NULL, package_id TEXT NOT NULL, surface_kind TEXT NOT NULL, surface_id TEXT NOT NULL, provider_id TEXT NOT NULL CHECK(length(provider_id) BETWEEN 1 AND 256), binding_digest TEXT NOT NULL CHECK(length(binding_digest) = 71 AND substr(binding_digest, 1, 7) = 'sha256:' AND substr(binding_digest, 8) NOT GLOB '*[^0-9a-f]*'), PRIMARY KEY(generation, package_id, surface_kind, surface_id, provider_id), FOREIGN KEY(generation, package_id, surface_kind, surface_id) REFERENCES selected_surface(generation, package_id, surface_kind, surface_id)) STRICT";
+
+pub(super) const CAPABILITY_GENERATION_DDL: &str = "CREATE TABLE capability_generation(installation_generation INTEGER PRIMARY KEY REFERENCES control_generation(generation), capability_generation INTEGER NOT NULL CHECK(capability_generation > 0), descriptor_digest TEXT NOT NULL CHECK(length(descriptor_digest) = 71 AND substr(descriptor_digest, 1, 7) = 'sha256:' AND substr(descriptor_digest, 8) NOT GLOB '*[^0-9a-f]*'), publication_state TEXT NOT NULL CHECK(publication_state IN ('candidate', 'published', 'retired', 'abandoned')), published_at_ms INTEGER, CHECK((publication_state IN ('candidate', 'abandoned') AND published_at_ms IS NULL) OR (publication_state IN ('published', 'retired') AND published_at_ms > 0))) STRICT";
+
+pub(super) const LIFECYCLE_CHECKPOINT_DDL: &str = "CREATE TABLE lifecycle_checkpoint(operation_id TEXT NOT NULL REFERENCES control_operation(operation_id), sequence INTEGER NOT NULL CHECK(sequence >= 0), package_generation INTEGER NOT NULL, package_id TEXT NOT NULL, checkpoint_kind TEXT NOT NULL CHECK(checkpoint_kind IN ('package-commit', 'surface-prepare', 'capability-publish', 'capability-hide', 'calls-drain', 'surface-stop', 'surface-remove', 'package-remove', 'grant-apply', 'grant-revoke', 'binding-apply', 'binding-remove')), required INTEGER NOT NULL CHECK(required IN (0, 1)), PRIMARY KEY(operation_id, sequence), FOREIGN KEY(package_generation, package_id) REFERENCES selected_package(generation, package_id)) STRICT";
+
+pub(super) const EFFECT_OUTBOX_DDL: &str = "CREATE TABLE effect_outbox(idempotency_key TEXT PRIMARY KEY CHECK(length(idempotency_key) = 71 AND substr(idempotency_key, 1, 7) = 'sha256:' AND substr(idempotency_key, 8) NOT GLOB '*[^0-9a-f]*'), operation_id TEXT NOT NULL, sequence INTEGER NOT NULL, provider_id TEXT NOT NULL CHECK(length(provider_id) BETWEEN 1 AND 256), payload_digest TEXT NOT NULL CHECK(length(payload_digest) = 71 AND substr(payload_digest, 1, 7) = 'sha256:' AND substr(payload_digest, 8) NOT GLOB '*[^0-9a-f]*'), status TEXT NOT NULL CHECK(status IN ('pending', 'claimed', 'applied', 'rejected', 'unknown')), attempt INTEGER NOT NULL CHECK(attempt >= 0), claim_owner TEXT, claim_token TEXT, lease_until_ms INTEGER, evidence_digest TEXT, error_code TEXT, observed_at_ms INTEGER, UNIQUE(operation_id, sequence), UNIQUE(claim_token), FOREIGN KEY(operation_id, sequence) REFERENCES lifecycle_checkpoint(operation_id, sequence), CHECK((status = 'pending' AND attempt = 0 AND claim_owner IS NULL AND claim_token IS NULL AND lease_until_ms IS NULL AND evidence_digest IS NULL AND error_code IS NULL AND observed_at_ms IS NULL) OR (status = 'claimed' AND attempt > 0 AND length(claim_owner) BETWEEN 1 AND 256 AND length(claim_token) BETWEEN 1 AND 256 AND lease_until_ms > 0 AND evidence_digest IS NULL AND error_code IS NULL AND observed_at_ms IS NULL) OR (status = 'applied' AND attempt > 0 AND length(claim_owner) BETWEEN 1 AND 256 AND length(claim_token) BETWEEN 1 AND 256 AND lease_until_ms > 0 AND length(evidence_digest) = 71 AND error_code IS NULL AND observed_at_ms > 0) OR (status IN ('rejected', 'unknown') AND attempt > 0 AND length(claim_owner) BETWEEN 1 AND 256 AND length(claim_token) BETWEEN 1 AND 256 AND lease_until_ms > 0 AND length(evidence_digest) = 71 AND length(error_code) BETWEEN 1 AND 128 AND observed_at_ms > 0))) STRICT";
+
+pub(super) const CREATE_SCHEMA: &[&str] = &[
+    CONTROL_INSTALLATION_DDL,
+    CONTROL_OPERATION_DDL,
+    CONTROL_GENERATION_DDL,
+    SELECTED_PACKAGE_DDL,
+    INSTALLATION_ROOT_DDL,
+    PACKAGE_DEPENDENCY_DDL,
+    SELECTED_SURFACE_DDL,
+    CONTROL_GRANT_DDL,
+    PROVIDER_BINDING_DDL,
+    CAPABILITY_GENERATION_DDL,
+    LIFECYCLE_CHECKPOINT_DDL,
+    EFFECT_OUTBOX_DDL,
+];
+
+pub(super) const EXPECTED_SCHEMA: &[(&str, &str)] = &[
+    ("capability_generation", CAPABILITY_GENERATION_DDL),
+    ("control_generation", CONTROL_GENERATION_DDL),
+    ("control_grant", CONTROL_GRANT_DDL),
+    ("control_installation", CONTROL_INSTALLATION_DDL),
+    ("control_operation", CONTROL_OPERATION_DDL),
+    ("effect_outbox", EFFECT_OUTBOX_DDL),
+    ("installation_root", INSTALLATION_ROOT_DDL),
+    ("lifecycle_checkpoint", LIFECYCLE_CHECKPOINT_DDL),
+    ("package_dependency", PACKAGE_DEPENDENCY_DDL),
+    ("provider_binding", PROVIDER_BINDING_DDL),
+    ("selected_package", SELECTED_PACKAGE_DDL),
+    ("selected_surface", SELECTED_SURFACE_DDL),
+];

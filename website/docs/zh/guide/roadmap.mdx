@@ -65,11 +65,13 @@ SQLite/WAL Control Store，通过类型化聚合事务提交本地控制状态�
 权威；graph、operation、Grant、enablement、binding、capability、reachability、
 diagnostic、backup 与 restore 的读取方必须一起切换。
 
-当前检入的 Control Store 内核仍刻意保持未启用状态。它只在其余状态为空时验证
-精确 installation identity、SQLite/WAL 持久性与完整性、单个有界阻塞 worker，
-以及可离线验证的确定性导出。生产 lifecycle 代码不会构造它；聚合 schema、
-outbox、backup/restore 集成、崩溃矩阵和协调一致的权威切换仍未完成，因此尚未
-完成任何 A2 roadmap 项。
+当前检入的 Control Store 内核仍刻意保持未启用状态。其 clean-state schema-v2
+聚合现在已验证精确 generation、reviewed root-package operation、snapshot、完整
+Grant、provider binding、capability history、幂等 outbox、跨重启的 unknown/expired
+claim 显式 reconciliation、可离线验证的确定性导出，以及 clean staged restore。
+生产 lifecycle 代码仍不会构造它；external-payload ownership、完整崩溃矩阵、
+lifecycle 转换、backup/restore 与 reachability 集成，以及协调一致的权威切换仍未
+完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

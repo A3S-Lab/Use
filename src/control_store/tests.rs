@@ -126,6 +126,10 @@ async fn deterministic_export_is_canonical_scope_bound_and_offline_verifiable() 
     let verified = store.verify_export(first.clone()).await.unwrap();
     assert_eq!(verified.export.installation, expected);
     assert_eq!(verified.export.current_generation, 0);
+    assert_eq!(verified.export.published_capability_generation, 0);
+    assert!(verified.export.authority.generations.is_empty());
+    assert!(verified.export.authority.operations.is_empty());
+    assert!(verified.export.authority.effects.is_empty());
     assert!(verified.descriptor_digest.starts_with("sha256:"));
 
     let mut noncanonical = first.clone();

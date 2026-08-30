@@ -1272,10 +1272,13 @@ See [Plugin Platform Architecture](docs/plugin-platform-architecture.md),
 [Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md),
 [ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md), and the
 [Control Store transaction boundary](docs/adr-003-control-store-transaction-boundary.md).
-The private A2 Control Store kernel currently qualifies only clean-state
-SQLite/WAL identity, bounded execution, corruption checks, and deterministic
-offline-verifiable export. It is not constructed by production lifecycle code
-and does not create a second authority beside the current JSON stores.
+The private A2 Control Store kernel now qualifies its clean-state schema-v2
+aggregate, typed generation transitions, full Grant and binding evidence,
+idempotent outbox reconciliation, bounded execution, corruption checks, and
+deterministic offline-verifiable export plus staged restore. It is not
+constructed by production lifecycle code and does not create a second
+authority beside the current JSON stores; external-payload ownership and the
+coordinated authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

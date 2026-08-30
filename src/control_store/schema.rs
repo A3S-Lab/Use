@@ -4,17 +4,21 @@ use std::time::Duration;
 use a3s_use_core::{InstallationId, InstallationKind, UseError, UseResult};
 use rusqlite::{params, Connection, ErrorCode, OpenFlags, TransactionBehavior};
 
-pub(super) const CONTROL_STORE_SCHEMA_VERSION: u32 = 1;
+mod definition;
+
+use definition::{CREATE_SCHEMA, EXPECTED_SCHEMA};
+
+pub(super) const CONTROL_STORE_SCHEMA_VERSION: u32 = 2;
 pub(super) const SQLITE_SYNCHRONOUS_FULL: u32 = 2;
 const CONTROL_STORE_APPLICATION_ID: u32 = 0x4133_5355;
 const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const INSTALLATION_TABLE_DDL: &str = "CREATE TABLE control_installation(singleton INTEGER PRIMARY KEY CHECK(singleton = 1), scope_kind TEXT NOT NULL CHECK(scope_kind IN ('user', 'workspace')), scope_id TEXT NOT NULL CHECK(length(scope_id) BETWEEN 1 AND 256), current_generation INTEGER NOT NULL CHECK(current_generation >= 0)) STRICT";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ControlStoreMetadata {
     pub(super) installation: InstallationId,
     pub(super) schema_version: u32,
     pub(super) current_generation: u64,
+    pub(super) published_capability_generation: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +56,7 @@ pub(super) fn inspect(
 #[derive(Debug, Clone, Copy)]
 enum OpenMode {
     Create,
+    ReadWrite,
     ReadOnly,
 }
 
@@ -62,6 +67,7 @@ fn open(path: &Path, mode: OpenMode) -> UseResult<Connection> {
         | OpenFlags::SQLITE_OPEN_EXRESCODE;
     flags |= match mode {
         OpenMode::Create => OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+        OpenMode::ReadWrite => OpenFlags::SQLITE_OPEN_READ_WRITE,
         OpenMode::ReadOnly => OpenFlags::SQLITE_OPEN_READ_ONLY,
     };
     #[cfg(windows)]
@@ -103,17 +109,20 @@ fn initialize_empty(connection: &mut Connection, installation: &InstallationId) 
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| sqlite_error("begin Control Store initialization", error))?;
-    transaction
-        .execute_batch(INSTALLATION_TABLE_DDL)
-        .map_err(|error| sqlite_error("create Control Store schema", error))?;
+    for ddl in CREATE_SCHEMA {
+        transaction
+            .execute_batch(ddl)
+            .map_err(|error| sqlite_error("create Control Store schema", error))?;
+    }
     transaction
         .execute(
             "INSERT INTO control_installation(
-                singleton, scope_kind, scope_id, current_generation
-             ) VALUES (1, ?1, ?2, 0)",
+                singleton, scope_kind, scope_id, current_generation,
+                published_capability_generation
+             ) VALUES (1, ?1, ?2, 0, 0)",
             params![installation.kind.as_str(), installation.id],
         )
-        .map_err(|error| sqlite_error("bind Control Store installation", error))?;
+        .map_err(|error| sqlite_error("create Control Store schema", error))?;
     transaction
         .pragma_update(None, "application_id", CONTROL_STORE_APPLICATION_ID)
         .map_err(|error| sqlite_error("set Control Store application identity", error))?;
@@ -123,6 +132,26 @@ fn initialize_empty(connection: &mut Connection, installation: &InstallationId) 
     transaction
         .commit()
         .map_err(|error| sqlite_error("commit Control Store initialization", error))
+}
+
+pub(super) fn open_verified_write(
+    path: &Path,
+    expected_installation: &InstallationId,
+) -> UseResult<Connection> {
+    expected_installation.validate()?;
+    let connection = open(path, OpenMode::ReadWrite)?;
+    inspect_connection(&connection, expected_installation)?;
+    Ok(connection)
+}
+
+pub(super) fn open_verified_read(
+    path: &Path,
+    expected_installation: &InstallationId,
+) -> UseResult<Connection> {
+    expected_installation.validate()?;
+    let connection = open(path, OpenMode::ReadOnly)?;
+    inspect_connection(&connection, expected_installation)?;
+    Ok(connection)
 }
 
 fn inspect_connection(
@@ -178,12 +207,13 @@ fn read_metadata(connection: &Connection) -> UseResult<ControlStoreMetadata> {
             "The Control Store must contain exactly one installation identity.",
         ));
     }
-    let (kind, id, generation): (String, String, i64) = connection
+    let (kind, id, generation, capability_generation): (String, String, i64, i64) = connection
         .query_row(
-            "SELECT scope_kind, scope_id, current_generation
+            "SELECT scope_kind, scope_id, current_generation,
+                    published_capability_generation
              FROM control_installation WHERE singleton = 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .map_err(|error| sqlite_error("read Control Store installation identity", error))?;
     let kind = match kind.as_str() {
@@ -199,10 +229,13 @@ fn read_metadata(connection: &Connection) -> UseResult<ControlStoreMetadata> {
         .map_err(|_| corruption_error("The Control Store installation identity is invalid."))?;
     let current_generation = u64::try_from(generation)
         .map_err(|_| corruption_error("The Control Store installation generation is invalid."))?;
+    let published_capability_generation = u64::try_from(capability_generation)
+        .map_err(|_| corruption_error("The Control Store capability generation is invalid."))?;
     Ok(ControlStoreMetadata {
         installation,
         schema_version: CONTROL_STORE_SCHEMA_VERSION,
         current_generation,
+        published_capability_generation,
     })
 }
 
@@ -240,28 +273,36 @@ fn validate_exact_schema(connection: &Connection) -> UseResult<()> {
              FROM sqlite_schema
              WHERE name NOT LIKE 'sqlite_%'
              ORDER BY type, name
-             LIMIT 2",
+             LIMIT ?1",
         )
         .map_err(|error| sqlite_error("prepare Control Store schema inspection", error))?;
     let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })
+        .query_map(
+            [i64::try_from(EXPECTED_SCHEMA.len() + 1).unwrap_or(i64::MAX)],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
         .map_err(|error| sqlite_error("inspect Control Store schema", error))?;
     let rows = rows
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| sqlite_error("read Control Store schema", error))?;
-    let expected = vec![(
-        "table".to_string(),
-        "control_installation".to_string(),
-        "control_installation".to_string(),
-        INSTALLATION_TABLE_DDL.to_string(),
-    )];
+    let expected = EXPECTED_SCHEMA
+        .iter()
+        .map(|(name, ddl)| {
+            (
+                "table".to_string(),
+                (*name).to_string(),
+                (*name).to_string(),
+                (*ddl).to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
     if rows != expected {
         return Err(corruption_error(
             "The Control Store schema differs from its exact supported definition.",
@@ -289,7 +330,7 @@ fn pragma_u32(connection: &Connection, name: &str) -> UseResult<u32> {
     u32::try_from(value).map_err(|_| corruption_error("A Control Store pragma value is invalid."))
 }
 
-fn sqlite_error(action: &str, error: rusqlite::Error) -> UseError {
+pub(super) fn sqlite_error(action: &str, error: rusqlite::Error) -> UseError {
     let corrupt = matches!(
         error,
         rusqlite::Error::SqliteFailure(
