@@ -52,7 +52,7 @@ pub(in crate::control_store) fn restore_export(
                 snapshot: generation.snapshot.clone(),
                 package_lifecycles: generation.package_lifecycles.clone(),
                 grants: generation.grants.clone(),
-                bindings: generation.bindings.clone(),
+                provider_selections: generation.provider_selections.clone(),
                 capability: generation.capability.clone(),
                 effects: operation_effects
                     .iter()

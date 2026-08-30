@@ -364,38 +364,31 @@ pub(super) fn transition(
     reviewed: &ReviewedControlOperation,
 ) -> ControlTransition {
     let committed_at_ms = reviewed.reviewed_at_ms + 10;
-    let (snapshot, package_lifecycles, grants) =
-        if reviewed.action() == PluginOperationAction::Install && reviewed.expected_generation == 0
-        {
-            let projected = reviewed
-                .project_generation(None, &ControlProjectionHistory::default(), committed_at_ms)
-                .unwrap();
-            (
-                projected.snapshot,
-                projected.package_lifecycles,
-                projected.grants,
-            )
-        } else {
-            let snapshot = snapshot(installation.clone(), reviewed.target_generation().unwrap());
-            let package_id = snapshot.packages[0].package_id().to_string();
-            (
-                snapshot,
-                vec![ControlPackageLifecycle {
-                    package_id,
-                    lifecycle_generation: 41,
-                }],
-                Vec::new(),
-            )
-        };
-    transition_from_projection(
-        installation,
-        reviewed,
-        snapshot,
-        package_lifecycles,
-        grants,
-        None,
-        committed_at_ms,
-    )
+    let projection = if reviewed.action() == PluginOperationAction::Install
+        && reviewed.expected_generation == 0
+    {
+        let projected = reviewed
+            .project_generation(None, &ControlProjectionHistory::default(), committed_at_ms)
+            .unwrap();
+        TransitionProjectionFixture::from(projected)
+    } else {
+        let snapshot = snapshot(installation.clone(), reviewed.target_generation().unwrap());
+        let package_id = snapshot.packages[0].package_id().to_string();
+        TransitionProjectionFixture {
+            snapshot,
+            package_lifecycles: vec![ControlPackageLifecycle {
+                package_id,
+                lifecycle_generation: 41,
+            }],
+            grants: Vec::new(),
+            provider_selections: Vec::new(),
+            capability: ControlCapabilitySelection {
+                generation: reviewed.target_capability_generation().unwrap(),
+                descriptor_digest: digest('5'),
+            },
+        }
+    };
+    transition_from_projection(installation, reviewed, projection, None, committed_at_ms)
 }
 
 pub(super) fn projected_transition(
@@ -411,23 +404,46 @@ pub(super) fn projected_transition(
     transition_from_projection(
         installation,
         reviewed,
-        projected.snapshot,
-        projected.package_lifecycles,
-        projected.grants,
+        TransitionProjectionFixture::from(projected),
         Some(prior),
         committed_at_ms,
     )
 }
 
-fn transition_from_projection(
-    installation: InstallationId,
-    reviewed: &ReviewedControlOperation,
+struct TransitionProjectionFixture {
     snapshot: InstallationSnapshot,
     package_lifecycles: Vec<ControlPackageLifecycle>,
     grants: Vec<ControlGrantSelection>,
+    provider_selections: Vec<ControlProviderSelection>,
+    capability: ControlCapabilitySelection,
+}
+
+impl From<ProjectedControlGeneration> for TransitionProjectionFixture {
+    fn from(projected: ProjectedControlGeneration) -> Self {
+        Self {
+            snapshot: projected.snapshot,
+            package_lifecycles: projected.package_lifecycles,
+            grants: projected.grants,
+            provider_selections: projected.provider_selections,
+            capability: projected.capability,
+        }
+    }
+}
+
+fn transition_from_projection(
+    installation: InstallationId,
+    reviewed: &ReviewedControlOperation,
+    projection: TransitionProjectionFixture,
     prior: Option<&ControlGeneration>,
     committed_at_ms: u64,
 ) -> ControlTransition {
+    let TransitionProjectionFixture {
+        snapshot,
+        package_lifecycles,
+        grants,
+        provider_selections,
+        capability,
+    } = projection;
     let subject_package = snapshot
         .package_selection(reviewed.root_package_id())
         .or_else(|| {
@@ -452,17 +468,6 @@ fn transition_from_projection(
         })
         .unwrap()
         .lifecycle_generation;
-    let target_package = snapshot.package_selection(&package_id);
-    let mut bindings = Vec::new();
-    if let Some(package) = target_package {
-        let surface = package.selected_surfaces[0].clone();
-        bindings.push(ControlProviderBinding {
-            package_id: package_id.clone(),
-            surface,
-            provider_id: "provider:test".to_string(),
-            binding_digest: digest('4'),
-        });
-    }
     let package_subject = ControlEffectSubject::Package {
         package_id: package_id.clone(),
         lifecycle_generation,
@@ -484,17 +489,15 @@ fn transition_from_projection(
             .unwrap(),
         action: lifecycle_action(reviewed.action()),
     };
+    let capability_effect_subject = capability_subject(reviewed, &capability);
     ControlTransition {
         operation_id: reviewed.operation_id().to_string(),
         plan_digest: reviewed.plan_digest().to_string(),
         snapshot,
         package_lifecycles,
         grants,
-        bindings,
-        capability: ControlCapabilitySelection {
-            generation: reviewed.target_capability_generation().unwrap(),
-            descriptor_digest: digest('5'),
-        },
+        provider_selections,
+        capability,
         effects: vec![
             ControlEffectIntent {
                 sequence: 0,
@@ -515,7 +518,7 @@ fn transition_from_projection(
                 plan_digest: reviewed.plan_digest().to_string(),
                 operation_action: reviewed.action(),
                 installation_generation: reviewed.target_generation().unwrap(),
-                subject: capability_subject(reviewed),
+                subject: capability_effect_subject,
                 provider_id: "provider:test".to_string(),
                 kind: ControlEffectKind::CapabilityPublish,
                 required: false,
@@ -535,11 +538,14 @@ pub(super) fn lifecycle_action(action: PluginOperationAction) -> PluginLifecycle
     }
 }
 
-pub(super) fn capability_subject(reviewed: &ReviewedControlOperation) -> ControlEffectSubject {
+pub(super) fn capability_subject(
+    reviewed: &ReviewedControlOperation,
+    capability: &ControlCapabilitySelection,
+) -> ControlEffectSubject {
     ControlEffectSubject::Installation {
         expected_capability_generation: reviewed.expected_capability_generation,
         capability_generation: reviewed.target_capability_generation().unwrap(),
-        descriptor_digest: digest('5'),
+        descriptor_digest: capability.descriptor_digest.clone(),
     }
 }
 

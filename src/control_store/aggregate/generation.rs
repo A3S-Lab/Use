@@ -160,23 +160,28 @@ pub(super) fn insert_generation(
             )
             .map_err(|error| mutation_error("insert Control Store Grant", error))?;
     }
-    for binding in &transition.bindings {
+    for selection in &transition.provider_selections {
         transaction
             .execute(
-                "INSERT INTO provider_binding(
+                "INSERT INTO provider_selection(
                     generation, package_id, surface_kind, surface_id,
-                    provider_id, binding_digest
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    provider_id, provider_build_id, capability_digest,
+                    semantics_profile_digest, enforcement_profile, selection_digest
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     to_i64(generation)?,
-                    binding.package_id,
-                    surface_kind_name(binding.surface.kind),
-                    binding.surface.id,
-                    binding.provider_id,
-                    binding.binding_digest,
+                    selection.package_id(),
+                    surface_kind_name(selection.surface().kind),
+                    selection.surface().id,
+                    selection.evidence.provider_id,
+                    selection.evidence.provider_build_id,
+                    selection.evidence.capability_digest,
+                    selection.evidence.semantics_profile_digest,
+                    enforcement_profile_name(selection.evidence.enforcement),
+                    selection.selection_digest,
                 ],
             )
-            .map_err(|error| mutation_error("insert Control Store provider binding", error))?;
+            .map_err(|error| mutation_error("insert Control Store provider selection", error))?;
     }
     transaction
         .execute(

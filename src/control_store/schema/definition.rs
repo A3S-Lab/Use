@@ -14,7 +14,7 @@ pub(super) const SELECTED_SURFACE_DDL: &str = "CREATE TABLE selected_surface(gen
 
 pub(super) const CONTROL_GRANT_DDL: &str = "CREATE TABLE control_grant(generation INTEGER NOT NULL, package_id TEXT NOT NULL, receipt_revision INTEGER NOT NULL CHECK(receipt_revision > 0), grant_json BLOB NOT NULL CHECK(length(grant_json) BETWEEN 1 AND 1048576), grant_digest TEXT NOT NULL CHECK(length(grant_digest) = 71 AND substr(grant_digest, 1, 7) = 'sha256:' AND substr(grant_digest, 8) NOT GLOB '*[^0-9a-f]*'), PRIMARY KEY(generation, package_id), FOREIGN KEY(generation, package_id) REFERENCES selected_package(generation, package_id)) STRICT";
 
-pub(super) const PROVIDER_BINDING_DDL: &str = "CREATE TABLE provider_binding(generation INTEGER NOT NULL, package_id TEXT NOT NULL, surface_kind TEXT NOT NULL, surface_id TEXT NOT NULL, provider_id TEXT NOT NULL CHECK(length(provider_id) BETWEEN 1 AND 256), binding_digest TEXT NOT NULL CHECK(length(binding_digest) = 71 AND substr(binding_digest, 1, 7) = 'sha256:' AND substr(binding_digest, 8) NOT GLOB '*[^0-9a-f]*'), PRIMARY KEY(generation, package_id, surface_kind, surface_id, provider_id), FOREIGN KEY(generation, package_id, surface_kind, surface_id) REFERENCES selected_surface(generation, package_id, surface_kind, surface_id)) STRICT";
+pub(super) const PROVIDER_SELECTION_DDL: &str = "CREATE TABLE provider_selection(generation INTEGER NOT NULL, package_id TEXT NOT NULL, surface_kind TEXT NOT NULL CHECK(surface_kind IN ('mcp', 'tool')), surface_id TEXT NOT NULL, provider_id TEXT NOT NULL CHECK(length(provider_id) BETWEEN 1 AND 256), provider_build_id TEXT NOT NULL CHECK(length(provider_build_id) BETWEEN 1 AND 256), capability_digest TEXT NOT NULL CHECK(length(capability_digest) = 71 AND substr(capability_digest, 1, 7) = 'sha256:' AND substr(capability_digest, 8) NOT GLOB '*[^0-9a-f]*'), semantics_profile_digest TEXT NOT NULL CHECK(length(semantics_profile_digest) = 71 AND substr(semantics_profile_digest, 1, 7) = 'sha256:' AND substr(semantics_profile_digest, 8) NOT GLOB '*[^0-9a-f]*'), enforcement_profile TEXT NOT NULL CHECK(enforcement_profile IN ('container', 'native-unconfined', 'sandbox')), selection_digest TEXT NOT NULL CHECK(length(selection_digest) = 71 AND substr(selection_digest, 1, 7) = 'sha256:' AND substr(selection_digest, 8) NOT GLOB '*[^0-9a-f]*'), PRIMARY KEY(generation, package_id, surface_kind, surface_id), FOREIGN KEY(generation, package_id, surface_kind, surface_id) REFERENCES selected_surface(generation, package_id, surface_kind, surface_id)) STRICT";
 
 pub(super) const CAPABILITY_GENERATION_DDL: &str = "CREATE TABLE capability_generation(installation_generation INTEGER PRIMARY KEY REFERENCES control_generation(generation), capability_generation INTEGER NOT NULL CHECK(capability_generation > 0), descriptor_digest TEXT NOT NULL CHECK(length(descriptor_digest) = 71 AND substr(descriptor_digest, 1, 7) = 'sha256:' AND substr(descriptor_digest, 8) NOT GLOB '*[^0-9a-f]*'), publication_state TEXT NOT NULL CHECK(publication_state IN ('candidate', 'published', 'retired', 'abandoned')), published_at_ms INTEGER, CHECK((publication_state IN ('candidate', 'abandoned') AND published_at_ms IS NULL) OR (publication_state IN ('published', 'retired') AND published_at_ms > 0))) STRICT";
 
@@ -31,7 +31,7 @@ pub(super) const CREATE_SCHEMA: &[&str] = &[
     PACKAGE_DEPENDENCY_DDL,
     SELECTED_SURFACE_DDL,
     CONTROL_GRANT_DDL,
-    PROVIDER_BINDING_DDL,
+    PROVIDER_SELECTION_DDL,
     CAPABILITY_GENERATION_DDL,
     LIFECYCLE_CHECKPOINT_DDL,
     EFFECT_OUTBOX_DDL,
@@ -47,7 +47,7 @@ pub(super) const EXPECTED_SCHEMA: &[(&str, &str)] = &[
     ("installation_root", INSTALLATION_ROOT_DDL),
     ("lifecycle_checkpoint", LIFECYCLE_CHECKPOINT_DDL),
     ("package_dependency", PACKAGE_DEPENDENCY_DDL),
-    ("provider_binding", PROVIDER_BINDING_DDL),
+    ("provider_selection", PROVIDER_SELECTION_DDL),
     ("selected_package", SELECTED_PACKAGE_DDL),
     ("selected_surface", SELECTED_SURFACE_DDL),
 ];

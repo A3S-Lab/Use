@@ -19,7 +19,7 @@ use super::model::{
     ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
     ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectStatus,
     ControlEffectSubject, ControlGeneration, ControlGrantSelection, ControlOperationStatus,
-    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderBinding, ControlTransition,
+    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderSelection, ControlTransition,
     ProjectedControlGeneration, ReviewedControlOperation,
 };
 use super::*;
@@ -32,6 +32,7 @@ mod grants;
 mod operations;
 mod payloads;
 mod projections;
+mod providers;
 
 use fixtures::*;
 
@@ -67,7 +68,7 @@ async fn aggregate_transition_is_atomic_idempotent_and_generation_bound() {
     let committed = store.commit_transition(candidate.clone()).await.unwrap();
     assert_eq!(committed.snapshot, candidate.snapshot);
     assert_eq!(committed.grants, candidate.grants);
-    assert_eq!(committed.bindings, candidate.bindings);
+    assert_eq!(committed.provider_selections, candidate.provider_selections);
     assert_eq!(
         committed.capability_status,
         ControlCapabilityStatus::Candidate

@@ -1,23 +1,24 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use a3s_use_core::{
     InstallationId, InstallationSnapshot, PluginOperationAction, PluginSurfaceKind,
-    PluginSurfaceRef, PluginWorkspaceGrant, UseError, UseResult,
+    PluginWorkspaceGrant, UseError, UseResult,
 };
 use serde::{Deserialize, Serialize};
 mod effect;
 mod effect_state;
 mod operation;
 mod projection;
+mod provider;
 
 pub(super) use effect::*;
 pub(super) use effect_state::*;
 pub(super) use operation::*;
 pub(super) use projection::*;
+pub(super) use provider::*;
 
 pub(super) const MAX_CONTROL_EFFECTS: usize = 4096;
 pub(super) const MAX_CONTROL_GRANTS: usize = 4096;
-pub(super) const MAX_CONTROL_BINDINGS: usize = 4096;
 const MAX_EFFECT_LEASE_MS: u64 = 5 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,15 +83,6 @@ impl ControlGrantSelection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct ControlProviderBinding {
-    pub(super) package_id: String,
-    pub(super) surface: PluginSurfaceRef,
-    pub(super) provider_id: String,
-    pub(super) binding_digest: String,
-}
-
 /// Immutable package incarnation selected by one installation generation.
 ///
 /// This is intentionally distinct from both the installation generation and
@@ -151,7 +143,7 @@ pub(super) struct ControlTransition {
     pub(super) snapshot: InstallationSnapshot,
     pub(super) package_lifecycles: Vec<ControlPackageLifecycle>,
     pub(super) grants: Vec<ControlGrantSelection>,
-    pub(super) bindings: Vec<ControlProviderBinding>,
+    pub(super) provider_selections: Vec<ControlProviderSelection>,
     pub(super) capability: ControlCapabilitySelection,
     pub(super) effects: Vec<ControlEffectIntent>,
     pub(super) committed_at_ms: u64,
@@ -173,20 +165,13 @@ impl ControlTransition {
             || !valid_sha256(&self.capability.descriptor_digest)
             || self.committed_at_ms < operation.reviewed_at_ms
             || self.grants.len() > MAX_CONTROL_GRANTS
-            || self.bindings.len() > MAX_CONTROL_BINDINGS
+            || self.provider_selections.len() > MAX_CONTROL_PROVIDER_SELECTIONS
             || self.effects.len() > MAX_CONTROL_EFFECTS
         {
             return Err(input_error(
                 "The Control Store transition does not match its reviewed operation or bounds.",
             ));
         }
-
-        let packages = self
-            .snapshot
-            .packages
-            .iter()
-            .map(|selection| (selection.package_id(), selection))
-            .collect::<BTreeMap<_, _>>();
 
         if self.package_lifecycles.len() != self.snapshot.packages.len()
             || self
@@ -209,27 +194,7 @@ impl ControlTransition {
 
         validate_grant_selections(&self.grants, &self.snapshot)?;
 
-        let mut prior_binding = None;
-        for binding in &self.bindings {
-            let key = (
-                binding.package_id.as_str(),
-                surface_kind_name(binding.surface.kind),
-                binding.surface.id.as_str(),
-                binding.provider_id.as_str(),
-            );
-            if prior_binding.is_some_and(|prior| prior >= key)
-                || !valid_machine_id(&binding.provider_id)
-                || !valid_sha256(&binding.binding_digest)
-                || packages
-                    .get(binding.package_id.as_str())
-                    .is_none_or(|package| !package.selected_surfaces.contains(&binding.surface))
-            {
-                return Err(input_error(
-                    "Control Store provider bindings must be sorted, unique, and bind selected surfaces.",
-                ));
-            }
-            prior_binding = Some(key);
-        }
+        validate_provider_selections(&self.provider_selections, &self.snapshot)?;
 
         let mut keys = BTreeSet::new();
         let mut payload_bytes = 0_usize;
@@ -259,9 +224,10 @@ impl ControlTransition {
         Ok(())
     }
 
-    /// Recompute caller-supplied graph, package-generation, and Grant fields
-    /// from the reviewed operation and committed history. A transition is
-    /// admissible only when every projection is byte-for-byte equal.
+    /// Recompute caller-supplied graph, package-generation, Grant, provider,
+    /// and capability fields from reviewed authority and committed history.
+    /// A transition is admissible only when every projection is byte-for-byte
+    /// equal.
     pub(super) fn validate_projection(
         &self,
         operation: &ReviewedControlOperation,
@@ -272,6 +238,8 @@ impl ControlTransition {
         if self.snapshot != projected.snapshot
             || self.package_lifecycles != projected.package_lifecycles
             || self.grants != projected.grants
+            || self.provider_selections != projected.provider_selections
+            || self.capability != projected.capability
         {
             return Err(input_error(
                 "The Control Store transition differs from the deterministic reviewed projection.",
@@ -380,7 +348,7 @@ pub(super) struct ControlGeneration {
     pub(super) snapshot_digest: String,
     pub(super) package_lifecycles: Vec<ControlPackageLifecycle>,
     pub(super) grants: Vec<ControlGrantSelection>,
-    pub(super) bindings: Vec<ControlProviderBinding>,
+    pub(super) provider_selections: Vec<ControlProviderSelection>,
     pub(super) capability: ControlCapabilitySelection,
     pub(super) capability_status: ControlCapabilityStatus,
     pub(super) capability_published_at_ms: Option<u64>,
