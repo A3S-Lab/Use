@@ -100,9 +100,11 @@ transaction, outbox, backup, and migration boundaries: the SQLite/WAL backend
 may be qualified before activation, but every authoritative reader switches as
 one cutover and live WAL files are never copied as backup payloads.
 The current private Control Store kernel qualifies an installation-bound
-schema-v4 aggregate, bounded blocking executor, typed transitions and outbox,
+schema-v5 aggregate, bounded blocking executor, typed transitions and outbox,
 and canonical offline-verifiable export plus staged restore on otherwise clean
-state. It distinguishes installation generation, package desired-state
+state. It persists each complete canonical reviewed Plan envelope and versioned
+authorization record, while relational columns remain validated projections of
+that evidence. It distinguishes installation generation, package desired-state
 generation, and immutable package-lifecycle generation. Package and surface
 effects bind exact artifact incarnations, while one graph capability effect
 binds the complete target installation/capability generation; canonical

@@ -32,8 +32,8 @@ pub(in crate::control_store) fn restore_export(
             .binary_search_by(|operation| {
                 operation
                     .reviewed
-                    .operation_id
-                    .cmp(&generation.operation_id)
+                    .operation_id()
+                    .cmp(generation.operation_id.as_str())
             })
             .ok()
             .map(|index| &export.authority.operations[index])
@@ -48,7 +48,7 @@ pub(in crate::control_store) fn restore_export(
             &transaction,
             &ControlTransition {
                 operation_id: generation.operation_id.clone(),
-                plan_digest: operation.reviewed.plan_digest.clone(),
+                plan_digest: operation.reviewed.plan_digest().to_string(),
                 snapshot: generation.snapshot.clone(),
                 package_lifecycles: generation.package_lifecycles.clone(),
                 grants: generation.grants.clone(),
@@ -115,21 +115,27 @@ fn insert_operation_record(
     operation: &ControlOperationRecord,
 ) -> UseResult<()> {
     validate_operation_record(operation)?;
+    let plan_json = operation.reviewed.canonical_plan_bytes()?;
+    let authorization_json = operation.reviewed.authorization.canonical_bytes()?;
+    let authorization_digest = operation.reviewed.authorization_digest()?;
     transaction
         .execute(
             "INSERT INTO control_operation(
-                operation_id, plan_digest, authorization_digest, action, root_package_id,
+                operation_id, plan_json, plan_digest,
+                authorization_json, authorization_digest, action, root_package_id,
                 expected_generation, target_generation,
                 expected_capability_generation, target_capability_generation,
                 reviewed_at_ms, status, committed_at_ms, completed_at_ms,
                 result_digest
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
-                operation.reviewed.operation_id,
-                operation.reviewed.plan_digest,
-                operation.reviewed.authorization_digest,
-                operation_action_name(operation.reviewed.action),
-                operation.reviewed.root_package_id.as_str(),
+                operation.reviewed.operation_id(),
+                plan_json,
+                operation.reviewed.plan_digest(),
+                authorization_json,
+                authorization_digest,
+                operation_action_name(operation.reviewed.action()),
+                operation.reviewed.root_package_id(),
                 to_i64(operation.reviewed.expected_generation)?,
                 to_i64(operation.reviewed.target_generation()?)?,
                 to_i64(operation.reviewed.expected_capability_generation)?,

@@ -484,12 +484,17 @@ must switch the complete mutable control aggregate and its reachability,
 diagnostic, backup, and restore readers together.
 
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
-for a clean installation. Schema v4 binds one exact `InstallationId` and stores
-contiguous installation generations, reviewed root-package operations, exact
-snapshots, full Workspace Grants, provider bindings, capability candidates,
-lifecycle checkpoints, and an idempotent effect outbox behind relational and
-compare-and-swap constraints. Selected packages now keep immutable lifecycle
-generation separate from installation generation and desired-state generation.
+for a clean installation. Schema v5 binds one exact `InstallationId` and stores
+contiguous installation generations, canonical complete reviewed Plan
+envelopes, versioned authorization evidence, exact snapshots, full Workspace
+Grants, provider bindings, capability candidates, lifecycle checkpoints, and an
+idempotent effect outbox behind relational and compare-and-swap constraints.
+Plan and authorization bytes are bounded canonical JSON; operation ID, both
+digests, action, root package, installation scope, and generation cursors are
+derived and revalidated against relational projections after restart, in
+offline export verification, and during staged restore. Selected packages now
+keep immutable lifecycle generation separate from installation generation and
+desired-state generation.
 Canonical typed effect payloads bind the installation, plan, action, provider,
 artifact digests, and exact package or surface lifecycle incarnation. Atomic
 graph capability publish/hide effects instead bind the complete target
@@ -509,10 +514,10 @@ foreign keys, exact-schema/integrity checks, linked-path rejection, and the
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
-not accept it. Canonical full reviewed-operation and authorization material,
-the external artifact/projection payload-owner registry, complete process-exit
-matrix, lifecycle conversion, indivisible consumer cutover, and deletion of
-legacy mutable stores therefore remain open; no A2 checkbox is complete yet.
+not accept it. The external artifact/projection payload-owner registry,
+complete process-exit matrix, deterministic lifecycle conversion, indivisible
+consumer cutover, and deletion of legacy mutable stores therefore remain open;
+no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions

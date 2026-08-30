@@ -6,14 +6,15 @@ pub(super) use effects::*;
 
 pub(super) fn read_operation_from(
     connection: &Connection,
+    installation: &InstallationId,
     operation_id: &str,
 ) -> UseResult<Option<ControlOperationRecord>> {
     let mut statement = connection
         .prepare(
-            "SELECT plan_digest, authorization_digest, action, root_package_id,
-                    expected_generation, expected_capability_generation,
-                    reviewed_at_ms, status, committed_at_ms, completed_at_ms,
-                    result_digest
+            "SELECT plan_json, plan_digest, authorization_json, authorization_digest,
+                    action, root_package_id, expected_generation, target_generation,
+                    expected_capability_generation, target_capability_generation,
+                    reviewed_at_ms, status, committed_at_ms, completed_at_ms, result_digest
              FROM control_operation WHERE operation_id = ?1",
         )
         .map_err(|error| schema::sqlite_error("prepare Control Store operation read", error))?;
@@ -26,7 +27,7 @@ pub(super) fn read_operation_from(
     else {
         return Ok(None);
     };
-    let record = operation_from_row(row, operation_id)?;
+    let record = operation_from_row(row, installation, operation_id)?;
     if rows
         .next()
         .map_err(|error| schema::sqlite_error("bound Control Store operation read", error))?
@@ -39,45 +40,92 @@ pub(super) fn read_operation_from(
     Ok(Some(record))
 }
 
-fn operation_from_row(row: &Row<'_>, operation_id: &str) -> UseResult<ControlOperationRecord> {
+fn operation_from_row(
+    row: &Row<'_>,
+    installation: &InstallationId,
+    operation_id: &str,
+) -> UseResult<ControlOperationRecord> {
+    let plan_json: Vec<u8> = row
+        .get(0)
+        .map_err(|error| schema::sqlite_error("decode Control Store operation plan", error))?;
+    let envelope: a3s_use_core::PluginOperationPlanEnvelope = serde_json::from_slice(&plan_json)
+        .map_err(|_| corruption_error("A Control Store operation plan is invalid JSON."))?;
+    let authorization_json: Vec<u8> = row.get(2).map_err(|error| {
+        schema::sqlite_error("decode Control Store authorization evidence", error)
+    })?;
+    let authorization: ControlAuthorizationEvidence = serde_json::from_slice(&authorization_json)
+        .map_err(|_| {
+        corruption_error("Control Store authorization evidence is invalid JSON.")
+    })?;
     let action: String = row
-        .get(2)
+        .get(4)
         .map_err(|error| schema::sqlite_error("decode Control Store operation action", error))?;
+    let root_package_id: String = row
+        .get(5)
+        .map_err(|error| schema::sqlite_error("decode Control Store root package", error))?;
+    let expected_generation = from_i64(row.get(6).map_err(|error| {
+        schema::sqlite_error("decode Control Store expected generation", error)
+    })?)?;
+    let target_generation =
+        from_i64(row.get(7).map_err(|error| {
+            schema::sqlite_error("decode Control Store target generation", error)
+        })?)?;
+    let expected_capability_generation = from_i64(row.get(8).map_err(|error| {
+        schema::sqlite_error("decode Control Store expected capability generation", error)
+    })?)?;
+    let target_capability_generation = from_i64(row.get(9).map_err(|error| {
+        schema::sqlite_error("decode Control Store target capability generation", error)
+    })?)?;
+    let reviewed_at_ms = from_i64(
+        row.get(10)
+            .map_err(|error| schema::sqlite_error("decode Control Store review time", error))?,
+    )?;
+    let reviewed = ReviewedControlOperation {
+        envelope,
+        authorization,
+        expected_generation,
+        expected_capability_generation,
+        reviewed_at_ms,
+    };
+    reviewed
+        .validate_for_installation(installation)
+        .map_err(|_| {
+            corruption_error("A persisted reviewed Control Store operation is invalid.")
+        })?;
+    let plan_digest: String = row
+        .get(1)
+        .map_err(|error| schema::sqlite_error("decode Control Store plan digest", error))?;
+    let authorization_digest: String = row.get(3).map_err(|error| {
+        schema::sqlite_error("decode Control Store authorization digest", error)
+    })?;
+    if reviewed.operation_id() != operation_id
+        || reviewed.canonical_plan_bytes()? != plan_json
+        || reviewed.plan_digest() != plan_digest
+        || reviewed.authorization.canonical_bytes()? != authorization_json
+        || reviewed.authorization_digest()? != authorization_digest
+        || reviewed.action() != parse_operation_action(&action)?
+        || reviewed.root_package_id() != root_package_id
+        || reviewed.target_generation()? != target_generation
+        || reviewed.target_capability_generation()? != target_capability_generation
+    {
+        return Err(corruption_error(
+            "A Control Store operation drifted from its canonical reviewed evidence.",
+        ));
+    }
     let status: String = row
-        .get(7)
+        .get(11)
         .map_err(|error| schema::sqlite_error("decode Control Store operation status", error))?;
     let record = ControlOperationRecord {
-        reviewed: ReviewedControlOperation {
-            operation_id: operation_id.to_string(),
-            plan_digest: row
-                .get(0)
-                .map_err(|error| schema::sqlite_error("decode Control Store plan digest", error))?,
-            authorization_digest: row.get(1).map_err(|error| {
-                schema::sqlite_error("decode Control Store authorization digest", error)
-            })?,
-            action: parse_operation_action(&action)?,
-            root_package_id: PluginPackageId::parse(row.get::<_, String>(3).map_err(|error| {
-                schema::sqlite_error("decode Control Store root package", error)
-            })?)
-            .map_err(|_| corruption_error("A Control Store root package ID is invalid."))?,
-            expected_generation: from_i64(row.get(4).map_err(|error| {
-                schema::sqlite_error("decode Control Store expected generation", error)
-            })?)?,
-            expected_capability_generation: from_i64(row.get(5).map_err(|error| {
-                schema::sqlite_error("decode Control Store expected capability generation", error)
-            })?)?,
-            reviewed_at_ms: from_i64(row.get(6).map_err(|error| {
-                schema::sqlite_error("decode Control Store review time", error)
-            })?)?,
-        },
+        reviewed,
         status: ControlOperationStatus::parse(&status)?,
-        committed_at_ms: optional_u64(row, 8)?,
-        completed_at_ms: optional_u64(row, 9)?,
+        committed_at_ms: optional_u64(row, 12)?,
+        completed_at_ms: optional_u64(row, 13)?,
         result_digest: row
-            .get(10)
+            .get(14)
             .map_err(|error| schema::sqlite_error("decode Control Store result digest", error))?,
     };
-    validate_operation_record(&record)?;
+    validate_operation_record(&record)
+        .map_err(|_| corruption_error("A persisted Control Store operation record is invalid."))?;
     Ok(record)
 }
 

@@ -13,7 +13,7 @@ use super::model::{
 };
 use super::schema::{ControlStoreMetadata, CONTROL_STORE_SCHEMA_VERSION};
 
-const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v4";
+const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v5";
 const MAX_CONTROL_STORE_EXPORT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EXPORTED_GENERATIONS: usize = 4096;
 const MAX_EXPORTED_OPERATIONS: usize = 8192;
@@ -68,7 +68,7 @@ pub(super) fn verify(
         ));
     }
     let export: ControlStoreExport = serde_json::from_slice(bytes)
-        .map_err(|_| export_error("The Control Store export is not valid schema-v4 JSON."))?;
+        .map_err(|_| export_error("The Control Store export is not valid schema-v5 JSON."))?;
     validate_export(&export)?;
     let canonical = canonical_json(&export)?;
     if canonical != bytes {
@@ -126,7 +126,7 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
             .authority
             .operations
             .windows(2)
-            .any(|pair| pair[0].reviewed.operation_id >= pair[1].reviewed.operation_id)
+            .any(|pair| pair[0].reviewed.operation_id() >= pair[1].reviewed.operation_id())
         || export.authority.effects.windows(2).any(|pair| {
             (pair[0].operation_id.as_str(), pair[0].intent.sequence)
                 >= (pair[1].operation_id.as_str(), pair[1].intent.sequence)
@@ -143,7 +143,10 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
         .iter()
         .map(|operation| {
             validate_operation_record(operation)?;
-            Ok((operation.reviewed.operation_id.as_str(), operation))
+            operation
+                .reviewed
+                .validate_for_installation(&export.installation)?;
+            Ok((operation.reviewed.operation_id(), operation))
         })
         .collect::<UseResult<BTreeMap<_, _>>>()?;
     let effects = group_effects(&export.authority.effects, &operations)?;
@@ -179,7 +182,7 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
             .ok_or_else(|| {
                 corruption_error("A Control Store generation has no reviewed operation.")
             })?;
-        if !committed_operations.insert(operation.reviewed.operation_id.as_str())
+        if !committed_operations.insert(operation.reviewed.operation_id())
             || operation.reviewed.expected_generation + 1 != expected_generation
             || operation.reviewed.expected_capability_generation != published_cursor
             || generation.capability.generation
@@ -191,12 +194,12 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
             ));
         }
         let operation_effects = effects
-            .get(operation.reviewed.operation_id.as_str())
+            .get(operation.reviewed.operation_id())
             .cloned()
             .unwrap_or_default();
         let transition = ControlTransition {
             operation_id: generation.operation_id.clone(),
-            plan_digest: operation.reviewed.plan_digest.clone(),
+            plan_digest: operation.reviewed.plan_digest().to_string(),
             snapshot: generation.snapshot.clone(),
             package_lifecycles: generation.package_lifecycles.clone(),
             grants: generation.grants.clone(),
@@ -276,7 +279,7 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
     }
 
     for operation in &export.authority.operations {
-        let committed = committed_operations.contains(operation.reviewed.operation_id.as_str());
+        let committed = committed_operations.contains(operation.reviewed.operation_id());
         if committed
             != matches!(
                 operation.status,
@@ -284,7 +287,7 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
                     | ControlOperationStatus::Completed
                     | ControlOperationStatus::Rejected
             )
-            || (!committed && effects.contains_key(operation.reviewed.operation_id.as_str()))
+            || (!committed && effects.contains_key(operation.reviewed.operation_id()))
         {
             return Err(corruption_error(
                 "A Control Store operation history has inconsistent generation ownership.",

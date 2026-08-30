@@ -43,7 +43,7 @@ async fn effect_payload_is_committed_canonically_and_reopens_after_restart() {
     reopened.initialize().await.unwrap();
     let claimed = reopened
         .claim_next_effect(claim(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             "claim:payload-restart",
             30,
             40,
@@ -76,7 +76,7 @@ async fn self_consistent_payload_tampering_cannot_override_relational_authority(
         .unwrap();
     drop(connection);
 
-    let error = store.effects(&reviewed.operation_id).await.unwrap_err();
+    let error = store.effects(reviewed.operation_id()).await.unwrap_err();
     assert_eq!(error.code, "use.control_store.corrupt");
 }
 
@@ -97,7 +97,7 @@ async fn self_consistent_artifact_tampering_cannot_retarget_execution() {
 
     let error = store
         .claim_next_effect(claim(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             "claim:artifact-tamper",
             30,
             40,
@@ -126,7 +126,7 @@ async fn self_consistent_capability_tampering_cannot_retarget_graph_cutover() {
     *descriptor_digest = digest('e');
     rewrite_payload(&store, 1, &tampered);
 
-    let error = store.effects(&reviewed.operation_id).await.unwrap_err();
+    let error = store.effects(reviewed.operation_id()).await.unwrap_err();
     assert_eq!(error.code, "use.control_store.corrupt");
 }
 
@@ -146,8 +146,8 @@ async fn missing_outbox_entries_cannot_make_an_operation_appear_complete() {
 
     let error = store
         .complete_operation(
-            &reviewed.operation_id,
-            &reviewed.plan_digest,
+            reviewed.operation_id(),
+            reviewed.plan_digest(),
             &digest('f'),
             50,
         )
@@ -195,7 +195,7 @@ async fn surface_payload_binds_the_exact_selected_artifact_and_surface() {
     store.commit_transition(candidate.clone()).await.unwrap();
     let claimed = store
         .claim_next_effect(claim(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             "claim:surface-payload",
             30,
             40,

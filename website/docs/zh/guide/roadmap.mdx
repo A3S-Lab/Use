@@ -65,19 +65,21 @@ SQLite/WAL Control Store，通过类型化聚合事务提交本地控制状态�
 权威；graph、operation、Grant、enablement、binding、capability、reachability、
 diagnostic、backup 与 restore 的读取方必须一起切换。
 
-当前检入的 Control Store 内核仍刻意保持未启用状态。其 clean-state schema-v4
-聚合已将 installation generation、期望 package-state generation 与 immutable
-package-lifecycle generation 明确分离。规范化类型化 effect payload 会绑定安装、
-reviewed plan、operation action、provider、工件摘要，以及精确的 package 或 surface
-incarnation；单一 graph effect 则绑定完整的目标安装与 capability generation。
+当前检入的 Control Store 内核仍刻意保持未启用状态。其 clean-state schema-v5
+聚合会持久化每个规范化的完整 reviewed Plan envelope 与带版本的 authorization
+evidence，并从中推导 operation identity、Plan/authorization digest、action、root
+package、installation scope 与 generation cursor；重启、离线导出验证和 staged restore
+都会重新核对这些关系投影。installation generation、期望 package-state generation 与
+immutable package-lifecycle generation 仍彼此独立。规范化类型化 effect payload 会绑定
+安装、reviewed plan、operation action、provider、工件摘要，以及精确的 package 或
+surface incarnation；单一 graph effect 则绑定完整的目标安装与 capability generation。
 payload 字节、digest 与关系投影在同一事务提交；claim 与 completion 会在重启后把它们
 重新绑定到已提交 generation，并拒绝不完整的 outbox inventory。该内核还验证了
-reviewed root-package operation、snapshot、完整 Grant、provider binding、
-capability history、跨重启的 unknown/expired claim 显式 reconciliation、可离线验证的
-确定性导出，以及 clean staged restore。生产 lifecycle 代码仍不会构造它；规范化的
-完整 reviewed-operation 与 authorization material、外部 artifact/projection payload
-ownership、完整崩溃矩阵、lifecycle 转换、backup/restore 与 reachability 集成，以及
-协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+snapshot、完整 Grant、provider binding、capability history、跨重启的
+unknown/expired claim 显式 reconciliation、可离线验证的确定性导出，以及 clean staged
+restore。生产 lifecycle 代码仍不会构造它；外部 artifact/projection payload ownership、
+完整崩溃矩阵、确定性 lifecycle 转换、backup/restore 与 reachability 集成，以及协调一致
+的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

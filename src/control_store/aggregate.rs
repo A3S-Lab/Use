@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use a3s_use_core::{
-    InstallationId, InstallationSnapshot, LockedPluginPackage, PluginPackageId, PluginSurfaceRef,
+    InstallationId, InstallationSnapshot, LockedPluginPackage, PluginSurfaceRef,
     PluginWorkspaceGrant, UseError, UseResult,
 };
 use olpc_cjson::CanonicalFormatter;
@@ -13,11 +13,12 @@ use super::export::ControlStoreExport;
 use super::model::{
     conflict_error, corruption_error, input_error, operation_action_name, parse_operation_action,
     parse_surface_kind, surface_kind_name, valid_machine_id, valid_sha256, ClaimedControlEffect,
-    ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
-    ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectRecord,
-    ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
-    ControlOperationRecord, ControlOperationStatus, ControlPackageLifecycle,
-    ControlProviderBinding, ControlStoreAuthority, ControlTransition, ReviewedControlOperation,
+    ControlAuthorizationEvidence, ControlCapabilitySelection, ControlCapabilityStatus,
+    ControlEffectClaim, ControlEffectIntent, ControlEffectKind, ControlEffectObservation,
+    ControlEffectOutcome, ControlEffectRecord, ControlEffectStatus, ControlEffectSubject,
+    ControlGeneration, ControlGrantSelection, ControlOperationRecord, ControlOperationStatus,
+    ControlPackageLifecycle, ControlProviderBinding, ControlStoreAuthority, ControlTransition,
+    ReviewedControlOperation,
 };
 use super::schema;
 
@@ -34,10 +35,15 @@ pub(super) fn register_operation(
     installation: &InstallationId,
     reviewed: &ReviewedControlOperation,
 ) -> UseResult<ControlOperationRecord> {
-    reviewed.validate()?;
+    reviewed.validate_for_installation(installation)?;
+    let plan_json = reviewed.canonical_plan_bytes()?;
+    let authorization_json = reviewed.authorization.canonical_bytes()?;
+    let authorization_digest = reviewed.authorization_digest()?;
     let mut connection = schema::open_verified_write(path, installation)?;
     let transaction = immediate(&mut connection, "register reviewed operation")?;
-    if let Some(existing) = read_operation_from(&transaction, &reviewed.operation_id)? {
+    if let Some(existing) =
+        read_operation_from(&transaction, installation, reviewed.operation_id())?
+    {
         if existing.reviewed == *reviewed {
             transaction
                 .commit()
@@ -57,17 +63,20 @@ pub(super) fn register_operation(
     transaction
         .execute(
             "INSERT INTO control_operation(
-                operation_id, plan_digest, authorization_digest, action, root_package_id,
+                operation_id, plan_json, plan_digest,
+                authorization_json, authorization_digest, action, root_package_id,
                 expected_generation, target_generation,
                 expected_capability_generation, target_capability_generation,
                 reviewed_at_ms, status
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'reviewed')",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 'reviewed')",
             params![
-                reviewed.operation_id,
-                reviewed.plan_digest,
-                reviewed.authorization_digest,
-                operation_action_name(reviewed.action),
-                reviewed.root_package_id.as_str(),
+                reviewed.operation_id(),
+                plan_json,
+                reviewed.plan_digest(),
+                authorization_json,
+                authorization_digest,
+                operation_action_name(reviewed.action()),
+                reviewed.root_package_id(),
                 to_i64(reviewed.expected_generation)?,
                 to_i64(reviewed.target_generation()?)?,
                 to_i64(reviewed.expected_capability_generation)?,
@@ -76,9 +85,10 @@ pub(super) fn register_operation(
             ],
         )
         .map_err(|error| mutation_error("register reviewed Control Store operation", error))?;
-    let record = read_operation_from(&transaction, &reviewed.operation_id)?.ok_or_else(|| {
-        corruption_error("The registered Control Store operation could not be read back.")
-    })?;
+    let record = read_operation_from(&transaction, installation, reviewed.operation_id())?
+        .ok_or_else(|| {
+            corruption_error("The registered Control Store operation could not be read back.")
+        })?;
     transaction
         .commit()
         .map_err(|error| schema::sqlite_error("commit reviewed Control Store operation", error))?;
@@ -96,9 +106,9 @@ pub(super) fn cancel_operation(
     validate_terminal_request(operation_id, plan_digest, result_digest, cancelled_at_ms)?;
     let mut connection = schema::open_verified_write(path, installation)?;
     let transaction = immediate(&mut connection, "cancel reviewed operation")?;
-    let current = read_operation_from(&transaction, operation_id)?
+    let current = read_operation_from(&transaction, installation, operation_id)?
         .ok_or_else(|| operation_missing(operation_id))?;
-    if current.reviewed.plan_digest != plan_digest {
+    if current.reviewed.plan_digest() != plan_digest {
         return Err(conflict_error(
             "The Control Store cancellation does not match the reviewed plan.",
         ));
@@ -131,9 +141,10 @@ pub(super) fn cancel_operation(
             params![operation_id, to_i64(cancelled_at_ms)?, result_digest],
         )
         .map_err(|error| mutation_error("cancel reviewed Control Store operation", error))?;
-    let record = read_operation_from(&transaction, operation_id)?.ok_or_else(|| {
-        corruption_error("The cancelled Control Store operation could not be read back.")
-    })?;
+    let record =
+        read_operation_from(&transaction, installation, operation_id)?.ok_or_else(|| {
+            corruption_error("The cancelled Control Store operation could not be read back.")
+        })?;
     transaction.commit().map_err(|error| {
         schema::sqlite_error("commit reviewed Control Store cancellation", error)
     })?;
@@ -147,7 +158,7 @@ pub(super) fn commit_transition(
 ) -> UseResult<ControlGeneration> {
     let mut connection = schema::open_verified_write(path, installation)?;
     let transaction = immediate(&mut connection, "commit control transition")?;
-    let operation = read_operation_from(&transaction, &transition.operation_id)?
+    let operation = read_operation_from(&transaction, installation, &transition.operation_id)?
         .ok_or_else(|| operation_missing(&transition.operation_id))?;
     transition.validate(installation, &operation.reviewed)?;
     let prior = if operation.reviewed.expected_generation == 0 {
@@ -267,7 +278,7 @@ pub(super) fn operation(
         return Err(input_error("The Control Store operation ID is invalid."));
     }
     let connection = schema::open_verified_read(path, installation)?;
-    read_operation_from(&connection, operation_id)
+    read_operation_from(&connection, installation, operation_id)
 }
 
 pub(super) fn current_generation(
@@ -350,7 +361,7 @@ fn authority_from(
     let operations = operation_ids
         .iter()
         .map(|operation_id| {
-            read_operation_from(connection, operation_id)?.ok_or_else(|| {
+            read_operation_from(connection, installation, operation_id)?.ok_or_else(|| {
                 corruption_error("A Control Store operation disappeared during export.")
             })
         })
@@ -377,7 +388,7 @@ pub(super) fn claim_next_effect(
     claim.validate()?;
     let mut connection = schema::open_verified_write(path, installation)?;
     let transaction = immediate(&mut connection, "claim Control Store effect")?;
-    let operation = read_operation_from(&transaction, &claim.operation_id)?
+    let operation = read_operation_from(&transaction, installation, &claim.operation_id)?
         .ok_or_else(|| operation_missing(&claim.operation_id))?;
     if operation.status != ControlOperationStatus::EffectsPending {
         return Err(conflict_error(
@@ -555,9 +566,9 @@ pub(super) fn complete_operation(
     validate_terminal_request(operation_id, plan_digest, result_digest, completed_at_ms)?;
     let mut connection = schema::open_verified_write(path, installation)?;
     let transaction = immediate(&mut connection, "complete Control Store operation")?;
-    let current = read_operation_from(&transaction, operation_id)?
+    let current = read_operation_from(&transaction, installation, operation_id)?
         .ok_or_else(|| operation_missing(operation_id))?;
-    if current.reviewed.plan_digest != plan_digest {
+    if current.reviewed.plan_digest() != plan_digest {
         return Err(conflict_error(
             "The Control Store completion does not match the reviewed plan.",
         ));
@@ -653,9 +664,10 @@ pub(super) fn complete_operation(
             params![operation_id, to_i64(completed_at_ms)?, result_digest],
         )
         .map_err(|error| mutation_error("complete Control Store operation", error))?;
-    let completed = read_operation_from(&transaction, operation_id)?.ok_or_else(|| {
-        corruption_error("The completed Control Store operation could not be read back.")
-    })?;
+    let completed =
+        read_operation_from(&transaction, installation, operation_id)?.ok_or_else(|| {
+            corruption_error("The completed Control Store operation could not be read back.")
+        })?;
     transaction
         .commit()
         .map_err(|error| schema::sqlite_error("commit Control Store completion", error))?;
