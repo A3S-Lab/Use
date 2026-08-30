@@ -13,12 +13,14 @@ use sha2::{Digest, Sha256};
 use super::model::{
     ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
     ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectStatus,
-    ControlGrantSelection, ControlOperationStatus, ControlPackageLifecycle, ControlProviderBinding,
-    ControlTransition, ReviewedControlOperation,
+    ControlEffectSubject, ControlGrantSelection, ControlOperationStatus, ControlPackageLifecycle,
+    ControlProviderBinding, ControlTransition, ReviewedControlOperation,
 };
 use super::*;
+use crate::plugin_lifecycle::PluginLifecycleAction;
 
 mod generations;
+mod payloads;
 
 const CATALOG: &[u8] = include_bytes!("../../crates/core/fixtures/plugins/catalog-record-v3.json");
 const GRANT: &[u8] = include_bytes!("../../crates/core/fixtures/plugins/workspace-grant-v1.json");
@@ -115,7 +117,7 @@ fn transition(
     installation: InstallationId,
     reviewed: &ReviewedControlOperation,
 ) -> ControlTransition {
-    let snapshot = snapshot(installation, reviewed.target_generation().unwrap());
+    let snapshot = snapshot(installation.clone(), reviewed.target_generation().unwrap());
     let package = &snapshot.packages[0];
     let package_id = package.package_id().to_string();
     let surface = package.selected_surfaces[0].clone();
@@ -129,6 +131,27 @@ fn transition(
         .clone()
         .unwrap();
     let grant_digest = grant.descriptor_digest().unwrap();
+    let package_subject = ControlEffectSubject::Package {
+        package_id: package_id.clone(),
+        lifecycle_generation: 41,
+        package_digest: package
+            .package
+            .catalog
+            .record
+            .package
+            .sha256
+            .clone()
+            .unwrap(),
+        manifest_digest: package
+            .package
+            .catalog
+            .record
+            .package
+            .manifest_sha256
+            .clone()
+            .unwrap(),
+        action: lifecycle_action(reviewed.action),
+    };
     ControlTransition {
         operation_id: reviewed.operation_id.clone(),
         plan_digest: reviewed.plan_digest.clone(),
@@ -155,27 +178,47 @@ fn transition(
             ControlEffectIntent {
                 sequence: 0,
                 idempotency_key: effect_key(&reviewed.operation_id, 0),
+                installation: installation.clone(),
+                plan_digest: reviewed.plan_digest.clone(),
+                operation_action: reviewed.action,
                 installation_generation: reviewed.target_generation().unwrap(),
-                package_lifecycle_generation: 41,
-                package_id: package_id.clone(),
+                subject: package_subject,
                 provider_id: "provider:test".to_string(),
                 kind: ControlEffectKind::PackageCommit,
-                payload_digest: digest('7'),
                 required: true,
             },
             ControlEffectIntent {
                 sequence: 1,
                 idempotency_key: effect_key(&reviewed.operation_id, 1),
+                installation,
+                plan_digest: reviewed.plan_digest.clone(),
+                operation_action: reviewed.action,
                 installation_generation: reviewed.target_generation().unwrap(),
-                package_lifecycle_generation: 41,
-                package_id,
+                subject: capability_subject(reviewed),
                 provider_id: "provider:test".to_string(),
                 kind: ControlEffectKind::CapabilityPublish,
-                payload_digest: digest('9'),
                 required: false,
             },
         ],
         committed_at_ms: reviewed.reviewed_at_ms + 10,
+    }
+}
+
+fn lifecycle_action(action: PluginOperationAction) -> PluginLifecycleAction {
+    match action {
+        PluginOperationAction::Install => PluginLifecycleAction::Install,
+        PluginOperationAction::Upgrade => PluginLifecycleAction::Upgrade,
+        PluginOperationAction::Enable => PluginLifecycleAction::Enable,
+        PluginOperationAction::Disable => PluginLifecycleAction::Disable,
+        PluginOperationAction::Uninstall => PluginLifecycleAction::Uninstall,
+    }
+}
+
+fn capability_subject(reviewed: &ReviewedControlOperation) -> ControlEffectSubject {
+    ControlEffectSubject::Installation {
+        expected_capability_generation: reviewed.expected_capability_generation,
+        capability_generation: reviewed.target_capability_generation().unwrap(),
+        descriptor_digest: digest('5'),
     }
 }
 
@@ -708,6 +751,14 @@ async fn authority_export_is_complete_and_semantically_verified_offline() {
     let mut tampered: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     tampered["authority"]["generations"][0]["packageLifecycles"][0]["lifecycleGeneration"] =
         serde_json::json!(42);
+    let error = store
+        .verify_export(canonical_json(&tampered))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.control_store.export_invalid");
+
+    let mut tampered: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    tampered["authority"]["effects"][0]["payloadDigest"] = serde_json::json!(digest('d'));
     let error = store
         .verify_export(canonical_json(&tampered))
         .await

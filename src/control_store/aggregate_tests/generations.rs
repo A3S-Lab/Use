@@ -28,8 +28,11 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
     disabled.snapshot.packages[0].enabled = false;
     disabled.grants.clear();
     disabled.bindings.clear();
+    let package_subject = disabled.effects[0].subject.clone();
     disabled.effects[0].kind = ControlEffectKind::CapabilityHide;
+    disabled.effects[0].subject = capability_subject(&disable);
     disabled.effects[1].kind = ControlEffectKind::GrantRevoke;
+    disabled.effects[1].subject = package_subject;
     store.commit_transition(disabled).await.unwrap();
     apply_all_effects(&store, &disable, 230).await;
 
@@ -65,11 +68,12 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
     removed.package_lifecycles.clear();
     removed.grants.clear();
     removed.bindings.clear();
-    for effect in &mut removed.effects {
-        effect.installation_generation = 3;
-    }
+    let package_subject = removed.effects[0].subject.clone();
     removed.effects[0].kind = ControlEffectKind::CapabilityHide;
+    removed.effects[0].subject = capability_subject(&uninstall);
     removed.effects[1].kind = ControlEffectKind::PackageRemove;
+    removed.effects[1].installation_generation = 3;
+    removed.effects[1].subject = package_subject;
     store.commit_transition(removed).await.unwrap();
     apply_all_effects(&store, &uninstall, 630).await;
 
@@ -109,6 +113,24 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         .snapshot
         .roots
         .is_empty());
+    let uninstall_effects = export
+        .export
+        .authority
+        .effects
+        .iter()
+        .filter(|effect| effect.operation_id == uninstall.operation_id)
+        .collect::<Vec<_>>();
+    assert_eq!(uninstall_effects.len(), 2);
+    assert_eq!(uninstall_effects[0].intent.installation_generation, 4);
+    assert!(matches!(
+        &uninstall_effects[0].intent.subject,
+        ControlEffectSubject::Installation { .. }
+    ));
+    assert_eq!(uninstall_effects[1].intent.installation_generation, 3);
+    assert!(matches!(
+        &uninstall_effects[1].intent.subject,
+        ControlEffectSubject::Package { .. }
+    ));
 }
 
 #[tokio::test]
@@ -122,11 +144,52 @@ async fn invalid_effect_generation_references_roll_back_the_whole_transition() {
     let error = store.commit_transition(candidate).await.unwrap_err();
     assert_eq!(error.code, "use.control_store.input_invalid");
 
+    let mut wrong_action = transition(control_installation(), &reviewed);
+    if let ControlEffectSubject::Package { action, .. } = &mut wrong_action.effects[0].subject {
+        *action = PluginLifecycleAction::Upgrade;
+    } else {
+        panic!("package commit must retain a package subject");
+    }
+    assert_eq!(
+        store
+            .commit_transition(wrong_action)
+            .await
+            .unwrap_err()
+            .code,
+        "use.control_store.input_invalid"
+    );
+
     let mut wrong_lifecycle = transition(control_installation(), &reviewed);
-    wrong_lifecycle.effects[0].package_lifecycle_generation = 42;
+    if let ControlEffectSubject::Package {
+        lifecycle_generation,
+        ..
+    } = &mut wrong_lifecycle.effects[0].subject
+    {
+        *lifecycle_generation = 42;
+    } else {
+        panic!("package commit must retain a package subject");
+    }
     assert_eq!(
         store
             .commit_transition(wrong_lifecycle)
+            .await
+            .unwrap_err()
+            .code,
+        "use.control_store.input_invalid"
+    );
+
+    let mut wrong_capability = transition(control_installation(), &reviewed);
+    if let ControlEffectSubject::Installation {
+        descriptor_digest, ..
+    } = &mut wrong_capability.effects[1].subject
+    {
+        *descriptor_digest = digest('e');
+    } else {
+        panic!("capability publication must retain an installation subject");
+    }
+    assert_eq!(
+        store
+            .commit_transition(wrong_capability)
             .await
             .unwrap_err()
             .code,
@@ -171,6 +234,10 @@ async fn package_lifecycle_generation_is_independent_of_installation_and_state_g
         .iter()
         .all(|effect| {
             effect.intent.installation_generation == 1
-                && effect.intent.package_lifecycle_generation == 41
+                && effect
+                    .intent
+                    .subject
+                    .package_identity()
+                    .is_none_or(|(_, generation)| generation == 41)
         }));
 }

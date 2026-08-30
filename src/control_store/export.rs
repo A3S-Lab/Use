@@ -13,7 +13,7 @@ use super::model::{
 };
 use super::schema::{ControlStoreMetadata, CONTROL_STORE_SCHEMA_VERSION};
 
-const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v3";
+const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v4";
 const MAX_CONTROL_STORE_EXPORT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EXPORTED_GENERATIONS: usize = 4096;
 const MAX_EXPORTED_OPERATIONS: usize = 8192;
@@ -68,7 +68,7 @@ pub(super) fn verify(
         ));
     }
     let export: ControlStoreExport = serde_json::from_slice(bytes)
-        .map_err(|_| export_error("The Control Store export is not valid schema-v3 JSON."))?;
+        .map_err(|_| export_error("The Control Store export is not valid schema-v4 JSON."))?;
     validate_export(&export)?;
     let canonical = canonical_json(&export)?;
     if canonical != bytes {
@@ -147,22 +147,6 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
         })
         .collect::<UseResult<BTreeMap<_, _>>>()?;
     let effects = group_effects(&export.authority.effects, &operations)?;
-    let packages_by_generation = export
-        .authority
-        .generations
-        .iter()
-        .map(|generation| {
-            (
-                generation.snapshot.generation,
-                generation
-                    .package_lifecycles
-                    .iter()
-                    .map(|package| (package.package_id.as_str(), package.lifecycle_generation))
-                    .collect::<BTreeMap<_, _>>(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-
     let expected_generation_count = usize::try_from(export.current_generation)
         .map_err(|_| corruption_error("The Control Store generation count is invalid."))?;
     if export.authority.generations.len() != expected_generation_count {
@@ -230,7 +214,7 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
             prior_generation.map(|prior| &prior.snapshot),
             &generation.snapshot,
         )?;
-        validate_effect_sequence(operation, &operation_effects, &packages_by_generation)?;
+        validate_effect_sequence(operation, &operation_effects)?;
 
         match operation.status {
             ControlOperationStatus::Completed => {
@@ -333,19 +317,13 @@ fn group_effects<'a>(
 fn validate_effect_sequence(
     operation: &ControlOperationRecord,
     effects: &[&ControlEffectRecord],
-    packages_by_generation: &BTreeMap<u64, BTreeMap<&str, u64>>,
 ) -> UseResult<()> {
     let mut required_rejected = false;
     let mut unfinished_seen = false;
     for (index, effect) in effects.iter().enumerate() {
-        if usize::try_from(effect.intent.sequence).ok() != Some(index)
-            || packages_by_generation
-                .get(&effect.intent.installation_generation)
-                .and_then(|packages| packages.get(effect.intent.package_id.as_str()))
-                .is_none_or(|generation| *generation != effect.intent.package_lifecycle_generation)
-        {
+        if usize::try_from(effect.intent.sequence).ok() != Some(index) {
             return Err(corruption_error(
-                "A Control Store effect does not reference its exact package generation.",
+                "A Control Store effect sequence is not contiguous.",
             ));
         }
         let finished = effect.status == ControlEffectStatus::Applied
@@ -379,14 +357,24 @@ fn validate_effect_sequence(
 fn validate_effect_record(record: &ControlEffectRecord) -> UseResult<()> {
     if !valid_machine_id(&record.operation_id)
         || !valid_sha256(&record.intent.idempotency_key)
-        || !valid_machine_id(&record.intent.package_id)
+        || record.intent.installation.validate().is_err()
+        || !valid_sha256(&record.intent.plan_digest)
+        || !record.intent.subject.matches_kind(record.intent.kind)
+        || !record.intent.subject.validate_identity()
         || !valid_machine_id(&record.intent.provider_id)
-        || !valid_sha256(&record.intent.payload_digest)
+        || !valid_sha256(&record.payload_digest)
         || record.intent.installation_generation == 0
-        || record.intent.package_lifecycle_generation == 0
     {
         return Err(corruption_error(
             "A Control Store effect record has invalid identity evidence.",
+        ));
+    }
+    let payload_digest = record.intent.descriptor_digest().map_err(|_| {
+        corruption_error("A Control Store effect payload is not canonically encodable.")
+    })?;
+    if payload_digest != record.payload_digest {
+        return Err(corruption_error(
+            "A Control Store effect payload digest does not match its canonical command.",
         ));
     }
     let has_claim = record.attempt > 0
