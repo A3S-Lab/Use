@@ -59,6 +59,12 @@ graph、enablement 与 lifecycle 证据推导 operation phase 和有界 checkpoi
 durable admission 前接受。多包进度不会把 `currentSurface` 错归到某个包，只有
 durable Host outcome 才会报告 `Completed`。
 
+ROADMAP A2 是下一个发布关键的权威切换。ADR-003 要求每个安装使用一个
+SQLite/WAL Control Store，通过类型化聚合事务提交本地控制状态，并用 outbox
+隔离外部 provider 副作用。数据库可以先完成验证再启用，但绝不能镜像当前 JSON
+权威；graph、operation、Grant、enablement、binding、capability、reachability、
+diagnostic、backup 与 restore 的读取方必须一起切换。
+
 ## 已实现基线
 
 - Manifest v3 与 catalog v3 已覆盖命名 Tool、MCP、OKF、Flow、Skill、UI

@@ -474,6 +474,15 @@ Implementation evidence (2026-08-30; exit gate passed):
 Exit gate: a process failure cannot expose a combination of graph, Grant,
 enablement, operation, and capability metadata that never committed together.
 
+Implementation order is fixed by
+[ADR-003](docs/adr-003-control-store-transaction-boundary.md). In particular,
+the SQLite backend must not become a mirror beside the current JSON stores.
+The preparatory extraction of installation-snapshot persistence from shared
+package-graph file I/O gives the coordinated cutover an explicit replacement
+boundary; it does not complete an A2 checkbox by itself. Production activation
+must switch the complete mutable control aggregate and its reachability,
+diagnostic, backup, and restore readers together.
+
 ### A3 - Deliver the arbitrary-agent capability plane
 
 - [ ] Ship two standard MCP service entry points: a privileged Package Manager

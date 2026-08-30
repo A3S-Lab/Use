@@ -63,6 +63,13 @@ explicit-user cancellation is accepted only before durable admission.
 Multi-package progress never attributes a `currentSurface` to the wrong
 package, and only a durable Host outcome reports `Completed`.
 
+ROADMAP A2 is the next release-critical authority cutover. ADR-003 requires a
+per-installation SQLite/WAL Control Store, typed aggregate transactions, and an
+outbox for external provider effects. The database may be qualified before it
+is activated, but it must never mirror the current JSON authority; graph,
+operation, Grant, enablement, binding, capability, reachability, diagnostic,
+backup, and restore readers switch together.
+
 ## Implemented baseline
 
 - Manifest v3 and catalog v3 cover named Tool, MCP, OKF, Flow, Skill, and UI
