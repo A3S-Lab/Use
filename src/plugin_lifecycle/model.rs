@@ -5,7 +5,7 @@ use a3s_use_extension::SurfaceActivation;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub const PLUGIN_LIFECYCLE_INTENT_SCHEMA: &str = "a3s.use.plugin-lifecycle-intent.v3";
+pub const PLUGIN_LIFECYCLE_INTENT_SCHEMA: &str = "a3s.use.plugin-lifecycle-intent.v4";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -187,12 +187,16 @@ impl PluginLifecycleIntent {
             ));
         }
         super::schedule::validate_surfaces(&self.surfaces)?;
-        let expected = super::schedule::checkpoints(
+        let checkpoint_domain = checkpoint_domain(
             &self.operation_id,
+            &self.plan_digest,
+            &self.scope,
+            &self.package_id,
             self.generation,
             self.action,
-            &self.surfaces,
-        )?;
+        );
+        let expected =
+            super::schedule::checkpoints(&checkpoint_domain, self.action, &self.surfaces)?;
         if self.checkpoints != expected {
             return Err(lifecycle_error(
                 "The cognitive-package lifecycle checkpoints do not match the canonical surface schedule.",
@@ -218,10 +222,24 @@ impl PluginLifecycleIntent {
     }
 }
 
-pub(super) fn checkpoint_key(
+pub(super) fn checkpoint_domain(
     operation_id: &str,
+    plan_digest: &str,
+    scope: &PlanScope,
+    package_id: &str,
     generation: u64,
     action: PluginLifecycleAction,
+) -> String {
+    format!(
+        "a3s.use.lifecycle-checkpoint.v2\n{operation_id}\n{plan_digest}\n{}\n{}\n{package_id}\n{generation}\n{}",
+        scope.kind.as_str(),
+        scope.id,
+        action.name(),
+    )
+}
+
+pub(super) fn checkpoint_key(
+    checkpoint_domain: &str,
     sequence: u32,
     kind: PluginLifecycleCheckpointKind,
     surface: Option<&PluginSurfaceRef>,
@@ -231,9 +249,8 @@ pub(super) fn checkpoint_key(
         |surface| format!("{}:{}", surface_kind_name(surface.kind), surface.id),
     );
     let identity = format!(
-        "{operation_id}\n{generation}\n{}\n{sequence}\n{}\n{surface}",
-        action.name(),
-        kind.name()
+        "{checkpoint_domain}\n{sequence}\n{}\n{surface}",
+        kind.name(),
     );
     format!("sha256:{:x}", Sha256::digest(identity.as_bytes()))
 }

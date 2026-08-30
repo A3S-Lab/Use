@@ -502,6 +502,10 @@ state layout, reachability, diagnostics, backup, and restore orchestration do
 not accept it. The external-payload owner registry, complete process-exit
 matrix, lifecycle conversion, indivisible consumer cutover, and deletion of
 legacy mutable stores therefore remain open; no A2 checkbox is complete yet.
+As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
+checkpoint key to the plan, installation kind and ID, package ID and
+generation, action, sequence, kind, and surface. This removes collisions
+between graph siblings before their effects enter one installation outbox.
 
 ### A3 - Deliver the arbitrary-agent capability plane
 

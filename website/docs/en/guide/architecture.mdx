@@ -151,7 +151,7 @@ intent
   → terminal result
 ```
 
-Each checkpoint uses an operation ID and surface idempotency key. Crash recovery continues from durable intent and the last completed checkpoint. Repeated apply returns the same terminal result without duplicating side effects.
+Each checkpoint uses an idempotency key bound to the plan, exact installation, package generation, action, sequence, kind, and surface. Graph siblings and equal textual IDs in different scope kinds cannot alias. Crash recovery continues from durable intent and the last completed checkpoint. Repeated apply returns the same terminal result without duplicating side effects.
 
 The in-crate foundation now implements a package-lock graph above each package-owned surface graph:
 

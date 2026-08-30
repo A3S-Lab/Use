@@ -145,7 +145,10 @@ before mutation.
 ## Durability and recovery
 
 Journals are bounded, canonical, atomically replaced, cross-process locked, and
-path-owned. Every checkpoint has a deterministic SHA-256 idempotency key.
+path-owned. Every checkpoint has a deterministic SHA-256 idempotency key that
+binds the plan, exact installation kind and ID, package ID and generation,
+action, sequence, kind, and surface. Two packages in one graph operation or
+two installations with the same textual ID cannot alias an external effect.
 Detailed provider/package/Grant/projection receipts remain the source of truth;
 the parent journal stores validated non-secret evidence digests and typed error
 codes.
@@ -172,7 +175,8 @@ Changing a Registry configuration does not migrate installed provenance.
 Implemented in Use:
 
 - manifest-v3 six-surface inventory and dependency schedule;
-- lifecycle intent/operation v2 journals;
+- lifecycle intent v4 and operation v3 journals with installation- and
+  package-bound checkpoint identities;
 - immutable content-addressed package artifacts and exact-generation leases;
 - dependency-forward graph install and reverse uninstall;
 - prior/candidate lock-bound upgrade with Add/Replace/Remove/Retain;
