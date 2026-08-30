@@ -4,9 +4,10 @@ use a3s_use_core::{PluginSurfaceRef, UseResult};
 use a3s_use_extension::{ExtensionManifest, ManifestPluginSurface};
 
 use super::model::{
-    checkpoint_key, lifecycle_error, PluginLifecycleAction, PluginLifecycleCheckpoint,
-    PluginLifecycleCheckpointKind, PluginLifecycleIntent, PluginLifecycleIntentSpec,
-    PluginLifecycleSurface, PluginSurfaceHost, PLUGIN_LIFECYCLE_INTENT_SCHEMA,
+    checkpoint_domain, checkpoint_key, lifecycle_error, PluginLifecycleAction,
+    PluginLifecycleCheckpoint, PluginLifecycleCheckpointKind, PluginLifecycleIntent,
+    PluginLifecycleIntentSpec, PluginLifecycleSurface, PluginSurfaceHost,
+    PLUGIN_LIFECYCLE_INTENT_SCHEMA,
 };
 
 impl PluginLifecycleIntent {
@@ -35,7 +36,15 @@ impl PluginLifecycleIntent {
             ));
         }
         let surfaces = lifecycle_surfaces(manifest.plugin_surfaces()?, selected_surfaces)?;
-        let checkpoints = checkpoints(&spec.operation_id, spec.generation, spec.action, &surfaces)?;
+        let checkpoint_domain = checkpoint_domain(
+            &spec.operation_id,
+            &spec.plan_digest,
+            &spec.scope,
+            &spec.package_id,
+            spec.generation,
+            spec.action,
+        );
+        let checkpoints = checkpoints(&checkpoint_domain, spec.action, &surfaces)?;
         let intent = Self {
             schema: PLUGIN_LIFECYCLE_INTENT_SCHEMA.to_string(),
             operation_id: spec.operation_id,
@@ -190,8 +199,7 @@ fn required_closure(
 }
 
 pub(super) fn checkpoints(
-    operation_id: &str,
-    generation: u64,
+    checkpoint_domain: &str,
     action: PluginLifecycleAction,
     surfaces: &[PluginLifecycleSurface],
 ) -> UseResult<Vec<PluginLifecycleCheckpoint>> {
@@ -260,9 +268,7 @@ pub(super) fn checkpoints(
             Ok(PluginLifecycleCheckpoint {
                 sequence,
                 idempotency_key: checkpoint_key(
-                    operation_id,
-                    generation,
-                    action,
+                    checkpoint_domain,
                     sequence,
                     kind,
                     surface.as_ref(),

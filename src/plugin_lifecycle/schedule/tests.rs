@@ -44,6 +44,68 @@ fn one_package_orders_all_six_surface_kinds_and_required_closure() {
 }
 
 #[test]
+fn checkpoint_identity_is_unique_across_packages_in_one_graph_operation() {
+    let first_manifest = ExtensionManifest::parse_acl(ALL_SURFACES).unwrap();
+    let second_manifest =
+        ExtensionManifest::parse_acl(&ALL_SURFACES.replace("acme/research", "acme/analysis"))
+            .unwrap();
+    let spec = |package_id: &str| PluginLifecycleIntentSpec {
+        operation_id: "operation:shared-graph:1".to_string(),
+        plan_digest: format!("sha256:{}", "1".repeat(64)),
+        scope: a3s_use_core::PlanScope {
+            kind: a3s_use_core::PlanScopeKind::Workspace,
+            id: "research".to_string(),
+        },
+        package_id: package_id.to_string(),
+        package_digest: format!("sha256:{}", "2".repeat(64)),
+        manifest_digest: format!("sha256:{}", "3".repeat(64)),
+        generation: 7,
+        action: PluginLifecycleAction::Install,
+        retained_ui_state_surfaces: Vec::new(),
+    };
+    let first =
+        PluginLifecycleIntent::from_manifest(spec("acme/research"), &first_manifest).unwrap();
+    let second =
+        PluginLifecycleIntent::from_manifest(spec("acme/analysis"), &second_manifest).unwrap();
+
+    assert_eq!(first.checkpoints.len(), second.checkpoints.len());
+    for (first, second) in first.checkpoints.iter().zip(&second.checkpoints) {
+        assert_ne!(first.idempotency_key, second.idempotency_key);
+    }
+}
+
+#[test]
+fn checkpoint_identity_is_unique_across_installation_kinds_with_the_same_id() {
+    let manifest = ExtensionManifest::parse_acl(ALL_SURFACES).unwrap();
+    let spec = |kind| PluginLifecycleIntentSpec {
+        operation_id: "operation:shared-scope:1".to_string(),
+        plan_digest: format!("sha256:{}", "1".repeat(64)),
+        scope: a3s_use_core::PlanScope {
+            kind,
+            id: "same/id".to_string(),
+        },
+        package_id: "acme/research".to_string(),
+        package_digest: format!("sha256:{}", "2".repeat(64)),
+        manifest_digest: format!("sha256:{}", "3".repeat(64)),
+        generation: 7,
+        action: PluginLifecycleAction::Install,
+        retained_ui_state_surfaces: Vec::new(),
+    };
+    let user =
+        PluginLifecycleIntent::from_manifest(spec(a3s_use_core::PlanScopeKind::User), &manifest)
+            .unwrap();
+    let workspace = PluginLifecycleIntent::from_manifest(
+        spec(a3s_use_core::PlanScopeKind::Workspace),
+        &manifest,
+    )
+    .unwrap();
+
+    for (user, workspace) in user.checkpoints.iter().zip(&workspace.checkpoints) {
+        assert_ne!(user.idempotency_key, workspace.idempotency_key);
+    }
+}
+
+#[test]
 fn uninstall_hides_and_drains_before_reverse_dependency_removal() {
     let intent = intent(PluginLifecycleAction::Uninstall);
     let kinds = intent

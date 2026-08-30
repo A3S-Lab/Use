@@ -475,8 +475,11 @@ visible graph.
 ## Lifecycle and storage
 
 The lifecycle intent and journal contain the complete package generation,
-scope, action, surface schedule, and idempotency keys. Host traits must return
-canonical SHA-256 evidence for each checkpoint.
+scope, action, surface schedule, and idempotency keys. Each key binds the exact
+plan, installation kind and ID, package ID and generation, action, checkpoint,
+and surface so graph siblings and equal textual IDs in different scope kinds
+cannot alias. Host traits must return canonical SHA-256 evidence for each
+checkpoint.
 
 Capability visibility methods always return exact immutable snapshot cutover
 evidence. Host traits have no fallback publication API. A separate retirement

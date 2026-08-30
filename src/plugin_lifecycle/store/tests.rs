@@ -66,6 +66,24 @@ fn evidence(value: char) -> String {
     format!("sha256:{}", value.to_string().repeat(64))
 }
 
+#[test]
+fn superseded_lifecycle_identity_schemas_fail_closed() {
+    let current_intent = intent("install:acme-guide:schema");
+    let mut superseded_intent = current_intent.clone();
+    superseded_intent.schema = "a3s.use.plugin-lifecycle-intent.v3".to_string();
+    assert_eq!(
+        superseded_intent.validate().unwrap_err().code,
+        "use.plugin.lifecycle_invalid"
+    );
+
+    let mut superseded_operation = PluginLifecycleOperationRecord::new(current_intent).unwrap();
+    superseded_operation.schema = "a3s.use.plugin-lifecycle-operation.v2".to_string();
+    assert_eq!(
+        superseded_operation.validate().unwrap_err().code,
+        "use.plugin.lifecycle_operation_invalid"
+    );
+}
+
 #[tokio::test]
 async fn resumes_exact_checkpoint_and_replays_terminal_record() {
     let temp = tempfile::tempdir().unwrap();

@@ -136,7 +136,7 @@ intent
   → terminal result
 ```
 
-每个 checkpoint 使用 operation ID 和 surface idempotency key。崩溃恢复从 durable intent 和最后成功 checkpoint 继续；重复 apply 返回同一 terminal result，不重复副作用。
+每个 checkpoint 的 idempotency key 都绑定 plan、精确 installation、package generation、action、sequence、kind 与 surface；同一 graph 的不同 package，以及不同 scope kind 下相同文本 ID 都不会发生别名。崩溃恢复从 durable intent 和最后成功 checkpoint 继续；重复 apply 返回同一 terminal result，不重复副作用。
 
 当前 crate 内基础已在每个 package-owned surface graph 之上实现 package-lock graph：
 
