@@ -190,6 +190,19 @@ pub(super) struct ControlProviderBinding {
     pub(super) binding_digest: String,
 }
 
+/// Immutable package incarnation selected by one installation generation.
+///
+/// This is intentionally distinct from both the installation generation and
+/// `InstallationPackageSelection::state_generation`. Enable/disable advances
+/// desired state without replacing the installed artifact, while upgrade may
+/// select a new artifact generation in the same installation transition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct ControlPackageLifecycle {
+    pub(super) package_id: String,
+    pub(super) lifecycle_generation: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct ControlCapabilitySelection {
@@ -288,7 +301,8 @@ impl ControlEffectKind {
 pub(super) struct ControlEffectIntent {
     pub(super) sequence: u32,
     pub(super) idempotency_key: String,
-    pub(super) package_generation: u64,
+    pub(super) installation_generation: u64,
+    pub(super) package_lifecycle_generation: u64,
     pub(super) package_id: String,
     pub(super) provider_id: String,
     pub(super) kind: ControlEffectKind,
@@ -302,6 +316,7 @@ pub(super) struct ControlTransition {
     pub(super) operation_id: String,
     pub(super) plan_digest: String,
     pub(super) snapshot: InstallationSnapshot,
+    pub(super) package_lifecycles: Vec<ControlPackageLifecycle>,
     pub(super) grants: Vec<ControlGrantSelection>,
     pub(super) bindings: Vec<ControlProviderBinding>,
     pub(super) capability: ControlCapabilitySelection,
@@ -339,6 +354,25 @@ impl ControlTransition {
             .iter()
             .map(|selection| (selection.package_id(), selection))
             .collect::<BTreeMap<_, _>>();
+
+        if self.package_lifecycles.len() != self.snapshot.packages.len()
+            || self
+                .package_lifecycles
+                .windows(2)
+                .any(|pair| pair[0].package_id >= pair[1].package_id)
+            || self
+                .package_lifecycles
+                .iter()
+                .zip(&self.snapshot.packages)
+                .any(|(lifecycle, package)| {
+                    lifecycle.package_id != package.package_id()
+                        || lifecycle.lifecycle_generation == 0
+                })
+        {
+            return Err(input_error(
+                "Control Store package lifecycle generations must exactly cover the selected graph.",
+            ));
+        }
 
         if (!self.grants.is_empty() && installation.kind != InstallationKind::Workspace)
             || self
@@ -398,12 +432,46 @@ impl ControlTransition {
                 || !valid_machine_id(&effect.package_id)
                 || !valid_machine_id(&effect.provider_id)
                 || !valid_sha256(&effect.payload_digest)
-                || effect.package_generation == 0
-                || (effect.package_generation == self.snapshot.generation
-                    && !packages.contains_key(effect.package_id.as_str()))
+                || effect.installation_generation == 0
+                || effect.package_lifecycle_generation == 0
+                || (effect.installation_generation != self.snapshot.generation
+                    && (operation.expected_generation == 0
+                        || effect.installation_generation != operation.expected_generation))
             {
                 return Err(input_error(
                     "Control Store effects must form one bounded canonical idempotent sequence.",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn validate_effect_references(
+        &self,
+        prior: Option<&ControlGeneration>,
+    ) -> UseResult<()> {
+        for effect in &self.effects {
+            let lifecycles = if effect.installation_generation == self.snapshot.generation {
+                &self.package_lifecycles
+            } else if let Some(generation) = prior.filter(|generation| {
+                generation.snapshot.generation == effect.installation_generation
+            }) {
+                &generation.package_lifecycles
+            } else {
+                return Err(input_error(
+                    "A Control Store effect references an unrelated installation generation.",
+                ));
+            };
+            let matches = lifecycles
+                .binary_search_by(|lifecycle| lifecycle.package_id.as_str().cmp(&effect.package_id))
+                .ok()
+                .and_then(|index| lifecycles.get(index))
+                .is_some_and(|lifecycle| {
+                    lifecycle.lifecycle_generation == effect.package_lifecycle_generation
+                });
+            if !matches {
+                return Err(input_error(
+                    "A Control Store effect does not bind the selected package lifecycle generation.",
                 ));
             }
         }
@@ -427,6 +495,7 @@ pub(super) struct ControlGeneration {
     pub(super) operation_id: String,
     pub(super) snapshot: InstallationSnapshot,
     pub(super) snapshot_digest: String,
+    pub(super) package_lifecycles: Vec<ControlPackageLifecycle>,
     pub(super) grants: Vec<ControlGrantSelection>,
     pub(super) bindings: Vec<ControlProviderBinding>,
     pub(super) capability: ControlCapabilitySelection,

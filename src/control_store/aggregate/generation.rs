@@ -21,18 +21,24 @@ pub(super) fn insert_generation(
             ],
         )
         .map_err(|error| mutation_error("insert Control Store generation", error))?;
-    for package in &transition.snapshot.packages {
+    for (package, lifecycle) in transition
+        .snapshot
+        .packages
+        .iter()
+        .zip(&transition.package_lifecycles)
+    {
         let package_json = canonical_json(&package.package)?;
         let package_digest = sha256_digest(&package_json);
         transaction
             .execute(
                 "INSERT INTO selected_package(
-                    generation, package_id, state_generation, enabled,
-                    package_json, package_digest
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    generation, package_id, lifecycle_generation, state_generation,
+                    enabled, package_json, package_digest
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     to_i64(generation)?,
                     package.package_id(),
+                    to_i64(lifecycle.lifecycle_generation)?,
                     to_i64(package.state_generation)?,
                     package.enabled,
                     package_json,
@@ -137,14 +143,15 @@ pub(super) fn insert_generation(
         transaction
             .execute(
                 "INSERT INTO lifecycle_checkpoint(
-                    operation_id, sequence, package_generation, package_id,
-                    checkpoint_kind, required
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    operation_id, sequence, installation_generation, package_id,
+                    package_lifecycle_generation, checkpoint_kind, required
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     transition.operation_id,
                     i64::from(effect.sequence),
-                    to_i64(effect.package_generation)?,
+                    to_i64(effect.installation_generation)?,
                     effect.package_id,
+                    to_i64(effect.package_lifecycle_generation)?,
                     effect.kind.as_str(),
                     effect.required,
                 ],

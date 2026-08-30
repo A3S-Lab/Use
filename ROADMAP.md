@@ -484,11 +484,15 @@ must switch the complete mutable control aggregate and its reachability,
 diagnostic, backup, and restore readers together.
 
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
-for a clean installation. Schema v2 binds one exact `InstallationId` and stores
+for a clean installation. Schema v3 binds one exact `InstallationId` and stores
 contiguous installation generations, reviewed root-package operations, exact
 snapshots, full Workspace Grants, provider bindings, capability candidates,
 lifecycle checkpoints, and an idempotent effect outbox behind relational and
-compare-and-swap constraints. Typed commands prove atomic transition rollback,
+compare-and-swap constraints. Selected packages now keep immutable lifecycle
+generation separate from installation generation and desired-state generation;
+every effect references the exact installation generation and package
+lifecycle incarnation, including prior-generation uninstall effects. Typed
+commands prove atomic transition rollback,
 action/root-state semantics, terminal replay, required-effect rejection,
 capability retirement, and explicit reconciliation of unknown or expired
 claims across restart. Its bounded canonical export includes the complete

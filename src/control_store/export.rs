@@ -8,12 +8,12 @@ use sha2::{Digest, Sha256};
 use super::aggregate::validate_operation_record;
 use super::model::{
     corruption_error, valid_machine_id, valid_sha256, ControlCapabilityStatus, ControlEffectRecord,
-    ControlEffectStatus, ControlOperationRecord, ControlOperationStatus, ControlStoreAuthority,
-    ControlTransition,
+    ControlEffectStatus, ControlGeneration, ControlOperationRecord, ControlOperationStatus,
+    ControlStoreAuthority, ControlTransition,
 };
 use super::schema::{ControlStoreMetadata, CONTROL_STORE_SCHEMA_VERSION};
 
-const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v2";
+const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v3";
 const MAX_CONTROL_STORE_EXPORT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EXPORTED_GENERATIONS: usize = 4096;
 const MAX_EXPORTED_OPERATIONS: usize = 8192;
@@ -68,7 +68,7 @@ pub(super) fn verify(
         ));
     }
     let export: ControlStoreExport = serde_json::from_slice(bytes)
-        .map_err(|_| export_error("The Control Store export is not valid schema-v2 JSON."))?;
+        .map_err(|_| export_error("The Control Store export is not valid schema-v3 JSON."))?;
     validate_export(&export)?;
     let canonical = canonical_json(&export)?;
     if canonical != bytes {
@@ -155,11 +155,10 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
             (
                 generation.snapshot.generation,
                 generation
-                    .snapshot
-                    .packages
+                    .package_lifecycles
                     .iter()
-                    .map(|package| package.package_id())
-                    .collect::<BTreeSet<_>>(),
+                    .map(|package| (package.package_id.as_str(), package.lifecycle_generation))
+                    .collect::<BTreeMap<_, _>>(),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -175,7 +174,7 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
     let mut committed_operations = BTreeSet::new();
     let mut published_cursor = 0_u64;
     let mut pending_count = 0_usize;
-    let mut prior_snapshot = None;
+    let mut prior_generation: Option<&ControlGeneration> = None;
     for (index, generation) in export.authority.generations.iter().enumerate() {
         let expected_generation = u64::try_from(index)
             .ok()
@@ -211,10 +210,11 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
             .get(operation.reviewed.operation_id.as_str())
             .cloned()
             .unwrap_or_default();
-        ControlTransition {
+        let transition = ControlTransition {
             operation_id: generation.operation_id.clone(),
             plan_digest: operation.reviewed.plan_digest.clone(),
             snapshot: generation.snapshot.clone(),
+            package_lifecycles: generation.package_lifecycles.clone(),
             grants: generation.grants.clone(),
             bindings: generation.bindings.clone(),
             capability: generation.capability.clone(),
@@ -223,11 +223,13 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
                 .map(|effect| effect.intent.clone())
                 .collect(),
             committed_at_ms: generation.committed_at_ms,
-        }
-        .validate(&export.installation, &operation.reviewed)?;
-        operation
-            .reviewed
-            .validate_snapshot_transition(prior_snapshot, &generation.snapshot)?;
+        };
+        transition.validate(&export.installation, &operation.reviewed)?;
+        transition.validate_effect_references(prior_generation)?;
+        operation.reviewed.validate_snapshot_transition(
+            prior_generation.map(|prior| &prior.snapshot),
+            &generation.snapshot,
+        )?;
         validate_effect_sequence(operation, &operation_effects, &packages_by_generation)?;
 
         match operation.status {
@@ -281,7 +283,7 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
                 ))
             }
         }
-        prior_snapshot = Some(&generation.snapshot);
+        prior_generation = Some(generation);
     }
     if published_cursor != export.published_capability_generation || pending_count > 1 {
         return Err(corruption_error(
@@ -331,15 +333,16 @@ fn group_effects<'a>(
 fn validate_effect_sequence(
     operation: &ControlOperationRecord,
     effects: &[&ControlEffectRecord],
-    packages_by_generation: &BTreeMap<u64, BTreeSet<&str>>,
+    packages_by_generation: &BTreeMap<u64, BTreeMap<&str, u64>>,
 ) -> UseResult<()> {
     let mut required_rejected = false;
     let mut unfinished_seen = false;
     for (index, effect) in effects.iter().enumerate() {
         if usize::try_from(effect.intent.sequence).ok() != Some(index)
             || packages_by_generation
-                .get(&effect.intent.package_generation)
-                .is_none_or(|packages| !packages.contains(effect.intent.package_id.as_str()))
+                .get(&effect.intent.installation_generation)
+                .and_then(|packages| packages.get(effect.intent.package_id.as_str()))
+                .is_none_or(|generation| *generation != effect.intent.package_lifecycle_generation)
         {
             return Err(corruption_error(
                 "A Control Store effect does not reference its exact package generation.",
@@ -379,7 +382,8 @@ fn validate_effect_record(record: &ControlEffectRecord) -> UseResult<()> {
         || !valid_machine_id(&record.intent.package_id)
         || !valid_machine_id(&record.intent.provider_id)
         || !valid_sha256(&record.intent.payload_digest)
-        || record.intent.package_generation == 0
+        || record.intent.installation_generation == 0
+        || record.intent.package_lifecycle_generation == 0
     {
         return Err(corruption_error(
             "A Control Store effect record has invalid identity evidence.",

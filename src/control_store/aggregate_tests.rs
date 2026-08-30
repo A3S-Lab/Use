@@ -13,8 +13,8 @@ use sha2::{Digest, Sha256};
 use super::model::{
     ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
     ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectStatus,
-    ControlGrantSelection, ControlOperationStatus, ControlProviderBinding, ControlTransition,
-    ReviewedControlOperation,
+    ControlGrantSelection, ControlOperationStatus, ControlPackageLifecycle, ControlProviderBinding,
+    ControlTransition, ReviewedControlOperation,
 };
 use super::*;
 
@@ -131,6 +131,10 @@ fn transition(
         operation_id: reviewed.operation_id.clone(),
         plan_digest: reviewed.plan_digest.clone(),
         snapshot,
+        package_lifecycles: vec![ControlPackageLifecycle {
+            package_id: package_id.clone(),
+            lifecycle_generation: 41,
+        }],
         grants: vec![ControlGrantSelection {
             grant,
             grant_digest,
@@ -149,7 +153,8 @@ fn transition(
             ControlEffectIntent {
                 sequence: 0,
                 idempotency_key: effect_key(&reviewed.operation_id, 0),
-                package_generation: reviewed.target_generation().unwrap(),
+                installation_generation: reviewed.target_generation().unwrap(),
+                package_lifecycle_generation: 41,
                 package_id: package_id.clone(),
                 provider_id: "provider:test".to_string(),
                 kind: ControlEffectKind::PackageCommit,
@@ -159,7 +164,8 @@ fn transition(
             ControlEffectIntent {
                 sequence: 1,
                 idempotency_key: effect_key(&reviewed.operation_id, 1),
-                package_generation: reviewed.target_generation().unwrap(),
+                installation_generation: reviewed.target_generation().unwrap(),
+                package_lifecycle_generation: 41,
                 package_id,
                 provider_id: "provider:test".to_string(),
                 kind: ControlEffectKind::CapabilityPublish,
@@ -420,10 +426,11 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         Vec::new(),
     )
     .unwrap();
+    removed.package_lifecycles.clear();
     removed.grants.clear();
     removed.bindings.clear();
     for effect in &mut removed.effects {
-        effect.package_generation = 3;
+        effect.installation_generation = 3;
     }
     removed.effects[0].kind = ControlEffectKind::CapabilityHide;
     removed.effects[1].kind = ControlEffectKind::PackageRemove;
@@ -438,6 +445,23 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         .await
         .unwrap();
     assert_eq!(export.export.authority.generations.len(), 4);
+    assert_eq!(
+        export.export.authority.generations[..3]
+            .iter()
+            .map(|generation| generation.package_lifecycles[0].lifecycle_generation)
+            .collect::<Vec<_>>(),
+        vec![41, 41, 41]
+    );
+    assert_eq!(
+        export.export.authority.generations[..3]
+            .iter()
+            .map(|generation| generation.snapshot.packages[0].state_generation)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    assert!(export.export.authority.generations[3]
+        .package_lifecycles
+        .is_empty());
     assert!(export.export.authority.generations[..3]
         .iter()
         .all(|generation| generation.capability_status == ControlCapabilityStatus::Retired));
@@ -452,15 +476,26 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
 }
 
 #[tokio::test]
-async fn failed_relational_effect_reference_rolls_back_the_whole_transition() {
+async fn invalid_effect_generation_references_roll_back_the_whole_transition() {
     let (_temporary, store) = initialized_store().await;
     let reviewed = operation("operation:invalid-reference:1");
     store.register_operation(reviewed.clone()).await.unwrap();
     let mut candidate = transition(control_installation(), &reviewed);
-    candidate.effects[0].package_generation = 99;
+    candidate.effects[0].installation_generation = 99;
 
     let error = store.commit_transition(candidate).await.unwrap_err();
-    assert_eq!(error.code, "use.control_store.conflict");
+    assert_eq!(error.code, "use.control_store.input_invalid");
+
+    let mut wrong_lifecycle = transition(control_installation(), &reviewed);
+    wrong_lifecycle.effects[0].package_lifecycle_generation = 42;
+    assert_eq!(
+        store
+            .commit_transition(wrong_lifecycle)
+            .await
+            .unwrap_err()
+            .code,
+        "use.control_store.input_invalid"
+    );
     assert_eq!(
         store.inspect().await.unwrap().metadata.current_generation,
         0
@@ -480,6 +515,28 @@ async fn failed_relational_effect_reference_rolls_back_the_whole_transition() {
         .await
         .unwrap()
         .is_empty());
+}
+
+#[tokio::test]
+async fn package_lifecycle_generation_is_independent_of_installation_and_state_generations() {
+    let (_temporary, store) = initialized_store().await;
+    let reviewed = operation("operation:independent-package-generation:1");
+    store.register_operation(reviewed.clone()).await.unwrap();
+
+    let mut candidate = transition(control_installation(), &reviewed);
+    candidate.snapshot.packages[0].state_generation = 7;
+    let committed = store.commit_transition(candidate).await.unwrap();
+    assert_eq!(committed.snapshot.generation, 1);
+    assert_eq!(committed.snapshot.packages[0].state_generation, 7);
+    assert!(store
+        .effects(&reviewed.operation_id)
+        .await
+        .unwrap()
+        .iter()
+        .all(|effect| {
+            effect.intent.installation_generation == 1
+                && effect.intent.package_lifecycle_generation == 41
+        }));
 }
 
 #[tokio::test]
@@ -815,6 +872,15 @@ async fn authority_export_is_complete_and_semantically_verified_offline() {
 
     let mut tampered: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     tampered["authority"]["generations"][0]["capabilityStatus"] = serde_json::json!("published");
+    let error = store
+        .verify_export(canonical_json(&tampered))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.control_store.export_invalid");
+
+    let mut tampered: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    tampered["authority"]["generations"][0]["packageLifecycles"][0]["lifecycleGeneration"] =
+        serde_json::json!(42);
     let error = store
         .verify_export(canonical_json(&tampered))
         .await

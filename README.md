@@ -1272,8 +1272,11 @@ See [Plugin Platform Architecture](docs/plugin-platform-architecture.md),
 [Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md),
 [ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md), and the
 [Control Store transaction boundary](docs/adr-003-control-store-transaction-boundary.md).
-The private A2 Control Store kernel now qualifies its clean-state schema-v2
-aggregate, typed generation transitions, full Grant and binding evidence,
+The private A2 Control Store kernel now qualifies its clean-state schema-v3
+aggregate. Installation generation, desired package-state generation, and
+immutable package-lifecycle generation are independent and effects reference
+the exact installation/package incarnation through relational constraints. It
+also qualifies typed generation transitions, full Grant and binding evidence,
 idempotent outbox reconciliation, bounded execution, corruption checks, and
 deterministic offline-verifiable export plus staged restore. It is not
 constructed by production lifecycle code and does not create a second

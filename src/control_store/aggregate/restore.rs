@@ -50,6 +50,7 @@ pub(in crate::control_store) fn restore_export(
                 operation_id: generation.operation_id.clone(),
                 plan_digest: operation.reviewed.plan_digest.clone(),
                 snapshot: generation.snapshot.clone(),
+                package_lifecycles: generation.package_lifecycles.clone(),
                 grants: generation.grants.clone(),
                 bindings: generation.bindings.clone(),
                 capability: generation.capability.clone(),

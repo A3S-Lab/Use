@@ -71,8 +71,10 @@ operation, Grant, enablement, binding, capability, reachability, diagnostic,
 backup, and restore readers switch together.
 
 The checked-in Control Store kernel is deliberately inactive. Its clean-state
-schema-v2 aggregate now qualifies exact generations, reviewed root-package
-operations, snapshots, full Grants, provider bindings, capability history, an
+schema-v3 aggregate now keeps installation, desired package-state, and immutable
+package-lifecycle generations independent, with effects bound to the exact
+selected incarnation. It also qualifies reviewed root-package operations,
+snapshots, full Grants, provider bindings, capability history, an
 idempotent outbox, explicit unknown/expired-claim reconciliation across
 restart, deterministic offline-verifiable export, and clean staged restore.
 Production lifecycle code does not construct it. External-payload ownership,
