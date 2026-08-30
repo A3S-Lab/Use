@@ -483,6 +483,17 @@ boundary; it does not complete an A2 checkbox by itself. Production activation
 must switch the complete mutable control aggregate and its reachability,
 diagnostic, backup, and restore readers together.
 
+The inactive `src/control_store/` kernel now qualifies the storage substrate on
+clean state only: schema v1 binds exactly one `InstallationId`, enables WAL,
+full synchronous durability, foreign keys, and exact-schema/integrity checks,
+and runs all blocking SQLite work through a 16-entry bounded worker. Its
+canonical export is deterministic, installation-bound, size-bounded, and
+verifiable without the live database. Production lifecycle code does not
+construct this kernel, and the current state layout and backup/restore paths do
+not recognize its database. The aggregate schema, typed mutation commands,
+outbox, payload-owner registry, restore path, crash matrix, and indivisible
+authority cutover therefore remain open; no A2 checkbox is complete yet.
+
 ### A3 - Deliver the arbitrary-agent capability plane
 
 - [ ] Ship two standard MCP service entry points: a privileged Package Manager

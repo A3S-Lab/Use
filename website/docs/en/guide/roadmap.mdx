@@ -70,6 +70,13 @@ is activated, but it must never mirror the current JSON authority; graph,
 operation, Grant, enablement, binding, capability, reachability, diagnostic,
 backup, and restore readers switch together.
 
+The checked-in Control Store kernel is deliberately inactive. It currently
+qualifies exact installation identity, SQLite/WAL durability and integrity,
+one bounded blocking worker, and deterministic offline-verifiable export on
+otherwise clean state. Production lifecycle code does not construct it, and
+the aggregate schema, outbox, backup/restore integration, crash matrix, and
+coordinated authority cutover remain open; no A2 roadmap item is complete yet.
+
 ## Implemented baseline
 
 - Manifest v3 and catalog v3 cover named Tool, MCP, OKF, Flow, Skill, and UI

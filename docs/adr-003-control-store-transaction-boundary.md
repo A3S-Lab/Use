@@ -199,6 +199,24 @@ exit gate is satisfied only by crash tests that prove every observable graph,
 Grant, enablement, operation, binding, and capability combination corresponds
 to a committed transaction plus explicit external-effect observations.
 
+### Current qualification status
+
+The checked-in inactive kernel implements the clean-state foundation of step
+2, not the authority cutover. It binds schema v1 to one exact installation,
+uses WAL with full synchronous durability and foreign-key enforcement, rejects
+unknown schema or filesystem state, and serializes blocking work through one
+16-entry bounded worker. It also produces a bounded canonical export whose
+identity and digest can be verified without the live database, with tests for
+determinism, corruption, path substitution, and concurrent async callers.
+
+The kernel is private and no production lifecycle constructs it. The schema
+contains only installation identity and generation zero; it does not yet hold
+the package-control aggregate, outbox, or external payload inventory. Existing
+JSON authorities remain the only production authority, and state-layout,
+backup, restore, and reachability code intentionally do not accept
+`control.sqlite3`. Activating or mirroring this partial schema would violate
+this decision.
+
 ## Consequences
 
 Benefits:
