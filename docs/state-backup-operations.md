@@ -12,9 +12,10 @@ It does not migrate, sign, encrypt, or upload state. A backup never authorizes
 its own restore and cannot recreate missing Registry projection, installed
 receipt, package, lifecycle, or Grant authority. Restore requires that exact
 installation authority to remain live and equal to the evidence captured by
-the archive. Global Registry source configuration, trust roots, TUF state, and
-the global Artifact Store, and derivable caches are outside this backup
-boundary. Consequently the archive is not a self-contained package backup:
+the archive. Global Registry source configuration, trust roots, TUF state, the
+global Artifact Store and its durable quota policy, and derivable caches are
+outside this backup boundary. Consequently the archive is not a self-contained
+package backup:
 restore requires every receipt-referenced artifact to remain present and exact.
 
 ## Commands
@@ -138,12 +139,13 @@ Cross-process lock files and generation lease files are excluded. Empty director
 do not create manifest entries.
 
 Global `registries.acl`, Registry trust roots, TUF metadata, verified target and
-planning caches, expanded packages under `data/artifacts`, and the Flow
-compiled-artifact cache are deliberately excluded. They are shared or
-derivable inputs, not mutable authority owned by one installation. Global
-reachability inventory joins every installation and durable operation with
-physical evidence and checked usage, but unreferenced artifacts remain retained
-until audit, hard quota admission, and confirmed deletion are implemented.
+planning caches, the global Artifact Store under `data/artifacts` including its
+`storage-quota.acl` resource policy, and the Flow compiled-artifact cache are
+deliberately excluded. They are shared or derivable inputs, not
+mutable authority owned by one installation. Global reachability inventory
+joins every installation and durable operation with physical evidence and
+checked usage, but unreferenced artifacts remain retained until audit and
+confirmed deletion are implemented.
 
 ## Archive format
 

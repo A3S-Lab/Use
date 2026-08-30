@@ -8,8 +8,9 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use super::{
     artifact_store_error, validate_real_directory, validate_sha256, ArtifactMutationLock,
-    ArtifactReferenceAdmission, ArtifactStore, ARTIFACT_STAGING_PREFIX, BLOBS_DIRECTORY,
-    CONTENT_DIRECTORY, MAX_ARTIFACT_CONTAINER_ENTRIES, MUTATION_LOCK, SHA256_DIRECTORY,
+    ArtifactReferenceAdmission, ArtifactStorageWrite, ArtifactStore, ARTIFACT_STAGING_PREFIX,
+    BLOBS_DIRECTORY, CONTENT_DIRECTORY, MAX_ARTIFACT_CONTAINER_ENTRIES, MUTATION_LOCK,
+    SHA256_DIRECTORY,
 };
 use crate::package::{
     io_error, remove_file_with_windows_retry, sync_parent_directory, unique_suffix,
@@ -130,6 +131,12 @@ impl ArtifactStore {
     ) -> UseResult<ArtifactBlob> {
         admission.ensure_store(self)?;
         validate_blob_evidence(sha256, expected_length)?;
+        let _storage = self
+            .acquire_storage_admission(
+                admission,
+                ArtifactStorageWrite::blob(sha256, expected_length)?,
+            )
+            .await?;
         let container = self.blob_container(sha256);
         self.ensure_container(&container, "blob artifact").await?;
         let _lock =

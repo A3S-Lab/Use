@@ -110,6 +110,8 @@ pub struct ExtensionLifecyclePackage {
     pub(super) manifest: ExtensionManifest,
     pub(super) package_digest: String,
     pub(super) manifest_digest: String,
+    pub(super) expanded_bytes: u64,
+    pub(super) file_count: u64,
     pub(super) trust: ExtensionTrust,
     pub(super) registry: Option<ResolvedRemotePackage>,
     pub(super) verified_catalog: Option<VerifiedPluginCatalogRecord>,

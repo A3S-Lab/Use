@@ -229,8 +229,12 @@ Implementation evidence (2026-08-28):
   reference inventory before deleting any raw blob or expanded tree.
 - [x] Join global references with physical inventory in one guarded collection
   pass and expose checked usage plus bounded quota assessment.
-- [ ] Enforce hard quota with a concurrency-safe reservation protocol and
-  require an explicit confirmed garbage-collection policy before deletion.
+- [x] Enforce an optional durable hard quota with concurrency-safe cross-process
+  admission. Policy-disabled publications share the storage boundary;
+  policy-enabled publications serialize physical scan, exact projection,
+  staging cleanup, and final commit so two writers cannot spend the same
+  capacity.
+- [ ] Require an explicit confirmed garbage-collection policy before deletion.
 - [ ] Add explicit global artifact audit, quarantine, and verified
   rehydration. Corruption must fail closed and preserve forensic evidence; it
   must not silently replace bytes underneath an admitted generation.
@@ -261,7 +265,7 @@ Implementation evidence (2026-08-28):
 Exit gate: all lifecycle, authorization, and capability queries can be answered
 from one exact scoped installation generation plus immutable artifact evidence.
 
-Implementation evidence (foundational slice, 2026-08-29; exit gate remains
+Implementation evidence (foundational slice, 2026-08-30; exit gate remains
 open):
 
 - `InstallationId(kind, id)` is the sole installation identity. Its validated
@@ -324,8 +328,7 @@ open):
   regular-file bytes and files, bounds the complete traversal, and rejects
   unknown layout, links/reparse points, and special files. This is physical
   evidence only: it neither infers reachability nor verifies path digests and
-  grants no deletion authority. Physical joining, quota, confirmed GC, audit,
-  quarantine, and rehydration remain open.
+  grants no deletion authority.
 - `RegistrySourceStore::inspect_artifact_references` now derives the first
   reference-source inventory under that exact exclusive guard. Its path-free
   v1 evidence scans every preserved Registry datastore, including a source no
@@ -352,8 +355,22 @@ open):
   classifies only metadata expectation availability/match, and derives checked
   global storage usage. Reference retirement may leave conservative extra
   owners. A bounded quota assessment reports observed excess but deliberately
-  provides neither concurrent capacity reservation nor deletion authority.
-  Hard quota admission, digest audit, quarantine, rehydration, and confirmed
+  provides no deletion authority.
+- The global Artifact Store owns optional canonical
+  `data/artifacts/storage-quota.acl` policy state. Revision compare-and-swap
+  serializes operator changes with publications. Every Blob and expanded-tree
+  writer takes reference admission, then the global storage boundary, then its
+  digest mutation lock. Without a policy, the storage lock is shared. With a
+  policy, one exclusive lock covers bounded physical inventory, exact
+  logical-byte/container projection, same-digest staging reclamation, and final
+  publication. Real subprocess competition proves that only one of two
+  distinct writers can consume one remaining slot. Prepared expanded-package
+  byte/file measurements and a bounded exact copy prevent source growth from
+  creating unaccounted staging. Tightening below current usage stops growth but
+  permits non-worsening replay or cleanup. This correctness-first protocol is
+  serialized, not a parallel durable reservation ledger, and grants no deletion
+  authority.
+- Digest audit, corruption quarantine, verified rehydration, and confirmed
   deletion remain open.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
@@ -374,7 +391,7 @@ open):
   alias-only projection change cannot evade snapshot consistency.
 - The remaining A1 work is structural, not a hidden compatibility layer: the
   global blob and expanded-tree tiers still need one safe
-  quota-admission/audit/quarantine/rehydration/confirmed-GC model, and the
+  audit/quarantine/rehydration/confirmed-GC model, and the
   complete two-installation lifecycle/lease matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store

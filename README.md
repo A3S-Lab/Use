@@ -447,11 +447,28 @@ expectations, and retains references even when content is missing. The joined
 and the physical inventory in one guarded collection pass. New publication is
 frozen; reference retirement can only leave conservative extra owners. One row
 per artifact keeps owners, physical measurements, expectation status, and
-checked global storage usage distinct. A bounded operator quota assessment
-reports excess bytes or containers but neither reserves concurrent capacity nor
-authorizes deletion. `complete` remains only a physical publication state;
-digest audit, hard quota admission, confirmation, and deletion are not yet
-implemented.
+checked global storage usage distinct.
+
+The Artifact Store now owns an optional durable hard-quota policy at
+`data/artifacts/storage-quota.acl`. `ArtifactStore::storage_quota`,
+`set_storage_quota`, and `clear_storage_quota` expose canonical ACL state through
+revision compare-and-swap. The policy bounds logical regular-file lengths and
+digest containers, not allocated filesystem blocks. Publication always enters
+reference admission first, then the global storage boundary, then the exact
+digest lock. With no policy, publishers share the storage boundary. With a
+policy, the final Blob or expanded-package publication holds it exclusively,
+scans current content plus abandoned staging, projects the exact prepared write,
+and retains the lock through staging cleanup and atomic commit. Distinct
+processes therefore cannot both spend the same remaining capacity. If an
+operator tightens the policy below current usage, exact replay and cleanup that
+do not worsen either exceeded dimension remain possible. A malformed policy
+fails writes closed without suppressing physical inventory evidence.
+
+The joined quota assessment remains evidence only; it does not authorize
+deletion. Hard admission is deliberately serialized rather than implemented as
+a parallel durable reservation ledger. `complete` remains only a physical
+publication state; digest audit, corruption quarantine, verified rehydration,
+explicit confirmation, and garbage collection are not yet implemented.
 
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
@@ -760,9 +777,9 @@ network transfer. Source prune removes stale writes, then inactive partials,
 then the oldest observations. It releases logical source-policy capacity but
 never deletes global blobs, installed artifacts, receipts, generations, or
 journals. Global references are now joined with physical evidence and bounded
-quota assessment across sources, installations, and operations; hard quota
-admission, confirmed GC, audit, quarantine, and verified rehydration remain
-explicit release work.
+quota assessment across sources, installations, and operations. Optional global
+hard quota admission covers both publication tiers; confirmed GC, audit,
+quarantine, and verified rehydration remain explicit release work.
 
 Inspect cache usage without making a Registry request:
 
@@ -1248,7 +1265,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
 | Registry target observations, explicit offline install/upgrade, bounded source working set, resumable downloads, usage, and confirmed source cleanup | Implemented with interruption, range, tamper, and zero-network tests; cleanup never claims global blob reclamation |
-| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive admission boundary prevents maintenance or whole-installation restore from racing durable reference publication. Physical v1 inventories canonical content and staging; Registry-reference v1 scans every preserved source datastore; global reference v1 adds all installations and reference-bearing operations. Joined reachability v1 captures those logical and physical facts in one guarded pass, preserves conservative extra owners if retirement races inspection, preserves missing content, reports expectation mismatches and checked storage usage, and supports bounded quota assessment. It grants no digest validity, concurrent quota reservation, or deletion authority; hard quota admission, confirmed GC, audit, quarantine, and verified rehydration remain open |
+| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive reference boundary prevents maintenance or whole-installation restore from racing durable reference publication. Physical v1 inventories canonical content and staging; Registry-reference v1 scans every preserved source datastore; global reference v1 adds all installations and reference-bearing operations. Joined reachability v1 captures those logical and physical facts in one guarded pass, preserves conservative extra owners if retirement races inspection, preserves missing content, reports expectation mismatches and checked storage usage, and supports bounded quota assessment. An optional canonical `storage-quota.acl`, mutated by revision CAS, enforces logical-byte and digest-container ceilings across processes. Policy-enabled Blob and expanded-package commits serialize scan, exact projection, staging cleanup, and publication under one global storage lock; policy-disabled commits retain shared concurrency. Non-worsening replay remains possible when current usage already exceeds a tightened policy. Admission grants no digest validity or deletion authority; confirmed GC, audit, quarantine, and verified rehydration remain open |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |

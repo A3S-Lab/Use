@@ -10,12 +10,19 @@ use crate::package::{io_error, lock_is_contended};
 
 mod blob;
 mod inventory;
+mod quota;
 mod reachability;
 
 pub(crate) use blob::ArtifactBlob;
 pub use inventory::{
     ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState, ArtifactStoreInventory,
     ARTIFACT_STORE_INVENTORY_SCHEMA, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
+};
+pub(crate) use quota::{ArtifactStorageAdmission, ArtifactStorageWrite};
+pub use quota::{
+    ArtifactStorageQuotaAction, ArtifactStorageQuotaMutation, ArtifactStorageQuotaPolicy,
+    ArtifactStorageQuotaSnapshot, ARTIFACT_STORAGE_QUOTA_POLICY_SCHEMA_VERSION,
+    MAX_ARTIFACT_STORAGE_QUOTA_ARTIFACTS,
 };
 pub use reachability::{ArtifactCollectionGuard, ArtifactReferenceAdmission};
 
@@ -25,6 +32,8 @@ const SHA256_DIRECTORY: &str = "sha256";
 const CONTENT_DIRECTORY: &str = "content";
 const MUTATION_LOCK: &str = ".mutation.lock";
 const REACHABILITY_LOCK: &str = ".reachability.lock";
+#[cfg(test)]
+mod quota_tests;
 pub(crate) const ARTIFACT_STAGING_PREFIX: &str = ".artifact-staging-";
 pub(crate) const MAX_ARTIFACT_CONTAINER_ENTRIES: usize = 128;
 pub(crate) const MAX_ARTIFACT_TREE_ENTRIES: usize = crate::package::MAX_PACKAGE_FILES * 2;
@@ -100,9 +109,11 @@ impl ArtifactStore {
     pub(crate) async fn acquire_expanded_package_mutation(
         &self,
         admission: &ArtifactReferenceAdmission,
+        storage: &ArtifactStorageAdmission,
         sha256: &str,
     ) -> UseResult<ArtifactMutationLock> {
         admission.ensure_store(self)?;
+        storage.ensure_store(self)?;
         validate_sha256(sha256)?;
         let container = self.expanded_package_container(sha256);
         self.ensure_container(&container, "expanded-package artifact")

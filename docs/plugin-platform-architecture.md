@@ -528,10 +528,18 @@ on identity or physical-expectation conflicts. Joined reachability v1 captures
 the physical and logical inventories before releasing that guard, preserves
 their orthogonal evidence in one row per artifact, and derives checked storage
 usage plus bounded quota assessment. It does not reserve concurrent capacity or
-authorize deletion. The tiers still need hard quota admission and a confirmed
-garbage-collection policy. Shared-content corruption currently fails closed;
-explicit quarantine and verified rehydration remain part of that global policy
-rather than an implicit overwrite performed by one source or installation.
+authorize deletion. The Artifact Store separately owns an optional canonical
+`data/artifacts/storage-quota.acl`. Policy changes use revision compare-and-swap
+under the lock order `reference admission -> global storage -> digest
+mutation`. With no policy, publishers share the storage boundary. With a policy,
+Blob and expanded-package commits hold it exclusively across bounded physical
+scan, exact logical-byte/container projection, same-digest staging cleanup, and
+atomic publication. This serialized admission prevents concurrent overcommit;
+it is intentionally not a parallel durable reservation ledger. The tiers still
+need a confirmed garbage-collection policy. Shared-content corruption currently
+fails closed; explicit quarantine and verified rehydration remain part of that
+global policy rather than an implicit overwrite performed by one source or
+installation.
 
 Each `InstallationId(kind, id)` owns separate roots for:
 

@@ -190,13 +190,13 @@ fn quota_assessment_is_bounded_and_never_claims_deletion_authority() {
     assert!(value.get("deletionAuthorized").is_none());
     assert_eq!(
         ArtifactStorageQuotaPolicy::new(0, 1).unwrap_err().code,
-        "use.artifact_reachability.quota_policy_invalid"
+        "use.artifact_store.quota_policy_invalid"
     );
     assert_eq!(
         ArtifactStorageQuotaPolicy::new(1, MAX_ARTIFACT_STORAGE_QUOTA_ARTIFACTS + 1)
             .unwrap_err()
             .code,
-        "use.artifact_reachability.quota_policy_invalid"
+        "use.artifact_store.quota_policy_invalid"
     );
 }
 

@@ -8,7 +8,8 @@ use super::{
     lifecycle_identity_error, lifecycle_state_error, ExtensionLifecycleIdentity,
     ExtensionLifecyclePackage,
 };
-use crate::package::{copy_package, io_error, read_manifest, sha256, validate_surface_files};
+use crate::artifact_store::ArtifactStorageWrite;
+use crate::package::{copy_package_exact, io_error, read_manifest, sha256, validate_surface_files};
 use crate::registry::{
     normalize_package_id, validate_catalog_package, ExtensionReceipt, ExtensionTrust,
 };
@@ -203,13 +204,13 @@ impl ExtensionLifecyclePackage {
             }
         }
         validate_surface_files(&manifest, source.root()).await?;
-        let package_sha256 = crate::digest::package_sha256(source.root()).await?;
+        let fingerprint = crate::digest::package_fingerprint(source.root()).await?;
         validate_catalog_package(
             verified_catalog.as_ref(),
             registry.as_ref(),
             &manifest,
             &manifest_bytes,
-            &package_sha256,
+            &fingerprint.sha256,
         )?;
         match (verified_catalog.as_ref(), planning_bundle.as_ref()) {
             (Some(catalog), Some(bundle)) if catalog.record.planning.is_some() => {
@@ -234,8 +235,10 @@ impl ExtensionLifecyclePackage {
         Ok(Self {
             source,
             manifest,
-            package_digest: format!("sha256:{package_sha256}"),
+            package_digest: format!("sha256:{}", fingerprint.sha256),
             manifest_digest: format!("sha256:{}", sha256(&manifest_bytes)),
+            expanded_bytes: fingerprint.byte_count,
+            file_count: fingerprint.file_count,
             trust,
             registry,
             verified_catalog,
@@ -257,6 +260,14 @@ impl ExtensionLifecyclePackage {
 
     pub fn manifest(&self) -> &ExtensionManifest {
         &self.manifest
+    }
+
+    pub const fn expanded_bytes(&self) -> u64 {
+        self.expanded_bytes
+    }
+
+    pub const fn file_count(&self) -> u64 {
+        self.file_count
     }
 
     pub(super) fn validate_identity(&self, identity: &ExtensionLifecycleIdentity) -> UseResult<()> {
@@ -284,10 +295,12 @@ pub(super) async fn validate_candidate_source(
 ) -> UseResult<()> {
     let (manifest, manifest_bytes) = read_manifest(candidate.source.root()).await?;
     validate_surface_files(&manifest, candidate.source.root()).await?;
-    let package_sha256 = crate::digest::package_sha256(candidate.source.root()).await?;
+    let fingerprint = crate::digest::package_fingerprint(candidate.source.root()).await?;
     if manifest != candidate.manifest
         || format!("sha256:{}", sha256(&manifest_bytes)) != candidate.manifest_digest
-        || format!("sha256:{package_sha256}") != candidate.package_digest
+        || format!("sha256:{}", fingerprint.sha256) != candidate.package_digest
+        || fingerprint.byte_count != candidate.expanded_bytes
+        || fingerprint.file_count != candidate.file_count
     {
         return Err(UseError::new(
             "use.extension.package_changed",
@@ -310,8 +323,18 @@ pub(super) async fn commit_candidate_root(
             "The expanded-package target does not match its Artifact Store digest.",
         ));
     }
+    let storage = artifact_store
+        .acquire_storage_admission(
+            artifact_admission,
+            ArtifactStorageWrite::expanded(
+                candidate.package_digest(),
+                candidate.expanded_bytes(),
+                candidate.file_count(),
+            )?,
+        )
+        .await?;
     let _artifact_lock = artifact_store
-        .acquire_expanded_package_mutation(artifact_admission, package_sha256)
+        .acquire_expanded_package_mutation(artifact_admission, &storage, package_sha256)
         .await?;
     let parent = target.parent().ok_or_else(|| {
         lifecycle_state_error("The lifecycle package root has no owned parent directory.")
@@ -329,7 +352,13 @@ pub(super) async fn commit_candidate_root(
         .prefix(ARTIFACT_STAGING_PREFIX)
         .tempdir_in(parent)
         .map_err(|error| io_error("create expanded-package artifact staging", parent, error))?;
-    copy_package(candidate.source.root(), staging.path()).await?;
+    copy_package_exact(
+        candidate.source.root(),
+        staging.path(),
+        candidate.expanded_bytes(),
+        candidate.file_count(),
+    )
+    .await?;
     validate_committed_root(candidate, staging.path()).await?;
     let staging = staging.keep();
     run_before_candidate_commit_hook(target, &staging);
@@ -371,10 +400,12 @@ async fn validate_committed_root(
     }
     let (manifest, manifest_bytes) = read_manifest(root).await?;
     validate_surface_files(&manifest, root).await?;
-    let package_sha256 = crate::digest::package_sha256(root).await?;
+    let fingerprint = crate::digest::package_fingerprint(root).await?;
     if manifest != candidate.manifest
         || format!("sha256:{}", sha256(&manifest_bytes)) != candidate.manifest_digest
-        || format!("sha256:{package_sha256}") != candidate.package_digest
+        || format!("sha256:{}", fingerprint.sha256) != candidate.package_digest
+        || fingerprint.byte_count != candidate.expanded_bytes
+        || fingerprint.file_count != candidate.file_count
     {
         return Err(UseError::new(
             "use.extension.package_changed",

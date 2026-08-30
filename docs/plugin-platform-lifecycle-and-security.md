@@ -465,6 +465,29 @@ complete target requirement on its temporary staging filesystem and remaining
 partial bytes on the source filesystem because they may be different volumes.
 These limits are not a global Artifact Store quota.
 
+The Artifact Store has a separate optional hard-quota policy at
+`data/artifacts/storage-quota.acl`. The canonical ACL contains schema version,
+maximum logical physical bytes, and maximum digest containers. Embedding hosts
+read it through `ArtifactStore::storage_quota` and mutate it only with the exact
+reviewed revision through `set_storage_quota` or `clear_storage_quota`. Absence
+means disabled; malformed, linked, empty, non-canonical, or oversized policy
+state fails publication closed.
+
+Every global publication takes locks in this order: shared reference admission,
+global storage quota boundary, then the exact digest mutation lock. A disabled
+policy keeps the storage lock shared, so independent publications remain
+concurrent. An enabled policy upgrades to an exclusive cross-process lock,
+rescans canonical content and abandoned staging, projects the exact prepared
+write, reclaims same-digest staging under the subordinate lock, and retains the
+global lock through atomic publication. Bytes are logical regular-file lengths,
+not allocated blocks. Expanded packages carry their prepared byte/file
+fingerprint into a bounded exact copy, so a changed source cannot transiently
+stage more than admitted. If current usage already exceeds a newly tightened
+policy, only writes that do not worsen either exceeded dimension are accepted;
+this preserves exact replay and cleanup. The design serializes policy-enabled
+publication for correctness instead of maintaining a parallel reservation
+ledger.
+
 Each resumable partial is opened without following its final component and the
 same handle remains authoritative through append, checkpoint, verification,
 and global blob commit. The global blob is reopened and rehashed, then retained
@@ -496,9 +519,9 @@ are not offline evidence and never authorize package staging. Global reference
 inventory now covers Registry observations plus every installation and durable
 reference-bearing operation. The joined view adds physical evidence, checked
 usage, and bounded quota assessment under the same guarded collection pass.
-Concurrent retirement may leave conservative extra owners. Hard
-quota admission, confirmed GC, audit, quarantine, and verified rehydration
-remain release work.
+Concurrent retirement may leave conservative extra owners. Hard quota
+admission now covers both global publication paths; confirmed GC, audit,
+quarantine, and verified rehydration remain release work.
 
 A real-process failure test terminates installation after the complete target
 has entered the verified cache but while a high-entry archive is still being
@@ -723,8 +746,9 @@ checks the canonical manifest, header digest, exact archive length, and every
 concatenated payload digest without extraction, network access, or local state.
 
 The archive contains raw control state and is sensitive operational data. The
-global Artifact Store and Registry/TUF caches are excluded, so restore requires
-the exact live artifacts referenced by retained authority. Its hashes detect
+global Artifact Store, its `storage-quota.acl` resource policy, and Registry/TUF
+caches are excluded, so restore requires the exact live artifacts referenced by
+retained authority. Its hashes detect
 corruption; they do not authenticate a publisher or recreate missing authority.
 `state backup-retention` fully verifies each managed
 archive under the publication directory lock, returns a path-free oldest-first

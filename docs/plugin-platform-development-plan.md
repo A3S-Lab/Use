@@ -453,9 +453,11 @@ Status: pending
 - [x] Join reference and physical inventories in one guarded collection pass,
   conservatively retain owners retired during inspection, derive checked global
   storage usage, and expose bounded quota assessment.
-- Define concurrency-safe hard quota admission, audit, quarantine, verified
-  rehydration, and confirmed GC. Joined evidence and quota assessment grant no
-  deletion authority.
+- [x] Define concurrency-safe hard quota admission for Blob and expanded-package
+  publication through canonical ACL policy, revision CAS, and a serialized
+  cross-process storage boundary. Policy-disabled writers remain concurrent;
+  the joined assessment and admission protocol grant no deletion authority.
+- Define audit, quarantine, verified rehydration, and confirmed GC.
 - Treat the implemented standalone OKF scope quota/GC, integrity audit,
   non-overwriting verified database backup, exact-plan oldest-first backup
   rotation, derived FTS repair, and authority-bound database plus

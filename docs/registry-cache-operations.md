@@ -2,7 +2,7 @@
 
 Status: development preview
 
-Last updated: 2026-08-29
+Last updated: 2026-08-30
 
 ## Boundary
 
@@ -108,8 +108,24 @@ filesystem before copying a completed blob. Source observation deletion can
 release logical policy capacity, but it does not claim to release physical
 Artifact Store space. Global blob references and physical content are joined in
 one guarded collection pass with checked usage and bounded quota assessment;
-reference retirement can leave conservative extra owners. Hard quota admission
-and confirmed cross-source GC remain explicit roadmap items.
+reference retirement can leave conservative extra owners.
+
+An embedding host may enable the global hard ceiling through the Artifact Store
+returned by `UsePaths::artifact_store()`. `storage_quota()` returns the canonical
+policy revision; `set_storage_quota()` and `clear_storage_quota()` require that
+exact reviewed revision. The policy is stored at
+`<data-root>/artifacts/storage-quota.acl` and bounds logical regular-file bytes
+plus digest containers across Blob and expanded-package tiers. It does not count
+Registry partials or source observations, which remain governed by the
+per-source policy above.
+
+Policy-disabled global commits share a cross-process storage lock. A configured
+policy serializes physical scan, exact projection, same-digest staging cleanup,
+and final publication under the exclusive counterpart. Two processes therefore
+cannot spend the same remaining capacity. Tightening below current use stops
+growth but still permits exact replay or cleanup that does not worsen an
+exceeded dimension. This admission does not delete content; confirmed
+cross-source GC remains an explicit roadmap item.
 
 Interrupted downloads are retained as
 `.target-<sha256>.part`. The partial must be a bounded regular file and its
@@ -272,6 +288,10 @@ source-mismatched cache state fails closed.
 | `use.extension.registry_target_cache_invalid` | Quarantine the Registry datastore and investigate unexpected or tampered entries. |
 | `use.artifact_store.blob_invalid` | Quarantine the digest path and preserve it for investigation; do not overwrite it in place. Rehydrate only through an explicit verified repair workflow. |
 | `use.artifact_store.ownership_invalid` | Inspect the Artifact Store directory chain for links, reparse points, or unexpected ownership changes. |
+| `use.artifact_store.quota_exceeded` | Review current/projected logical bytes and containers. Increase the global policy through revision CAS or complete a future confirmed global cleanup before retrying. |
+| `use.artifact_store.quota_config_invalid` | Stop publishers, preserve the malformed `storage-quota.acl` or staging file outside the store for incident review, remove only that proven invalid state, then recreate policy through the typed API. |
+| `use.artifact_store.quota_revision_conflict` | Read the current policy and review the mutation again; never retry a stale change blindly. |
+| `use.artifact_store.quota_busy` | Retry after the active global artifact publication or policy change releases the storage boundary. |
 | `use.extension.catalog_cache_invalid` | Quarantine the affected identity datastore. Restore a verified backup of that exact source identity, or replace the source and repopulate its isolated new datastore. |
 | `use.extension.registry_sources_busy` | Retry after the process changing Registry source configuration releases the source lock. |
 | `use.extension.registry_sources_revision_mismatch` | List sources again, review the new revision, and retry the confirmed mutation. |

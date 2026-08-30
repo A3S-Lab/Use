@@ -8,7 +8,7 @@ use url::Url;
 use super::digest::package_fingerprint;
 #[cfg(windows)]
 use super::package::copy_package;
-use super::package::{read_manifest, validate_surface_files};
+use super::package::{copy_package_exact, read_manifest, validate_surface_files};
 use super::remote::test_support::{package_directory_archive, TestRepository, TestServer, FUTURE};
 use super::source::prepare_package_source;
 use super::{
@@ -75,6 +75,59 @@ const OKF_FILES: &[(&str, &[u8])] = &[
         include_bytes!("../../core/fixtures/okf/bundle-v02/references/run-revenue.md"),
     ),
 ];
+
+#[tokio::test]
+async fn exact_package_copy_never_writes_beyond_the_prepared_measurement() {
+    let temporary = tempdir().unwrap();
+    let source = temporary.path().join("source");
+    let rejected = temporary.path().join("rejected");
+    let accepted = temporary.path().join("accepted");
+    fs::create_dir(&source).await.unwrap();
+    fs::create_dir(source.join("semantically-empty"))
+        .await
+        .unwrap();
+    fs::write(source.join("payload.bin"), b"payload")
+        .await
+        .unwrap();
+
+    let error = copy_package_exact(&source, &rejected, 6, 1)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.package_changed");
+    assert!(!rejected.join("payload.bin").exists());
+
+    copy_package_exact(&source, &accepted, 7, 1).await.unwrap();
+    assert_eq!(
+        fs::read(accepted.join("payload.bin")).await.unwrap(),
+        b"payload"
+    );
+    assert!(!accepted.join("semantically-empty").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn exact_package_copy_preserves_executable_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temporary = tempdir().unwrap();
+    let source = temporary.path().join("source");
+    let target = temporary.path().join("target");
+    let script = source.join("run.sh");
+    fs::create_dir(&source).await.unwrap();
+    fs::write(&script, b"#!/bin/sh\n").await.unwrap();
+    fs::set_permissions(&script, std::fs::Permissions::from_mode(0o751))
+        .await
+        .unwrap();
+
+    copy_package_exact(&source, &target, 10, 1).await.unwrap();
+
+    let mode = fs::metadata(target.join("run.sh"))
+        .await
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o751);
+}
 
 fn canonical_fixture(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\n").unwrap_or(bytes)
