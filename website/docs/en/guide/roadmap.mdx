@@ -76,7 +76,11 @@ versioned authorization record. It derives operation identity, Plan and
 authorization digests, action, root package, installation scope, and generation
 cursors from that evidence and checks every relational projection after restart
 and in offline export or restore. Installation, desired package-state, and
-immutable package-lifecycle generations remain independent. Canonical typed
+immutable package-lifecycle generations remain independent. The complete next
+snapshot and both package generation axes are deterministically projected from
+the reviewed Plan, exact prior generation, and bounded committed history.
+Commit, offline export, and restore reject caller-selected divergence across
+all five actions, shared roots, and uninstall/reinstall. Canonical typed
 effect payloads bind the installation, reviewed plan, operation action,
 provider, artifact digests, and exact package or surface incarnation. One graph
 effect instead binds the complete target installation and capability
@@ -87,7 +91,8 @@ Grants, provider bindings, capability history, explicit unknown/expired-claim
 reconciliation, deterministic offline-verifiable export, and clean staged
 restore. Production lifecycle code does not construct it. External
 artifact/projection payload ownership, the complete crash matrix, deterministic
-lifecycle conversion, backup/restore and reachability integration, and the
+lifecycle conversion of Grants, bindings, capability descriptors, and effect
+intents, backup/restore and reachability integration, and the
 coordinated authority cutover remain open; no A2 roadmap item is complete yet.
 
 ## Implemented baseline

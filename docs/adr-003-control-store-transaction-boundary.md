@@ -218,10 +218,16 @@ scope, and generation cursors are revalidated against relational projections
 after restart, in deterministic export verification, and during staged restore.
 Installation generation, desired
 package-state generation, and immutable package-lifecycle generation remain
-separate. Canonical effect payloads bind scope, plan, action, provider, artifact
-digests, subject, and capability identity; their bytes and digest are committed
-with a relational projection. Package and surface foreign keys bind the exact
-current or immediately prior incarnation, while one installation-scoped graph
+separate. A deterministic projection derives the complete next snapshot and
+both package generation axes from the canonical reviewed Plan, exact prior
+generation, and bounded committed history. The same projection runs before a
+database commit and during offline export or restore verification; it covers
+all lifecycle actions, shared dependencies across roots, and removal followed
+by reinstall without reusing lifecycle identity. Canonical effect payloads bind
+scope, plan, action, provider, artifact digests, subject, and capability
+identity; their bytes and digest are committed with a relational projection.
+Package and surface foreign keys bind the exact current or immediately prior
+incarnation, while one installation-scoped graph
 effect represents the real atomic capability cutover. Typed transactions
 enforce cursor compare-and-swap, root/action semantics, exact replay,
 required-effect failure,
@@ -245,7 +251,8 @@ The kernel remains private and no production lifecycle constructs it. It does
 not yet register external artifact/projection payload owners or participate in
 live state-layout, reachability, diagnostics, backup, or restore orchestration.
 Existing JSON stores remain the only production authority. Deterministic
-lifecycle conversion, the full process-exit matrix, the indivisible
+lifecycle conversion of complete Grants, provider bindings, capability
+descriptors, and effect intents, the full process-exit matrix, the indivisible
 reader/writer cutover, and deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.

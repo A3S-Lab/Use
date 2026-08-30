@@ -18,8 +18,9 @@ use sha2::{Digest, Sha256};
 use super::model::{
     ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
     ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectStatus,
-    ControlEffectSubject, ControlGrantSelection, ControlOperationStatus, ControlPackageLifecycle,
-    ControlProviderBinding, ControlTransition, ReviewedControlOperation,
+    ControlEffectSubject, ControlGeneration, ControlGrantSelection, ControlOperationStatus,
+    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderBinding, ControlTransition,
+    ProjectedControlGeneration, ReviewedControlOperation,
 };
 use super::*;
 use crate::plugin_lifecycle::PluginLifecycleAction;
@@ -28,6 +29,7 @@ mod fixtures;
 mod generations;
 mod operations;
 mod payloads;
+mod projections;
 
 use fixtures::*;
 
@@ -418,8 +420,11 @@ async fn required_rejection_is_terminal_and_cannot_publish_capabilities() {
         .register_operation(compensating.clone())
         .await
         .unwrap();
+    let prior = store.current_generation().await.unwrap().unwrap();
+    let mut history = ControlProjectionHistory::default();
+    history.observe(&prior).unwrap();
     let committed = store
-        .commit_transition(transition(control_installation(), &compensating))
+        .commit_transition(projected_transition(&compensating, &prior, &history))
         .await
         .unwrap();
     assert_eq!(committed.snapshot.generation, 2);
@@ -469,6 +474,18 @@ async fn authority_export_is_complete_and_semantically_verified_offline() {
     let mut tampered: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     tampered["authority"]["generations"][0]["packageLifecycles"][0]["lifecycleGeneration"] =
         serde_json::json!(42);
+    let error = store
+        .verify_export(canonical_json(&tampered))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.control_store.export_invalid");
+
+    let mut tampered: super::export::ControlStoreExport = serde_json::from_slice(&bytes).unwrap();
+    tampered.authority.generations[0].snapshot.packages[0].state_generation = 42;
+    tampered.authority.generations[0].snapshot_digest = tampered.authority.generations[0]
+        .snapshot
+        .descriptor_digest()
+        .unwrap();
     let error = store
         .verify_export(canonical_json(&tampered))
         .await

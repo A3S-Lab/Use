@@ -1,5 +1,56 @@
 use super::*;
 
+pub(super) fn read_projection_history(
+    connection: &Connection,
+    through_generation: u64,
+) -> UseResult<ControlProjectionHistory> {
+    let last_lifecycle_generation = from_i64(
+        connection
+            .query_row(
+                "SELECT COALESCE(MAX(lifecycle_generation), 0)
+                 FROM selected_package WHERE generation <= ?1",
+                [to_i64(through_generation)?],
+                |row| row.get(0),
+            )
+            .map_err(|error| schema::sqlite_error("read Control Store lifecycle history", error))?,
+    )?;
+    let mut statement = connection
+        .prepare(
+            "SELECT package_id, MAX(state_generation)
+             FROM selected_package
+             WHERE generation <= ?1
+             GROUP BY package_id
+             ORDER BY package_id
+             LIMIT ?2",
+        )
+        .map_err(|error| schema::sqlite_error("prepare package state history", error))?;
+    let limit = i64::try_from(super::MAX_CONTROL_HISTORY_PACKAGES)
+        .ok()
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| corruption_error("The package history bound is invalid."))?;
+    let rows = statement
+        .query_map(params![to_i64(through_generation)?, limit], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(|error| schema::sqlite_error("query package state history", error))?;
+    let mut package_state_generations = std::collections::BTreeMap::new();
+    for row in rows {
+        let (package_id, generation) =
+            row.map_err(|error| schema::sqlite_error("read package state history", error))?;
+        if package_state_generations.len() >= super::MAX_CONTROL_HISTORY_PACKAGES
+            || package_state_generations
+                .insert(package_id, from_i64(generation)?)
+                .is_some()
+        {
+            return Err(corruption_error(
+                "The Control Store package state history is duplicated or exceeds its bound.",
+            ));
+        }
+    }
+    ControlProjectionHistory::new(last_lifecycle_generation, package_state_generations)
+        .map_err(|_| corruption_error("The Control Store package state history is invalid."))
+}
+
 pub(super) fn insert_generation(
     transaction: &Transaction<'_>,
     transition: &ControlTransition,

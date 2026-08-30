@@ -8,10 +8,12 @@ use serde::{Deserialize, Serialize};
 mod effect;
 mod effect_state;
 mod operation;
+mod projection;
 
 pub(super) use effect::*;
 pub(super) use effect_state::*;
 pub(super) use operation::*;
+pub(super) use projection::*;
 
 pub(super) const MAX_CONTROL_EFFECTS: usize = 4096;
 pub(super) const MAX_CONTROL_GRANTS: usize = 4096;
@@ -277,6 +279,26 @@ impl ControlTransition {
         if payload_bytes > MAX_CONTROL_EFFECT_PAYLOAD_TOTAL_BYTES {
             return Err(input_error(
                 "The Control Store effect payload sequence exceeds its total byte bound.",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Recompute caller-supplied graph and package generation fields from the
+    /// reviewed operation and committed history. A transition is admissible
+    /// only when both projections are byte-for-byte equal.
+    pub(super) fn validate_projection(
+        &self,
+        operation: &ReviewedControlOperation,
+        prior: Option<&ControlGeneration>,
+        history: &ControlProjectionHistory,
+    ) -> UseResult<()> {
+        let projected = operation.project_generation(prior, history, self.committed_at_ms)?;
+        if self.snapshot != projected.snapshot
+            || self.package_lifecycles != projected.package_lifecycles
+        {
+            return Err(input_error(
+                "The Control Store transition differs from the deterministic reviewed projection.",
             ));
         }
         Ok(())

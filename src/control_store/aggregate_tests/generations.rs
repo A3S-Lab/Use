@@ -3,6 +3,7 @@ use super::*;
 #[tokio::test]
 async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
     let (_temporary, store) = initialized_store().await;
+    let mut projection_history = ControlProjectionHistory::default();
 
     let install = operation_at(
         "operation:lifecycle:install",
@@ -11,10 +12,11 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         0,
     );
     store.register_operation(install.clone()).await.unwrap();
-    store
+    let installed = store
         .commit_transition(transition(control_installation(), &install))
         .await
         .unwrap();
+    projection_history.observe(&installed).unwrap();
     apply_all_effects(&store, &install, 30).await;
 
     let disable = operation_at(
@@ -24,8 +26,7 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         1,
     );
     store.register_operation(disable.clone()).await.unwrap();
-    let mut disabled = transition(control_installation(), &disable);
-    disabled.snapshot.packages[0].enabled = false;
+    let mut disabled = projected_transition(&disable, &installed, &projection_history);
     disabled.grants.clear();
     disabled.bindings.clear();
     let package_subject = disabled.effects[0].subject.clone();
@@ -33,7 +34,8 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
     disabled.effects[0].subject = capability_subject(&disable);
     disabled.effects[1].kind = ControlEffectKind::GrantRevoke;
     disabled.effects[1].subject = package_subject;
-    store.commit_transition(disabled).await.unwrap();
+    let disabled_generation = store.commit_transition(disabled).await.unwrap();
+    projection_history.observe(&disabled_generation).unwrap();
     apply_all_effects(&store, &disable, 230).await;
 
     let enable = operation_at(
@@ -43,10 +45,11 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         2,
     );
     store.register_operation(enable.clone()).await.unwrap();
-    let mut enabled = transition(control_installation(), &enable);
+    let mut enabled = projected_transition(&enable, &disabled_generation, &projection_history);
     enabled.effects[0].kind = ControlEffectKind::GrantApply;
     enabled.effects[1].kind = ControlEffectKind::CapabilityPublish;
-    store.commit_transition(enabled).await.unwrap();
+    let enabled_generation = store.commit_transition(enabled).await.unwrap();
+    projection_history.observe(&enabled_generation).unwrap();
     apply_all_effects(&store, &enable, 430).await;
 
     let uninstall = operation_at(
@@ -56,25 +59,15 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         3,
     );
     store.register_operation(uninstall.clone()).await.unwrap();
-    let mut removed = transition(control_installation(), &uninstall);
-    removed.snapshot = InstallationSnapshot::from_root_locks(
-        control_installation(),
-        4,
-        removed.snapshot.host.clone(),
-        Vec::new(),
-        Vec::new(),
-    )
-    .unwrap();
-    removed.package_lifecycles.clear();
-    removed.grants.clear();
-    removed.bindings.clear();
+    let mut removed = projected_transition(&uninstall, &enabled_generation, &projection_history);
     let package_subject = removed.effects[0].subject.clone();
     removed.effects[0].kind = ControlEffectKind::CapabilityHide;
     removed.effects[0].subject = capability_subject(&uninstall);
     removed.effects[1].kind = ControlEffectKind::PackageRemove;
     removed.effects[1].installation_generation = 3;
     removed.effects[1].subject = package_subject;
-    store.commit_transition(removed).await.unwrap();
+    let removed_generation = store.commit_transition(removed).await.unwrap();
+    projection_history.observe(&removed_generation).unwrap();
     apply_all_effects(&store, &uninstall, 630).await;
 
     let inspection = store.inspect().await.unwrap();
@@ -90,7 +83,7 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
             .iter()
             .map(|generation| generation.package_lifecycles[0].lifecycle_generation)
             .collect::<Vec<_>>(),
-        vec![41, 41, 41]
+        vec![1, 1, 1]
     );
     assert_eq!(
         export.export.authority.generations[..3]
@@ -217,27 +210,23 @@ async fn invalid_effect_generation_references_roll_back_the_whole_transition() {
 }
 
 #[tokio::test]
-async fn package_lifecycle_generation_is_independent_of_installation_and_state_generations() {
+async fn caller_cannot_choose_package_state_or_lifecycle_generations() {
     let (_temporary, store) = initialized_store().await;
     let reviewed = operation("operation:independent-package-generation:1");
     store.register_operation(reviewed.clone()).await.unwrap();
 
     let mut candidate = transition(control_installation(), &reviewed);
     candidate.snapshot.packages[0].state_generation = 7;
-    let committed = store.commit_transition(candidate).await.unwrap();
-    assert_eq!(committed.snapshot.generation, 1);
-    assert_eq!(committed.snapshot.packages[0].state_generation, 7);
-    assert!(store
-        .effects(reviewed.operation_id())
-        .await
-        .unwrap()
-        .iter()
-        .all(|effect| {
-            effect.intent.installation_generation == 1
-                && effect
-                    .intent
-                    .subject
-                    .package_identity()
-                    .is_none_or(|(_, generation)| generation == 41)
-        }));
+    assert_eq!(
+        store.commit_transition(candidate).await.unwrap_err().code,
+        "use.control_store.input_invalid"
+    );
+
+    let mut candidate = transition(control_installation(), &reviewed);
+    candidate.package_lifecycles[0].lifecycle_generation = 7;
+    assert_eq!(
+        store.commit_transition(candidate).await.unwrap_err().code,
+        "use.control_store.input_invalid"
+    );
+    assert!(store.current_generation().await.unwrap().is_none());
 }

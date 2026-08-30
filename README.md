@@ -1278,7 +1278,13 @@ and versioned authorization evidence, then derives and revalidates its operation
 ID, Plan and authorization digests, action, root package, installation scope,
 and generation cursors against relational projections after restart and during
 offline export verification. Installation generation, desired package-state
-generation, and immutable package-lifecycle generation are independent.
+generation, and immutable package-lifecycle generation are independent. Before
+commit, the kernel reconstructs the complete target snapshot and both package
+generation axes from the reviewed Plan, exact prior generation, and bounded
+committed history. All five actions, multi-root shared dependencies, and
+uninstall/reinstall therefore reject caller-selected package generation
+identities. The offline export and restore verifier runs the same projection
+again.
 Canonical typed effect payloads bind installation, reviewed plan, operation
 action, provider, exact artifact identity, and package or surface incarnation;
 graph capability publish/hide instead bind the complete target installation and
@@ -1288,9 +1294,10 @@ also qualifies typed generation transitions, full Grant and binding evidence,
 idempotent outbox reconciliation, bounded execution, corruption checks, and
 deterministic offline-verifiable export plus staged restore. It is not
 constructed by production lifecycle code and does not create a second
-authority beside the current JSON stores. Deterministic lifecycle conversion,
-the external artifact/projection payload-owner registry, and the coordinated
-authority cutover remain open.
+authority beside the current JSON stores. Deterministic lifecycle conversion
+still must derive complete Grant, provider-binding, capability-descriptor, and
+effect-intent inventories. The external artifact/projection payload-owner
+registry and coordinated authority cutover also remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.
