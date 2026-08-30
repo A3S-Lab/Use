@@ -70,12 +70,15 @@ is activated, but it must never mirror the current JSON authority; graph,
 operation, Grant, enablement, binding, capability, reachability, diagnostic,
 backup, and restore readers switch together.
 
-The checked-in Control Store kernel is deliberately inactive. It currently
-qualifies exact installation identity, SQLite/WAL durability and integrity,
-one bounded blocking worker, and deterministic offline-verifiable export on
-otherwise clean state. Production lifecycle code does not construct it, and
-the aggregate schema, outbox, backup/restore integration, crash matrix, and
-coordinated authority cutover remain open; no A2 roadmap item is complete yet.
+The checked-in Control Store kernel is deliberately inactive. Its clean-state
+schema-v2 aggregate now qualifies exact generations, reviewed root-package
+operations, snapshots, full Grants, provider bindings, capability history, an
+idempotent outbox, explicit unknown/expired-claim reconciliation across
+restart, deterministic offline-verifiable export, and clean staged restore.
+Production lifecycle code does not construct it. External-payload ownership,
+the complete crash matrix, lifecycle conversion, backup/restore and
+reachability integration, and the coordinated authority cutover remain open;
+no A2 roadmap item is complete yet.
 
 ## Implemented baseline
 

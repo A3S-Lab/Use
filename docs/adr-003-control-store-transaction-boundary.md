@@ -201,21 +201,34 @@ to a committed transaction plus explicit external-effect observations.
 
 ### Current qualification status
 
-The checked-in inactive kernel implements the clean-state foundation of step
-2, not the authority cutover. It binds schema v1 to one exact installation,
-uses WAL with full synchronous durability and foreign-key enforcement, rejects
-unknown schema or filesystem state, and serializes blocking work through one
-16-entry bounded worker. It also produces a bounded canonical export whose
-identity and digest can be verified without the live database, with tests for
-determinism, corruption, path substitution, and concurrent async callers.
+The checked-in inactive kernel implements most of the local Control Store work
+in step 2, not the authority cutover. Schema v2 binds one exact installation
+and stores the complete generation history, reviewed root-package operations,
+exact installation snapshots and relational graph projections, canonical full
+Workspace Grants, provider bindings, capability publication states, lifecycle
+checkpoints, and effect outbox observations. Typed transactions enforce cursor
+compare-and-swap, root/action semantics, exact replay, required-effect failure,
+and capability retirement. Expired or explicitly unknown claims require an
+explicit reconciliation request and retain the same effect idempotency key,
+including after process restart.
 
-The kernel is private and no production lifecycle constructs it. The schema
-contains only installation identity and generation zero; it does not yet hold
-the package-control aggregate, outbox, or external payload inventory. Existing
-JSON authorities remain the only production authority, and state-layout,
-backup, restore, and reachability code intentionally do not accept
-`control.sqlite3`. Activating or mirroring this partial schema would violate
-this decision.
+The kernel uses WAL with full synchronous durability and foreign-key
+enforcement, rejects unknown schema or filesystem state, and serializes
+blocking work through one 16-entry bounded worker. Its size-bounded canonical
+export contains the full aggregate, performs semantic verification without the
+live database, and can be restored only through a clean staged database whose
+authority must round-trip exactly. Tests cover atomic rollback, concurrent
+generation races, corruption and relational drift, linked-path substitution,
+multi-generation capability history, outbox ambiguity, deterministic export,
+and staged restore.
+
+The kernel remains private and no production lifecycle constructs it. It does
+not yet register external payload owners or participate in live state-layout,
+reachability, diagnostics, backup, or restore orchestration. Existing JSON
+stores remain the only production authority. Lifecycle conversion, the full
+process-exit matrix, the indivisible reader/writer cutover, and deletion of
+legacy mutable stores remain open; activating or mirroring the kernel before
+that coordinated change would violate this decision.
 
 ## Consequences
 

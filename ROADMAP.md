@@ -483,16 +483,25 @@ boundary; it does not complete an A2 checkbox by itself. Production activation
 must switch the complete mutable control aggregate and its reachability,
 diagnostic, backup, and restore readers together.
 
-The inactive `src/control_store/` kernel now qualifies the storage substrate on
-clean state only: schema v1 binds exactly one `InstallationId`, enables WAL,
-full synchronous durability, foreign keys, and exact-schema/integrity checks,
-and runs all blocking SQLite work through a 16-entry bounded worker. Its
-canonical export is deterministic, installation-bound, size-bounded, and
-verifiable without the live database. Production lifecycle code does not
-construct this kernel, and the current state layout and backup/restore paths do
-not recognize its database. The aggregate schema, typed mutation commands,
-outbox, payload-owner registry, restore path, crash matrix, and indivisible
-authority cutover therefore remain open; no A2 checkbox is complete yet.
+The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
+for a clean installation. Schema v2 binds one exact `InstallationId` and stores
+contiguous installation generations, reviewed root-package operations, exact
+snapshots, full Workspace Grants, provider bindings, capability candidates,
+lifecycle checkpoints, and an idempotent effect outbox behind relational and
+compare-and-swap constraints. Typed commands prove atomic transition rollback,
+action/root-state semantics, terminal replay, required-effect rejection,
+capability retirement, and explicit reconciliation of unknown or expired
+claims across restart. Its bounded canonical export includes the complete
+aggregate, is semantically verifiable without the live database, and supports
+clean-state staged restore with exact authority round-trip. WAL/full durability,
+foreign keys, exact-schema/integrity checks, linked-path rejection, and the
+16-entry bounded worker remain qualified.
+
+Production lifecycle code still does not construct this kernel, and the live
+state layout, reachability, diagnostics, backup, and restore orchestration do
+not accept it. The external-payload owner registry, complete process-exit
+matrix, lifecycle conversion, indivisible consumer cutover, and deletion of
+legacy mutable stores therefore remain open; no A2 checkbox is complete yet.
 
 ### A3 - Deliver the arbitrary-agent capability plane
 
