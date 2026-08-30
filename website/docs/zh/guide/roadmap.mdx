@@ -70,7 +70,10 @@ diagnostic、backup 与 restore 的读取方必须一起切换。
 evidence，并从中推导 operation identity、Plan/authorization digest、action、root
 package、installation scope 与 generation cursor；重启、离线导出验证和 staged restore
 都会重新核对这些关系投影。installation generation、期望 package-state generation 与
-immutable package-lifecycle generation 仍彼此独立。规范化类型化 effect payload 会绑定
+immutable package-lifecycle generation 仍彼此独立。完整的下一代 snapshot 与两类
+package generation 现在由 reviewed Plan、精确 prior generation 和有界的已提交历史
+确定性投影得到；commit、离线导出与 restore 会拒绝调用方选择的偏差。该规则覆盖五种
+操作、共享依赖的多根图，以及 uninstall/reinstall。规范化类型化 effect payload 会绑定
 安装、reviewed plan、operation action、provider、工件摘要，以及精确的 package 或
 surface incarnation；单一 graph effect 则绑定完整的目标安装与 capability generation。
 payload 字节、digest 与关系投影在同一事务提交；claim 与 completion 会在重启后把它们
@@ -78,7 +81,8 @@ payload 字节、digest 与关系投影在同一事务提交；claim 与 complet
 snapshot、完整 Grant、provider binding、capability history、跨重启的
 unknown/expired claim 显式 reconciliation、可离线验证的确定性导出，以及 clean staged
 restore。生产 lifecycle 代码仍不会构造它；外部 artifact/projection payload ownership、
-完整崩溃矩阵、确定性 lifecycle 转换、backup/restore 与 reachability 集成，以及协调一致
+完整崩溃矩阵、完整 Grant、binding、capability descriptor 与 effect intent 的确定性
+lifecycle 转换、backup/restore 与 reachability 集成，以及协调一致
 的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线

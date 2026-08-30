@@ -105,14 +105,19 @@ and canonical offline-verifiable export plus staged restore on otherwise clean
 state. It persists each complete canonical reviewed Plan envelope and versioned
 authorization record, while relational columns remain validated projections of
 that evidence. It distinguishes installation generation, package desired-state
-generation, and immutable package-lifecycle generation. Package and surface
+generation, and immutable package-lifecycle generation. The next snapshot and
+both package generation axes are a pure function of the reviewed Plan, exact
+prior generation, and bounded committed history; database commit, offline
+export, and restore reject caller-selected divergence, including shared-root
+or reinstall identity reuse. Package and surface
 effects bind exact artifact incarnations, while one graph capability effect
 binds the complete target installation/capability generation; canonical
 payload bytes, their digest, and their relational projection commit together.
 Production lifecycle code does not construct
-it, so it neither mirrors nor replaces the current JSON authority; lifecycle
-conversion, external-payload ownership, and the coordinated reader/writer
-cutover remain A2 work.
+it, so it neither mirrors nor replaces the current JSON authority. Lifecycle
+conversion still must derive complete Grant, binding, capability, and effect
+inventories. External-payload ownership and the coordinated reader/writer
+cutover also remain A2 work.
 
 Snapshot v2 gives every selected package one monotonic state generation,
 desired enablement bit, and exact selected-surface closure. Enable/disable

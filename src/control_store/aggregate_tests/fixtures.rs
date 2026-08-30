@@ -361,24 +361,116 @@ pub(super) fn transition(
     installation: InstallationId,
     reviewed: &ReviewedControlOperation,
 ) -> ControlTransition {
-    let snapshot = snapshot(installation.clone(), reviewed.target_generation().unwrap());
-    let package = &snapshot.packages[0];
-    let package_id = package.package_id().to_string();
-    let surface = package.selected_surfaces[0].clone();
-    let mut grant = PluginWorkspaceGrant::from_json(GRANT).unwrap();
-    grant.package_digest = package
-        .package
-        .catalog
-        .record
-        .package
-        .sha256
-        .clone()
+    let committed_at_ms = reviewed.reviewed_at_ms + 10;
+    let (snapshot, package_lifecycles) = if reviewed.action() == PluginOperationAction::Install
+        && reviewed.expected_generation == 0
+    {
+        let projected = reviewed
+            .project_generation(None, &ControlProjectionHistory::default(), committed_at_ms)
+            .unwrap();
+        (projected.snapshot, projected.package_lifecycles)
+    } else {
+        let snapshot = snapshot(installation.clone(), reviewed.target_generation().unwrap());
+        let package_id = snapshot.packages[0].package_id().to_string();
+        (
+            snapshot,
+            vec![ControlPackageLifecycle {
+                package_id,
+                lifecycle_generation: 41,
+            }],
+        )
+    };
+    transition_from_projection(
+        installation,
+        reviewed,
+        snapshot,
+        package_lifecycles,
+        None,
+        committed_at_ms,
+    )
+}
+
+pub(super) fn projected_transition(
+    reviewed: &ReviewedControlOperation,
+    prior: &ControlGeneration,
+    history: &ControlProjectionHistory,
+) -> ControlTransition {
+    let committed_at_ms = reviewed.reviewed_at_ms + 10;
+    let projected = reviewed
+        .project_generation(Some(prior), history, committed_at_ms)
         .unwrap();
-    let grant_digest = grant.descriptor_digest().unwrap();
+    transition_from_projection(
+        control_installation(),
+        reviewed,
+        projected.snapshot,
+        projected.package_lifecycles,
+        Some(prior),
+        committed_at_ms,
+    )
+}
+
+fn transition_from_projection(
+    installation: InstallationId,
+    reviewed: &ReviewedControlOperation,
+    snapshot: InstallationSnapshot,
+    package_lifecycles: Vec<ControlPackageLifecycle>,
+    prior: Option<&ControlGeneration>,
+    committed_at_ms: u64,
+) -> ControlTransition {
+    let subject_package = snapshot
+        .package_selection(reviewed.root_package_id())
+        .or_else(|| {
+            prior.and_then(|generation| {
+                generation
+                    .snapshot
+                    .package_selection(reviewed.root_package_id())
+            })
+        })
+        .unwrap();
+    let package_id = subject_package.package_id().to_string();
+    let lifecycle_generation = package_lifecycles
+        .iter()
+        .find(|lifecycle| lifecycle.package_id == package_id)
+        .or_else(|| {
+            prior.and_then(|generation| {
+                generation
+                    .package_lifecycles
+                    .iter()
+                    .find(|lifecycle| lifecycle.package_id == package_id)
+            })
+        })
+        .unwrap()
+        .lifecycle_generation;
+    let target_package = snapshot.package_selection(&package_id);
+    let mut grants = Vec::new();
+    let mut bindings = Vec::new();
+    if let Some(package) = target_package {
+        let surface = package.selected_surfaces[0].clone();
+        let mut grant = PluginWorkspaceGrant::from_json(GRANT).unwrap();
+        grant.package_digest = package
+            .package
+            .catalog
+            .record
+            .package
+            .sha256
+            .clone()
+            .unwrap();
+        let grant_digest = grant.descriptor_digest().unwrap();
+        grants.push(ControlGrantSelection {
+            grant,
+            grant_digest,
+        });
+        bindings.push(ControlProviderBinding {
+            package_id: package_id.clone(),
+            surface,
+            provider_id: "provider:test".to_string(),
+            binding_digest: digest('4'),
+        });
+    }
     let package_subject = ControlEffectSubject::Package {
         package_id: package_id.clone(),
-        lifecycle_generation: 41,
-        package_digest: package
+        lifecycle_generation,
+        package_digest: subject_package
             .package
             .catalog
             .record
@@ -386,7 +478,7 @@ pub(super) fn transition(
             .sha256
             .clone()
             .unwrap(),
-        manifest_digest: package
+        manifest_digest: subject_package
             .package
             .catalog
             .record
@@ -400,20 +492,9 @@ pub(super) fn transition(
         operation_id: reviewed.operation_id().to_string(),
         plan_digest: reviewed.plan_digest().to_string(),
         snapshot,
-        package_lifecycles: vec![ControlPackageLifecycle {
-            package_id: package_id.clone(),
-            lifecycle_generation: 41,
-        }],
-        grants: vec![ControlGrantSelection {
-            grant,
-            grant_digest,
-        }],
-        bindings: vec![ControlProviderBinding {
-            package_id: package_id.clone(),
-            surface,
-            provider_id: "provider:test".to_string(),
-            binding_digest: digest('4'),
-        }],
+        package_lifecycles,
+        grants,
+        bindings,
         capability: ControlCapabilitySelection {
             generation: reviewed.target_capability_generation().unwrap(),
             descriptor_digest: digest('5'),
@@ -444,7 +525,7 @@ pub(super) fn transition(
                 required: false,
             },
         ],
-        committed_at_ms: reviewed.reviewed_at_ms + 10,
+        committed_at_ms,
     }
 }
 

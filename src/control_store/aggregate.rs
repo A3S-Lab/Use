@@ -17,8 +17,9 @@ use super::model::{
     ControlEffectClaim, ControlEffectIntent, ControlEffectKind, ControlEffectObservation,
     ControlEffectOutcome, ControlEffectRecord, ControlEffectStatus, ControlEffectSubject,
     ControlGeneration, ControlGrantSelection, ControlOperationRecord, ControlOperationStatus,
-    ControlPackageLifecycle, ControlProviderBinding, ControlStoreAuthority, ControlTransition,
-    ReviewedControlOperation,
+    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderBinding,
+    ControlStoreAuthority, ControlTransition, ReviewedControlOperation,
+    MAX_CONTROL_HISTORY_PACKAGES,
 };
 use super::schema;
 
@@ -26,7 +27,7 @@ mod generation;
 mod read;
 mod restore;
 
-use generation::insert_generation;
+use generation::{insert_generation, read_projection_history};
 use read::*;
 pub(super) use restore::restore_export;
 
@@ -173,6 +174,9 @@ pub(super) fn commit_transition(
             .ok_or_else(|| corruption_error("The prior Control Store generation is missing."))?,
         )
     };
+    let projection_history =
+        read_projection_history(&transaction, operation.reviewed.expected_generation)?;
+    transition.validate_projection(&operation.reviewed, prior.as_ref(), &projection_history)?;
     operation.reviewed.validate_snapshot_transition(
         prior.as_ref().map(|generation| &generation.snapshot),
         &transition.snapshot,

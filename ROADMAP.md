@@ -494,7 +494,13 @@ digests, action, root package, installation scope, and generation cursors are
 derived and revalidated against relational projections after restart, in
 offline export verification, and during staged restore. Selected packages now
 keep immutable lifecycle generation separate from installation generation and
-desired-state generation.
+desired-state generation. A pure projection derives the complete next
+snapshot, per-package desired-state generations, and globally monotonic
+lifecycle incarnations from the exact reviewed Plan, prior generation, and
+bounded committed history. Database commit, offline export verification, and
+staged restore all recompute it. The projection covers all five actions,
+multiple roots sharing a dependency, and removal followed by reinstall without
+reusing a package identity; callers can no longer select these fields.
 Canonical typed effect payloads bind the installation, plan, action, provider,
 artifact digests, and exact package or surface lifecycle incarnation. Atomic
 graph capability publish/hide effects instead bind the complete target
@@ -515,8 +521,9 @@ foreign keys, exact-schema/integrity checks, linked-path rejection, and the
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
 not accept it. The external artifact/projection payload-owner registry,
-complete process-exit matrix, deterministic lifecycle conversion, indivisible
-consumer cutover, and deletion of legacy mutable stores therefore remain open;
+complete process-exit matrix, deterministic lifecycle conversion of Grants,
+bindings, capability descriptors, and outbox intents, indivisible consumer
+cutover, and deletion of legacy mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

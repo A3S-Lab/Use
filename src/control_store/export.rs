@@ -9,7 +9,7 @@ use super::aggregate::validate_operation_record;
 use super::model::{
     corruption_error, valid_machine_id, valid_sha256, ControlCapabilityStatus, ControlEffectRecord,
     ControlEffectStatus, ControlGeneration, ControlOperationRecord, ControlOperationStatus,
-    ControlStoreAuthority, ControlTransition,
+    ControlProjectionHistory, ControlStoreAuthority, ControlTransition,
 };
 use super::schema::{ControlStoreMetadata, CONTROL_STORE_SCHEMA_VERSION};
 
@@ -162,6 +162,7 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
     let mut published_cursor = 0_u64;
     let mut pending_count = 0_usize;
     let mut prior_generation: Option<&ControlGeneration> = None;
+    let mut projection_history = ControlProjectionHistory::default();
     for (index, generation) in export.authority.generations.iter().enumerate() {
         let expected_generation = u64::try_from(index)
             .ok()
@@ -212,12 +213,18 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
             committed_at_ms: generation.committed_at_ms,
         };
         transition.validate(&export.installation, &operation.reviewed)?;
+        transition.validate_projection(
+            &operation.reviewed,
+            prior_generation,
+            &projection_history,
+        )?;
         transition.validate_effect_references(prior_generation)?;
         operation.reviewed.validate_snapshot_transition(
             prior_generation.map(|prior| &prior.snapshot),
             &generation.snapshot,
         )?;
         validate_effect_sequence(operation, &operation_effects)?;
+        projection_history.observe(generation)?;
 
         match operation.status {
             ControlOperationStatus::Completed => {
