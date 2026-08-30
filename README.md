@@ -1269,8 +1269,10 @@ rolls package and Grant candidates back together.
 | A3S Code/OS | Product UX, workspace/session scope, rendering, injected providers | A second package manager |
 
 See [Plugin Platform Architecture](docs/plugin-platform-architecture.md),
-[Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md), and
-[ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md). The research-preview
+[Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md),
+[ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md), and the
+[Control Store transaction boundary](docs/adr-003-control-store-transaction-boundary.md).
+The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.
 
