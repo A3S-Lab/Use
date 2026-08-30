@@ -62,14 +62,17 @@ async fn host_manager_replays_the_full_lifecycle_for_each_scope_kind() {
             kind: PluginSurfaceKind::Skill,
             id: "main".to_owned(),
         }];
-        let context = LifecycleContext {
+        let context = HostLifecycleContext {
             host: &host,
             scope: &scope,
             capabilities_digest: &capabilities_digest,
             package_id: &package_id,
+            search_query: LIFECYCLE_ROUTE,
+            surface_kind: PluginSurfaceKind::Skill,
+            registry_access: CognitiveRegistryAccess::Refreshed,
         };
 
-        let (install_request, install_plan, install_apply) = lifecycle_release_operation(
+        let (install_request, install_plan, install_apply) = host_lifecycle_release_operation(
             &context,
             PluginOperationAction::Install,
             "1.0.0",
@@ -107,11 +110,14 @@ async fn host_manager_replays_the_full_lifecycle_for_each_scope_kind() {
 
         drop(host);
         let restarted = lifecycle_host(&scope, paths.clone());
-        let restarted_context = LifecycleContext {
+        let restarted_context = HostLifecycleContext {
             host: &restarted,
             scope: &scope,
             capabilities_digest: &capabilities_digest,
             package_id: &package_id,
+            search_query: LIFECYCLE_ROUTE,
+            surface_kind: PluginSurfaceKind::Skill,
+            registry_access: CognitiveRegistryAccess::Refreshed,
         };
         let replayed_install = restarted.apply(install_apply.clone()).await.unwrap();
         assert!(replayed_install.replayed);
@@ -137,7 +143,7 @@ async fn host_manager_replays_the_full_lifecycle_for_each_scope_kind() {
         )
         .await;
 
-        let (upgrade_request, upgrade_plan, upgrade_apply) = lifecycle_release_operation(
+        let (upgrade_request, upgrade_plan, upgrade_apply) = host_lifecycle_release_operation(
             &restarted_context,
             PluginOperationAction::Upgrade,
             "2.0.0",
@@ -171,11 +177,14 @@ async fn host_manager_replays_the_full_lifecycle_for_each_scope_kind() {
 
         drop(restarted);
         let restarted = lifecycle_host(&scope, paths.clone());
-        let restarted_context = LifecycleContext {
+        let restarted_context = HostLifecycleContext {
             host: &restarted,
             scope: &scope,
             capabilities_digest: &capabilities_digest,
             package_id: &package_id,
+            search_query: LIFECYCLE_ROUTE,
+            surface_kind: PluginSurfaceKind::Skill,
+            registry_access: CognitiveRegistryAccess::Refreshed,
         };
         let replayed_upgrade = restarted.apply(upgrade_apply.clone()).await.unwrap();
         assert!(replayed_upgrade.replayed);
@@ -192,15 +201,16 @@ async fn host_manager_replays_the_full_lifecycle_for_each_scope_kind() {
         )
         .await;
 
-        let (uninstall_request, uninstall_plan, uninstall_apply) = lifecycle_release_operation(
-            &restarted_context,
-            PluginOperationAction::Uninstall,
-            "2.0.0",
-            Vec::new(),
-            "uninstall",
-            Some(upgrade_request.package_lock.clone().unwrap()),
-        )
-        .await;
+        let (uninstall_request, uninstall_plan, uninstall_apply) =
+            host_lifecycle_release_operation(
+                &restarted_context,
+                PluginOperationAction::Uninstall,
+                "2.0.0",
+                Vec::new(),
+                "uninstall",
+                Some(upgrade_request.package_lock.clone().unwrap()),
+            )
+            .await;
         assert!(uninstall_request.candidate.is_none());
         assert_scope_kind_substitution_rejected(
             &restarted,
@@ -228,11 +238,14 @@ async fn host_manager_replays_the_full_lifecycle_for_each_scope_kind() {
 
         drop(restarted);
         let restarted = lifecycle_host(&scope, paths);
-        let restarted_context = LifecycleContext {
+        let restarted_context = HostLifecycleContext {
             host: &restarted,
             scope: &scope,
             capabilities_digest: &capabilities_digest,
             package_id: &package_id,
+            search_query: LIFECYCLE_ROUTE,
+            surface_kind: PluginSurfaceKind::Skill,
+            registry_access: CognitiveRegistryAccess::Refreshed,
         };
         let replayed_uninstall = restarted.apply(uninstall_apply).await.unwrap();
         assert!(replayed_uninstall.replayed);
@@ -286,99 +299,6 @@ fn lifecycle_host(
         }),
     )
     .unwrap()
-}
-
-struct LifecycleContext<'a> {
-    host: &'a CognitivePackageHostManager,
-    scope: &'a PluginManagedScope,
-    capabilities_digest: &'a str,
-    package_id: &'a PluginPackageId,
-}
-
-async fn lifecycle_release_operation(
-    context: &LifecycleContext<'_>,
-    action: PluginOperationAction,
-    version: &str,
-    selected_surfaces: Vec<PluginSurfaceRef>,
-    label: &str,
-    prior_lock: Option<a3s_use_core::PluginPackageLock>,
-) -> (
-    PluginHostPlanRequest,
-    a3s_use_core::PluginHostPlanResult,
-    PluginHostApplyRequest,
-) {
-    let (candidate, package_lock) = if action == PluginOperationAction::Uninstall {
-        (None, prior_lock)
-    } else {
-        let candidate = context
-            .host
-            .search_cognitive_packages(
-                CognitiveRegistryAccess::Refreshed,
-                Some("fixture"),
-                &PluginCatalogSearch {
-                    query: LIFECYCLE_ROUTE.to_owned(),
-                    kind: Some(PluginSurfaceKind::Skill),
-                    channel: Some(PluginReleaseChannel::Stable),
-                    publisher: Some("acme".to_owned()),
-                    category: None,
-                    availability: None,
-                    cursor: None,
-                    limit: 20,
-                },
-            )
-            .await
-            .unwrap()
-            .plugins
-            .into_iter()
-            .find(|candidate| candidate.record.version == version)
-            .unwrap_or_else(|| panic!("Registry search omitted {LIFECYCLE_PACKAGE_ID} {version}"));
-        let lock = context
-            .host
-            .resolve_cognitive_package_lock(CognitiveRegistryAccess::Refreshed, &candidate)
-            .await
-            .unwrap();
-        (Some(candidate), Some(lock))
-    };
-    let request = PluginHostPlanRequest {
-        schema: PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_owned(),
-        request_id: format!("plan:scope-kind:{label}"),
-        assignment_generation: 1,
-        capabilities_digest: context.capabilities_digest.to_owned(),
-        scope: context.scope.clone(),
-        action,
-        package_id: context.package_id.clone(),
-        candidate,
-        package_lock,
-        selected_surfaces,
-    };
-    let planned = context
-        .host
-        .plan(request.clone())
-        .await
-        .unwrap_or_else(|error| {
-            panic!(
-                "{0:?} {label} {action:?} planning failed: {error:?}",
-                request.scope.scope_kind
-            )
-        });
-    let apply = PluginHostApplyRequest {
-        schema: PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned(),
-        request_id: format!("apply:scope-kind:{label}"),
-        assignment_generation: request.assignment_generation,
-        capabilities_digest: request.capabilities_digest.clone(),
-        scope: request.scope.clone(),
-        package_id: request.package_id.clone(),
-        operation_id: planned.plan.plan.operation_id.clone(),
-        plan_digest: planned.plan.plan_digest.clone(),
-        confirmation: Some(PluginOperationConfirmation {
-            schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_owned(),
-            operation_id: planned.plan.plan.operation_id.clone(),
-            plan_digest: planned.plan.plan_digest.clone(),
-            confirmed_by: PlanActor::User,
-            confirmed_at_ms: planned.plan.plan.created_at_ms + 1,
-        }),
-    };
-    (request, planned, apply)
 }
 
 async fn assert_scope_kind_substitution_rejected(
@@ -468,7 +388,7 @@ async fn assert_completed_operation(
 }
 
 async fn assert_package_state(
-    context: &LifecycleContext<'_>,
+    context: &HostLifecycleContext<'_>,
     desired: PluginDesiredState,
     observed_state: PluginObservedState,
     version: Option<&str>,

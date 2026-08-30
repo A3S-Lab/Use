@@ -64,6 +64,8 @@ mod host_scope_isolation;
 mod host_scope_lifecycle;
 #[path = "graph_grants/host_six_surface_lifecycle.rs"]
 mod host_six_surface_lifecycle;
+#[path = "graph_grants/host_two_scope_matrix.rs"]
+mod host_two_scope_matrix;
 #[path = "graph_grants/lifecycle.rs"]
 mod lifecycle;
 #[path = "graph_grants/plugin_manager.rs"]
@@ -310,4 +312,108 @@ fn test_authority() -> PlanAuthority {
         policy_digest: POLICY_DIGEST.to_string(),
         confirmation_required: true,
     }
+}
+
+struct HostLifecycleContext<'a> {
+    host: &'a CognitivePackageHostManager,
+    scope: &'a PluginManagedScope,
+    capabilities_digest: &'a str,
+    package_id: &'a PluginPackageId,
+    search_query: &'a str,
+    surface_kind: PluginSurfaceKind,
+    registry_access: CognitiveRegistryAccess,
+}
+
+async fn host_lifecycle_release_operation(
+    context: &HostLifecycleContext<'_>,
+    action: PluginOperationAction,
+    version: &str,
+    selected_surfaces: Vec<PluginSurfaceRef>,
+    label: &str,
+    prior_lock: Option<a3s_use_core::PluginPackageLock>,
+) -> (
+    PluginHostPlanRequest,
+    a3s_use_core::PluginHostPlanResult,
+    PluginHostApplyRequest,
+) {
+    let (candidate, package_lock) = if action == PluginOperationAction::Uninstall {
+        (None, prior_lock)
+    } else {
+        let candidate = context
+            .host
+            .search_cognitive_packages(
+                context.registry_access,
+                Some("fixture"),
+                &PluginCatalogSearch {
+                    query: context.search_query.to_owned(),
+                    kind: Some(context.surface_kind),
+                    channel: Some(PluginReleaseChannel::Stable),
+                    publisher: Some("acme".to_owned()),
+                    category: None,
+                    availability: None,
+                    cursor: None,
+                    limit: 20,
+                },
+            )
+            .await
+            .unwrap()
+            .plugins
+            .into_iter()
+            .find(|candidate| {
+                candidate.record.package_id == context.package_id.as_str()
+                    && candidate.record.version == version
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "Registry search omitted {} {version}",
+                    context.package_id.as_str()
+                )
+            });
+        let lock = context
+            .host
+            .resolve_cognitive_package_lock(context.registry_access, &candidate)
+            .await
+            .unwrap();
+        (Some(candidate), Some(lock))
+    };
+    let request = PluginHostPlanRequest {
+        schema: PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_owned(),
+        request_id: format!("plan:scope-kind:{label}"),
+        assignment_generation: 1,
+        capabilities_digest: context.capabilities_digest.to_owned(),
+        scope: context.scope.clone(),
+        action,
+        package_id: context.package_id.clone(),
+        candidate,
+        package_lock,
+        selected_surfaces,
+    };
+    let planned = context
+        .host
+        .plan(request.clone())
+        .await
+        .unwrap_or_else(|error| {
+            panic!(
+                "{0:?} {label} {action:?} planning failed: {error:?}",
+                request.scope.scope_kind
+            )
+        });
+    let apply = PluginHostApplyRequest {
+        schema: PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned(),
+        request_id: format!("apply:scope-kind:{label}"),
+        assignment_generation: request.assignment_generation,
+        capabilities_digest: request.capabilities_digest.clone(),
+        scope: request.scope.clone(),
+        package_id: request.package_id.clone(),
+        operation_id: planned.plan.plan.operation_id.clone(),
+        plan_digest: planned.plan.plan_digest.clone(),
+        confirmation: Some(PluginOperationConfirmation {
+            schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_owned(),
+            operation_id: planned.plan.plan.operation_id.clone(),
+            plan_digest: planned.plan.plan_digest.clone(),
+            confirmed_by: PlanActor::User,
+            confirmed_at_ms: planned.plan.plan.created_at_ms + 1,
+        }),
+    };
+    (request, planned, apply)
 }

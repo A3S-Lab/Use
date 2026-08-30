@@ -14,6 +14,12 @@ observation 与精确 operation observation、revision-based watch、显式用�
 pre-admission cancellation 分开。这些 projection 只使用 Use 持有的持久化证据，
 不会建立第二套 lifecycle state machine。
 
+A1 验收矩阵让 User 与 Workspace manager 在同一个 Artifact Store 和相同文本
+scope ID 上并存。同一个已签名 OKF package 在两个安装中分别完成 apply、restart、
+精确 snapshot、leased query、upgrade、uninstall 与终态重放。任一操作都保持另一
+安装的 cursor 不变，并确保其已接纳 generation lease 仍可调用：共享不可变字节只是
+优化，绝不是 lifecycle 或 invocation authority。
+
 Use 已在该 Host protocol 之上实现类型化 `PluginManagerService`。标准 MCP
 adapter 只暴露冻结的 10 个 v4 tool，并把每个 operation 委托给同一 service。
 Apply 会重开持久 plan，再向注入的可信 host provider 请求已有 confirmation；

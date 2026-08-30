@@ -81,8 +81,11 @@ package, and only a durable Host outcome reports `Completed`.
   candidate and later references. Confirmed GC now requires a bounded explicit
   target allowlist, fresh all-owner zero-reference proof, exact physical and
   lifecycle evidence, a durable fail-closed deletion fence, same-shard atomic
-  retirement, and read-only terminal replay. The remaining A1 single-snapshot
-  qualification gate stays open.
+  retirement, and read-only terminal replay. The A1 two-installation gate now
+  runs the same signed OKF package through apply, restart, exact snapshots,
+  leased queries, upgrade, uninstall, and terminal replay in concurrent User
+  and Workspace installations with the same textual ID. Each operation leaves
+  the opposite installation cursor unchanged and its admitted lease callable.
 - The bounded resolver freezes one Registry/TUF package lock, prepares
   dependencies forward, publishes one graph snapshot, and retires unused
   packages in reverse.
