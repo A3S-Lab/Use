@@ -327,6 +327,7 @@ fn corruption_error(message: impl Into<String>) -> UseError {
     UseError::new("use.control_store.corrupt", message)
 }
 
+#[cfg(windows)]
 fn path_error(message: impl Into<String>) -> UseError {
     UseError::new("use.control_store.path_invalid", message)
 }
