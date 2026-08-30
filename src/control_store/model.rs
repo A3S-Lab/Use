@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{
-    InstallationId, InstallationKind, InstallationSnapshot, PluginOperationAction,
-    PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrant, UseError, UseResult,
+    InstallationId, InstallationSnapshot, PluginOperationAction, PluginSurfaceKind,
+    PluginSurfaceRef, PluginWorkspaceGrant, UseError, UseResult,
 };
 use serde::{Deserialize, Serialize};
 mod effect;
@@ -73,6 +73,7 @@ pub(super) fn parse_operation_action(value: &str) -> UseResult<PluginOperationAc
 pub(super) struct ControlGrantSelection {
     pub(super) grant: PluginWorkspaceGrant,
     pub(super) grant_digest: String,
+    pub(super) receipt_revision: u64,
 }
 
 impl ControlGrantSelection {
@@ -206,33 +207,7 @@ impl ControlTransition {
             ));
         }
 
-        if (!self.grants.is_empty() && installation.kind != InstallationKind::Workspace)
-            || self
-                .grants
-                .windows(2)
-                .any(|pair| pair[0].package_id() >= pair[1].package_id())
-            || self.grants.iter().any(|grant| {
-                let Some(package) = packages.get(grant.package_id()) else {
-                    return true;
-                };
-                grant.grant.validate().is_err()
-                    || grant.grant.scope_id != installation.id
-                    || !grant
-                        .grant
-                        .descriptor_digest()
-                        .is_ok_and(|digest| digest == grant.grant_digest)
-                    || package.package.catalog.record.package.sha256.as_deref()
-                        != Some(grant.grant.package_digest.as_str())
-                    || grant
-                        .grant
-                        .validate_against(&package.package.catalog.record.permission_ceiling)
-                        .is_err()
-            })
-        {
-            return Err(input_error(
-                "Control Store Grants must be sorted, unique, digest-bound selected packages.",
-            ));
-        }
+        validate_grant_selections(&self.grants, &self.snapshot)?;
 
         let mut prior_binding = None;
         for binding in &self.bindings {
@@ -284,9 +259,9 @@ impl ControlTransition {
         Ok(())
     }
 
-    /// Recompute caller-supplied graph and package generation fields from the
-    /// reviewed operation and committed history. A transition is admissible
-    /// only when both projections are byte-for-byte equal.
+    /// Recompute caller-supplied graph, package-generation, and Grant fields
+    /// from the reviewed operation and committed history. A transition is
+    /// admissible only when every projection is byte-for-byte equal.
     pub(super) fn validate_projection(
         &self,
         operation: &ReviewedControlOperation,
@@ -296,6 +271,7 @@ impl ControlTransition {
         let projected = operation.project_generation(prior, history, self.committed_at_ms)?;
         if self.snapshot != projected.snapshot
             || self.package_lifecycles != projected.package_lifecycles
+            || self.grants != projected.grants
         {
             return Err(input_error(
                 "The Control Store transition differs from the deterministic reviewed projection.",
@@ -349,6 +325,41 @@ impl ControlTransition {
         }
         Ok(())
     }
+}
+
+pub(super) fn validate_grant_selections(
+    grants: &[ControlGrantSelection],
+    snapshot: &InstallationSnapshot,
+) -> UseResult<()> {
+    if grants.len() > MAX_CONTROL_GRANTS
+        || grants
+            .windows(2)
+            .any(|pair| pair[0].package_id() >= pair[1].package_id())
+        || grants.iter().any(|grant| {
+            let Some(package) = snapshot.package_selection(grant.package_id()) else {
+                return true;
+            };
+            grant.grant.validate().is_err()
+                || grant.receipt_revision == 0
+                || grant.receipt_revision > snapshot.generation.saturating_add(1)
+                || grant.grant.scope_id != snapshot.installation.id
+                || !grant
+                    .grant
+                    .descriptor_digest()
+                    .is_ok_and(|digest| digest == grant.grant_digest)
+                || package.package.catalog.record.package.sha256.as_deref()
+                    != Some(grant.grant.package_digest.as_str())
+                || grant
+                    .grant
+                    .validate_against(&package.package.catalog.record.permission_ceiling)
+                    .is_err()
+        })
+    {
+        return Err(input_error(
+            "Control Store Grants must be revisioned, sorted, unique, digest-bound selected packages.",
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

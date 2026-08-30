@@ -8,10 +8,11 @@ use super::resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGra
 use super::validation::{valid_machine_id, valid_package_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPackageChangeKind,
-    PlanPolicyDecision, PlannedPackageState, PlannedPackageTransition, PluginGrantConfirmation,
-    PluginOperationAction, PluginOperationConfirmation, PluginOperationPlan, PluginWorkspaceGrant,
-    PluginWorkspaceGrantProposal, WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS,
-    PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
+    PlanPolicyDecision, PlanScopeKind, PlannedPackageState, PlannedPackageTransition,
+    PluginGrantConfirmation, PluginOperationAction, PluginOperationConfirmation,
+    PluginOperationPlan, PluginWorkspaceGrant, PluginWorkspaceGrantProposal,
+    WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
 const SNAPSHOT_ERROR: &str = "use.plugin.grant_snapshot_invalid";
@@ -388,6 +389,60 @@ impl PluginWorkspaceGrantChangeSet {
     }
 }
 
+impl PluginOperationPlan {
+    /// Return whether this plan requires a Workspace Grant transition while
+    /// validating the canonical absence/presence shape of its workspace
+    /// impact evidence.
+    ///
+    /// This is the shared semantic boundary for planners, persisted lifecycle
+    /// authorization, and the Control Store. Callers must not infer Grant work
+    /// independently from action names or caller-supplied impact digests.
+    pub fn workspace_grant_changes_required(&self) -> UseResult<bool> {
+        self.validate()?;
+        let (enabled_before, enabled_after) = expected_enablement(self.action);
+        let expected = expected_changes(self, enabled_before, enabled_after);
+        let impact = self
+            .workspace_impacts
+            .iter()
+            .find(|impact| impact.scope_id == self.scope.id);
+
+        if expected.is_empty() {
+            let canonical_absence = match self.scope.kind {
+                PlanScopeKind::User => self.workspace_impacts.is_empty(),
+                PlanScopeKind::Workspace => matches!(
+                    self.workspace_impacts.as_slice(),
+                    [impact]
+                        if impact.scope_id == self.scope.id
+                            && impact.grant_before_digest.is_none()
+                            && impact.grant_after_digest.is_none()
+                            && impact.enabled_before == enabled_before
+                            && impact.enabled_after == enabled_after
+                ),
+            };
+            if !canonical_absence {
+                return Err(plan_mismatch());
+            }
+            return Ok(false);
+        }
+
+        if self.workspace_impacts.len() != 1
+            || impact.is_none_or(|impact| {
+                impact.grant_after_digest.is_none()
+                    || (self
+                        .packages
+                        .iter()
+                        .any(|package| grant_before_required(self.action, package, enabled_before))
+                        && impact.grant_before_digest.is_none())
+                    || impact.enabled_before != enabled_before
+                    || impact.enabled_after != enabled_after
+            })
+        {
+            return Err(plan_mismatch());
+        }
+        Ok(true)
+    }
+}
+
 impl PlannedWorkspaceGrantChange {
     fn validate(&self, operation_id: &str, scope_id: &str) -> UseResult<()> {
         if !valid_package_id(&self.package_id)
@@ -423,6 +478,14 @@ fn expected_changes(
         })
         .map(|package| package.package_id.as_str())
         .collect()
+}
+
+const fn expected_enablement(action: PluginOperationAction) -> (bool, bool) {
+    match action {
+        PluginOperationAction::Install | PluginOperationAction::Enable => (false, true),
+        PluginOperationAction::Upgrade => (true, true),
+        PluginOperationAction::Uninstall | PluginOperationAction::Disable => (true, false),
+    }
 }
 
 fn grant_before_required(

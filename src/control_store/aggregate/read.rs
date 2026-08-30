@@ -175,6 +175,9 @@ pub(super) fn read_generation_from(
     }
     let package_lifecycles = validate_snapshot_relations(connection, &snapshot)?;
     let grants = read_grants(connection, generation)?;
+    validate_grant_selections(&grants, &snapshot).map_err(|_| {
+        corruption_error("Control Store Grant rows do not match their selected generation.")
+    })?;
     let bindings = read_bindings(connection, generation)?;
     let (capability_generation, descriptor_digest, publication_state, published_at_ms): (
         i64,
@@ -400,7 +403,7 @@ fn validate_surfaces(connection: &Connection, snapshot: &InstallationSnapshot) -
 fn read_grants(connection: &Connection, generation: u64) -> UseResult<Vec<ControlGrantSelection>> {
     let mut statement = connection
         .prepare(
-            "SELECT package_id, grant_json, grant_digest FROM control_grant
+            "SELECT package_id, receipt_revision, grant_json, grant_digest FROM control_grant
              WHERE generation = ?1 ORDER BY package_id",
         )
         .map_err(|error| schema::sqlite_error("prepare Control Store Grant read", error))?;
@@ -408,15 +411,16 @@ fn read_grants(connection: &Connection, generation: u64) -> UseResult<Vec<Contro
         .query_map([to_i64(generation)?], |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, Vec<u8>>(1)?,
-                row.get::<_, String>(2)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, String>(3)?,
             ))
         })
         .map_err(|error| schema::sqlite_error("query Control Store Grants", error))?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| schema::sqlite_error("read Control Store Grants", error))?;
     rows.into_iter()
-        .map(|(package_id, grant_json, grant_digest)| {
+        .map(|(package_id, receipt_revision, grant_json, grant_digest)| {
             let grant = PluginWorkspaceGrant::from_json(&grant_json)
                 .map_err(|_| corruption_error("A Control Store Grant value is invalid."))?;
             if grant.package_id != package_id
@@ -430,6 +434,7 @@ fn read_grants(connection: &Connection, generation: u64) -> UseResult<Vec<Contro
             Ok(ControlGrantSelection {
                 grant,
                 grant_digest,
+                receipt_revision: from_i64(receipt_revision)?,
             })
         })
         .collect()

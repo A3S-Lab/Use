@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use a3s_use_core::{
     PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind, PlanPolicyDecision,
@@ -247,7 +247,7 @@ impl CognitivePackageAuthorizationProvider for StandaloneCognitivePackageAuthori
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct PlannedWorkspaceGrantOperation {
+pub(crate) struct PlannedWorkspaceGrantOperation {
     pub snapshot: PluginWorkspaceGrantSnapshot,
     pub change_set: PluginWorkspaceGrantChangeSet,
     pub ceilings: Vec<WorkspaceGrantCandidateCeiling>,
@@ -287,7 +287,7 @@ impl PackageGraphAuthorization {
             confirmation.validate()?;
         }
 
-        let expected = expected_grant_packages(&envelope.plan);
+        let grant_changes_required = envelope.plan.workspace_grant_changes_required()?;
         match (
             &self.grant_snapshot,
             &self.grant_change_set,
@@ -296,13 +296,11 @@ impl PackageGraphAuthorization {
             (None, None, None)
                 if self.grant_ceilings.is_empty()
                     && self.grant_confirmations.is_empty()
-                    && expected.is_empty()
-                    && permission_free_workspace_impact_matches(&envelope.plan) =>
+                    && !grant_changes_required =>
             {
                 Ok(())
             }
-            (Some(snapshot), Some(change_set), Some(resolved)) if !expected.is_empty() => {
-                validate_workspace_impact(&envelope.plan)?;
+            (Some(snapshot), Some(change_set), Some(resolved)) if grant_changes_required => {
                 snapshot.validate()?;
                 if snapshot.scope_id != envelope.plan.scope.id
                     || snapshot.state_revision != envelope.plan.state.state_revision
@@ -607,7 +605,7 @@ pub fn reconstruct_cognitive_package_grants(
     Ok(CognitivePackageGrantPlan { proposals })
 }
 
-pub(super) fn reconstruct_planned_workspace_grants(
+pub(crate) fn reconstruct_planned_workspace_grants(
     plan: &PluginOperationPlan,
     snapshot: &PluginWorkspaceGrantSnapshot,
 ) -> UseResult<Option<PlannedWorkspaceGrantOperation>> {
@@ -749,36 +747,6 @@ fn has_workspace_permissions(state: &PlannedPackageState) -> bool {
     !state.permissions.surfaces.is_empty()
 }
 
-fn expected_grant_packages(plan: &PluginOperationPlan) -> BTreeSet<&str> {
-    let (enabled_before, enabled_after) = expected_enablement(plan);
-    plan.packages
-        .iter()
-        .filter(|package| {
-            (enabled_before
-                && (matches!(
-                    package.change,
-                    PlanPackageChangeKind::Remove | PlanPackageChangeKind::Replace
-                ) || (plan.action == a3s_use_core::PluginOperationAction::Disable
-                    && package.change == PlanPackageChangeKind::Retain))
-                && package
-                    .before
-                    .as_ref()
-                    .is_some_and(has_workspace_permissions))
-                || (enabled_after
-                    && (matches!(
-                        package.change,
-                        PlanPackageChangeKind::Add | PlanPackageChangeKind::Replace
-                    ) || (plan.action == a3s_use_core::PluginOperationAction::Enable
-                        && package.change == PlanPackageChangeKind::Retain))
-                    && package
-                        .after
-                        .as_ref()
-                        .is_some_and(has_workspace_permissions))
-        })
-        .map(|package| package.package_id.as_str())
-        .collect()
-}
-
 fn candidate_ceilings(
     plan: &PluginOperationPlan,
 ) -> UseResult<Vec<WorkspaceGrantCandidateCeiling>> {
@@ -815,22 +783,6 @@ fn candidate_ceilings(
     Ok(ceilings)
 }
 
-fn validate_workspace_impact(plan: &PluginOperationPlan) -> UseResult<()> {
-    let (enabled_before, enabled_after) = expected_enablement(plan);
-    if plan.workspace_impacts.len() != 1
-        || plan.workspace_impacts[0].scope_id != plan.scope.id
-        || plan.workspace_impacts[0].enabled_before != enabled_before
-        || plan.workspace_impacts[0].enabled_after != enabled_after
-        || plan.workspace_impacts[0].grant_before_digest.is_none()
-        || plan.workspace_impacts[0].grant_after_digest.is_none()
-    {
-        return Err(authorization_error(
-            "The package plan does not bind the exact Grant scope and enablement transition.",
-        ));
-    }
-    Ok(())
-}
-
 fn expected_enablement(plan: &PluginOperationPlan) -> (bool, bool) {
     match plan.action {
         a3s_use_core::PluginOperationAction::Install => (false, true),
@@ -838,24 +790,6 @@ fn expected_enablement(plan: &PluginOperationPlan) -> (bool, bool) {
         a3s_use_core::PluginOperationAction::Uninstall => (true, false),
         a3s_use_core::PluginOperationAction::Enable => (false, true),
         a3s_use_core::PluginOperationAction::Disable => (true, false),
-    }
-}
-
-fn permission_free_workspace_impact_matches(plan: &PluginOperationPlan) -> bool {
-    match plan.scope.kind {
-        PlanScopeKind::User => plan.workspace_impacts.is_empty(),
-        PlanScopeKind::Workspace => {
-            let (enabled_before, enabled_after) = expected_enablement(plan);
-            matches!(
-                plan.workspace_impacts.as_slice(),
-                [impact]
-                    if impact.scope_id == plan.scope.id
-                        && impact.grant_before_digest.is_none()
-                        && impact.grant_after_digest.is_none()
-                        && impact.enabled_before == enabled_before
-                        && impact.enabled_after == enabled_after
-            )
-        }
     }
 }
 

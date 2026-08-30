@@ -208,7 +208,7 @@ to a committed transaction plus explicit external-effect observations.
 ### Current qualification status
 
 The checked-in inactive kernel implements most of the local Control Store work
-in step 2, not the authority cutover. Schema v5 binds one exact installation
+in step 2, not the authority cutover. Schema v6 binds one exact installation
 and stores the complete generation history, canonical reviewed Plan envelopes,
 versioned authorization evidence, exact installation snapshots and relational
 graph projections, canonical full Workspace Grants, provider bindings,
@@ -217,14 +217,17 @@ observations. Plan and authorization bytes are size-bounded canonical JSON;
 their derived operation identity, digests, action, root package, installation
 scope, and generation cursors are revalidated against relational projections
 after restart, in deterministic export verification, and during staged restore.
-Installation generation, desired
-package-state generation, and immutable package-lifecycle generation remain
-separate. A deterministic projection derives the complete next snapshot and
-both package generation axes from the canonical reviewed Plan, exact prior
-generation, and bounded committed history. The same projection runs before a
-database commit and during offline export or restore verification; it covers
-all lifecycle actions, shared dependencies across roots, and removal followed
-by reinstall without reusing lifecycle identity. Canonical effect payloads bind
+Installation generation, desired package-state generation, immutable
+package-lifecycle generation, and Grant receipt revision remain separate.
+Authorization evidence v2 stores the exact prior Grant snapshot, reviewed
+change set, and confirmation facts, but not caller-supplied resolved Grants or
+ceilings. A deterministic projection derives the complete next snapshot, both
+package generation axes, and the complete target Grant inventory from the
+canonical reviewed evidence, exact prior generation, and bounded committed
+history. The same projection runs before a database commit and during offline
+export or restore verification; it covers all lifecycle actions, User and
+Workspace installations, shared dependencies across roots, and removal
+followed by reinstall without reusing lifecycle identity. Canonical effect payloads bind
 scope, plan, action, provider, artifact digests, subject, and capability
 identity; their bytes and digest are committed with a relational projection.
 Package and surface foreign keys bind the exact current or immediately prior
@@ -252,9 +255,10 @@ The kernel remains private and no production lifecycle constructs it. It does
 not yet register external artifact/projection payload owners or participate in
 live state-layout, reachability, diagnostics, backup, or restore orchestration.
 Existing JSON stores remain the only production authority. Deterministic
-lifecycle conversion of complete Grants, provider bindings, capability
-descriptors, and effect intents, the full process-exit matrix, the indivisible
-reader/writer cutover, and deletion of legacy mutable stores remain open;
+lifecycle conversion into reviewed Grant evidence, plus derivation of provider
+bindings, capability descriptors, and effect intents, the full process-exit
+matrix, the indivisible reader/writer cutover, and deletion of legacy mutable
+stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 

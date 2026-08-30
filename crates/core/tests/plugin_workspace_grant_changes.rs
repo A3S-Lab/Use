@@ -19,6 +19,7 @@ const GRANT_CHANGES_DIGEST: &str =
 #[test]
 fn multi_package_install_finalizes_every_planned_grant_in_order() {
     let (plan, changes) = multi_package_install();
+    assert!(plan.workspace_grant_changes_required().unwrap());
     changes.validate_against_plan(&plan, None).unwrap();
     let plan_digest = plan.descriptor_digest().unwrap();
     let confirmations = confirmations(&changes, &plan_digest);
@@ -71,6 +72,18 @@ fn multi_package_install_finalizes_every_planned_grant_in_order() {
         .authority
         .confirmation_digest
         .is_some()));
+}
+
+#[test]
+fn grant_requirement_rejects_permission_bearing_plan_without_bound_change_set() {
+    let (mut plan, _) = multi_package_install();
+    plan.workspace_impacts[0].grant_after_digest = None;
+    plan.validate().unwrap();
+
+    assert_eq!(
+        plan.workspace_grant_changes_required().unwrap_err().code,
+        "use.plugin.grant_changes_plan_mismatch"
+    );
 }
 
 #[test]
@@ -211,6 +224,17 @@ fn change_set_rejects_plan_drift_extra_packages_and_missing_confirmation() {
 #[test]
 fn uninstall_binds_the_before_snapshot_and_resolves_exact_revocations() {
     let (plan, changes, snapshot) = multi_package_uninstall();
+    assert!(plan.workspace_grant_changes_required().unwrap());
+    let mut missing_before_impact = plan.clone();
+    missing_before_impact.workspace_impacts[0].grant_before_digest = None;
+    missing_before_impact.validate().unwrap();
+    assert_eq!(
+        missing_before_impact
+            .workspace_grant_changes_required()
+            .unwrap_err()
+            .code,
+        "use.plugin.grant_changes_plan_mismatch"
+    );
     assert_eq!(
         snapshot.canonical_bytes().unwrap(),
         canonical_fixture(GRANT_SNAPSHOT)

@@ -13,7 +13,7 @@ use super::model::{
 };
 use super::schema::{ControlStoreMetadata, CONTROL_STORE_SCHEMA_VERSION};
 
-const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v5";
+const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v6";
 const MAX_CONTROL_STORE_EXPORT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EXPORTED_GENERATIONS: usize = 4096;
 const MAX_EXPORTED_OPERATIONS: usize = 8192;
@@ -68,7 +68,7 @@ pub(super) fn verify(
         ));
     }
     let export: ControlStoreExport = serde_json::from_slice(bytes)
-        .map_err(|_| export_error("The Control Store export is not valid schema-v5 JSON."))?;
+        .map_err(|_| export_error("The Control Store export is not valid schema-v6 JSON."))?;
     validate_export(&export)?;
     let canonical = canonical_json(&export)?;
     if canonical != bytes {

@@ -8,8 +8,8 @@ use a3s_use_core::{
     PlannedWorkspaceImpact, PluginCatalogRecord, PluginOperationAction,
     PluginOperationConfirmation, PluginOperationPlanBinding, PluginOperationPlanDraft,
     PluginOperationPlanEnvelope, PluginPackageLock, PluginPackageLockHost, PluginPackageResolver,
-    PluginSurfaceKind, PluginWorkspaceGrant, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PluginSurfaceKind, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
 };
 use olpc_cjson::CanonicalFormatter;
 use serde::Serialize;
@@ -27,6 +27,8 @@ use crate::plugin_lifecycle::PluginLifecycleAction;
 
 mod fixtures;
 mod generations;
+mod grant_fixtures;
+mod grants;
 mod operations;
 mod payloads;
 mod projections;
