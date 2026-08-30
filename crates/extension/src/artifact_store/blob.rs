@@ -6,6 +6,11 @@ use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
+use super::quarantine::{QUARANTINE_RECORD, QUARANTINE_TEMPORARY};
+use super::rehydration::{
+    REHYDRATION_PREPARED_RECORD, REHYDRATION_PREPARED_TEMPORARY, REHYDRATION_RECORD,
+    REHYDRATION_TEMPORARY,
+};
 use super::{
     artifact_store_error, validate_real_directory, validate_sha256, ArtifactKind,
     ArtifactMutationLock, ArtifactReferenceAdmission, ArtifactStorageWrite, ArtifactStore,
@@ -379,7 +384,17 @@ async fn reclaim_abandoned_staging(container: &Path) -> UseResult<()> {
                 "An artifact blob container contains a non-UTF-8 entry name.",
             )
         })?;
-        if matches!(name, MUTATION_LOCK | CONTENT_DIRECTORY) {
+        if matches!(
+            name,
+            MUTATION_LOCK
+                | CONTENT_DIRECTORY
+                | QUARANTINE_RECORD
+                | QUARANTINE_TEMPORARY
+                | REHYDRATION_PREPARED_RECORD
+                | REHYDRATION_PREPARED_TEMPORARY
+                | REHYDRATION_RECORD
+                | REHYDRATION_TEMPORARY
+        ) {
             continue;
         }
         let path = entry.path();

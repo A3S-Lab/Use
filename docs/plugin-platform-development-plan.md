@@ -464,7 +464,11 @@ Status: pending
   the reviewed mismatch under the global maintenance boundary, publish only a
   bounded canonical marker, preserve forensic content in place, and reject new
   ordinary access without granting repair or deletion authority.
-- Define verified rehydration and confirmed GC as separate reviewed mutations.
+- [x] Define and implement verified rehydration as a separate reviewed mutation
+  with a fresh global zero-reference proof, independent candidate verification,
+  exact path-free planning, prepared/completed crash recovery, and read-only
+  terminal replay independent of the external candidate and later references.
+- Define confirmed GC as a separate reviewed mutation.
 - Treat the implemented standalone OKF scope quota/GC, integrity audit,
   non-overwriting verified database backup, exact-plan oldest-first backup
   rotation, derived FTS repair, and authority-bound database plus

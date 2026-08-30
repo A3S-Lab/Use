@@ -82,8 +82,11 @@ planning target、presentation media 与 expanded package tree 都按 SHA-256
 保留 selection 与 lifecycle authority。Source prune 与 scoped uninstall 永不删除
 全局字节。跨 source reachability、hard quota admission 与无路径只读 digest audit
 已覆盖两个物理层。Exact-plan 逻辑隔离会重新审计完整 mismatch，发布 canonical
-no-clobber marker，保留原始字节并阻止新的普通访问。Confirmed GC 与 verified
-rehydration 仍未完成；隔离 marker 不授予这两种权限。
+no-clobber marker，保留原始字节并阻止新的普通访问；隔离 marker 本身不授予恢复
+或删除权限。Verified rehydration 现通过 `ArtifactStoreMaintenance` 独立执行：同一
+collection guard 覆盖新的全局零持久引用证明、独立候选验证、精确无路径审查、
+quota-aware staging 与 prepared/completed 崩溃恢复。完成态的精确重放是只读的，
+不再依赖外部候选，也不要求完成后新增的引用再次退出。Confirmed GC 仍未完成。
 
 ## 包依赖边界
 

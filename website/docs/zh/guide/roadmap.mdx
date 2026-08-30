@@ -68,8 +68,11 @@ durable Host outcome 才会报告 `Completed`。
   raw-blob/expanded-tree Artifact Store 不拥有 installation authority；source
   prune 与 scoped uninstall 永不删除全局字节。Guarded reachability、hard quota
   admission 与只读 digest audit 已覆盖两个物理层。Exact-plan 逻辑隔离通过
-  canonical marker 原位保留 mismatch 字节并阻止新的普通访问。A1 剩余的
-  verified rehydration、confirmed GC 与单一 snapshot 收敛门禁仍保持开放。
+  canonical marker 原位保留 mismatch 字节并阻止新的普通访问。Verified
+  rehydration 现要求 Artifact Store 外部候选、精确审查证据、新的全局零引用证明，
+  以及 prepared/completed fail-closed 恢复；完成态精确重放只读，且不再依赖
+  外部候选或完成后新增的引用。A1 剩余的 confirmed GC 与单一 snapshot
+  收敛门禁仍保持开放。
 - 有界 resolver 会冻结一个 Registry/TUF package lock，前向准备依赖，一次
   发布图快照，再反向退休不再需要的包。
 - standalone CLI 会把有界 enabled Registry set 持久化为 canonical ACL，

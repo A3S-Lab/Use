@@ -7,6 +7,7 @@ use a3s_use_extension::{
     ExtensionManifest, ExtensionPaths, ExtensionReceipt, ExtensionTrust,
     EXTENSION_RECEIPT_SCHEMA_VERSION,
 };
+use sha2::{Digest, Sha256};
 use tokio::fs;
 
 use super::*;
@@ -24,12 +25,141 @@ mod joined_tests;
 
 fn assert_send_sync<T: Send + Sync>() {}
 
+async fn publish_registry_blob_reference(paths: &UsePaths, sha256: &str, digest: &str) {
+    let datastore = paths
+        .state_root()
+        .join("remote-registries/packages/sources")
+        .join("1".repeat(64));
+    let cache = datastore.join("verified-targets/sha256");
+    fs::create_dir_all(&cache).await.unwrap();
+    fs::write(datastore.join(".target-cache.lock"), b"")
+        .await
+        .unwrap();
+    fs::write(
+        cache.join(format!("{sha256}.json")),
+        format!(
+            "{{\"schema\":\"a3s.use.registry-target-observation.v1\",\"targetDigest\":\"{digest}\",\"expectedBytes\":4}}"
+        ),
+    )
+    .await
+    .unwrap();
+}
+
 #[test]
 fn public_reachability_types_are_send_sync() {
     assert_send_sync::<ArtifactReferenceSource>();
     assert_send_sync::<ArtifactReferenceEntry>();
     assert_send_sync::<ArtifactReferenceInventory>();
     assert_send_sync::<ArtifactReachabilityInspector>();
+    assert_send_sync::<ArtifactStoreMaintenance>();
+}
+
+#[tokio::test]
+async fn rehydration_coordinator_rejects_a_durable_registry_reference() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let store = roots.artifact_store();
+    let candidate = temporary.path().join("verified-blob");
+    fs::write(&candidate, b"good").await.unwrap();
+    let sha256 = format!("{:x}", Sha256::digest(b"good"));
+    let digest = format!("sha256:{sha256}");
+    let content = store.blob_path(&digest).unwrap();
+    fs::create_dir_all(content.parent().unwrap()).await.unwrap();
+    fs::write(&content, b"evil").await.unwrap();
+    let collection = store.acquire_collection().await.unwrap();
+    let quarantine = store
+        .plan_quarantine(&collection, ArtifactKind::Blob, &digest)
+        .await
+        .unwrap();
+    store
+        .apply_quarantine(
+            &collection,
+            ArtifactKind::Blob,
+            &digest,
+            &quarantine.descriptor_digest().unwrap(),
+        )
+        .await
+        .unwrap();
+    drop(collection);
+
+    publish_registry_blob_reference(&roots, &sha256, &digest).await;
+
+    let error = ArtifactStoreMaintenance::new(roots)
+        .plan_rehydration(ArtifactKind::Blob, &digest, &candidate)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.artifact_rehydration.referenced");
+    assert_eq!(error.details.get("referenceCount").unwrap(), "1");
+    assert_eq!(fs::read(content).await.unwrap(), b"evil");
+}
+
+#[tokio::test]
+async fn rehydration_coordinator_keeps_zero_reference_proof_and_mutation_under_one_guard() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let store = roots.artifact_store();
+    let candidate = temporary.path().join("verified-blob");
+    fs::write(&candidate, b"good").await.unwrap();
+    let sha256 = format!("{:x}", Sha256::digest(b"good"));
+    let digest = format!("sha256:{sha256}");
+    let content = store.blob_path(&digest).unwrap();
+    fs::create_dir_all(content.parent().unwrap()).await.unwrap();
+    fs::write(&content, b"evil").await.unwrap();
+    let collection = store.acquire_collection().await.unwrap();
+    let quarantine = store
+        .plan_quarantine(&collection, ArtifactKind::Blob, &digest)
+        .await
+        .unwrap();
+    store
+        .apply_quarantine(
+            &collection,
+            ArtifactKind::Blob,
+            &digest,
+            &quarantine.descriptor_digest().unwrap(),
+        )
+        .await
+        .unwrap();
+    drop(collection);
+    let coordinator = ArtifactStoreMaintenance::new(roots.clone());
+    let plan = coordinator
+        .plan_rehydration(ArtifactKind::Blob, &digest, &candidate)
+        .await
+        .unwrap();
+
+    let result = coordinator
+        .apply_rehydration(
+            ArtifactKind::Blob,
+            &digest,
+            &candidate,
+            &plan.descriptor_digest().unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(result.changed);
+    assert_eq!(fs::read(content).await.unwrap(), b"good");
+
+    fs::remove_file(&candidate).await.unwrap();
+    publish_registry_blob_reference(&roots, &sha256, &digest).await;
+    let replay = coordinator
+        .apply_rehydration(
+            ArtifactKind::Blob,
+            &digest,
+            &candidate,
+            &plan.descriptor_digest().unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(!replay.changed);
+    assert_eq!(replay.record, result.record);
 }
 
 #[test]

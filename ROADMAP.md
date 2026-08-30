@@ -243,7 +243,7 @@ Implementation evidence (2026-08-28):
   collection guard, require the reviewed canonical plan digest, atomically
   publish a bounded marker, preserve forensic content in place, and fail new
   ordinary Blob and expanded-package access closed.
-- [ ] Add verified rehydration. Recovery must not silently replace bytes
+- [x] Add verified rehydration. Recovery must not silently replace bytes
   underneath an admitted generation and must never derive replacement
   authority from a quarantine marker alone.
 - [x] Bind enablement and capability-publication intent to the exact
@@ -397,6 +397,21 @@ open):
   Blob open/observe/commit and expanded-package validate/commit paths fail
   closed. Canonical content remains untouched as forensic evidence. The marker
   grants neither replacement nor deletion authority.
+- `ArtifactStoreMaintenance` now coordinates verified rehydration across the
+  facade/extension boundary. Planning and apply keep the exact collection guard
+  across a fresh global zero-reference proof and Artifact Store work.
+  Candidates must resolve outside the store and match the expected raw or
+  canonical expanded digest. Exact path-free v1 plans bind the quarantine
+  record, corrupt measurement, replacement measurement, and required reference
+  count. Apply reverifies all evidence, publishes canonical prepared/completed
+  records, stages under the digest mutation lock, accounts for peak hard-quota
+  bytes, and only then reopens access. Bounded interrupted preparation,
+  retired-content, and completion states resume; moved or conflicting records
+  fail closed. Matching terminal replay validates durable completion and the
+  canonical replacement without reopening the external candidate or requiring
+  later references to be retired again. The reviewed replacement consumes
+  corrupt forensic content, so external evidence retention remains an operator
+  decision rather than hidden Artifact Store GC.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove
@@ -415,9 +430,8 @@ open):
   host names. The cursor revision still commits the complete projection so an
   alias-only projection change cannot evade snapshot consistency.
 - The remaining A1 work is structural, not a hidden compatibility layer: the
-  global blob and expanded-tree tiers still need verified rehydration and
-  confirmed GC built on the completed audit and logical-quarantine boundary,
-  and the
+  global blob and expanded-tree tiers still need confirmed GC built on the
+  completed audit, logical-quarantine, and verified-rehydration boundaries, and the
   complete two-installation lifecycle/lease matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store

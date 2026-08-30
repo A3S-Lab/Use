@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 mod installation;
 mod joined;
 mod quota;
+mod rehydration;
 #[cfg(test)]
 mod tests;
 
@@ -25,6 +26,11 @@ pub use joined::{
 pub use quota::{
     ArtifactStorageQuotaAssessment, ArtifactStorageQuotaPolicy,
     MAX_ARTIFACT_STORAGE_QUOTA_ARTIFACTS,
+};
+pub use rehydration::{
+    ArtifactRehydrationPlan, ArtifactRehydrationRecord, ArtifactRehydrationResult,
+    ArtifactStoreMaintenance, ARTIFACT_REHYDRATION_PLAN_SCHEMA, ARTIFACT_REHYDRATION_RECORD_SCHEMA,
+    ARTIFACT_REHYDRATION_RESULT_SCHEMA,
 };
 
 pub const ARTIFACT_REFERENCE_INVENTORY_SCHEMA: &str = "a3s.use.artifact-reference-inventory.v1";
