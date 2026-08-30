@@ -125,7 +125,7 @@ and final publication under the exclusive counterpart. Two processes therefore
 cannot spend the same remaining capacity. Tightening below current use stops
 growth but still permits exact replay or cleanup that does not worsen an
 exceeded dimension. This admission does not delete content; confirmed
-cross-source GC remains an explicit roadmap item.
+cross-source GC is a separate explicit `ArtifactStoreMaintenance` operation.
 
 An embedding host can quarantine a complete digest mismatch through the
 Artifact Store returned by `UsePaths::artifact_store()`. Acquire the exact
@@ -156,7 +156,9 @@ or requiring later owners to retire again. Interrupted bounded phases retry
 exactly; moved, malformed, stale, or conflicting evidence fails closed. Apply
 consumes the reviewed corrupt bytes, so preserve required forensic evidence
 outside the store before confirmation. Existing open handles are not revoked.
-Confirmed global GC remains unimplemented and separate.
+Confirmed global GC remains a separate reviewed authority and never follows
+implicitly from quota pressure, audit, quarantine, rehydration, or
+unreachability.
 
 Interrupted downloads are retained as
 `.target-<sha256>.part`. The partial must be a bounded regular file and its
@@ -329,7 +331,7 @@ source-mismatched cache state fails closed.
 | `use.artifact_store.rehydration_candidate_mismatch` | Preserve the candidate, investigate provenance or drift, and plan again from independently verified bytes outside the Artifact Store. |
 | `use.artifact_store.rehydration_plan_mismatch` | The candidate, quarantine evidence, or reviewed plan changed. Obtain a fresh zero-reference plan and explicit confirmation. |
 | `use.artifact_store.rehydration_state_invalid` | Keep access closed and preserve the container. Prepared/completed records are malformed, moved, conflicting, or inconsistent with the quarantine record. Retry only the exact reviewed operation after investigating state. |
-| `use.artifact_store.quota_exceeded` | Review current/projected logical bytes and containers. Increase the global policy through revision CAS or complete a future confirmed global cleanup before retrying. |
+| `use.artifact_store.quota_exceeded` | Review current/projected logical bytes and containers. Increase the global policy through revision CAS or explicitly plan, review, and confirm global garbage collection before retrying. |
 | `use.artifact_store.quota_config_invalid` | Stop publishers, preserve the malformed `storage-quota.acl` or staging file outside the store for incident review, remove only that proven invalid state, then recreate policy through the typed API. |
 | `use.artifact_store.quota_revision_conflict` | Read the current policy and review the mutation again; never retry a stale change blindly. |
 | `use.artifact_store.quota_busy` | Retry after the active global artifact publication or policy change releases the storage boundary. |
@@ -346,5 +348,8 @@ current write path deliberately refuses to replace corrupt global content.
 exact-plan logical quarantine can contain a reviewed complete mismatch without
 moving its bytes. Verified rehydration is a separate zero-reference,
 exact-plan operation and never follows from audit or quarantine evidence alone.
-Source-cache pruning is not global Artifact Store GC, coordinated backup,
-incident response, or whole-product recovery; those remain release gates.
+Source-cache pruning is not global Artifact Store GC. Global deletion is a
+separate `ArtifactStoreMaintenance` operation that requires an explicit bounded
+target policy, a fresh all-owner zero-reference proof, and the exact confirmed
+physical/lifecycle plan. Neither operation substitutes for coordinated backup,
+incident response, or whole-product recovery.

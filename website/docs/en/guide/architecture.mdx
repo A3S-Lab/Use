@@ -95,7 +95,16 @@ zero-durable-reference proof, independent candidate verification, exact
 path-free review, quota-aware staging, and prepared/completed crash recovery.
 Completed exact replay is read-only and no longer depends on the external
 candidate or retirement of references published after completion.
-Confirmed GC remains open.
+Confirmed GC is implemented as another `ArtifactStoreMaintenance` operation.
+Its bounded policy explicitly names exact Blob or expanded-package digests;
+there is no automatic sweep. Planning and nonterminal apply keep the global
+collection guard across a fresh all-owner zero-reference proof and exact
+physical/lifecycle evidence. Apply requires the reviewed canonical plan digest,
+publishes a durable admission fence, atomically retires each container within
+its shard, and removes only a bounded no-link tombstone tree. Interrupted state
+blocks new references and resumes the same target set. Completion replay is
+read-only, while predecessor chaining distinguishes later objects that reuse a
+digest from the operation already completed.
 
 ## Package dependency boundary
 

@@ -10,6 +10,7 @@ use crate::package::{io_error, lock_is_contended};
 
 mod audit;
 mod blob;
+mod garbage_collection;
 mod inventory;
 mod quarantine;
 mod quota;
@@ -21,6 +22,14 @@ pub use audit::{
     ARTIFACT_STORE_DIGEST_AUDIT_SCHEMA,
 };
 pub(crate) use blob::ArtifactBlob;
+pub use garbage_collection::{
+    ArtifactGarbageCollectionEntry, ArtifactGarbageCollectionLifecycle,
+    ArtifactGarbageCollectionPlan, ArtifactGarbageCollectionPolicy,
+    ArtifactGarbageCollectionRecord, ArtifactGarbageCollectionResult,
+    ArtifactGarbageCollectionTarget, ARTIFACT_GARBAGE_COLLECTION_PLAN_SCHEMA,
+    ARTIFACT_GARBAGE_COLLECTION_RECORD_SCHEMA, ARTIFACT_GARBAGE_COLLECTION_RESULT_SCHEMA,
+    MAX_ARTIFACT_GARBAGE_COLLECTION_TARGETS,
+};
 pub use inventory::{
     ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState, ArtifactStoreInventory,
     ARTIFACT_STORE_INVENTORY_SCHEMA, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
@@ -51,6 +60,10 @@ const MUTATION_LOCK: &str = ".mutation.lock";
 const REACHABILITY_LOCK: &str = ".reachability.lock";
 #[cfg(test)]
 mod audit_tests;
+#[cfg(all(test, any(unix, windows)))]
+mod garbage_collection_recovery_tests;
+#[cfg(test)]
+mod garbage_collection_tests;
 #[cfg(test)]
 mod quarantine_tests;
 #[cfg(test)]
@@ -343,6 +356,8 @@ mod tests {
         assert_send_sync::<ArtifactCollectionGuard>();
         assert_send_sync::<ArtifactStoreInventory>();
         assert_send_sync::<ArtifactInventoryEntry>();
+        assert_send_sync::<ArtifactGarbageCollectionPolicy>();
+        assert_send_sync::<ArtifactGarbageCollectionPlan>();
     }
 
     #[tokio::test]

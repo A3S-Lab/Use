@@ -78,8 +78,11 @@ package, and only a durable Host outcome reports `Completed`.
   rehydration now requires a candidate outside the store, exact reviewed
   evidence, a fresh zero-reference proof, and prepared/completed fail-closed
   recovery; completed exact replay is read-only and independent of the external
-  candidate and later references. The remaining A1 confirmed-GC and
-  single-snapshot gates stay open.
+  candidate and later references. Confirmed GC now requires a bounded explicit
+  target allowlist, fresh all-owner zero-reference proof, exact physical and
+  lifecycle evidence, a durable fail-closed deletion fence, same-shard atomic
+  retirement, and read-only terminal replay. The remaining A1 single-snapshot
+  qualification gate stays open.
 - The bounded resolver freezes one Registry/TUF package lock, prepares
   dependencies forward, publishes one graph snapshot, and retires unused
   packages in reverse.

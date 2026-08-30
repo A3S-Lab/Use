@@ -86,7 +86,13 @@ no-clobber marker，保留原始字节并阻止新的普通访问；隔离 marke
 或删除权限。Verified rehydration 现通过 `ArtifactStoreMaintenance` 独立执行：同一
 collection guard 覆盖新的全局零持久引用证明、独立候选验证、精确无路径审查、
 quota-aware staging 与 prepared/completed 崩溃恢复。完成态的精确重放是只读的，
-不再依赖外部候选，也不要求完成后新增的引用再次退出。Confirmed GC 仍未完成。
+不再依赖外部候选，也不要求完成后新增的引用再次退出。Confirmed GC 已作为另一项
+`ArtifactStoreMaintenance` 操作实现。其有界策略只显式列出精确 Blob 或
+expanded-package digest，不存在自动 sweep。规划与非终态 apply 在同一个全局
+collection guard 下完成新的全 owner 零引用证明和精确物理/lifecycle 审查；apply
+必须匹配已确认的 canonical plan digest，先持久化 admission 栅栏，再在同一分片
+原子退休容器，并且只删除通过有界 no-link 校验的 tombstone。中断状态会阻止新引用，
+并只恢复原目标集合；完成态重放只读，predecessor 链会区分后来复用同一 digest 的对象。
 
 ## 包依赖边界
 

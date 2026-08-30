@@ -4,6 +4,11 @@ use a3s_use_core::UseResult;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
+use super::garbage_collection::{
+    validate_garbage_collection_metadata, GARBAGE_COLLECTION_COMPLETED_RECORD,
+    GARBAGE_COLLECTION_COMPLETED_TEMPORARY, GARBAGE_COLLECTION_PREPARED_RECORD,
+    GARBAGE_COLLECTION_PREPARED_TEMPORARY,
+};
 use super::quarantine::{
     inspect_container_state, validate_quarantine_metadata, QUARANTINE_RECORD, QUARANTINE_TEMPORARY,
 };
@@ -93,6 +98,7 @@ impl ArtifactStore {
         &self,
     ) -> UseResult<ArtifactStoreInventory> {
         validate_real_directory(self.root(), "Artifact Store root").await?;
+        super::garbage_collection::inspect_garbage_collection_state(self.root()).await?;
 
         let mut budget = InventoryBudget::default();
         let mut entries = Vec::new();
@@ -172,6 +178,12 @@ async fn scan_store_root(
             }
             STORAGE_QUOTA_TEMPORARY_FILE => {
                 validate_policy_metadata(&path, &metadata, true)?;
+            }
+            GARBAGE_COLLECTION_PREPARED_RECORD | GARBAGE_COLLECTION_COMPLETED_RECORD => {
+                validate_garbage_collection_metadata(&path, &metadata, false)?;
+            }
+            GARBAGE_COLLECTION_PREPARED_TEMPORARY | GARBAGE_COLLECTION_COMPLETED_TEMPORARY => {
+                validate_garbage_collection_metadata(&path, &metadata, true)?;
             }
             BLOBS_DIRECTORY => {
                 validate_directory_metadata(&path, &metadata, "blob Artifact Store tier")?;
@@ -434,6 +446,15 @@ async fn scan_container(
         staging_entries,
         staging_bytes,
     })
+}
+
+pub(in crate::artifact_store) async fn inspect_container_entry(
+    root: &Path,
+    sha256: &str,
+    kind: ArtifactKind,
+) -> UseResult<ArtifactInventoryEntry> {
+    let mut budget = InventoryBudget::default();
+    scan_container(root, sha256, kind, &mut budget).await
 }
 
 #[derive(Debug, Clone, Copy)]

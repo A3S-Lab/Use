@@ -425,8 +425,9 @@ Expanded content lives at
 `data/artifacts/expanded-packages/sha256/<prefix>/<digest>/content`. Different
 installations may point to the same exact tree while retaining independent
 receipts, generations, enablement, Grants, bindings, and leases. Use rehashes
-content before publication and use, but it does not yet garbage-collect
-unreferenced expanded trees. A
+content before publication and use. Global bytes are deleted only through an
+explicit confirmed Artifact Store garbage-collection plan; source cleanup and
+scoped uninstall still never delete them. A
 cross-process shared/exclusive boundary now prevents future inventory and
 collection from racing raw-target observations, lifecycle receipts,
 applying lifecycle journals, installation snapshots, or pending graph
@@ -511,13 +512,33 @@ longer evidence retention must archive them outside the store before
 confirmation. Existing open handles are not revoked, but no admitted package
 generation may reference the target during replacement.
 
+Confirmed Artifact Store garbage collection is a separate reference-aware
+mutation coordinated by `ArtifactStoreMaintenance`. Its policy is a non-empty,
+bounded, canonical allowlist of exact `(kind, digest)` targets; there is no
+timer, age threshold, quota-triggered sweep, or implicit "all unreferenced"
+mode. Planning holds the global collection guard, proves zero durable owners
+across every Registry, installation, receipt, snapshot, and nonterminal
+operation, and binds exact physical measurements plus ordinary, quarantined,
+or completed-rehydration lifecycle evidence into a path-free plan. Apply
+repeats the zero-reference proof and accepts only the reviewed canonical plan
+digest. Before any namespace mutation it publishes a durable global prepared
+record. Each reviewed digest container is then atomically renamed within its
+shard to a deterministic tombstone and removed through a bounded, no-link
+residual-tree check. Prepared or temporary state blocks new reference
+admission across restart until the same plan resumes. A durable completion
+record makes exact replay read-only, so an old confirmation cannot delete an
+identical digest that was later recreated or newly referenced; each later plan
+chains to the previous completion digest. Quarantine, rehydration, audit, quota
+pressure, and physical unreachability are evidence only and never independently
+authorize deletion.
+
 The joined quota assessment remains evidence only; it does not authorize
 deletion. Hard admission is deliberately serialized rather than implemented as
 a parallel durable reservation ledger. `complete` remains only a physical
 publication state; the explicit digest audit produces a separate integrity
 result. Exact-plan logical quarantine and zero-reference verified rehydration
-are implemented. Explicit confirmed garbage collection remains a separate
-unimplemented control.
+remain separate from explicit confirmed garbage collection; none grants the
+authority of another.
 
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
@@ -830,7 +851,8 @@ quota assessment across sources, installations, and operations. Optional global
 hard quota admission and read-only digest audit cover both publication tiers;
 exact-plan logical quarantine blocks newly observed corrupt content while
 preserving its bytes, and verified rehydration requires an independent candidate
-plus a fresh zero-reference proof. Confirmed GC remains explicit release work.
+plus a fresh zero-reference proof. Global deletion now additionally requires a
+bounded explicit target policy and its exact confirmed GC plan digest.
 
 Inspect cache usage without making a Registry request:
 
@@ -1323,7 +1345,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
 | Registry target observations, explicit offline install/upgrade, bounded source working set, resumable downloads, usage, and confirmed source cleanup | Implemented with interruption, range, tamper, and zero-network tests; cleanup never claims global blob reclamation |
-| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive reference boundary prevents maintenance or whole-installation restore from racing durable reference publication. Physical v1 inventories canonical content and staging; Registry-reference v1 scans every preserved source datastore; global reference v1 adds all installations and reference-bearing operations. Joined reachability v1 captures those logical and physical facts in one guarded pass, preserves conservative extra owners if retirement races inspection, preserves missing content, reports expectation mismatches and checked storage usage, and supports bounded quota assessment. An optional canonical `storage-quota.acl`, mutated by revision CAS, enforces logical-byte and digest-container ceilings across processes. Policy-enabled Blob and expanded-package commits serialize scan, exact projection, staging cleanup, and publication under one global storage lock; policy-disabled commits retain shared concurrency. Non-worsening replay remains possible when current usage already exceeds a tightened policy. Explicit digest-audit v1 sequentially rehashes both tiers under the collection guard, reports path-free verified/mismatch/incomplete evidence, and fails closed on unsafe or unstable physical state. Exact-plan logical quarantine re-audits a reviewed mismatch, publishes a canonical no-clobber marker, preserves the original content bytes, and blocks ordinary future Blob and expanded-package access. Verified rehydration requires a candidate outside the store, exact reviewed path-free evidence, a fresh zero-durable-reference proof across every owner source, prepared/completed crash evidence, candidate reverification, quota-aware staging, and a fail-closed physical switch for both tiers. Explicitly confirmed GC remains open; neither audit nor quarantine alone grants replacement or deletion authority |
+| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive reference boundary prevents maintenance or whole-installation restore from racing durable reference publication. Physical, Registry-reference, global-reference, and joined-reachability v1 evidence covers canonical content, staging, every durable owner, expectation mismatches, and checked storage usage. Optional canonical hard quota, full digest audit, exact-plan logical quarantine, and verified zero-reference rehydration remain separate authorities. Confirmed GC now accepts only a bounded explicit Blob/expanded-package digest allowlist, repeats the complete zero-reference proof, binds physical and lifecycle evidence plus predecessor completion into one canonical plan, and persists a global fail-closed fence before same-shard atomic retirement and bounded tombstone deletion. Terminal replay is read-only and cannot delete a later recreated object. Source prune, scoped uninstall, audit, quarantine, rehydration, quota pressure, and unreachability never independently authorize global deletion |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |

@@ -52,6 +52,109 @@ fn public_reachability_types_are_send_sync() {
     assert_send_sync::<ArtifactReferenceInventory>();
     assert_send_sync::<ArtifactReachabilityInspector>();
     assert_send_sync::<ArtifactStoreMaintenance>();
+    assert_send_sync::<ArtifactGarbageCollectionPolicy>();
+    assert_send_sync::<ArtifactGarbageCollectionPlan>();
+}
+
+fn garbage_collection_policy(kind: ArtifactKind, digest: &str) -> ArtifactGarbageCollectionPolicy {
+    ArtifactGarbageCollectionPolicy::new(vec![
+        ArtifactGarbageCollectionTarget::new(kind, digest).unwrap()
+    ])
+    .unwrap()
+}
+
+#[tokio::test]
+async fn garbage_collection_coordinator_rejects_a_durable_registry_reference() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let store = roots.artifact_store();
+    let sha256 = format!("{:x}", Sha256::digest(b"owned"));
+    let digest = format!("sha256:{sha256}");
+    let content = store.blob_path(&digest).unwrap();
+    fs::create_dir_all(content.parent().unwrap()).await.unwrap();
+    fs::write(&content, b"owned").await.unwrap();
+    publish_registry_blob_reference(&roots, &sha256, &digest).await;
+
+    let error = ArtifactStoreMaintenance::new(roots)
+        .plan_garbage_collection(garbage_collection_policy(ArtifactKind::Blob, &digest))
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.artifact_garbage_collection.referenced");
+    assert_eq!(error.details.get("referenceCount").unwrap(), "1");
+    assert_eq!(fs::read(content).await.unwrap(), b"owned");
+}
+
+#[tokio::test]
+async fn completed_garbage_collection_replay_never_deletes_a_recreated_referenced_object() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let store = roots.artifact_store();
+    let sha256 = format!("{:x}", Sha256::digest(b"recreated"));
+    let digest = format!("sha256:{sha256}");
+    let content = store.blob_path(&digest).unwrap();
+    fs::create_dir_all(content.parent().unwrap()).await.unwrap();
+    fs::write(&content, b"recreated").await.unwrap();
+    let policy = garbage_collection_policy(ArtifactKind::Blob, &digest);
+    let coordinator = ArtifactStoreMaintenance::new(roots.clone());
+    let plan = coordinator
+        .plan_garbage_collection(policy.clone())
+        .await
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+    let result = coordinator
+        .apply_garbage_collection(policy.clone(), &plan_digest)
+        .await
+        .unwrap();
+    assert!(result.changed);
+    assert!(!content.exists());
+
+    fs::create_dir_all(content.parent().unwrap()).await.unwrap();
+    fs::write(&content, b"recreated").await.unwrap();
+    publish_registry_blob_reference(&roots, &sha256, &digest).await;
+    let replay = coordinator
+        .apply_garbage_collection(policy, &plan_digest)
+        .await
+        .unwrap();
+
+    assert!(!replay.changed);
+    assert_eq!(fs::read(content).await.unwrap(), b"recreated");
+}
+
+#[tokio::test]
+async fn garbage_collection_apply_rejects_a_reference_published_after_planning() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let store = roots.artifact_store();
+    let sha256 = format!("{:x}", Sha256::digest(b"late"));
+    let digest = format!("sha256:{sha256}");
+    let content = store.blob_path(&digest).unwrap();
+    fs::create_dir_all(content.parent().unwrap()).await.unwrap();
+    fs::write(&content, b"late").await.unwrap();
+    let policy = garbage_collection_policy(ArtifactKind::Blob, &digest);
+    let coordinator = ArtifactStoreMaintenance::new(roots.clone());
+    let plan = coordinator
+        .plan_garbage_collection(policy.clone())
+        .await
+        .unwrap();
+    publish_registry_blob_reference(&roots, &sha256, &digest).await;
+
+    let error = coordinator
+        .apply_garbage_collection(policy, &plan.descriptor_digest().unwrap())
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.artifact_garbage_collection.referenced");
+    assert_eq!(fs::read(content).await.unwrap(), b"late");
 }
 
 #[tokio::test]

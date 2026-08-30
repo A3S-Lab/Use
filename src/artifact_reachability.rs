@@ -11,25 +11,36 @@ use a3s_use_core::{InstallationId, UseError, UseResult};
 use a3s_use_extension::{ArtifactCollectionGuard, ArtifactKind, RegistrySourceStore, UsePaths};
 use serde::{Deserialize, Serialize};
 
+mod garbage_collection;
 mod installation;
 mod joined;
+mod maintenance;
 mod quota;
 mod rehydration;
 #[cfg(test)]
 mod tests;
 
+pub use garbage_collection::{
+    ArtifactGarbageCollectionEntry, ArtifactGarbageCollectionLifecycle,
+    ArtifactGarbageCollectionPlan, ArtifactGarbageCollectionPolicy,
+    ArtifactGarbageCollectionRecord, ArtifactGarbageCollectionResult,
+    ArtifactGarbageCollectionTarget, ARTIFACT_GARBAGE_COLLECTION_PLAN_SCHEMA,
+    ARTIFACT_GARBAGE_COLLECTION_RECORD_SCHEMA, ARTIFACT_GARBAGE_COLLECTION_RESULT_SCHEMA,
+    MAX_ARTIFACT_GARBAGE_COLLECTION_TARGETS,
+};
 pub use joined::{
     ArtifactMeasurementStatus, ArtifactPhysicalEvidence, ArtifactReachabilityEntry,
     ArtifactReachabilityInventory, ArtifactReferenceOwner, ArtifactStorageUsage,
     ARTIFACT_REACHABILITY_INVENTORY_SCHEMA,
 };
+pub use maintenance::ArtifactStoreMaintenance;
 pub use quota::{
     ArtifactStorageQuotaAssessment, ArtifactStorageQuotaPolicy,
     MAX_ARTIFACT_STORAGE_QUOTA_ARTIFACTS,
 };
 pub use rehydration::{
     ArtifactRehydrationPlan, ArtifactRehydrationRecord, ArtifactRehydrationResult,
-    ArtifactStoreMaintenance, ARTIFACT_REHYDRATION_PLAN_SCHEMA, ARTIFACT_REHYDRATION_RECORD_SCHEMA,
+    ARTIFACT_REHYDRATION_PLAN_SCHEMA, ARTIFACT_REHYDRATION_RECORD_SCHEMA,
     ARTIFACT_REHYDRATION_RESULT_SCHEMA,
 };
 
