@@ -21,6 +21,16 @@ pub(crate) fn create_directory_link(target: &Path, link: &Path) {
     );
 }
 
+#[cfg(unix)]
+pub(crate) fn remove_directory_link(link: &Path) {
+    std::fs::remove_file(link).expect("remove test directory symlink");
+}
+
+#[cfg(windows)]
+pub(crate) fn remove_directory_link(link: &Path) {
+    std::fs::remove_dir(link).expect("remove test directory junction");
+}
+
 #[cfg(windows)]
 pub(crate) fn open_reading_scanner_without_delete_share(path: &Path) -> std::fs::File {
     use std::os::windows::fs::OpenOptionsExt;

@@ -64,7 +64,7 @@ async fn residual_tombstone_recovery_rejects_links_without_touching_external_con
         b"preserve"
     );
 
-    std::fs::remove_dir(tombstone.join("content")).unwrap();
+    crate::test_filesystem::remove_directory_link(&tombstone.join("content"));
     std::fs::create_dir(tombstone.join("content")).unwrap();
     store
         .apply_unreferenced_garbage_collection(&collection, policy, &plan_digest)
