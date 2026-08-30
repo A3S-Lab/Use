@@ -457,7 +457,10 @@ Status: pending
   publication through canonical ACL policy, revision CAS, and a serialized
   cross-process storage boundary. Policy-disabled writers remain concurrent;
   the joined assessment and admission protocol grant no deletion authority.
-- Define audit, quarantine, verified rehydration, and confirmed GC.
+- [x] Define and implement bounded, path-free, read-only digest audit for raw
+  Blobs and expanded packages under the global maintenance boundary. Report
+  mismatches as evidence and grant no mutation authority.
+- Define quarantine, verified rehydration, and confirmed GC.
 - Treat the implemented standalone OKF scope quota/GC, integrity audit,
   non-overwriting verified database backup, exact-plan oldest-first backup
   rotation, derived FTS repair, and authority-bound database plus

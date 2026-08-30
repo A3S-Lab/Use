@@ -411,7 +411,7 @@ async fn optional_real_directory(path: &Path, label: &str) -> UseResult<bool> {
     }
 }
 
-fn blob_open_options() -> fs::OpenOptions {
+pub(super) fn blob_open_options() -> fs::OpenOptions {
     let mut options = fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]

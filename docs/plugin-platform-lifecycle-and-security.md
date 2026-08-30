@@ -488,6 +488,20 @@ this preserves exact replay and cleanup. The design serializes policy-enabled
 publication for correctness instead of maintaining a parallel reservation
 ledger.
 
+An embedding host performs full physical integrity verification with
+`ArtifactStore::audit_digests` while holding the exact store-bound collection
+guard. The deterministic `a3s.use.artifact-store-digest-audit.v1` result is
+path-free and contains one sorted entry per bounded physical container.
+Complete Blobs use raw SHA-256; complete expanded packages reuse the canonical
+admission fingerprint over normalized regular-file paths, lengths, and bytes.
+Package file opens do not follow the final link/reparse component and revalidate
+the opened type and length. Incomplete containers retain content/staging
+measurements but have no observed digest. The implementation hashes
+sequentially and repeats physical inventory before returning. An unsafe layout,
+read failure, measurement change, or inventory drift fails the operation;
+cryptographic mismatch is successful forensic evidence. Neither result grants
+quarantine, repair, rehydration, replacement, or deletion authority.
+
 Each resumable partial is opened without following its final component and the
 same handle remains authoritative through append, checkpoint, verification,
 and global blob commit. The global blob is reopened and rehashed, then retained
@@ -520,8 +534,9 @@ inventory now covers Registry observations plus every installation and durable
 reference-bearing operation. The joined view adds physical evidence, checked
 usage, and bounded quota assessment under the same guarded collection pass.
 Concurrent retirement may leave conservative extra owners. Hard quota
-admission now covers both global publication paths; confirmed GC, audit,
-quarantine, and verified rehydration remain release work.
+admission now covers both global publication paths, and explicit digest audit
+covers both physical tiers. Confirmed GC, quarantine, and verified rehydration
+remain release work.
 
 A real-process failure test terminates installation after the complete target
 has entered the verified cache but while a high-entry archive is still being

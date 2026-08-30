@@ -8,11 +8,16 @@ use tokio::fs;
 
 use crate::package::{io_error, lock_is_contended};
 
+mod audit;
 mod blob;
 mod inventory;
 mod quota;
 mod reachability;
 
+pub use audit::{
+    ArtifactDigestAuditEntry, ArtifactDigestAuditStatus, ArtifactStoreDigestAudit,
+    ARTIFACT_STORE_DIGEST_AUDIT_SCHEMA,
+};
 pub(crate) use blob::ArtifactBlob;
 pub use inventory::{
     ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState, ArtifactStoreInventory,
@@ -32,6 +37,8 @@ const SHA256_DIRECTORY: &str = "sha256";
 const CONTENT_DIRECTORY: &str = "content";
 const MUTATION_LOCK: &str = ".mutation.lock";
 const REACHABILITY_LOCK: &str = ".reachability.lock";
+#[cfg(test)]
+mod audit_tests;
 #[cfg(test)]
 mod quota_tests;
 pub(crate) const ARTIFACT_STAGING_PREFIX: &str = ".artifact-staging-";

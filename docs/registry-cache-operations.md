@@ -300,7 +300,8 @@ source-mismatched cache state fails closed.
 | `use.extension.registry_busy` | Retry after the active cache or metadata operation completes. |
 
 Do not repair a blob by renaming arbitrary bytes to its expected digest. The
-current write path deliberately refuses to replace corrupt global content;
-audit, quarantine, and verified rehydration are separate unfinished controls.
+current write path deliberately refuses to replace corrupt global content.
+`ArtifactStore::audit_digests` can now produce read-only mismatch evidence;
+quarantine and verified rehydration remain separate unfinished controls.
 Source-cache pruning is not global Artifact Store GC, coordinated backup,
 incident response, or whole-product recovery; those remain release gates.
