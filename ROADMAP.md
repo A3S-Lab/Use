@@ -239,9 +239,13 @@ Implementation evidence (2026-08-28):
   report mismatches without mutation, and fail closed on unsafe or unstable
   physical state.
 - [ ] Require an explicit confirmed garbage-collection policy before deletion.
-- [ ] Add explicit corruption quarantine and verified rehydration. Corruption
-  must preserve forensic evidence; recovery must not silently replace bytes
-  underneath an admitted generation.
+- [x] Add exact-plan logical corruption quarantine. Re-audit under the exact
+  collection guard, require the reviewed canonical plan digest, atomically
+  publish a bounded marker, preserve forensic content in place, and fail new
+  ordinary Blob and expanded-package access closed.
+- [ ] Add verified rehydration. Recovery must not silently replace bytes
+  underneath an admitted generation and must never derive replacement
+  authority from a quarantine marker alone.
 - [x] Bind enablement and capability-publication intent to the exact
   `InstallationSnapshot` generation instead of reconciling separate mutable
   authorities.
@@ -381,8 +385,18 @@ open):
   reports complete mismatches instead of mutating them, retains incomplete
   staging evidence without hashing it, and repeats the bounded physical scan
   before returning. Package file opens do not follow the final link/reparse
-  component and revalidate the opened measurement. Corruption quarantine,
-  verified rehydration, and confirmed deletion remain open.
+  component and revalidate the opened measurement. The audit itself grants no
+  quarantine, rehydration, or deletion authority.
+- `ArtifactStore::plan_quarantine` now derives one canonical path-free plan
+  only from a fresh complete digest mismatch. `apply_quarantine` re-audits
+  under the same exact collection guard, compares the reviewed plan digest,
+  and atomically publishes a no-clobber `quarantine.json` record. Exact replay
+  is idempotent; bounded interrupted publication can be retried without
+  removing its fail-closed sentinel first. Inventory
+  validates marker state without charging it as content or staging, while new
+  Blob open/observe/commit and expanded-package validate/commit paths fail
+  closed. Canonical content remains untouched as forensic evidence. The marker
+  grants neither replacement nor deletion authority.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove
@@ -401,9 +415,9 @@ open):
   host names. The cursor revision still commits the complete projection so an
   alias-only projection change cannot evade snapshot consistency.
 - The remaining A1 work is structural, not a hidden compatibility layer: the
-  global blob and expanded-tree tiers still need one safe
-  quarantine/rehydration/confirmed-GC model built on the completed read-only
-  digest audit, and the
+  global blob and expanded-tree tiers still need verified rehydration and
+  confirmed GC built on the completed audit and logical-quarantine boundary,
+  and the
   complete two-installation lifecycle/lease matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store

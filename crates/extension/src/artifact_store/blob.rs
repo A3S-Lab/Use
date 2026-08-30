@@ -7,10 +7,10 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use super::{
-    artifact_store_error, validate_real_directory, validate_sha256, ArtifactMutationLock,
-    ArtifactReferenceAdmission, ArtifactStorageWrite, ArtifactStore, ARTIFACT_STAGING_PREFIX,
-    BLOBS_DIRECTORY, CONTENT_DIRECTORY, MAX_ARTIFACT_CONTAINER_ENTRIES, MUTATION_LOCK,
-    SHA256_DIRECTORY,
+    artifact_store_error, validate_real_directory, validate_sha256, ArtifactKind,
+    ArtifactMutationLock, ArtifactReferenceAdmission, ArtifactStorageWrite, ArtifactStore,
+    ARTIFACT_STAGING_PREFIX, BLOBS_DIRECTORY, CONTENT_DIRECTORY, MAX_ARTIFACT_CONTAINER_ENTRIES,
+    MUTATION_LOCK, SHA256_DIRECTORY,
 };
 use crate::package::{
     io_error, remove_file_with_windows_retry, sync_parent_directory, unique_suffix,
@@ -139,6 +139,8 @@ impl ArtifactStore {
             .await?;
         let container = self.blob_container(sha256);
         self.ensure_container(&container, "blob artifact").await?;
+        self.ensure_container_not_quarantined(&container, ArtifactKind::Blob, sha256)
+            .await?;
         let _lock =
             ArtifactMutationLock::acquire(&container.join(MUTATION_LOCK), "blob artifact").await?;
         reclaim_abandoned_staging(&container).await?;
@@ -205,7 +207,7 @@ impl ArtifactStore {
         open_blob_path(target, expected_length, sha256).await
     }
 
-    fn blob_container(&self, sha256: &str) -> PathBuf {
+    pub(super) fn blob_container(&self, sha256: &str) -> PathBuf {
         let shard = sha256.get(..2).unwrap_or_default();
         self.root()
             .join(BLOBS_DIRECTORY)
@@ -236,6 +238,8 @@ impl ArtifactStore {
                 return Ok(false);
             }
         }
+        self.ensure_container_not_quarantined(&current, ArtifactKind::Blob, sha256)
+            .await?;
         let content = current.join(CONTENT_DIRECTORY);
         let metadata = match fs::symlink_metadata(&content).await {
             Ok(metadata) => metadata,

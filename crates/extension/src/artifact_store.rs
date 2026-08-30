@@ -11,6 +11,7 @@ use crate::package::{io_error, lock_is_contended};
 mod audit;
 mod blob;
 mod inventory;
+mod quarantine;
 mod quota;
 mod reachability;
 
@@ -22,6 +23,11 @@ pub(crate) use blob::ArtifactBlob;
 pub use inventory::{
     ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState, ArtifactStoreInventory,
     ARTIFACT_STORE_INVENTORY_SCHEMA, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
+};
+pub use quarantine::{
+    ArtifactQuarantinePlan, ArtifactQuarantineRecord, ArtifactQuarantineResult,
+    ARTIFACT_QUARANTINE_PLAN_SCHEMA, ARTIFACT_QUARANTINE_RECORD_SCHEMA,
+    ARTIFACT_QUARANTINE_RESULT_SCHEMA,
 };
 pub(crate) use quota::{ArtifactStorageAdmission, ArtifactStorageWrite};
 pub use quota::{
@@ -39,6 +45,8 @@ const MUTATION_LOCK: &str = ".mutation.lock";
 const REACHABILITY_LOCK: &str = ".reachability.lock";
 #[cfg(test)]
 mod audit_tests;
+#[cfg(test)]
+mod quarantine_tests;
 #[cfg(test)]
 mod quota_tests;
 pub(crate) const ARTIFACT_STAGING_PREFIX: &str = ".artifact-staging-";
@@ -110,6 +118,12 @@ impl ArtifactStore {
             current.push(component.as_os_str());
             validate_real_directory(&current, "expanded-package Artifact Store directory").await?;
         }
+        self.ensure_container_not_quarantined(
+            &self.expanded_package_container(sha256),
+            ArtifactKind::ExpandedPackage,
+            sha256,
+        )
+        .await?;
         Ok(())
     }
 
@@ -124,6 +138,8 @@ impl ArtifactStore {
         validate_sha256(sha256)?;
         let container = self.expanded_package_container(sha256);
         self.ensure_container(&container, "expanded-package artifact")
+            .await?;
+        self.ensure_container_not_quarantined(&container, ArtifactKind::ExpandedPackage, sha256)
             .await?;
         ArtifactMutationLock::acquire(&container.join(MUTATION_LOCK), "expanded-package artifact")
             .await

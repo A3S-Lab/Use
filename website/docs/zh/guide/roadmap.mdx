@@ -65,8 +65,11 @@ durable Host outcome 才会报告 `Completed`。
   表面、包依赖、权限上限与精确 provenance。
 - `InstallationId(kind, id)` 已隔离 mutable package state、receipt、Grant、
   binding、capability publication、backup/restore 和 lock。全局 Registry/TUF 与
-  可派生 artifact cache 不拥有 installation authority；A1 的单一 snapshot
-  收敛门禁仍保持开放。
+  raw-blob/expanded-tree Artifact Store 不拥有 installation authority；source
+  prune 与 scoped uninstall 永不删除全局字节。Guarded reachability、hard quota
+  admission 与只读 digest audit 已覆盖两个物理层。Exact-plan 逻辑隔离通过
+  canonical marker 原位保留 mismatch 字节并阻止新的普通访问。A1 剩余的
+  verified rehydration、confirmed GC 与单一 snapshot 收敛门禁仍保持开放。
 - 有界 resolver 会冻结一个 Registry/TUF package lock，前向准备依赖，一次
   发布图快照，再反向退休不再需要的包。
 - standalone CLI 会把有界 enabled Registry set 持久化为 canonical ACL，

@@ -73,8 +73,10 @@ package, and only a durable Host outcome reports `Completed`.
   installation authority. Registry sources retain only observations and
   partials; source prune and scoped uninstall never delete global bytes.
   Guarded reachability, hard quota admission, and read-only digest audit cover
-  both physical tiers. The remaining A1 quarantine/rehydration/confirmed-GC and
-  single-snapshot gates stay open.
+  both physical tiers. Exact-plan logical quarantine preserves mismatched bytes
+  in place and blocks new ordinary access through a canonical marker. The
+  remaining A1 verified-rehydration/confirmed-GC and single-snapshot gates stay
+  open.
 - The bounded resolver freezes one Registry/TUF package lock, prepares
   dependencies forward, publishes one graph snapshot, and retires unused
   packages in reverse.

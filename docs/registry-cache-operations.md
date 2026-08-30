@@ -127,6 +127,17 @@ growth but still permits exact replay or cleanup that does not worsen an
 exceeded dimension. This admission does not delete content; confirmed
 cross-source GC remains an explicit roadmap item.
 
+An embedding host can quarantine a complete digest mismatch through the
+Artifact Store returned by `UsePaths::artifact_store()`. Acquire the exact
+store-bound collection guard, call `plan_quarantine(kind, digest)`, present its
+path-free evidence to a trusted operator, and pass only the exact
+`descriptor_digest()` to `apply_quarantine`. Apply repeats the full digest audit
+before atomically publishing a canonical marker. The operation never moves or
+overwrites canonical bytes. Exact replay reports `changed: false`; stale review
+is rejected. New ordinary Blob and expanded-package access fails closed while
+the marker exists. This is incident containment, not repair or cleanup:
+verified rehydration and confirmed global GC remain unimplemented.
+
 Interrupted downloads are retained as
 `.target-<sha256>.part`. The partial must be a bounded regular file and its
 length becomes the next HTTP Range offset. A `206` response must describe the
@@ -286,8 +297,13 @@ source-mismatched cache state fails closed.
 | `use.extension.registry_target_cache_policy_exceeded` | Increase the explicit byte/entry policy or select a smaller signed target. |
 | `use.extension.registry_target_cache_storage_insufficient` | Free space on the reported staging/cache volume or reduce other retained cache data. |
 | `use.extension.registry_target_cache_invalid` | Quarantine the Registry datastore and investigate unexpected or tampered entries. |
-| `use.artifact_store.blob_invalid` | Quarantine the digest path and preserve it for investigation; do not overwrite it in place. Rehydrate only through an explicit verified repair workflow. |
+| `use.artifact_store.blob_invalid` | Preserve the digest container, run the full digest audit, and use exact-plan quarantine only if it yields a complete mismatch. Do not overwrite content in place. |
 | `use.artifact_store.ownership_invalid` | Inspect the Artifact Store directory chain for links, reparse points, or unexpected ownership changes. |
+| `use.artifact_store.quarantined` | Keep the preserved content and marker intact for incident review. Do not bypass the Artifact Store path or overwrite the digest in place; wait for a verified rehydration workflow. |
+| `use.artifact_store.quarantine_not_required` | The fresh audit verified the content. Do not publish a corruption marker. |
+| `use.artifact_store.quarantine_not_auditable` | The digest container is absent or incomplete. Preserve staging evidence and investigate; no complete mismatch exists to confirm. |
+| `use.artifact_store.quarantine_plan_mismatch` | Content or reviewed evidence changed. Re-run planning and obtain fresh explicit confirmation; never replay the stale digest blindly. |
+| `use.artifact_store.quarantine_state_invalid` | Preserve the container for incident review. A marker is malformed, noncanonical, unsafe, conflicting, or interrupted; do not bypass it or treat it as deletion authority. |
 | `use.artifact_store.quota_exceeded` | Review current/projected logical bytes and containers. Increase the global policy through revision CAS or complete a future confirmed global cleanup before retrying. |
 | `use.artifact_store.quota_config_invalid` | Stop publishers, preserve the malformed `storage-quota.acl` or staging file outside the store for incident review, remove only that proven invalid state, then recreate policy through the typed API. |
 | `use.artifact_store.quota_revision_conflict` | Read the current policy and review the mutation again; never retry a stale change blindly. |
@@ -302,6 +318,7 @@ source-mismatched cache state fails closed.
 Do not repair a blob by renaming arbitrary bytes to its expected digest. The
 current write path deliberately refuses to replace corrupt global content.
 `ArtifactStore::audit_digests` can now produce read-only mismatch evidence;
-quarantine and verified rehydration remain separate unfinished controls.
+exact-plan logical quarantine can contain a reviewed complete mismatch without
+moving its bytes. Verified rehydration remains a separate unfinished control.
 Source-cache pruning is not global Artifact Store GC, coordinated backup,
 incident response, or whole-product recovery; those remain release gates.
