@@ -70,6 +70,13 @@ is activated, but it must never mirror the current JSON authority; graph,
 operation, Grant, enablement, binding, capability, reachability, diagnostic,
 backup, and restore readers switch together.
 
+The repository now carries a
+[machine-checked coordinated cutover inventory](https://github.com/A3S-Lab/Use/blob/main/docs/control-store-cutover.md).
+It accounts for every supported installation-state leaf exactly once and pins
+the consumer groups that must switch without dual writes or fallback reads.
+This freezes the implementation boundary only; production activation remains
+inactive and no A2 item is complete.
+
 The checked-in Control Store kernel is deliberately inactive. Its clean-state
 schema-v5 aggregate persists each canonical complete reviewed Plan envelope and
 versioned authorization record. It derives operation identity, Plan and

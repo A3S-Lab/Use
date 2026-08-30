@@ -483,6 +483,14 @@ boundary; it does not complete an A2 checkbox by itself. Production activation
 must switch the complete mutable control aggregate and its reachability,
 diagnostic, backup, and restore readers together.
 
+The checked-in [coordinated cutover contract](docs/control-store-cutover.md)
+freezes that replacement boundary in versioned ACL. A unit test accounts for
+every supported installation-state leaf exactly once as legacy authority,
+registered external ownership, or excluded operational state; it also pins the
+seven consumer groups that must switch without fallback. This closes the
+inventory prerequisite only. It neither activates the database nor completes
+an A2 checkbox.
+
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
 for a clean installation. Schema v5 binds one exact `InstallationId` and stores
 contiguous installation generations, canonical complete reviewed Plan

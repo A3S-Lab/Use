@@ -327,4 +327,6 @@ impl ControlStore {
 #[cfg(test)]
 mod aggregate_tests;
 #[cfg(test)]
+mod cutover_manifest_tests;
+#[cfg(test)]
 mod tests;
