@@ -71,8 +71,9 @@ durable Host outcome 才会报告 `Completed`。
   canonical marker 原位保留 mismatch 字节并阻止新的普通访问。Verified
   rehydration 现要求 Artifact Store 外部候选、精确审查证据、新的全局零引用证明，
   以及 prepared/completed fail-closed 恢复；完成态精确重放只读，且不再依赖
-  外部候选或完成后新增的引用。A1 剩余的 confirmed GC 与单一 snapshot
-  收敛门禁仍保持开放。
+  外部候选或完成后新增的引用。Confirmed GC 现要求有界的显式目标 allowlist、
+  新的全局零引用证明、精确物理与 lifecycle 证据、持久化 fail-closed 删除栅栏、
+  同分片原子退休与只读终态重放。A1 剩余的单一 snapshot 验收门禁仍保持开放。
 - 有界 resolver 会冻结一个 Registry/TUF package lock，前向准备依赖，一次
   发布图快照，再反向退休不再需要的包。
 - standalone CLI 会把有界 enabled Registry set 持久化为 canonical ACL，

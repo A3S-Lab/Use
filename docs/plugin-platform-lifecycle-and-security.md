@@ -557,7 +557,12 @@ candidate, exact reviewed plan, fresh global zero-reference proof, quota-aware
 staging, and prepared/completed recovery under the same collection boundary.
 Matching terminal replay is read-only and depends only on the durable records
 and verified canonical replacement, not the external candidate or a second
-zero-reference authorization. Confirmed GC remains release work.
+zero-reference authorization. Confirmed GC is implemented as a different
+reviewed mutation: only an explicit bounded digest allowlist plus a fresh
+global zero-reference proof and exact physical/lifecycle plan can authorize
+same-shard retirement. A durable global fence blocks new reference admission
+during interrupted deletion; bounded tombstone recovery rejects links and
+unowned entries, and terminal replay is read-only.
 
 A real-process failure test terminates installation after the complete target
 has entered the verified cache but while a high-entry archive is still being

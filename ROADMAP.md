@@ -238,7 +238,7 @@ Implementation evidence (2026-08-28):
   packages. Reuse the admission fingerprint, hold the exact collection guard,
   report mismatches without mutation, and fail closed on unsafe or unstable
   physical state.
-- [ ] Require an explicit confirmed garbage-collection policy before deletion.
+- [x] Require an explicit confirmed garbage-collection policy before deletion.
 - [x] Add exact-plan logical corruption quarantine. Re-audit under the exact
   collection guard, require the reviewed canonical plan digest, atomically
   publish a bounded marker, preserve forensic content in place, and fail new
@@ -412,10 +412,24 @@ open):
   later references to be retired again. The reviewed replacement consumes
   corrupt forensic content, so external evidence retention remains an operator
   decision rather than hidden Artifact Store GC.
+- `ArtifactStoreMaintenance` now owns explicit confirmed global garbage
+  collection. A policy names 1..=1024 exact Blob or expanded-package digests;
+  there is no implicit sweep. Plan and nonterminal apply retain one collection
+  guard across the complete reference scan and physical work, require zero
+  Registry, installation, receipt, snapshot, graph-operation, and lifecycle-
+  operation owners, and bind canonical physical measurements plus ordinary,
+  quarantined, or completed-rehydration lifecycle evidence. Apply requires the
+  reviewed plan digest, durably publishes a global prepared fence before any
+  deletion, atomically renames each container to a deterministic same-shard
+  tombstone, rejects links/reparse points and unowned residual entries, and
+  resumes bounded partial deletion after restart. While prepared or temporary
+  state exists, new reference admission fails closed. Completion is durable and
+  exact replay is read-only. Each new plan binds the previous completion digest,
+  so an old confirmation cannot delete an identical digest recreated later.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
-  Unreferenced expanded trees are retained until a global collector can prove
-  reachability across every installation and durable operation.
+  Unreferenced content remains retained unless an operator explicitly selects
+  it and confirms the exact global garbage-collection plan.
 - Enable and disable use package-state compare-and-swap inside the next
   Installation Snapshot generation. Receipts, Registry package bindings, and the v3
   enablement file are applied evidence or crash-recovery projections; none can
@@ -430,8 +444,6 @@ open):
   host names. The cursor revision still commits the complete projection so an
   alias-only projection change cannot evade snapshot consistency.
 - The remaining A1 work is structural, not a hidden compatibility layer: the
-  global blob and expanded-tree tiers still need confirmed GC built on the
-  completed audit, logical-quarantine, and verified-rehydration boundaries, and the
   complete two-installation lifecycle/lease matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store

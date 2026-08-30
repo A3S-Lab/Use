@@ -45,12 +45,12 @@ impl ArtifactStore {
     pub async fn acquire_reference_admission(&self) -> UseResult<ArtifactReferenceAdmission> {
         self.ensure_container(self.root(), "global artifact reachability")
             .await?;
-        acquire_reachability_lock(self, ReachabilityLockMode::Shared)
-            .await
-            .map(|file| ArtifactReferenceAdmission {
-                file,
-                root: self.root().to_path_buf(),
-            })
+        let file = acquire_reachability_lock(self, ReachabilityLockMode::Shared).await?;
+        super::garbage_collection::ensure_reference_admission_allowed(self.root()).await?;
+        Ok(ArtifactReferenceAdmission {
+            file,
+            root: self.root().to_path_buf(),
+        })
     }
 
     /// Freeze new durable references while deriving or applying maintenance.
