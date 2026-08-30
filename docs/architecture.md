@@ -92,18 +92,22 @@ to that exact User or Workspace installation. Host
 projections and deployed units are receipt-owned derived state; packages do not
 scatter authoritative files across host directories. The current preview still
 materializes mutable authority across multiple scoped stores.
-`InstallationSnapshot` is already the sole installed-selection and
-desired-activation authority; ROADMAP A2 tracks transactional consolidation of
-the remaining control facts and applied observations. ADR-003 fixes the
+`InstallationSnapshot` is already the sole desired graph and activation
+authority. The current receipt-backed materialization still carries immutable
+package-lifecycle incarnation; ROADMAP A2 moves that identity and the remaining
+control facts and applied observations into one transaction. ADR-003 fixes the
 transaction, outbox, backup, and migration boundaries: the SQLite/WAL backend
 may be qualified before activation, but every authoritative reader switches as
 one cutover and live WAL files are never copied as backup payloads.
-The current private Control Store kernel qualifies only an installation-bound
-schema-v1 database, bounded blocking executor, and canonical offline-verifiable
-export on otherwise clean state. Production lifecycle code does not construct
-it, so it neither mirrors nor replaces the current JSON authority; aggregate
-commands, outbox processing, and the coordinated reader/writer cutover remain
-A2 work.
+The current private Control Store kernel qualifies an installation-bound
+schema-v3 aggregate, bounded blocking executor, typed transitions and outbox,
+and canonical offline-verifiable export plus staged restore on otherwise clean
+state. It distinguishes installation generation, package desired-state
+generation, and immutable package-lifecycle generation, and binds effects to
+the exact selected incarnation. Production lifecycle code does not construct
+it, so it neither mirrors nor replaces the current JSON authority; lifecycle
+conversion, external-payload ownership, and the coordinated reader/writer
+cutover remain A2 work.
 
 Snapshot v2 gives every selected package one monotonic state generation,
 desired enablement bit, and exact selected-surface closure. Enable/disable

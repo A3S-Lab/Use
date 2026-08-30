@@ -16,8 +16,8 @@ use super::model::{
     ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
     ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectRecord,
     ControlEffectStatus, ControlGeneration, ControlGrantSelection, ControlOperationRecord,
-    ControlOperationStatus, ControlProviderBinding, ControlStoreAuthority, ControlTransition,
-    ReviewedControlOperation,
+    ControlOperationStatus, ControlPackageLifecycle, ControlProviderBinding, ControlStoreAuthority,
+    ControlTransition, ReviewedControlOperation,
 };
 use super::schema;
 
@@ -166,6 +166,7 @@ pub(super) fn commit_transition(
         prior.as_ref().map(|generation| &generation.snapshot),
         &transition.snapshot,
     )?;
+    transition.validate_effect_references(prior.as_ref())?;
     if operation.status != ControlOperationStatus::Reviewed {
         if matches!(
             operation.status,
@@ -674,6 +675,7 @@ fn generation_matches_transition(
 ) -> bool {
     generation.operation_id == transition.operation_id
         && generation.snapshot == transition.snapshot
+        && generation.package_lifecycles == transition.package_lifecycles
         && generation.grants == transition.grants
         && generation.bindings == transition.bindings
         && generation.capability == transition.capability

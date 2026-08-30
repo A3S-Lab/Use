@@ -132,9 +132,11 @@ uncommittable. At minimum it enforces:
 - exactly one validated installation identity per database;
 - one selected package identity per installation generation;
 - roots and dependency edges referencing selected packages in that generation;
-- monotonically increasing installation and package state generations;
+- monotonically increasing installation and package state generations, with a
+  separate positive immutable lifecycle generation for each selected package;
 - one immutable reviewed plan digest per operation ID;
-- checkpoints and outbox entries referencing their exact operation and package
+- checkpoints and outbox entries referencing their exact operation,
+  installation generation, package identity, and immutable lifecycle
   generation; and
 - capability and provider-binding metadata referencing the generation that
   selected it.
@@ -202,11 +204,14 @@ to a committed transaction plus explicit external-effect observations.
 ### Current qualification status
 
 The checked-in inactive kernel implements most of the local Control Store work
-in step 2, not the authority cutover. Schema v2 binds one exact installation
+in step 2, not the authority cutover. Schema v3 binds one exact installation
 and stores the complete generation history, reviewed root-package operations,
 exact installation snapshots and relational graph projections, canonical full
 Workspace Grants, provider bindings, capability publication states, lifecycle
-checkpoints, and effect outbox observations. Typed transactions enforce cursor
+checkpoints, and effect outbox observations. Installation generation, desired
+package-state generation, and immutable package-lifecycle generation remain
+separate; effect foreign keys bind the exact current or immediately prior
+package incarnation. Typed transactions enforce cursor
 compare-and-swap, root/action semantics, exact replay, required-effect failure,
 and capability retirement. Expired or explicitly unknown claims require an
 explicit reconciliation request and retain the same effect idempotency key,
@@ -219,7 +224,8 @@ export contains the full aggregate, performs semantic verification without the
 live database, and can be restored only through a clean staged database whose
 authority must round-trip exactly. Tests cover atomic rollback, concurrent
 generation races, corruption and relational drift, linked-path substitution,
-multi-generation capability history, outbox ambiguity, deterministic export,
+multi-generation capability history, independent package generation axes,
+outbox ambiguity, deterministic export, lifecycle-reference tamper detection,
 and staged restore.
 
 The kernel remains private and no production lifecycle constructs it. It does

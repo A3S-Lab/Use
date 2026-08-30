@@ -123,7 +123,7 @@ pub(super) fn read_generation_from(
             "A Control Store installation snapshot does not match its generation evidence.",
         ));
     }
-    validate_snapshot_relations(connection, &snapshot)?;
+    let package_lifecycles = validate_snapshot_relations(connection, &snapshot)?;
     let grants = read_grants(connection, generation)?;
     let bindings = read_bindings(connection, generation)?;
     let (capability_generation, descriptor_digest, publication_state, published_at_ms): (
@@ -163,6 +163,7 @@ pub(super) fn read_generation_from(
         operation_id,
         snapshot,
         snapshot_digest,
+        package_lifecycles,
         grants,
         bindings,
         capability,
@@ -175,11 +176,12 @@ pub(super) fn read_generation_from(
 fn validate_snapshot_relations(
     connection: &Connection,
     snapshot: &InstallationSnapshot,
-) -> UseResult<()> {
+) -> UseResult<Vec<ControlPackageLifecycle>> {
     let generation = to_i64(snapshot.generation)?;
     let mut statement = connection
         .prepare(
-            "SELECT package_id, state_generation, enabled, package_json, package_digest
+            "SELECT package_id, lifecycle_generation, state_generation, enabled,
+                    package_json, package_digest
              FROM selected_package WHERE generation = ?1 ORDER BY package_id",
         )
         .map_err(|error| schema::sqlite_error("prepare selected package validation", error))?;
@@ -188,9 +190,10 @@ fn validate_snapshot_relations(
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
-                row.get::<_, bool>(2)?,
-                row.get::<_, Vec<u8>>(3)?,
-                row.get::<_, String>(4)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, bool>(3)?,
+                row.get::<_, Vec<u8>>(4)?,
+                row.get::<_, String>(5)?,
             ))
         })
         .map_err(|error| schema::sqlite_error("query selected packages", error))?
@@ -203,15 +206,16 @@ fn validate_snapshot_relations(
     }
     for (row, expected) in rows.iter().zip(&snapshot.packages) {
         let expected_json = canonical_json(&expected.package)?;
-        let decoded: LockedPluginPackage = serde_json::from_slice(&row.3).map_err(|_| {
+        let decoded: LockedPluginPackage = serde_json::from_slice(&row.4).map_err(|_| {
             corruption_error("A Control Store selected-package value is invalid JSON.")
         })?;
         if row.0 != expected.package_id()
-            || from_i64(row.1)? != expected.state_generation
-            || row.2 != expected.enabled
+            || from_i64(row.1)? == 0
+            || from_i64(row.2)? != expected.state_generation
+            || row.3 != expected.enabled
             || decoded != expected.package
-            || row.3 != expected_json
-            || row.4 != sha256_digest(&expected_json)
+            || row.4 != expected_json
+            || row.5 != sha256_digest(&expected_json)
         {
             return Err(corruption_error(
                 "A Control Store selected-package row drifted from its snapshot.",
@@ -220,7 +224,15 @@ fn validate_snapshot_relations(
     }
     validate_roots(connection, snapshot)?;
     validate_dependencies(connection, snapshot)?;
-    validate_surfaces(connection, snapshot)
+    validate_surfaces(connection, snapshot)?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(ControlPackageLifecycle {
+                package_id: row.0,
+                lifecycle_generation: from_i64(row.1)?,
+            })
+        })
+        .collect()
 }
 
 fn validate_roots(connection: &Connection, snapshot: &InstallationSnapshot) -> UseResult<()> {
@@ -423,8 +435,9 @@ pub(super) fn read_effects_from(
 ) -> UseResult<Vec<ControlEffectRecord>> {
     let mut statement = connection
         .prepare(
-            "SELECT c.sequence, o.idempotency_key, c.package_generation,
-                    c.package_id, o.provider_id, c.checkpoint_kind, o.payload_digest,
+            "SELECT c.sequence, o.idempotency_key, c.installation_generation,
+                    c.package_id, c.package_lifecycle_generation, o.provider_id,
+                    c.checkpoint_kind, o.payload_digest,
                     c.required, o.status, o.attempt, o.claim_owner, o.claim_token,
                     o.lease_until_ms, o.evidence_digest, o.error_code,
                     o.observed_at_ms
@@ -441,18 +454,19 @@ pub(super) fn read_effects_from(
                 row.get::<_, String>(1)?,
                 row.get::<_, i64>(2)?,
                 row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
+                row.get::<_, i64>(4)?,
                 row.get::<_, String>(5)?,
                 row.get::<_, String>(6)?,
-                row.get::<_, bool>(7)?,
-                row.get::<_, String>(8)?,
-                row.get::<_, i64>(9)?,
-                row.get::<_, Option<String>>(10)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, bool>(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, i64>(10)?,
                 row.get::<_, Option<String>>(11)?,
-                row.get::<_, Option<i64>>(12)?,
-                row.get::<_, Option<String>>(13)?,
+                row.get::<_, Option<String>>(12)?,
+                row.get::<_, Option<i64>>(13)?,
                 row.get::<_, Option<String>>(14)?,
-                row.get::<_, Option<i64>>(15)?,
+                row.get::<_, Option<String>>(15)?,
+                row.get::<_, Option<i64>>(16)?,
             ))
         })
         .map_err(|error| schema::sqlite_error("query Control Store effects", error))?
@@ -462,28 +476,29 @@ pub(super) fn read_effects_from(
         .map(|row| {
             let sequence = u32::try_from(row.0)
                 .map_err(|_| corruption_error("A Control Store effect sequence is invalid."))?;
-            let attempt = u32::try_from(row.9)
+            let attempt = u32::try_from(row.10)
                 .map_err(|_| corruption_error("A Control Store effect attempt is invalid."))?;
             Ok(ControlEffectRecord {
                 operation_id: operation_id.to_string(),
                 intent: ControlEffectIntent {
                     sequence,
                     idempotency_key: row.1,
-                    package_generation: from_i64(row.2)?,
+                    installation_generation: from_i64(row.2)?,
                     package_id: row.3,
-                    provider_id: row.4,
-                    kind: ControlEffectKind::parse(&row.5)?,
-                    payload_digest: row.6,
-                    required: row.7,
+                    package_lifecycle_generation: from_i64(row.4)?,
+                    provider_id: row.5,
+                    kind: ControlEffectKind::parse(&row.6)?,
+                    payload_digest: row.7,
+                    required: row.8,
                 },
-                status: ControlEffectStatus::parse(&row.8)?,
+                status: ControlEffectStatus::parse(&row.9)?,
                 attempt,
-                claim_owner: row.10,
-                claim_token: row.11,
-                lease_until_ms: row.12.map(from_i64).transpose()?,
-                evidence_digest: row.13,
-                error_code: row.14,
-                observed_at_ms: row.15.map(from_i64).transpose()?,
+                claim_owner: row.11,
+                claim_token: row.12,
+                lease_until_ms: row.13.map(from_i64).transpose()?,
+                evidence_digest: row.14,
+                error_code: row.15,
+                observed_at_ms: row.16.map(from_i64).transpose()?,
             })
         })
         .collect()
