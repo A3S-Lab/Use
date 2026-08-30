@@ -1,4 +1,40 @@
 use super::*;
+use crate::ArtifactStorageQuotaPolicy;
+
+#[tokio::test]
+async fn expanded_package_publication_is_rejected_before_staging_when_quota_is_exhausted() {
+    let temporary = tempfile::tempdir().unwrap();
+    let source = temporary.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 6);
+    let registry = registry(temporary.path());
+    let artifact_store = registry.paths().artifact_store();
+    let snapshot = artifact_store.storage_quota().await.unwrap();
+    artifact_store
+        .set_storage_quota(
+            &snapshot.revision,
+            ArtifactStorageQuotaPolicy::new(candidate.expanded_bytes() - 1, 1).unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let error = registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.artifact_store.quota_exceeded");
+    assert!(!registry.lifecycle_package_root(&identity).exists());
+    assert!(registry.get("acme/cognitive").await.unwrap().is_none());
+}
 
 #[tokio::test]
 async fn receipt_reference_survives_missing_physical_content() {

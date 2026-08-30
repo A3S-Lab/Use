@@ -13,6 +13,12 @@ use super::registry::{ExtensionReceipt, MAX_EXTENSION_RECEIPT_BYTES};
 use super::state_maintenance::{StateMaintenanceGuard, StateMaintenanceLock};
 use super::{ArtifactReferenceAdmission, ArtifactStore, ExtensionManifest, ExtensionPaths};
 
+mod copy;
+
+#[cfg(test)]
+pub(crate) use copy::copy_package;
+pub(crate) use copy::copy_package_exact;
+
 pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
 pub(crate) const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
@@ -148,87 +154,6 @@ fn is_executable(metadata: &std::fs::Metadata) -> bool {
 #[cfg(not(unix))]
 fn is_executable(_metadata: &std::fs::Metadata) -> bool {
     true
-}
-
-pub(crate) async fn copy_package(source: &Path, target: &Path) -> UseResult<()> {
-    let mut pending = vec![(source.to_path_buf(), target.to_path_buf())];
-    let mut files = 0_usize;
-    let mut bytes = 0_u64;
-    while let Some((source_dir, target_dir)) = pending.pop() {
-        let source_metadata = fs::symlink_metadata(&source_dir)
-            .await
-            .map_err(|error| io_error("inspect extension package directory", &source_dir, error))?;
-        if a3s_use_core::metadata_is_link_or_reparse_point(&source_metadata) {
-            return Err(UseError::new(
-                "use.extension.package_symlink",
-                format!(
-                    "Extension package directory '{}' is a link or reparse point.",
-                    source_dir.display()
-                ),
-            ));
-        }
-        if !source_metadata.is_dir() {
-            return Err(UseError::new(
-                "use.extension.package_entry_invalid",
-                format!(
-                    "Extension package directory '{}' is not a directory.",
-                    source_dir.display()
-                ),
-            ));
-        }
-        fs::create_dir_all(&target_dir)
-            .await
-            .map_err(|error| io_error("create staged package directory", &target_dir, error))?;
-        let mut entries = fs::read_dir(&source_dir)
-            .await
-            .map_err(|error| io_error("read extension package directory", &source_dir, error))?;
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|error| io_error("read extension package entry", &source_dir, error))?
-        {
-            let source_path = entry.path();
-            let target_path = target_dir.join(entry.file_name());
-            let metadata = fs::symlink_metadata(&source_path).await.map_err(|error| {
-                io_error("inspect extension package entry", &source_path, error)
-            })?;
-            if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) {
-                return Err(UseError::new(
-                    "use.extension.package_symlink",
-                    format!(
-                        "Extension package entry '{}' is a link or reparse point.",
-                        source_path.display()
-                    ),
-                ));
-            }
-            if metadata.is_dir() {
-                pending.push((source_path, target_path));
-            } else if metadata.is_file() {
-                files += 1;
-                bytes = bytes.saturating_add(metadata.len());
-                if files > MAX_PACKAGE_FILES || bytes > MAX_PACKAGE_BYTES {
-                    return Err(UseError::new(
-                        "use.extension.package_too_large",
-                        "The extension package exceeds the local installation limits.",
-                    ));
-                }
-                fs::copy(&source_path, &target_path)
-                    .await
-                    .map_err(|error| {
-                        io_error("copy extension package file", &source_path, error)
-                    })?;
-            } else {
-                return Err(UseError::new(
-                    "use.extension.package_entry_invalid",
-                    format!(
-                        "Extension package entry '{}' is not a regular file or directory.",
-                        source_path.display()
-                    ),
-                ));
-            }
-        }
-    }
-    Ok(())
 }
 
 pub(crate) async fn write_receipt(

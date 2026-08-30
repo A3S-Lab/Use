@@ -1,7 +1,7 @@
 # A3S Use Architecture
 
 Status: development preview; not production-ready
-Last updated: 2026-08-29
+Last updated: 2026-08-30
 
 ## Product boundary
 
@@ -50,7 +50,7 @@ ownership boundaries stabilize.
 | --- | --- | --- |
 | Package aggregate | One manifest generation owns Tool, MCP, OKF, Flow, Skill, and UI surfaces; dependency preparation and retirement are ordered around one cutover. | Correct foundation. A surface must not become an independently installed mini-package. |
 | Trust and planning | TUF provenance, exact SemVer locks, read-only planning, explicit confirmation, generation compare-and-swap, and crash replay are enforced. | Correct foundation. Keep source transport, trust evidence, and package identity separate. |
-| Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. A guarded, bounded, path-free joined inventory captures physical content plus Registry, installation, receipt, pending-graph, and nonterminal lifecycle references in one collection pass, conservatively retaining owners retired during inspection; it derives checked storage usage and supports bounded quota assessment. Source observations and resumable partials remain source-scoped; hard quota admission, quarantine, rehydration, and garbage collection are not implemented. | Partially correct. Complete concurrency-safe quota admission and the explicit audit/repair/GC policy before deleting or replacing shared bytes. |
+| Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. A guarded, bounded, path-free joined inventory captures physical content plus Registry, installation, receipt, pending-graph, and nonterminal lifecycle references in one collection pass, conservatively retaining owners retired during inspection; it derives checked storage usage and supports bounded quota assessment. Optional durable global quota policy serializes policy-enabled physical publication across processes and rejects growth beyond logical-byte or digest-container ceilings. Source observations and resumable partials remain source-scoped; quarantine, rehydration, and garbage collection are not implemented. | Partially correct. Quota correctness is established with a serialized admission boundary. Complete the explicit audit/repair/GC policy before deleting or replacing shared bytes. |
 | Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. | Critical debt. A2 must make related control facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
 | Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
 | Identity | Registry ownership, accepted-call leases, cursors, and Tool/MCP host names use scoped package/generation/surface keys. The optional manifest `route` is retained only as a human alias; duplicates are legal and explicit alias lookup rejects ambiguity. | Corrected A1 foundation. Aliases may improve presentation but must never enter ownership or cursor identity. |
@@ -113,8 +113,7 @@ authority and never deletes shared bytes. Installation backup excludes the
 global store. The joined reachability inventory now captures which installations
 and nonterminal operations retain each digest together with its physical
 measurements and checked usage. Unreferenced expanded content is still retained
-until audit, concurrency-safe quota admission, and confirmed deletion are
-implemented.
+until audit and confirmed deletion are implemented.
 
 Verified archives, executable planning targets, and presentation media now use
 the global sharded Blob tier. Registry-source datastores retain only canonical
@@ -137,9 +136,16 @@ installation identity, rejects conflicting physical expectations, and retains
 missing-content references. Joined reachability v1 captures those reference and
 physical facts under the same exclusive guard, reports metadata expectation
 status, and derives checked storage usage plus bounded quota assessment. It does
-not rehash content, reserve capacity against concurrent publication, or grant
-deletion authority. No collector may delete shared raw or expanded bytes until
-hard quota admission, confirmation, corruption quarantine, and verified
+not rehash content or grant deletion authority. The Artifact Store separately
+owns optional canonical `storage-quota.acl` policy state. Policy mutation uses
+revision compare-and-swap. All publishers take reference admission before the
+storage boundary and per-digest lock. With no policy, the storage lock is
+shared; with a policy, one exclusive lock covers physical scan, exact
+logical-byte/container projection, staging reclamation, and final publication.
+This serialized protocol prevents concurrent overcommit without a parallel
+reservation ledger. It also permits only non-worsening replay or cleanup when a
+tightened policy is already exceeded. No collector may delete shared raw or
+expanded bytes until confirmation, corruption quarantine, and verified
 rehydration are implemented without replacing an admitted generation in place.
 
 Every Runtime, Flow, OKF binding/SQLite, and lifecycle journal store captures

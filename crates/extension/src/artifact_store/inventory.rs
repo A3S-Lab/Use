@@ -4,6 +4,10 @@ use a3s_use_core::UseResult;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
+use super::quota::{
+    validate_policy_metadata, STORAGE_QUOTA_LOCK, STORAGE_QUOTA_POLICY_FILE,
+    STORAGE_QUOTA_TEMPORARY_FILE,
+};
 use super::{
     artifact_store_error, validate_lock_metadata, validate_real_directory, validate_sha256,
     ArtifactCollectionGuard, ArtifactStore, ARTIFACT_STAGING_PREFIX, BLOBS_DIRECTORY,
@@ -73,6 +77,14 @@ impl ArtifactStore {
         collection: &ArtifactCollectionGuard,
     ) -> UseResult<ArtifactStoreInventory> {
         collection.ensure_store(self)?;
+        self.scan_inventory_under_global_guard().await
+    }
+
+    /// The caller must own either the exclusive reachability collection guard,
+    /// or shared reference admission plus the exclusive storage boundary.
+    pub(super) async fn scan_inventory_under_global_guard(
+        &self,
+    ) -> UseResult<ArtifactStoreInventory> {
         validate_real_directory(self.root(), "Artifact Store root").await?;
 
         let mut budget = InventoryBudget::default();
@@ -144,6 +156,15 @@ async fn scan_store_root(
         match name.as_str() {
             REACHABILITY_LOCK => {
                 validate_lock_metadata(&path, &metadata, "global artifact reachability")?;
+            }
+            STORAGE_QUOTA_LOCK => {
+                validate_lock_metadata(&path, &metadata, "Artifact Store quota")?;
+            }
+            STORAGE_QUOTA_POLICY_FILE => {
+                validate_policy_metadata(&path, &metadata, false)?;
+            }
+            STORAGE_QUOTA_TEMPORARY_FILE => {
+                validate_policy_metadata(&path, &metadata, true)?;
             }
             BLOBS_DIRECTORY => {
                 validate_directory_metadata(&path, &metadata, "blob Artifact Store tier")?;
