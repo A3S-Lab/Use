@@ -4,6 +4,7 @@
 - Decision date: 2026-08-30
 - Architecture: [A3S Use Architecture](architecture.md)
 - Lifecycle: [ADR-002](adr-002-cognitive-package-lifecycle-saga.md)
+- Cutover inventory: [Control Store Coordinated Cutover](control-store-cutover.md)
 - Roadmap: [A3S Use Roadmap](../ROADMAP.md)
 
 ## Context
@@ -256,6 +257,14 @@ descriptors, and effect intents, the full process-exit matrix, the indivisible
 reader/writer cutover, and deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
+
+The machine-checked
+[cutover inventory](control-store-cutover.md) now freezes every supported
+legacy authority leaf, retained external owner, operational file, and consumer
+that must change with production activation. It proves inventory completeness
+against the current state layout and forbids dual-write or fallback-read
+activation. This completes an architecture prerequisite only; it does not wire
+the kernel or satisfy an A2 exit gate.
 
 ## Consequences
 

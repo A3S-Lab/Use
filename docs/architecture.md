@@ -117,7 +117,11 @@ Production lifecycle code does not construct
 it, so it neither mirrors nor replaces the current JSON authority. Lifecycle
 conversion still must derive complete Grant, binding, capability, and effect
 inventories. External-payload ownership and the coordinated reader/writer
-cutover also remain A2 work.
+cutover also remain A2 work. The machine-checked
+[cutover contract](control-store-cutover.md) now freezes the current authority,
+external-owner, operational-state, and consumer inventory against the actual
+state layout. It is an implementation prerequisite, not an activated migration
+or a completed A2 gate.
 
 Snapshot v2 gives every selected package one monotonic state generation,
 desired enablement bit, and exact selected-surface closure. Enable/disable

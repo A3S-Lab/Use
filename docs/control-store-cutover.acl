@@ -1,0 +1,473 @@
+control_store_cutover {
+  schema_version           = 1
+  status                   = "inventory-frozen"
+  production_authority     = "legacy-files"
+  control_store_activation = "inactive"
+  migration_policy         = "clean-state-only"
+  cutover_unit             = "one-installation-aggregate"
+  dual_write_allowed       = false
+  fallback_read_allowed    = false
+
+  authority "installation-graph" {
+    legacy_paths = ["installation-snapshot.json"]
+    facts = [
+      "installation generation",
+      "requested roots and resolved dependency graph",
+      "desired package enablement and selected surfaces",
+      "package state and lifecycle generations",
+    ]
+    implementation = [
+      "src/cognitive_package/store/installation.rs",
+    ]
+    readers = [
+      "src/artifact_reachability/installation.rs",
+      "src/capability_registry.rs",
+      "src/cognitive_package/enablement.rs",
+      "src/cognitive_package/install.rs",
+      "src/cognitive_package/mod.rs",
+      "src/cognitive_package/uninstall.rs",
+      "src/cognitive_package/upgrade.rs",
+      "src/state_backup/inventory.rs",
+    ]
+    writers = [
+      "src/cognitive_package/enablement.rs",
+      "src/cognitive_package/install.rs",
+      "src/cognitive_package/uninstall.rs",
+      "src/cognitive_package/upgrade.rs",
+    ]
+    target_owner       = "control-store"
+    cutover            = "same-commit"
+    legacy_disposition = "delete"
+  }
+
+  authority "reviewed-graph-operations" {
+    legacy_paths = ["operations/package-graphs"]
+    facts = [
+      "reviewed install, upgrade, and uninstall Plan evidence",
+      "authorization, confirmation, and exact package lock evidence",
+      "admission, cancellation, and recovery phase",
+    ]
+    implementation = [
+      "src/cognitive_package/store/inventory.rs",
+      "src/cognitive_package/store/pending.rs",
+    ]
+    readers = [
+      "src/artifact_reachability/installation.rs",
+      "src/cognitive_package/diagnostic.rs",
+      "src/cognitive_package/diagnostic_history.rs",
+      "src/cognitive_package/enablement.rs",
+      "src/cognitive_package/host_manager.rs",
+      "src/cognitive_package/install.rs",
+      "src/cognitive_package/mod.rs",
+      "src/cognitive_package/prepare_graph.rs",
+      "src/cognitive_package/uninstall.rs",
+      "src/cognitive_package/upgrade.rs",
+    ]
+    writers = [
+      "src/cognitive_package/host_manager.rs",
+      "src/cognitive_package/install.rs",
+      "src/cognitive_package/mod.rs",
+      "src/cognitive_package/uninstall.rs",
+      "src/cognitive_package/upgrade.rs",
+    ]
+    target_owner       = "control-store"
+    cutover            = "same-commit"
+    legacy_disposition = "delete"
+  }
+
+  authority "enablement-operations" {
+    legacy_paths = ["package-enablement"]
+    facts = [
+      "reviewed enable and disable Plan evidence",
+      "desired enablement projection",
+      "active operation and recovery phase",
+    ]
+    implementation = [
+      "src/cognitive_package/enablement_store.rs",
+    ]
+    readers = [
+      "src/cognitive_package/diagnostic/enablement.rs",
+      "src/cognitive_package/enablement.rs",
+      "src/cognitive_package/enablement_plan.rs",
+      "src/cognitive_package/host_manager.rs",
+      "src/cognitive_package/mod.rs",
+      "src/state_backup/inventory.rs",
+    ]
+    writers = [
+      "src/cognitive_package/enablement.rs",
+      "src/cognitive_package/host_manager.rs",
+    ]
+    target_owner       = "control-store"
+    cutover            = "same-commit"
+    legacy_disposition = "delete"
+  }
+
+  authority "workspace-grants" {
+    legacy_paths = ["grants"]
+    facts = [
+      "candidate and committed Workspace Grants",
+      "Grant receipt revisions and canonical digests",
+      "cutover, revocation, rollback, and recovery phase",
+    ]
+    implementation = [
+      "crates/extension/src/workspace_grant.rs",
+      "crates/extension/src/workspace_grant_lifecycle.rs",
+      "crates/extension/src/workspace_grant_operation.rs",
+      "crates/extension/src/workspace_grant_snapshot.rs",
+    ]
+    readers = [
+      "src/cognitive_package/grant.rs",
+      "src/cognitive_package/mod.rs",
+      "src/okf_knowledge/recovery.rs",
+      "src/plugin_lifecycle/grant.rs",
+      "src/state_backup/inventory.rs",
+    ]
+    writers = [
+      "src/cognitive_package/grant.rs",
+      "src/plugin_lifecycle/grant.rs",
+    ]
+    target_owner       = "control-store"
+    cutover            = "same-commit"
+    legacy_disposition = "delete"
+  }
+
+  authority "lifecycle-journal" {
+    legacy_paths = ["operations/plugins"]
+    facts = [
+      "package and surface lifecycle intent",
+      "checkpoint and effect-attempt identity",
+      "provider observations, drain, rollback, and terminal result",
+    ]
+    implementation = [
+      "src/plugin_lifecycle/store.rs",
+    ]
+    readers = [
+      "src/artifact_reachability/installation.rs",
+      "src/cognitive_package/diagnostic.rs",
+      "src/cognitive_package/diagnostic/projection.rs",
+      "src/cognitive_package/host_manager.rs",
+      "src/extension_cli.rs",
+      "src/okf_knowledge/recovery.rs",
+      "src/plugin_lifecycle/coordinator.rs",
+      "src/state_backup/inventory.rs",
+    ]
+    writers = [
+      "src/cognitive_package/host_manager.rs",
+      "src/cognitive_package/hosts.rs",
+      "src/cognitive_package/upgrade.rs",
+      "src/plugin_lifecycle/coordinator.rs",
+    ]
+    target_owner       = "control-store"
+    cutover            = "same-commit"
+    legacy_disposition = "delete"
+  }
+
+  authority "capability-registry" {
+    legacy_paths = [
+      "extension-generations",
+      "extensions",
+      "registry.json",
+    ]
+    facts = [
+      "current and retained package receipt identity",
+      "capability generation and package projection",
+      "pending graph cutover and publication checkpoint",
+    ]
+    implementation = [
+      "crates/extension/src/registry.rs",
+      "crates/extension/src/registry/lifecycle.rs",
+      "crates/extension/src/registry/lifecycle/cutover.rs",
+      "crates/extension/src/registry/lifecycle/generations.rs",
+      "crates/extension/src/registry/lifecycle/visibility.rs",
+      "crates/extension/src/registry/snapshot_lease.rs",
+    ]
+    readers = [
+      "src/artifact_reachability/installation.rs",
+      "src/capability_registry.rs",
+      "src/capability_registry/lease.rs",
+      "src/cognitive_package/host_manager.rs",
+      "src/cognitive_package/hosts.rs",
+      "src/cognitive_package/mod.rs",
+      "src/extension_cli.rs",
+      "src/extension_cli/manager.rs",
+      "src/extension_host.rs",
+      "src/okf_knowledge/lease.rs",
+      "src/okf_knowledge/recovery.rs",
+      "src/plugin_lifecycle/registry_hosts.rs",
+      "src/plugin_runtime/task_dispatch.rs",
+      "src/state_backup.rs",
+      "src/state_restore/authority.rs",
+    ]
+    writers = [
+      "src/cognitive_package/hosts.rs",
+      "src/extension_cli.rs",
+      "src/plugin_lifecycle/registry_hosts.rs",
+    ]
+    target_owner       = "control-store"
+    cutover            = "same-commit"
+    legacy_disposition = "delete"
+  }
+
+  authority "runtime-bindings" {
+    legacy_paths = ["bindings/runtime"]
+    facts = [
+      "Runtime provider and endpoint identity",
+      "provisioning and readiness observation",
+      "exact package and surface generation binding",
+    ]
+    implementation = [
+      "src/plugin_runtime/store.rs",
+      "src/plugin_runtime/store/provisioning.rs",
+    ]
+    readers = [
+      "src/capability_registry.rs",
+      "src/capability_registry/mcp.rs",
+      "src/capability_registry/runtime_tasks.rs",
+      "src/cognitive_package/hosts.rs",
+      "src/plugin_lifecycle/runtime.rs",
+      "src/plugin_runtime/surface_observer.rs",
+      "src/plugin_runtime/task_dispatch.rs",
+    ]
+    writers = [
+      "src/plugin_lifecycle/runtime.rs",
+      "src/plugin_runtime/store/provisioning.rs",
+    ]
+    target_owner       = "control-store"
+    cutover            = "same-commit"
+    legacy_disposition = "delete"
+  }
+
+  authority "flow-bindings" {
+    legacy_paths = ["bindings/flow"]
+    facts = [
+      "Flow provider and compiler identity",
+      "preflight observation and source digest",
+      "exact package and surface generation binding",
+    ]
+    implementation = [
+      "src/flow_runtime/store.rs",
+    ]
+    readers = [
+      "src/capability_registry.rs",
+      "src/cognitive_package/hosts.rs",
+      "src/flow_runtime/lifecycle.rs",
+    ]
+    writers = [
+      "src/flow_runtime/lifecycle.rs",
+    ]
+    target_owner       = "control-store"
+    cutover            = "same-commit"
+    legacy_disposition = "delete"
+  }
+
+  authority "knowledge-bindings" {
+    legacy_paths = ["bindings/knowledge"]
+    facts = [
+      "Knowledge provider identity and projection digest",
+      "staged, promoted, removed, and failed observation",
+      "exact package and surface generation binding",
+    ]
+    implementation = [
+      "src/okf_knowledge/store.rs",
+    ]
+    readers = [
+      "src/capability_registry.rs",
+      "src/cognitive_package/embedded.rs",
+      "src/cognitive_package/hosts.rs",
+      "src/okf_knowledge/recovery.rs",
+      "src/plugin_lifecycle/okf.rs",
+    ]
+    writers = [
+      "src/okf_knowledge/recovery.rs",
+      "src/plugin_lifecycle/okf.rs",
+    ]
+    target_owner       = "control-store"
+    cutover            = "same-commit"
+    legacy_disposition = "delete"
+  }
+
+  consumer "package-lifecycle-orchestrator" {
+    implementation = [
+      "src/cognitive_package/enablement.rs",
+      "src/cognitive_package/install.rs",
+      "src/cognitive_package/mod.rs",
+      "src/cognitive_package/uninstall.rs",
+      "src/cognitive_package/upgrade.rs",
+      "src/plugin_lifecycle/coordinator.rs",
+    ]
+    required_change = "Replace file-store mutation and recovery with typed Control Store commands and outbox dispatch."
+    cutover          = "same-commit"
+    legacy_fallback  = false
+  }
+
+  consumer "capability-index-and-leases" {
+    implementation = [
+      "src/capability_registry.rs",
+      "src/capability_registry/lease.rs",
+      "src/okf_knowledge/lease.rs",
+      "src/plugin_runtime/task_dispatch.rs",
+    ]
+    required_change = "Read one immutable capability generation materialized from the committed Control Store generation."
+    cutover          = "same-commit"
+    legacy_fallback  = false
+  }
+
+  consumer "artifact-reachability" {
+    implementation = [
+      "src/artifact_reachability/installation.rs",
+      "src/artifact_reachability/installation/lifecycle.rs",
+      "src/artifact_reachability/installation/receipts.rs",
+    ]
+    required_change = "Read committed and nonterminal artifact references from Control Store read models plus registered payload owners."
+    cutover          = "same-commit"
+    legacy_fallback  = false
+  }
+
+  consumer "operation-diagnostics" {
+    implementation = [
+      "src/cognitive_package/diagnostic.rs",
+      "src/cognitive_package/diagnostic/enablement.rs",
+      "src/cognitive_package/diagnostic/projection.rs",
+      "src/cognitive_package/diagnostic_history.rs",
+      "src/cognitive_package/host_manager.rs",
+      "src/extension_cli.rs",
+    ]
+    required_change = "Project diagnostics from committed Control operations and provider observations without acquiring apply authority."
+    cutover          = "same-commit"
+    legacy_fallback  = false
+  }
+
+  consumer "state-backup" {
+    implementation = [
+      "src/state_backup.rs",
+      "src/state_backup/inventory.rs",
+    ]
+    required_change = "Replace the manual mutable-state allowlist with a Control Store snapshot and registered external-owner snapshots."
+    cutover          = "same-commit"
+    legacy_fallback  = false
+  }
+
+  consumer "state-restore" {
+    implementation = [
+      "src/state_restore.rs",
+      "src/state_restore/authority.rs",
+      "src/state_restore/journal.rs",
+    ]
+    required_change = "Stage and verify a Control Store export plus exact external payloads, then activate them under the maintenance fence."
+    cutover          = "same-commit"
+    legacy_fallback  = false
+  }
+
+  consumer "state-layout-and-clean-initialization" {
+    implementation = [
+      "crates/extension/src/paths.rs",
+      "src/control_store/filesystem.rs",
+      "src/installation_state_layout.rs",
+    ]
+    required_change = "Accept only the Control Store and registered external owners after activation; reject every legacy authority path."
+    cutover          = "same-commit"
+    legacy_fallback  = false
+  }
+
+  external_owner "artifact-store" {
+    state_paths                 = []
+    implementation             = ["crates/extension/src/artifact_store.rs"]
+    payload                     = "global content-addressed package and target bytes"
+    backup_policy               = "excluded-global"
+    registered_before_activation = true
+    may_choose_desired_state    = false
+  }
+
+  external_owner "knowledge-payload" {
+    state_paths = ["knowledge"]
+    implementation = [
+      "src/okf_knowledge/sqlite/mod.rs",
+      "src/okf_knowledge/store.rs",
+    ]
+    payload                     = "scope-local OKF SQLite content, backups, and immutable projection material"
+    backup_policy               = "owner-snapshot"
+    registered_before_activation = true
+    may_choose_desired_state    = false
+  }
+
+  external_owner "planning-and-diagnostic-observations" {
+    state_paths = [
+      "operations/package-diagnostic-history",
+      "operations/package-downloads",
+      "operations/package-resolutions",
+    ]
+    implementation = [
+      "src/cognitive_package/diagnostic_history.rs",
+      "src/cognitive_package/download_attempt.rs",
+      "src/cognitive_package/resolution_attempt.rs",
+    ]
+    payload                     = "bounded planning attempts and read-only diagnostic history"
+    backup_policy               = "registered-terminal-snapshot"
+    registered_before_activation = true
+    may_choose_desired_state    = false
+  }
+
+  external_owner "host-protocol-projection" {
+    state_paths = ["plugin-host-manager"]
+    implementation = [
+      "src/cognitive_package/host_manager.rs",
+      "src/cognitive_package/host_store.rs",
+    ]
+    payload                     = "request-to-plan, operation-to-request, cancellation, result, and observation indexes"
+    backup_policy               = "registered-projection"
+    registered_before_activation = true
+    may_choose_desired_state    = false
+  }
+
+  external_owner "restore-coordinator" {
+    state_paths = ["operations/state-restores"]
+    implementation = [
+      "src/state_restore.rs",
+      "src/state_restore/journal.rs",
+    ]
+    payload                     = "out-of-database restore journal and bounded terminal history"
+    backup_policy               = "exclude-active-register-terminal"
+    registered_before_activation = true
+    may_choose_desired_state    = false
+  }
+
+  operational_state "outer-fences" {
+    state_paths = [
+      ".installation-mutation.lock",
+      ".maintenance.lock",
+    ]
+    implementation = [
+      "crates/extension/src/package.rs",
+      "crates/extension/src/state_maintenance.rs",
+    ]
+    disposition  = "retain"
+    backup_policy = "excluded"
+  }
+
+  operational_state "generation-leases" {
+    state_paths = ["generation-leases"]
+    implementation = [
+      "crates/extension/src/generation_lease.rs",
+      "crates/extension/src/registry/snapshot_lease.rs",
+    ]
+    disposition  = "rebind-to-control-generation"
+    backup_policy = "excluded"
+  }
+
+  operational_state "legacy-package-graph-lock" {
+    state_paths = [".package-graph.lock"]
+    implementation = ["src/cognitive_package/mutation_lock.rs"]
+    disposition  = "delete"
+    backup_policy = "excluded"
+  }
+
+  operational_state "restore-marker" {
+    state_paths = [".maintenance.restore.json"]
+    implementation = [
+      "crates/extension/src/state_maintenance.rs",
+      "src/state_restore/journal.rs",
+    ]
+    disposition  = "retain-outside-database"
+    backup_policy = "excluded"
+  }
+}

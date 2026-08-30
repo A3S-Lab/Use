@@ -127,6 +127,7 @@ libc = { version = "0.2", optional = true }
 windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Console"], optional = true }
 
 [dev-dependencies]
+a3s-acl = "=0.2.2"
 reqwest.workspace = true
 flate2.workspace = true
 olpc-cjson.workspace = true

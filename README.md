@@ -1272,6 +1272,11 @@ See [Plugin Platform Architecture](docs/plugin-platform-architecture.md),
 [Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md),
 [ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md), and the
 [Control Store transaction boundary](docs/adr-003-control-store-transaction-boundary.md).
+The machine-checked
+[coordinated cutover inventory](docs/control-store-cutover.md) classifies every
+current state leaf, external owner, operational file, and consumer that must
+switch together; it explicitly keeps production activation inactive and
+forbids dual writes or legacy fallback reads.
 The private A2 Control Store kernel now qualifies its clean-state schema-v5
 aggregate. Each operation stores the canonical complete reviewed Plan envelope
 and versioned authorization evidence, then derives and revalidates its operation
