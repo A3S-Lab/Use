@@ -2,9 +2,14 @@ use std::sync::Arc;
 
 use a3s_use_core::{
     InstallationId, InstallationKind, InstallationPackageSelection, InstallationRootSelection,
-    InstallationSnapshot, PluginCatalogRecord, PluginOperationAction, PluginPackageId,
-    PluginPackageLock, PluginPackageLockHost, PluginPackageResolver, PluginWorkspaceGrant,
-    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    InstallationSnapshot, PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind,
+    PlanPackageRole, PlanPolicyDecision, PlanQualifiedSurfaceRef, PlannedOperationImpact,
+    PlannedPackageTransition, PlannedProviderEvidence, PlannedStateEvidence,
+    PlannedWorkspaceImpact, PluginCatalogRecord, PluginOperationAction,
+    PluginOperationConfirmation, PluginOperationPlanBinding, PluginOperationPlanDraft,
+    PluginOperationPlanEnvelope, PluginPackageLock, PluginPackageLockHost, PluginPackageResolver,
+    PluginSurfaceKind, PluginWorkspaceGrant, VerifiedCatalogProvenance,
+    VerifiedPluginCatalogRecord, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
 };
 use olpc_cjson::CanonicalFormatter;
 use serde::Serialize;
@@ -19,297 +24,12 @@ use super::model::{
 use super::*;
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
+mod fixtures;
 mod generations;
+mod operations;
 mod payloads;
 
-const CATALOG: &[u8] = include_bytes!("../../crates/core/fixtures/plugins/catalog-record-v3.json");
-const GRANT: &[u8] = include_bytes!("../../crates/core/fixtures/plugins/workspace-grant-v1.json");
-
-fn digest(seed: char) -> String {
-    format!("sha256:{}", seed.to_string().repeat(64))
-}
-
-fn effect_key(operation_id: &str, sequence: u32) -> String {
-    format!(
-        "sha256:{:x}",
-        Sha256::digest(format!("{operation_id}\n{sequence}").as_bytes())
-    )
-}
-
-fn operation(id: &str) -> ReviewedControlOperation {
-    operation_at(id, PluginOperationAction::Install, 0, 0)
-}
-
-fn operation_at(
-    id: &str,
-    action: PluginOperationAction,
-    expected_generation: u64,
-    expected_capability_generation: u64,
-) -> ReviewedControlOperation {
-    ReviewedControlOperation {
-        operation_id: id.to_string(),
-        plan_digest: digest('1'),
-        authorization_digest: digest('2'),
-        action,
-        root_package_id: PluginPackageId::parse("acme/research").unwrap(),
-        expected_generation,
-        expected_capability_generation,
-        reviewed_at_ms: 10 + expected_generation * 100,
-    }
-}
-
-fn control_installation() -> InstallationId {
-    InstallationId::new(InstallationKind::Workspace, "workspace-01").unwrap()
-}
-
-fn package_lock() -> PluginPackageLock {
-    let record = PluginCatalogRecord::from_json(CATALOG).unwrap();
-    let provenance = VerifiedCatalogProvenance {
-        registry_name: "packages".to_string(),
-        registry_url: "https://packages.example.test/a3s/".to_string(),
-        root_sha256: digest('f'),
-        root_version: 1,
-        timestamp_version: 1,
-        snapshot_version: 1,
-        targets_version: 1,
-        catalog_record_digest: record.descriptor_digest().unwrap(),
-    };
-    let verified = VerifiedPluginCatalogRecord::new(record, provenance).unwrap();
-    PluginPackageResolver::new(
-        PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap(),
-    )
-    .resolve(verified, Vec::new())
-    .unwrap()
-}
-
-fn snapshot(installation: InstallationId, generation: u64) -> InstallationSnapshot {
-    let package_lock = package_lock();
-    let selections = package_lock
-        .packages
-        .iter()
-        .map(|package| {
-            let selected_surfaces = package
-                .catalog
-                .record
-                .resolve_surfaces(&[])
-                .unwrap()
-                .into_iter()
-                .map(|surface| surface.reference())
-                .collect();
-            InstallationPackageSelection::new(package.clone(), generation, true, selected_surfaces)
-                .unwrap()
-        })
-        .collect();
-    InstallationSnapshot::from_root_locks(
-        installation,
-        generation,
-        package_lock.host.clone(),
-        vec![(
-            InstallationRootSelection::new(package_lock.root_package_id.clone(), 5).unwrap(),
-            package_lock.clone(),
-        )],
-        selections,
-    )
-    .unwrap()
-}
-
-fn transition(
-    installation: InstallationId,
-    reviewed: &ReviewedControlOperation,
-) -> ControlTransition {
-    let snapshot = snapshot(installation.clone(), reviewed.target_generation().unwrap());
-    let package = &snapshot.packages[0];
-    let package_id = package.package_id().to_string();
-    let surface = package.selected_surfaces[0].clone();
-    let mut grant = PluginWorkspaceGrant::from_json(GRANT).unwrap();
-    grant.package_digest = package
-        .package
-        .catalog
-        .record
-        .package
-        .sha256
-        .clone()
-        .unwrap();
-    let grant_digest = grant.descriptor_digest().unwrap();
-    let package_subject = ControlEffectSubject::Package {
-        package_id: package_id.clone(),
-        lifecycle_generation: 41,
-        package_digest: package
-            .package
-            .catalog
-            .record
-            .package
-            .sha256
-            .clone()
-            .unwrap(),
-        manifest_digest: package
-            .package
-            .catalog
-            .record
-            .package
-            .manifest_sha256
-            .clone()
-            .unwrap(),
-        action: lifecycle_action(reviewed.action),
-    };
-    ControlTransition {
-        operation_id: reviewed.operation_id.clone(),
-        plan_digest: reviewed.plan_digest.clone(),
-        snapshot,
-        package_lifecycles: vec![ControlPackageLifecycle {
-            package_id: package_id.clone(),
-            lifecycle_generation: 41,
-        }],
-        grants: vec![ControlGrantSelection {
-            grant,
-            grant_digest,
-        }],
-        bindings: vec![ControlProviderBinding {
-            package_id: package_id.clone(),
-            surface,
-            provider_id: "provider:test".to_string(),
-            binding_digest: digest('4'),
-        }],
-        capability: ControlCapabilitySelection {
-            generation: reviewed.target_capability_generation().unwrap(),
-            descriptor_digest: digest('5'),
-        },
-        effects: vec![
-            ControlEffectIntent {
-                sequence: 0,
-                idempotency_key: effect_key(&reviewed.operation_id, 0),
-                installation: installation.clone(),
-                plan_digest: reviewed.plan_digest.clone(),
-                operation_action: reviewed.action,
-                installation_generation: reviewed.target_generation().unwrap(),
-                subject: package_subject,
-                provider_id: "provider:test".to_string(),
-                kind: ControlEffectKind::PackageCommit,
-                required: true,
-            },
-            ControlEffectIntent {
-                sequence: 1,
-                idempotency_key: effect_key(&reviewed.operation_id, 1),
-                installation,
-                plan_digest: reviewed.plan_digest.clone(),
-                operation_action: reviewed.action,
-                installation_generation: reviewed.target_generation().unwrap(),
-                subject: capability_subject(reviewed),
-                provider_id: "provider:test".to_string(),
-                kind: ControlEffectKind::CapabilityPublish,
-                required: false,
-            },
-        ],
-        committed_at_ms: reviewed.reviewed_at_ms + 10,
-    }
-}
-
-fn lifecycle_action(action: PluginOperationAction) -> PluginLifecycleAction {
-    match action {
-        PluginOperationAction::Install => PluginLifecycleAction::Install,
-        PluginOperationAction::Upgrade => PluginLifecycleAction::Upgrade,
-        PluginOperationAction::Enable => PluginLifecycleAction::Enable,
-        PluginOperationAction::Disable => PluginLifecycleAction::Disable,
-        PluginOperationAction::Uninstall => PluginLifecycleAction::Uninstall,
-    }
-}
-
-fn capability_subject(reviewed: &ReviewedControlOperation) -> ControlEffectSubject {
-    ControlEffectSubject::Installation {
-        expected_capability_generation: reviewed.expected_capability_generation,
-        capability_generation: reviewed.target_capability_generation().unwrap(),
-        descriptor_digest: digest('5'),
-    }
-}
-
-async fn initialized_store() -> (tempfile::TempDir, ControlStore) {
-    let temporary = tempfile::tempdir().unwrap();
-    let store = ControlStore::new(temporary.path().join("state"), control_installation()).unwrap();
-    store.initialize().await.unwrap();
-    (temporary, store)
-}
-
-fn claim(
-    operation_id: &str,
-    token: &str,
-    now_ms: u64,
-    lease_until_ms: u64,
-    reconcile_unknown: bool,
-) -> ControlEffectClaim {
-    ControlEffectClaim {
-        operation_id: operation_id.to_string(),
-        worker_id: "worker:test".to_string(),
-        claim_token: token.to_string(),
-        now_ms,
-        lease_until_ms,
-        reconcile_unknown,
-    }
-}
-
-fn observation(
-    operation_id: &str,
-    idempotency_key: &str,
-    claim_token: &str,
-    outcome: ControlEffectOutcome,
-    seed: char,
-    observed_at_ms: u64,
-) -> ControlEffectObservation {
-    ControlEffectObservation {
-        operation_id: operation_id.to_string(),
-        idempotency_key: idempotency_key.to_string(),
-        claim_token: claim_token.to_string(),
-        outcome,
-        evidence_digest: digest(seed),
-        error_code: (!matches!(outcome, ControlEffectOutcome::Applied))
-            .then(|| "provider.rejected".to_string()),
-        observed_at_ms,
-    }
-}
-
-fn canonical_json<T: Serialize>(value: &T) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    let mut serializer =
-        serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
-    value.serialize(&mut serializer).unwrap();
-    bytes
-}
-
-async fn apply_all_effects(store: &ControlStore, reviewed: &ReviewedControlOperation, start: u64) {
-    let mut now = start;
-    let mut sequence = 0_u32;
-    loop {
-        let token = format!("claim:{}:{sequence}", reviewed.operation_id);
-        let Some(claimed) = store
-            .claim_next_effect(claim(&reviewed.operation_id, &token, now, now + 10, false))
-            .await
-            .unwrap()
-        else {
-            break;
-        };
-        store
-            .record_effect_observation(observation(
-                &reviewed.operation_id,
-                &claimed.intent.idempotency_key,
-                &claimed.claim_token,
-                ControlEffectOutcome::Applied,
-                char::from_digit((sequence % 10) + 1, 10).unwrap(),
-                now + 5,
-            ))
-            .await
-            .unwrap();
-        now += 20;
-        sequence += 1;
-    }
-    store
-        .complete_operation(
-            &reviewed.operation_id,
-            &reviewed.plan_digest,
-            &digest('f'),
-            now,
-        )
-        .await
-        .unwrap();
-}
+use fixtures::*;
 
 #[tokio::test]
 async fn aggregate_transition_is_atomic_idempotent_and_generation_bound() {
@@ -323,8 +43,13 @@ async fn aggregate_transition_is_atomic_idempotent_and_generation_bound() {
         registered
     );
 
-    let mut conflicting = reviewed.clone();
-    conflicting.plan_digest = digest('a');
+    let conflicting = operation_at_with_policy(
+        reviewed.operation_id(),
+        PluginOperationAction::Install,
+        0,
+        0,
+        'b',
+    );
     assert_eq!(
         store
             .register_operation(conflicting)
@@ -351,23 +76,20 @@ async fn aggregate_transition_is_atomic_idempotent_and_generation_bound() {
     assert_eq!(store.current_generation().await.unwrap(), Some(committed));
     assert_eq!(
         store
-            .operation(&reviewed.operation_id)
+            .operation(reviewed.operation_id())
             .await
             .unwrap()
             .unwrap()
             .status,
         ControlOperationStatus::EffectsPending
     );
-    let effects = store.effects(&reviewed.operation_id).await.unwrap();
+    let effects = store.effects(reviewed.operation_id()).await.unwrap();
     assert_eq!(effects.len(), 2);
     assert!(effects
         .iter()
         .all(|effect| effect.status == ControlEffectStatus::Pending));
 
-    let stale = ReviewedControlOperation {
-        operation_id: "operation:stale:1".to_string(),
-        ..reviewed
-    };
+    let stale = operation("operation:stale:1");
     assert_eq!(
         store.register_operation(stale).await.unwrap_err().code,
         "use.control_store.generation_changed"
@@ -395,7 +117,7 @@ async fn action_semantics_reject_impossible_root_state_transitions() {
         assert_eq!(error.code, "use.control_store.input_invalid");
         assert_eq!(
             store
-                .operation(&reviewed.operation_id)
+                .operation(reviewed.operation_id())
                 .await
                 .unwrap()
                 .unwrap()
@@ -418,14 +140,14 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
     store.commit_transition(candidate.clone()).await.unwrap();
 
     let first = store
-        .claim_next_effect(claim(&reviewed.operation_id, "claim:first", 30, 40, false))
+        .claim_next_effect(claim(reviewed.operation_id(), "claim:first", 30, 40, false))
         .await
         .unwrap()
         .unwrap();
     assert_eq!(first.intent, candidate.effects[0]);
     assert_eq!(first.attempt, 1);
     assert!(store
-        .claim_next_effect(claim(&reviewed.operation_id, "claim:busy", 35, 45, false))
+        .claim_next_effect(claim(reviewed.operation_id(), "claim:busy", 35, 45, false))
         .await
         .unwrap()
         .is_none());
@@ -433,7 +155,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
     assert_eq!(
         store
             .claim_next_effect(claim(
-                &reviewed.operation_id,
+                reviewed.operation_id(),
                 "claim:expired-implicit",
                 41,
                 50,
@@ -445,14 +167,14 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
         "use.control_store.reconciliation_required"
     );
     let replay = store
-        .claim_next_effect(claim(&reviewed.operation_id, "claim:replay", 41, 50, true))
+        .claim_next_effect(claim(reviewed.operation_id(), "claim:replay", 41, 50, true))
         .await
         .unwrap()
         .unwrap();
     assert_eq!(replay.intent.idempotency_key, first.intent.idempotency_key);
     assert_eq!(replay.attempt, 2);
     let unknown = observation(
-        &reviewed.operation_id,
+        reviewed.operation_id(),
         &replay.intent.idempotency_key,
         &replay.claim_token,
         ControlEffectOutcome::Unknown,
@@ -464,7 +186,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
     assert_eq!(
         store
             .claim_next_effect(claim(
-                &reviewed.operation_id,
+                reviewed.operation_id(),
                 "claim:implicit",
                 51,
                 60,
@@ -477,7 +199,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
     );
     let reconciled = store
         .claim_next_effect(claim(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             "claim:explicit",
             51,
             60,
@@ -492,7 +214,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
     );
     assert_eq!(reconciled.attempt, 3);
     let applied = observation(
-        &reviewed.operation_id,
+        reviewed.operation_id(),
         &reconciled.intent.idempotency_key,
         &reconciled.claim_token,
         ControlEffectOutcome::Applied,
@@ -507,7 +229,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
 
     let optional = store
         .claim_next_effect(claim(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             "claim:optional",
             61,
             70,
@@ -519,7 +241,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
     assert_eq!(optional.intent, candidate.effects[1]);
     store
         .record_effect_observation(observation(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             &optional.intent.idempotency_key,
             &optional.claim_token,
             ControlEffectOutcome::Rejected,
@@ -529,15 +251,15 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
         .await
         .unwrap();
     assert!(store
-        .claim_next_effect(claim(&reviewed.operation_id, "claim:none", 71, 80, false))
+        .claim_next_effect(claim(reviewed.operation_id(), "claim:none", 71, 80, false))
         .await
         .unwrap()
         .is_none());
 
     let completed = store
         .complete_operation(
-            &reviewed.operation_id,
-            &reviewed.plan_digest,
+            reviewed.operation_id(),
+            reviewed.plan_digest(),
             &digest('d'),
             80,
         )
@@ -573,7 +295,7 @@ async fn expired_claim_survives_restart_and_requires_explicit_reconciliation() {
     store.commit_transition(candidate.clone()).await.unwrap();
     let claimed = store
         .claim_next_effect(claim(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             "claim:before-restart",
             30,
             40,
@@ -590,7 +312,7 @@ async fn expired_claim_survives_restart_and_requires_explicit_reconciliation() {
     assert_eq!(
         restarted
             .claim_next_effect(claim(
-                &reviewed.operation_id,
+                reviewed.operation_id(),
                 "claim:restart-implicit",
                 41,
                 50,
@@ -603,7 +325,7 @@ async fn expired_claim_survives_restart_and_requires_explicit_reconciliation() {
     );
     let reconciled = restarted
         .claim_next_effect(claim(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             "claim:restart-explicit",
             41,
             50,
@@ -615,7 +337,7 @@ async fn expired_claim_survives_restart_and_requires_explicit_reconciliation() {
     assert_eq!(reconciled.intent, claimed.intent);
     assert_eq!(reconciled.attempt, 2);
     assert_eq!(
-        restarted.effects(&reviewed.operation_id).await.unwrap()[0].claim_token,
+        restarted.effects(reviewed.operation_id()).await.unwrap()[0].claim_token,
         Some("claim:restart-explicit".to_string())
     );
     drop(restarted);
@@ -633,7 +355,7 @@ async fn required_rejection_is_terminal_and_cannot_publish_capabilities() {
         .unwrap();
     let claimed = store
         .claim_next_effect(claim(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             "claim:required",
             30,
             40,
@@ -644,7 +366,7 @@ async fn required_rejection_is_terminal_and_cannot_publish_capabilities() {
         .unwrap();
     store
         .record_effect_observation(observation(
-            &reviewed.operation_id,
+            reviewed.operation_id(),
             &claimed.intent.idempotency_key,
             &claimed.claim_token,
             ControlEffectOutcome::Rejected,
@@ -656,7 +378,7 @@ async fn required_rejection_is_terminal_and_cannot_publish_capabilities() {
 
     assert_eq!(
         store
-            .operation(&reviewed.operation_id)
+            .operation(reviewed.operation_id())
             .await
             .unwrap()
             .unwrap()
@@ -666,8 +388,8 @@ async fn required_rejection_is_terminal_and_cannot_publish_capabilities() {
     assert_eq!(
         store
             .complete_operation(
-                &reviewed.operation_id,
-                &reviewed.plan_digest,
+                reviewed.operation_id(),
+                reviewed.plan_digest(),
                 &digest('f'),
                 40
             )
@@ -686,16 +408,12 @@ async fn required_rejection_is_terminal_and_cannot_publish_capabilities() {
         0
     );
 
-    let compensating = ReviewedControlOperation {
-        operation_id: "operation:compensate:1".to_string(),
-        plan_digest: digest('a'),
-        authorization_digest: digest('b'),
-        action: PluginOperationAction::Upgrade,
-        root_package_id: PluginPackageId::parse("acme/research").unwrap(),
-        expected_generation: 1,
-        expected_capability_generation: 0,
-        reviewed_at_ms: 50,
-    };
+    let compensating = operation_at(
+        "operation:compensate:1",
+        PluginOperationAction::Upgrade,
+        1,
+        0,
+    );
     store
         .register_operation(compensating.clone())
         .await
@@ -867,12 +585,7 @@ async fn concurrent_transition_cas_commits_exactly_one_generation() {
     let (_temporary, store) = initialized_store().await;
     let store = Arc::new(store);
     let left = operation("operation:race:left");
-    let right = ReviewedControlOperation {
-        operation_id: "operation:race:right".to_string(),
-        plan_digest: digest('a'),
-        authorization_digest: digest('b'),
-        ..left.clone()
-    };
+    let right = operation("operation:race:right");
     store.register_operation(left.clone()).await.unwrap();
     store.register_operation(right.clone()).await.unwrap();
 
@@ -912,8 +625,8 @@ async fn reviewed_operation_can_be_cancelled_only_before_transition_commit() {
     store.register_operation(reviewed.clone()).await.unwrap();
     let cancelled = store
         .cancel_operation(
-            &reviewed.operation_id,
-            &reviewed.plan_digest,
+            reviewed.operation_id(),
+            reviewed.plan_digest(),
             &digest('c'),
             15,
         )
@@ -923,8 +636,8 @@ async fn reviewed_operation_can_be_cancelled_only_before_transition_commit() {
     assert_eq!(
         store
             .cancel_operation(
-                &reviewed.operation_id,
-                &reviewed.plan_digest,
+                reviewed.operation_id(),
+                reviewed.plan_digest(),
                 &digest('c'),
                 15,
             )

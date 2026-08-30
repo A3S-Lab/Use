@@ -118,7 +118,7 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         .authority
         .effects
         .iter()
-        .filter(|effect| effect.operation_id == uninstall.operation_id)
+        .filter(|effect| effect.operation_id == uninstall.operation_id())
         .collect::<Vec<_>>();
     assert_eq!(uninstall_effects.len(), 2);
     assert_eq!(uninstall_effects[0].intent.installation_generation, 4);
@@ -202,7 +202,7 @@ async fn invalid_effect_generation_references_roll_back_the_whole_transition() {
     assert!(store.current_generation().await.unwrap().is_none());
     assert_eq!(
         store
-            .operation(&reviewed.operation_id)
+            .operation(reviewed.operation_id())
             .await
             .unwrap()
             .unwrap()
@@ -210,7 +210,7 @@ async fn invalid_effect_generation_references_roll_back_the_whole_transition() {
         ControlOperationStatus::Reviewed
     );
     assert!(store
-        .effects(&reviewed.operation_id)
+        .effects(reviewed.operation_id())
         .await
         .unwrap()
         .is_empty());
@@ -228,7 +228,7 @@ async fn package_lifecycle_generation_is_independent_of_installation_and_state_g
     assert_eq!(committed.snapshot.generation, 1);
     assert_eq!(committed.snapshot.packages[0].state_generation, 7);
     assert!(store
-        .effects(&reviewed.operation_id)
+        .effects(reviewed.operation_id())
         .await
         .unwrap()
         .iter()

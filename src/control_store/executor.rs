@@ -42,7 +42,7 @@ enum ControlStoreRequest {
     RegisterOperation {
         database_path: PathBuf,
         installation: InstallationId,
-        reviewed: ReviewedControlOperation,
+        reviewed: Box<ReviewedControlOperation>,
         response: oneshot::Sender<UseResult<ControlOperationRecord>>,
     },
     CancelOperation {
@@ -190,7 +190,7 @@ impl ControlStoreExecutor {
         self.send(ControlStoreRequest::RegisterOperation {
             database_path,
             installation,
-            reviewed,
+            reviewed: Box::new(reviewed),
             response,
         })
         .await?;

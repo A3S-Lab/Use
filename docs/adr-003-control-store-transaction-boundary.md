@@ -47,7 +47,8 @@ The Control Store is the sole authority for related mutable control facts:
 - installation and package state generations;
 - requested roots, the resolved graph, selected surfaces, and desired
   enablement;
-- reviewed operation identity, digest, authorization, phase, result, and
+- canonical reviewed Plan envelope and versioned authorization evidence, with
+  derived operation identity, digests, action, root, phase, result, and
   cancellation state;
 - Grant intent and committed Grant generation;
 - lifecycle checkpoint and effect-attempt identity;
@@ -134,7 +135,9 @@ uncommittable. At minimum it enforces:
 - roots and dependency edges referencing selected packages in that generation;
 - monotonically increasing installation and package state generations, with a
   separate positive immutable lifecycle generation for each selected package;
-- one immutable reviewed plan digest per operation ID;
+- one canonical reviewed Plan envelope and authorization record per operation
+  ID, with digests, action, root package, installation scope, and generation
+  cursors checked against relational projections;
 - installation-scoped graph checkpoints referencing the exact target
   installation and capability generation, while package and surface
   checkpoints additionally reference their immutable lifecycle generation;
@@ -204,11 +207,16 @@ to a committed transaction plus explicit external-effect observations.
 ### Current qualification status
 
 The checked-in inactive kernel implements most of the local Control Store work
-in step 2, not the authority cutover. Schema v4 binds one exact installation
-and stores the complete generation history, reviewed root-package operations,
-exact installation snapshots and relational graph projections, canonical full
-Workspace Grants, provider bindings, capability publication states, lifecycle
-checkpoints, and effect outbox observations. Installation generation, desired
+in step 2, not the authority cutover. Schema v5 binds one exact installation
+and stores the complete generation history, canonical reviewed Plan envelopes,
+versioned authorization evidence, exact installation snapshots and relational
+graph projections, canonical full Workspace Grants, provider bindings,
+capability publication states, lifecycle checkpoints, and effect outbox
+observations. Plan and authorization bytes are size-bounded canonical JSON;
+their derived operation identity, digests, action, root package, installation
+scope, and generation cursors are revalidated against relational projections
+after restart, in deterministic export verification, and during staged restore.
+Installation generation, desired
 package-state generation, and immutable package-lifecycle generation remain
 separate. Canonical effect payloads bind scope, plan, action, provider, artifact
 digests, subject, and capability identity; their bytes and digest are committed
@@ -234,11 +242,10 @@ artifact/capability tampering, incomplete outbox inventories, outbox ambiguity,
 deterministic export, lifecycle-reference tamper detection, and staged restore.
 
 The kernel remains private and no production lifecycle constructs it. It does
-not yet retain the canonical full reviewed-operation and authorization
-material, register external artifact/projection payload owners, or participate
-in live state-layout, reachability, diagnostics, backup, or restore
-orchestration. Existing JSON stores remain the only production authority.
-Lifecycle conversion, the full process-exit matrix, the indivisible
+not yet register external artifact/projection payload owners or participate in
+live state-layout, reachability, diagnostics, backup, or restore orchestration.
+Existing JSON stores remain the only production authority. Deterministic
+lifecycle conversion, the full process-exit matrix, the indivisible
 reader/writer cutover, and deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.

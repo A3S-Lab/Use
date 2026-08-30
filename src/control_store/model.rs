@@ -1,15 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{
-    InstallationId, InstallationKind, InstallationSnapshot, PluginOperationAction, PluginPackageId,
+    InstallationId, InstallationKind, InstallationSnapshot, PluginOperationAction,
     PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrant, UseError, UseResult,
 };
 use serde::{Deserialize, Serialize};
 mod effect;
 mod effect_state;
+mod operation;
 
 pub(super) use effect::*;
 pub(super) use effect_state::*;
+pub(super) use operation::*;
 
 pub(super) const MAX_CONTROL_EFFECTS: usize = 4096;
 pub(super) const MAX_CONTROL_GRANTS: usize = 4096;
@@ -41,107 +43,6 @@ impl ControlOperationStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct ReviewedControlOperation {
-    pub(super) operation_id: String,
-    pub(super) plan_digest: String,
-    pub(super) authorization_digest: String,
-    pub(super) action: PluginOperationAction,
-    pub(super) root_package_id: PluginPackageId,
-    pub(super) expected_generation: u64,
-    pub(super) expected_capability_generation: u64,
-    pub(super) reviewed_at_ms: u64,
-}
-
-impl ReviewedControlOperation {
-    pub(super) fn target_generation(&self) -> UseResult<u64> {
-        self.expected_generation
-            .checked_add(1)
-            .ok_or_else(generation_exhausted)
-    }
-
-    pub(super) fn target_capability_generation(&self) -> UseResult<u64> {
-        self.expected_capability_generation
-            .checked_add(1)
-            .ok_or_else(generation_exhausted)
-    }
-
-    pub(super) fn validate(&self) -> UseResult<()> {
-        if !valid_machine_id(&self.operation_id)
-            || !valid_sha256(&self.plan_digest)
-            || !valid_sha256(&self.authorization_digest)
-            || self.reviewed_at_ms == 0
-        {
-            return Err(input_error(
-                "The reviewed Control Store operation identity or evidence is invalid.",
-            ));
-        }
-        self.target_generation()?;
-        self.target_capability_generation()?;
-        Ok(())
-    }
-
-    pub(super) fn validate_snapshot_transition(
-        &self,
-        prior: Option<&InstallationSnapshot>,
-        target: &InstallationSnapshot,
-    ) -> UseResult<()> {
-        self.validate()?;
-        let prior_matches = match (self.expected_generation, prior) {
-            (0, None) => true,
-            (generation, Some(snapshot)) => {
-                generation > 0
-                    && snapshot.generation == generation
-                    && snapshot.installation == target.installation
-            }
-            _ => false,
-        };
-        if !prior_matches || target.generation != self.target_generation()? {
-            return Err(input_error(
-                "The Control Store action does not bind consecutive installation snapshots.",
-            ));
-        }
-
-        let root_package_id = self.root_package_id.as_str();
-        let before_is_root = prior.is_some_and(|snapshot| {
-            snapshot
-                .roots
-                .binary_search_by(|root| root.package_id.as_str().cmp(root_package_id))
-                .is_ok()
-        });
-        let after_is_root = target
-            .roots
-            .binary_search_by(|root| root.package_id.as_str().cmp(root_package_id))
-            .is_ok();
-        let before_enabled = prior.and_then(|snapshot| package_enabled(snapshot, root_package_id));
-        let after_enabled = package_enabled(target, root_package_id);
-        let action_matches = match self.action {
-            PluginOperationAction::Install => !before_is_root && after_is_root,
-            PluginOperationAction::Upgrade => before_is_root && after_is_root,
-            PluginOperationAction::Enable => {
-                before_is_root
-                    && after_is_root
-                    && before_enabled == Some(false)
-                    && after_enabled == Some(true)
-            }
-            PluginOperationAction::Disable => {
-                before_is_root
-                    && after_is_root
-                    && before_enabled == Some(true)
-                    && after_enabled == Some(false)
-            }
-            PluginOperationAction::Uninstall => before_is_root && !after_is_root,
-        };
-        if !action_matches {
-            return Err(input_error(
-                "The reviewed Control Store action contradicts the root package state transition.",
-            ));
-        }
-        Ok(())
-    }
-}
-
 pub(super) const fn operation_action_name(action: PluginOperationAction) -> &'static str {
     match action {
         PluginOperationAction::Install => "install",
@@ -163,14 +64,6 @@ pub(super) fn parse_operation_action(value: &str) -> UseResult<PluginOperationAc
             "A Control Store operation action is invalid.",
         )),
     }
-}
-
-fn package_enabled(snapshot: &InstallationSnapshot, package_id: &str) -> Option<bool> {
-    snapshot
-        .packages
-        .binary_search_by(|package| package.package_id().cmp(package_id))
-        .ok()
-        .map(|index| snapshot.packages[index].enabled)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,8 +162,8 @@ impl ControlTransition {
     ) -> UseResult<()> {
         operation.validate()?;
         self.snapshot.validate()?;
-        if self.operation_id != operation.operation_id
-            || self.plan_digest != operation.plan_digest
+        if self.operation_id != operation.operation_id()
+            || self.plan_digest != operation.plan_digest()
             || self.snapshot.installation != *installation
             || self.snapshot.generation != operation.target_generation()?
             || self.capability.generation != operation.target_capability_generation()?
@@ -369,7 +262,7 @@ impl ControlTransition {
                 .ok_or_else(|| {
                     input_error("The Control Store effect payload byte count overflowed.")
                 })?;
-            effect.validate_binding(installation, &self.plan_digest, operation.action)?;
+            effect.validate_binding(installation, &self.plan_digest, operation.action())?;
             if usize::try_from(effect.sequence).ok() != Some(index)
                 || !keys.insert(effect.idempotency_key.as_str())
                 || (effect.installation_generation != self.snapshot.generation
