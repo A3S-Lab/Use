@@ -15,9 +15,9 @@ use super::model::{
     parse_surface_kind, surface_kind_name, valid_machine_id, valid_sha256, ClaimedControlEffect,
     ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
     ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectRecord,
-    ControlEffectStatus, ControlGeneration, ControlGrantSelection, ControlOperationRecord,
-    ControlOperationStatus, ControlPackageLifecycle, ControlProviderBinding, ControlStoreAuthority,
-    ControlTransition, ReviewedControlOperation,
+    ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
+    ControlOperationRecord, ControlOperationStatus, ControlPackageLifecycle,
+    ControlProviderBinding, ControlStoreAuthority, ControlTransition, ReviewedControlOperation,
 };
 use super::schema;
 
@@ -182,7 +182,7 @@ pub(super) fn commit_transition(
             .ok_or_else(|| {
                 corruption_error("A committed Control Store operation is missing its generation.")
             })?;
-            let effects = read_effects_from(&transaction, &transition.operation_id)?;
+            let effects = read_effects_from(&transaction, installation, &transition.operation_id)?;
             if generation_matches_transition(&existing, transition)
                 && effects
                     .iter()
@@ -291,7 +291,7 @@ pub(super) fn effects(
         return Err(input_error("The Control Store operation ID is invalid."));
     }
     let connection = schema::open_verified_read(path, installation)?;
-    read_effects_from(&connection, operation_id)
+    read_effects_from(&connection, installation, operation_id)
 }
 
 pub(super) fn export_snapshot(
@@ -357,7 +357,7 @@ fn authority_from(
         .collect::<UseResult<Vec<_>>>()?;
     let effects = operation_ids
         .iter()
-        .map(|operation_id| read_effects_from(connection, operation_id))
+        .map(|operation_id| read_effects_from(connection, installation, operation_id))
         .collect::<UseResult<Vec<_>>>()?
         .into_iter()
         .flatten()
@@ -384,7 +384,9 @@ pub(super) fn claim_next_effect(
             "Only an effect-pending Control Store operation can claim work.",
         ));
     }
-    let Some(effect) = read_next_unfinished_effect(&transaction, &claim.operation_id)? else {
+    let Some(effect) =
+        read_next_unfinished_effect(&transaction, installation, &claim.operation_id)?
+    else {
         transaction
             .commit()
             .map_err(|error| schema::sqlite_error("finish empty Control Store claim", error))?;
@@ -456,7 +458,7 @@ pub(super) fn record_effect_observation(
     observation.validate()?;
     let mut connection = schema::open_verified_write(path, installation)?;
     let transaction = immediate(&mut connection, "record Control Store effect")?;
-    let current = read_effect_by_key(&transaction, &observation.idempotency_key)?
+    let current = read_effect_by_key(&transaction, installation, &observation.idempotency_key)?
         .ok_or_else(|| conflict_error("The Control Store effect does not exist."))?;
     if current.operation_id != observation.operation_id {
         return Err(conflict_error(
@@ -580,20 +582,11 @@ pub(super) fn complete_operation(
             "Only an effect-pending Control Store operation can complete.",
         ));
     }
-    let unfinished: i64 = transaction
-        .query_row(
-            "SELECT COUNT(*)
-             FROM effect_outbox o
-             JOIN lifecycle_checkpoint c
-               ON c.operation_id = o.operation_id AND c.sequence = o.sequence
-             WHERE o.operation_id = ?1
-               AND o.status <> 'applied'
-               AND NOT (o.status = 'rejected' AND c.required = 0)",
-            [operation_id],
-            |row| row.get(0),
-        )
-        .map_err(|error| schema::sqlite_error("count unfinished Control Store effects", error))?;
-    if unfinished != 0 {
+    let effects = read_effects_from(&transaction, installation, operation_id)?;
+    if effects.iter().any(|effect| {
+        effect.status != ControlEffectStatus::Applied
+            && !(effect.status == ControlEffectStatus::Rejected && !effect.intent.required)
+    }) {
         return Err(conflict_error(
             "The Control Store operation still has unfinished or rejected required effects.",
         ));

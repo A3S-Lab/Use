@@ -140,18 +140,36 @@ pub(super) fn insert_generation(
         )
         .map_err(|error| mutation_error("insert Control Store capability generation", error))?;
     for effect in &transition.effects {
+        let (package_id, package_lifecycle_generation) = effect
+            .subject
+            .package_identity()
+            .map_or((None, None), |(package_id, generation)| {
+                (Some(package_id), Some(generation))
+            });
+        let (surface_kind, surface_id) = effect.subject.surface().map_or((None, None), |surface| {
+            (
+                Some(surface_kind_name(surface.kind)),
+                Some(surface.id.as_str()),
+            )
+        });
+        let payload_json = effect.canonical_bytes()?;
+        let payload_digest = effect.descriptor_digest()?;
         transaction
             .execute(
                 "INSERT INTO lifecycle_checkpoint(
-                    operation_id, sequence, installation_generation, package_id,
-                    package_lifecycle_generation, checkpoint_kind, required
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    operation_id, sequence, installation_generation, subject_kind,
+                    package_id, package_lifecycle_generation, surface_kind, surface_id,
+                    checkpoint_kind, required
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     transition.operation_id,
                     i64::from(effect.sequence),
                     to_i64(effect.installation_generation)?,
-                    effect.package_id,
-                    to_i64(effect.package_lifecycle_generation)?,
+                    effect.subject.kind_name(),
+                    package_id,
+                    package_lifecycle_generation.map(to_i64).transpose()?,
+                    surface_kind,
+                    surface_id,
                     effect.kind.as_str(),
                     effect.required,
                 ],
@@ -161,14 +179,15 @@ pub(super) fn insert_generation(
             .execute(
                 "INSERT INTO effect_outbox(
                     idempotency_key, operation_id, sequence, provider_id,
-                    payload_digest, status, attempt
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', 0)",
+                    payload_json, payload_digest, status, attempt
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', 0)",
                 params![
                     effect.idempotency_key,
                     transition.operation_id,
                     i64::from(effect.sequence),
                     effect.provider_id,
-                    effect.payload_digest,
+                    payload_json,
+                    payload_digest,
                 ],
             )
             .map_err(|error| mutation_error("insert Control Store outbox effect", error))?;

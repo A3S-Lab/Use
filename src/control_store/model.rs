@@ -5,6 +5,11 @@ use a3s_use_core::{
     PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrant, UseError, UseResult,
 };
 use serde::{Deserialize, Serialize};
+mod effect;
+mod effect_state;
+
+pub(super) use effect::*;
+pub(super) use effect_state::*;
 
 pub(super) const MAX_CONTROL_EFFECTS: usize = 4096;
 pub(super) const MAX_CONTROL_GRANTS: usize = 4096;
@@ -242,74 +247,6 @@ impl ControlCapabilityStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub(super) enum ControlEffectKind {
-    PackageCommit,
-    SurfacePrepare,
-    CapabilityPublish,
-    CapabilityHide,
-    CallsDrain,
-    SurfaceStop,
-    SurfaceRemove,
-    PackageRemove,
-    GrantApply,
-    GrantRevoke,
-    BindingApply,
-    BindingRemove,
-}
-
-impl ControlEffectKind {
-    pub(super) const fn as_str(self) -> &'static str {
-        match self {
-            Self::PackageCommit => "package-commit",
-            Self::SurfacePrepare => "surface-prepare",
-            Self::CapabilityPublish => "capability-publish",
-            Self::CapabilityHide => "capability-hide",
-            Self::CallsDrain => "calls-drain",
-            Self::SurfaceStop => "surface-stop",
-            Self::SurfaceRemove => "surface-remove",
-            Self::PackageRemove => "package-remove",
-            Self::GrantApply => "grant-apply",
-            Self::GrantRevoke => "grant-revoke",
-            Self::BindingApply => "binding-apply",
-            Self::BindingRemove => "binding-remove",
-        }
-    }
-
-    pub(super) fn parse(value: &str) -> UseResult<Self> {
-        match value {
-            "package-commit" => Ok(Self::PackageCommit),
-            "surface-prepare" => Ok(Self::SurfacePrepare),
-            "capability-publish" => Ok(Self::CapabilityPublish),
-            "capability-hide" => Ok(Self::CapabilityHide),
-            "calls-drain" => Ok(Self::CallsDrain),
-            "surface-stop" => Ok(Self::SurfaceStop),
-            "surface-remove" => Ok(Self::SurfaceRemove),
-            "package-remove" => Ok(Self::PackageRemove),
-            "grant-apply" => Ok(Self::GrantApply),
-            "grant-revoke" => Ok(Self::GrantRevoke),
-            "binding-apply" => Ok(Self::BindingApply),
-            "binding-remove" => Ok(Self::BindingRemove),
-            _ => Err(corruption_error("A Control Store effect kind is invalid.")),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct ControlEffectIntent {
-    pub(super) sequence: u32,
-    pub(super) idempotency_key: String,
-    pub(super) installation_generation: u64,
-    pub(super) package_lifecycle_generation: u64,
-    pub(super) package_id: String,
-    pub(super) provider_id: String,
-    pub(super) kind: ControlEffectKind,
-    pub(super) payload_digest: String,
-    pub(super) required: bool,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct ControlTransition {
@@ -425,15 +362,16 @@ impl ControlTransition {
         }
 
         let mut keys = BTreeSet::new();
+        let mut payload_bytes = 0_usize;
         for (index, effect) in self.effects.iter().enumerate() {
+            payload_bytes = payload_bytes
+                .checked_add(effect.canonical_bytes()?.len())
+                .ok_or_else(|| {
+                    input_error("The Control Store effect payload byte count overflowed.")
+                })?;
+            effect.validate_binding(installation, &self.plan_digest, operation.action)?;
             if usize::try_from(effect.sequence).ok() != Some(index)
                 || !keys.insert(effect.idempotency_key.as_str())
-                || !valid_sha256(&effect.idempotency_key)
-                || !valid_machine_id(&effect.package_id)
-                || !valid_machine_id(&effect.provider_id)
-                || !valid_sha256(&effect.payload_digest)
-                || effect.installation_generation == 0
-                || effect.package_lifecycle_generation == 0
                 || (effect.installation_generation != self.snapshot.generation
                     && (operation.expected_generation == 0
                         || effect.installation_generation != operation.expected_generation))
@@ -443,6 +381,11 @@ impl ControlTransition {
                 ));
             }
         }
+        if payload_bytes > MAX_CONTROL_EFFECT_PAYLOAD_TOTAL_BYTES {
+            return Err(input_error(
+                "The Control Store effect payload sequence exceeds its total byte bound.",
+            ));
+        }
         Ok(())
     }
 
@@ -451,27 +394,41 @@ impl ControlTransition {
         prior: Option<&ControlGeneration>,
     ) -> UseResult<()> {
         for effect in &self.effects {
-            let lifecycles = if effect.installation_generation == self.snapshot.generation {
-                &self.package_lifecycles
+            let generation = if effect.installation_generation == self.snapshot.generation {
+                None
             } else if let Some(generation) = prior.filter(|generation| {
                 generation.snapshot.generation == effect.installation_generation
             }) {
-                &generation.package_lifecycles
+                Some(generation)
             } else {
                 return Err(input_error(
                     "A Control Store effect references an unrelated installation generation.",
                 ));
             };
-            let matches = lifecycles
-                .binary_search_by(|lifecycle| lifecycle.package_id.as_str().cmp(&effect.package_id))
-                .ok()
-                .and_then(|index| lifecycles.get(index))
-                .is_some_and(|lifecycle| {
-                    lifecycle.lifecycle_generation == effect.package_lifecycle_generation
-                });
-            if !matches {
+            let is_target = generation.is_none();
+            let (snapshot, lifecycles, capability) = generation.map_or(
+                (
+                    &self.snapshot,
+                    self.package_lifecycles.as_slice(),
+                    &self.capability,
+                ),
+                |generation| {
+                    (
+                        &generation.snapshot,
+                        generation.package_lifecycles.as_slice(),
+                        &generation.capability,
+                    )
+                },
+            );
+            if !effect.subject.matches_generation(
+                snapshot,
+                lifecycles,
+                capability,
+                is_target,
+                effect.operation_action,
+            ) {
                 return Err(input_error(
-                    "A Control Store effect does not bind the selected package lifecycle generation.",
+                    "A Control Store effect does not bind its exact installation, package, or surface generation.",
                 ));
             }
         }
@@ -510,140 +467,6 @@ pub(super) struct ControlStoreAuthority {
     pub(super) generations: Vec<ControlGeneration>,
     pub(super) operations: Vec<ControlOperationRecord>,
     pub(super) effects: Vec<ControlEffectRecord>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub(super) enum ControlEffectStatus {
-    Pending,
-    Claimed,
-    Applied,
-    Rejected,
-    Unknown,
-}
-
-impl ControlEffectStatus {
-    pub(super) const fn as_str(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Claimed => "claimed",
-            Self::Applied => "applied",
-            Self::Rejected => "rejected",
-            Self::Unknown => "unknown",
-        }
-    }
-
-    pub(super) fn parse(value: &str) -> UseResult<Self> {
-        match value {
-            "pending" => Ok(Self::Pending),
-            "claimed" => Ok(Self::Claimed),
-            "applied" => Ok(Self::Applied),
-            "rejected" => Ok(Self::Rejected),
-            "unknown" => Ok(Self::Unknown),
-            _ => Err(corruption_error(
-                "A Control Store effect status is invalid.",
-            )),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct ControlEffectRecord {
-    pub(super) operation_id: String,
-    pub(super) intent: ControlEffectIntent,
-    pub(super) status: ControlEffectStatus,
-    pub(super) attempt: u32,
-    pub(super) claim_owner: Option<String>,
-    pub(super) claim_token: Option<String>,
-    pub(super) lease_until_ms: Option<u64>,
-    pub(super) evidence_digest: Option<String>,
-    pub(super) error_code: Option<String>,
-    pub(super) observed_at_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct ControlEffectClaim {
-    pub(super) operation_id: String,
-    pub(super) worker_id: String,
-    pub(super) claim_token: String,
-    pub(super) now_ms: u64,
-    pub(super) lease_until_ms: u64,
-    pub(super) reconcile_unknown: bool,
-}
-
-impl ControlEffectClaim {
-    pub(super) fn validate(&self) -> UseResult<()> {
-        if !valid_machine_id(&self.operation_id)
-            || !valid_machine_id(&self.worker_id)
-            || !valid_machine_id(&self.claim_token)
-            || self.now_ms == 0
-            || self.lease_until_ms <= self.now_ms
-            || self.lease_until_ms - self.now_ms > MAX_EFFECT_LEASE_MS
-        {
-            return Err(input_error("The Control Store effect claim is invalid."));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct ClaimedControlEffect {
-    pub(super) intent: ControlEffectIntent,
-    pub(super) attempt: u32,
-    pub(super) claim_token: String,
-    pub(super) lease_until_ms: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ControlEffectOutcome {
-    Applied,
-    Rejected,
-    Unknown,
-}
-
-impl ControlEffectOutcome {
-    pub(super) const fn status(self) -> ControlEffectStatus {
-        match self {
-            Self::Applied => ControlEffectStatus::Applied,
-            Self::Rejected => ControlEffectStatus::Rejected,
-            Self::Unknown => ControlEffectStatus::Unknown,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct ControlEffectObservation {
-    pub(super) operation_id: String,
-    pub(super) idempotency_key: String,
-    pub(super) claim_token: String,
-    pub(super) outcome: ControlEffectOutcome,
-    pub(super) evidence_digest: String,
-    pub(super) error_code: Option<String>,
-    pub(super) observed_at_ms: u64,
-}
-
-impl ControlEffectObservation {
-    pub(super) fn validate(&self) -> UseResult<()> {
-        let error_matches = match self.outcome {
-            ControlEffectOutcome::Applied => self.error_code.is_none(),
-            ControlEffectOutcome::Rejected | ControlEffectOutcome::Unknown => {
-                self.error_code.as_deref().is_some_and(valid_error_code)
-            }
-        };
-        if !valid_machine_id(&self.operation_id)
-            || !valid_sha256(&self.idempotency_key)
-            || !valid_machine_id(&self.claim_token)
-            || !valid_sha256(&self.evidence_digest)
-            || self.observed_at_ms == 0
-            || !error_matches
-        {
-            return Err(input_error(
-                "The Control Store effect observation is invalid.",
-            ));
-        }
-        Ok(())
-    }
 }
 
 pub(super) fn surface_kind_name(kind: PluginSurfaceKind) -> &'static str {

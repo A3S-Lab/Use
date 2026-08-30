@@ -135,9 +135,9 @@ uncommittable. At minimum it enforces:
 - monotonically increasing installation and package state generations, with a
   separate positive immutable lifecycle generation for each selected package;
 - one immutable reviewed plan digest per operation ID;
-- checkpoints and outbox entries referencing their exact operation,
-  installation generation, package identity, and immutable lifecycle
-  generation; and
+- installation-scoped graph checkpoints referencing the exact target
+  installation and capability generation, while package and surface
+  checkpoints additionally reference their immutable lifecycle generation;
 - capability and provider-binding metadata referencing the generation that
   selected it.
 
@@ -204,15 +204,19 @@ to a committed transaction plus explicit external-effect observations.
 ### Current qualification status
 
 The checked-in inactive kernel implements most of the local Control Store work
-in step 2, not the authority cutover. Schema v3 binds one exact installation
+in step 2, not the authority cutover. Schema v4 binds one exact installation
 and stores the complete generation history, reviewed root-package operations,
 exact installation snapshots and relational graph projections, canonical full
 Workspace Grants, provider bindings, capability publication states, lifecycle
 checkpoints, and effect outbox observations. Installation generation, desired
 package-state generation, and immutable package-lifecycle generation remain
-separate; effect foreign keys bind the exact current or immediately prior
-package incarnation. Typed transactions enforce cursor
-compare-and-swap, root/action semantics, exact replay, required-effect failure,
+separate. Canonical effect payloads bind scope, plan, action, provider, artifact
+digests, subject, and capability identity; their bytes and digest are committed
+with a relational projection. Package and surface foreign keys bind the exact
+current or immediately prior incarnation, while one installation-scoped graph
+effect represents the real atomic capability cutover. Typed transactions
+enforce cursor compare-and-swap, root/action semantics, exact replay,
+required-effect failure,
 and capability retirement. Expired or explicitly unknown claims require an
 explicit reconciliation request and retain the same effect idempotency key,
 including after process restart.
@@ -225,16 +229,19 @@ live database, and can be restored only through a clean staged database whose
 authority must round-trip exactly. Tests cover atomic rollback, concurrent
 generation races, corruption and relational drift, linked-path substitution,
 multi-generation capability history, independent package generation axes,
-outbox ambiguity, deterministic export, lifecycle-reference tamper detection,
-and staged restore.
+empty-graph uninstall, restart-stable canonical payloads, self-consistent
+artifact/capability tampering, incomplete outbox inventories, outbox ambiguity,
+deterministic export, lifecycle-reference tamper detection, and staged restore.
 
 The kernel remains private and no production lifecycle constructs it. It does
-not yet register external payload owners or participate in live state-layout,
-reachability, diagnostics, backup, or restore orchestration. Existing JSON
-stores remain the only production authority. Lifecycle conversion, the full
-process-exit matrix, the indivisible reader/writer cutover, and deletion of
-legacy mutable stores remain open; activating or mirroring the kernel before
-that coordinated change would violate this decision.
+not yet retain the canonical full reviewed-operation and authorization
+material, register external artifact/projection payload owners, or participate
+in live state-layout, reachability, diagnostics, backup, or restore
+orchestration. Existing JSON stores remain the only production authority.
+Lifecycle conversion, the full process-exit matrix, the indivisible
+reader/writer cutover, and deletion of legacy mutable stores remain open;
+activating or mirroring the kernel before that coordinated change would violate
+this decision.
 
 ## Consequences
 

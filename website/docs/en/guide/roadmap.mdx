@@ -71,16 +71,21 @@ operation, Grant, enablement, binding, capability, reachability, diagnostic,
 backup, and restore readers switch together.
 
 The checked-in Control Store kernel is deliberately inactive. Its clean-state
-schema-v3 aggregate now keeps installation, desired package-state, and immutable
-package-lifecycle generations independent, with effects bound to the exact
-selected incarnation. It also qualifies reviewed root-package operations,
-snapshots, full Grants, provider bindings, capability history, an
-idempotent outbox, explicit unknown/expired-claim reconciliation across
-restart, deterministic offline-verifiable export, and clean staged restore.
-Production lifecycle code does not construct it. External-payload ownership,
-the complete crash matrix, lifecycle conversion, backup/restore and
-reachability integration, and the coordinated authority cutover remain open;
-no A2 roadmap item is complete yet.
+schema-v4 aggregate keeps installation, desired package-state, and immutable
+package-lifecycle generations independent. Canonical typed effect payloads bind
+the installation, reviewed plan, operation action, provider, artifact digests,
+and exact package or surface incarnation. One graph effect instead binds the
+complete target installation and capability generation. Payload bytes, digest,
+and relational projection commit together; claim and completion rebind them to
+the committed generation after restart and reject incomplete outbox inventory.
+The kernel also qualifies reviewed root-package operations, snapshots, full
+Grants, provider bindings, capability history, explicit unknown/expired-claim
+reconciliation, deterministic offline-verifiable export, and clean staged
+restore. Production lifecycle code does not construct it. Canonical full
+reviewed-operation and authorization material, external artifact/projection
+payload ownership, the complete crash matrix, lifecycle conversion,
+backup/restore and reachability integration, and the coordinated authority
+cutover remain open; no A2 roadmap item is complete yet.
 
 ## Implemented baseline
 

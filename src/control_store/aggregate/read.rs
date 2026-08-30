@@ -1,6 +1,8 @@
-use rusqlite::OptionalExtension as _;
-
 use super::*;
+
+mod effects;
+
+pub(super) use effects::*;
 
 pub(super) fn read_operation_from(
     connection: &Connection,
@@ -427,114 +429,6 @@ fn read_bindings(
             })
         })
         .collect()
-}
-
-pub(super) fn read_effects_from(
-    connection: &Connection,
-    operation_id: &str,
-) -> UseResult<Vec<ControlEffectRecord>> {
-    let mut statement = connection
-        .prepare(
-            "SELECT c.sequence, o.idempotency_key, c.installation_generation,
-                    c.package_id, c.package_lifecycle_generation, o.provider_id,
-                    c.checkpoint_kind, o.payload_digest,
-                    c.required, o.status, o.attempt, o.claim_owner, o.claim_token,
-                    o.lease_until_ms, o.evidence_digest, o.error_code,
-                    o.observed_at_ms
-             FROM lifecycle_checkpoint c
-             JOIN effect_outbox o
-               ON o.operation_id = c.operation_id AND o.sequence = c.sequence
-             WHERE c.operation_id = ?1 ORDER BY c.sequence",
-        )
-        .map_err(|error| schema::sqlite_error("prepare Control Store effects read", error))?;
-    let rows = statement
-        .query_map([operation_id], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, i64>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, bool>(8)?,
-                row.get::<_, String>(9)?,
-                row.get::<_, i64>(10)?,
-                row.get::<_, Option<String>>(11)?,
-                row.get::<_, Option<String>>(12)?,
-                row.get::<_, Option<i64>>(13)?,
-                row.get::<_, Option<String>>(14)?,
-                row.get::<_, Option<String>>(15)?,
-                row.get::<_, Option<i64>>(16)?,
-            ))
-        })
-        .map_err(|error| schema::sqlite_error("query Control Store effects", error))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|error| schema::sqlite_error("read Control Store effects", error))?;
-    rows.into_iter()
-        .map(|row| {
-            let sequence = u32::try_from(row.0)
-                .map_err(|_| corruption_error("A Control Store effect sequence is invalid."))?;
-            let attempt = u32::try_from(row.10)
-                .map_err(|_| corruption_error("A Control Store effect attempt is invalid."))?;
-            Ok(ControlEffectRecord {
-                operation_id: operation_id.to_string(),
-                intent: ControlEffectIntent {
-                    sequence,
-                    idempotency_key: row.1,
-                    installation_generation: from_i64(row.2)?,
-                    package_id: row.3,
-                    package_lifecycle_generation: from_i64(row.4)?,
-                    provider_id: row.5,
-                    kind: ControlEffectKind::parse(&row.6)?,
-                    payload_digest: row.7,
-                    required: row.8,
-                },
-                status: ControlEffectStatus::parse(&row.9)?,
-                attempt,
-                claim_owner: row.11,
-                claim_token: row.12,
-                lease_until_ms: row.13.map(from_i64).transpose()?,
-                evidence_digest: row.14,
-                error_code: row.15,
-                observed_at_ms: row.16.map(from_i64).transpose()?,
-            })
-        })
-        .collect()
-}
-
-pub(super) fn read_next_unfinished_effect(
-    connection: &Connection,
-    operation_id: &str,
-) -> UseResult<Option<ControlEffectRecord>> {
-    let effects = read_effects_from(connection, operation_id)?;
-    Ok(effects.into_iter().find(|effect| {
-        !matches!(
-            effect.status,
-            ControlEffectStatus::Applied | ControlEffectStatus::Rejected
-        )
-    }))
-}
-
-pub(super) fn read_effect_by_key(
-    connection: &Connection,
-    idempotency_key: &str,
-) -> UseResult<Option<ControlEffectRecord>> {
-    let operation_id = connection
-        .query_row(
-            "SELECT operation_id FROM effect_outbox WHERE idempotency_key = ?1",
-            [idempotency_key],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| schema::sqlite_error("locate Control Store effect", error))?;
-    let Some(operation_id) = operation_id else {
-        return Ok(None);
-    };
-    Ok(read_effects_from(connection, &operation_id)?
-        .into_iter()
-        .find(|effect| effect.intent.idempotency_key == idempotency_key))
 }
 
 pub(super) fn read_cursors(connection: &Connection) -> UseResult<(u64, u64)> {
