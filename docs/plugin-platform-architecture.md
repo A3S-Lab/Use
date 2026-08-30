@@ -536,10 +536,12 @@ Blob and expanded-package commits hold it exclusively across bounded physical
 scan, exact logical-byte/container projection, same-digest staging cleanup, and
 atomic publication. This serialized admission prevents concurrent overcommit;
 it is intentionally not a parallel durable reservation ledger. The tiers still
-need a confirmed garbage-collection policy. Shared-content corruption currently
-fails closed; explicit quarantine and verified rehydration remain part of that
-global policy rather than an implicit overwrite performed by one source or
-installation.
+need a confirmed garbage-collection policy. Explicit digest audit now rehashes
+both tiers sequentially under the same exclusive guard, repeats bounded
+physical inventory, and reports path-free mismatch evidence without mutation.
+Shared-content corruption fails closed; explicit quarantine and verified
+rehydration remain part of the global policy rather than an implicit overwrite
+performed by one source or installation.
 
 Each `InstallationId(kind, id)` owns separate roots for:
 

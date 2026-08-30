@@ -234,10 +234,14 @@ Implementation evidence (2026-08-28):
   policy-enabled publications serialize physical scan, exact projection,
   staging cleanup, and final commit so two writers cannot spend the same
   capacity.
+- [x] Add an explicit bounded global digest audit for raw Blobs and expanded
+  packages. Reuse the admission fingerprint, hold the exact collection guard,
+  report mismatches without mutation, and fail closed on unsafe or unstable
+  physical state.
 - [ ] Require an explicit confirmed garbage-collection policy before deletion.
-- [ ] Add explicit global artifact audit, quarantine, and verified
-  rehydration. Corruption must fail closed and preserve forensic evidence; it
-  must not silently replace bytes underneath an admitted generation.
+- [ ] Add explicit corruption quarantine and verified rehydration. Corruption
+  must preserve forensic evidence; recovery must not silently replace bytes
+  underneath an admitted generation.
 - [x] Bind enablement and capability-publication intent to the exact
   `InstallationSnapshot` generation instead of reconciling separate mutable
   authorities.
@@ -370,8 +374,15 @@ open):
   permits non-worsening replay or cleanup. This correctness-first protocol is
   serialized, not a parallel durable reservation ledger, and grants no deletion
   authority.
-- Digest audit, corruption quarantine, verified rehydration, and confirmed
-  deletion remain open.
+- `ArtifactStore::audit_digests` now emits deterministic, path-free
+  `a3s.use.artifact-store-digest-audit.v1` evidence while the exact collection
+  guard freezes admitted publication. It reuses raw SHA-256 for Blobs and the
+  canonical admission fingerprint for expanded packages, hashes sequentially,
+  reports complete mismatches instead of mutating them, retains incomplete
+  staging evidence without hashing it, and repeats the bounded physical scan
+  before returning. Package file opens do not follow the final link/reparse
+  component and revalidate the opened measurement. Corruption quarantine,
+  verified rehydration, and confirmed deletion remain open.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove
@@ -391,7 +402,8 @@ open):
   alias-only projection change cannot evade snapshot consistency.
 - The remaining A1 work is structural, not a hidden compatibility layer: the
   global blob and expanded-tree tiers still need one safe
-  audit/quarantine/rehydration/confirmed-GC model, and the
+  quarantine/rehydration/confirmed-GC model built on the completed read-only
+  digest audit, and the
   complete two-installation lifecycle/lease matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store

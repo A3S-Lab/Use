@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
@@ -53,8 +53,7 @@ fn hash_package(root: &Path) -> UseResult<PackageFingerprint> {
         digest.update(path_bytes);
         digest.update(package_file.size.to_be_bytes());
 
-        let file = File::open(&package_file.path)
-            .map_err(|error| io_error("open extension package file", &package_file.path, error))?;
+        let file = open_package_file(&package_file)?;
         let mut reader = BufReader::new(file);
         let mut buffer = [0_u8; 64 * 1024];
         let mut read_bytes = 0_u64;
@@ -74,12 +73,61 @@ fn hash_package(root: &Path) -> UseResult<PackageFingerprint> {
         if read_bytes != package_file.size {
             return Err(package_changed(&package_file.path));
         }
+        let metadata = reader.get_ref().metadata().map_err(|error| {
+            io_error(
+                "inspect opened extension package file",
+                &package_file.path,
+                error,
+            )
+        })?;
+        if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+            || !metadata.is_file()
+            || metadata.len() != package_file.size
+        {
+            return Err(package_changed(&package_file.path));
+        }
     }
     Ok(PackageFingerprint {
         sha256: format!("{:x}", digest.finalize()),
         file_count,
         byte_count: bytes,
     })
+}
+
+fn open_package_file(package_file: &PackageFile) -> UseResult<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        options
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .share_mode(FILE_SHARE_READ);
+    }
+    let file = options
+        .open(&package_file.path)
+        .map_err(|error| io_error("open extension package file", &package_file.path, error))?;
+    let metadata = file.metadata().map_err(|error| {
+        io_error(
+            "inspect opened extension package file",
+            &package_file.path,
+            error,
+        )
+    })?;
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+        || !metadata.is_file()
+        || metadata.len() != package_file.size
+    {
+        return Err(package_changed(&package_file.path));
+    }
+    Ok(file)
 }
 
 fn collect_files(
@@ -206,6 +254,39 @@ fn package_limit_error() -> UseError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn package_file_open_revalidates_the_collected_measurement() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("payload");
+        std::fs::write(&path, b"changed").unwrap();
+        let file = PackageFile {
+            normalized: "payload".to_owned(),
+            path,
+            size: 4,
+        };
+
+        let error = open_package_file(&file).unwrap_err();
+
+        assert_eq!(error.code, "use.extension.package_changed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn package_file_open_does_not_follow_a_replaced_link() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        let link = temp.path().join("payload");
+        std::fs::write(&target, b"outside").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let file = PackageFile {
+            normalized: "payload".to_owned(),
+            path: link,
+            size: 7,
+        };
+
+        assert!(open_package_file(&file).is_err());
+    }
 
     #[tokio::test]
     async fn package_digest_is_order_independent_and_content_sensitive() {

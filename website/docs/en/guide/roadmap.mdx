@@ -71,9 +71,10 @@ package, and only a durable Host outcome reports `Completed`.
   Grants, bindings, capability publication, backup/restore, and locks. Global
   Registry/TUF inputs and the raw-blob/expanded-tree Artifact Store own no
   installation authority. Registry sources retain only observations and
-  partials; source prune and scoped uninstall never delete global bytes. The
-  remaining A1 reachability/quota/audit/repair/GC and single-snapshot gates stay
-  open.
+  partials; source prune and scoped uninstall never delete global bytes.
+  Guarded reachability, hard quota admission, and read-only digest audit cover
+  both physical tiers. The remaining A1 quarantine/rehydration/confirmed-GC and
+  single-snapshot gates stay open.
 - The bounded resolver freezes one Registry/TUF package lock, prepares
   dependencies forward, publishes one graph snapshot, and retires unused
   packages in reverse.
