@@ -23,7 +23,7 @@ pub(super) fn bind_action_effects(
         PluginOperationAction::Disable => {
             let package_subject = transition.effects[0].subject.clone();
             transition.effects[0].kind = ControlEffectKind::CapabilityHide;
-            transition.effects[0].subject = capability_subject(reviewed);
+            transition.effects[0].subject = capability_subject(reviewed, &transition.capability);
             transition.effects[1].kind = ControlEffectKind::GrantRevoke;
             transition.effects[1].subject = package_subject;
         }
@@ -33,7 +33,7 @@ pub(super) fn bind_action_effects(
         PluginOperationAction::Uninstall => {
             let package_subject = transition.effects[0].subject.clone();
             transition.effects[0].kind = ControlEffectKind::CapabilityHide;
-            transition.effects[0].subject = capability_subject(reviewed);
+            transition.effects[0].subject = capability_subject(reviewed, &transition.capability);
             transition.effects[1].kind = ControlEffectKind::PackageRemove;
             transition.effects[1].installation_generation = reviewed.expected_generation;
             transition.effects[1].subject = package_subject;
@@ -371,11 +371,8 @@ pub(super) fn generation_from_projection(
         snapshot_digest: projected.snapshot.descriptor_digest().unwrap(),
         package_lifecycles: projected.package_lifecycles.clone(),
         grants: projected.grants.clone(),
-        bindings: Vec::new(),
-        capability: ControlCapabilitySelection {
-            generation: operation.target_capability_generation().unwrap(),
-            descriptor_digest: digest('5'),
-        },
+        provider_selections: projected.provider_selections.clone(),
+        capability: projected.capability.clone(),
         capability_status: ControlCapabilityStatus::Candidate,
         capability_published_at_ms: None,
         committed_at_ms: operation.reviewed_at_ms + 10,

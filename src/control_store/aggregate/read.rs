@@ -178,7 +178,12 @@ pub(super) fn read_generation_from(
     validate_grant_selections(&grants, &snapshot).map_err(|_| {
         corruption_error("Control Store Grant rows do not match their selected generation.")
     })?;
-    let bindings = read_bindings(connection, generation)?;
+    let provider_selections = read_provider_selections(connection, generation)?;
+    validate_provider_selections(&provider_selections, &snapshot).map_err(|_| {
+        corruption_error(
+            "Control Store provider rows do not exactly cover their selected generation.",
+        )
+    })?;
     let (capability_generation, descriptor_digest, publication_state, published_at_ms): (
         i64,
         String,
@@ -218,7 +223,7 @@ pub(super) fn read_generation_from(
         snapshot_digest,
         package_lifecycles,
         grants,
-        bindings,
+        provider_selections,
         capability,
         capability_status: ControlCapabilityStatus::parse(&publication_state)?,
         capability_published_at_ms: published_at_ms.map(from_i64).transpose()?,
@@ -440,17 +445,19 @@ fn read_grants(connection: &Connection, generation: u64) -> UseResult<Vec<Contro
         .collect()
 }
 
-fn read_bindings(
+fn read_provider_selections(
     connection: &Connection,
     generation: u64,
-) -> UseResult<Vec<ControlProviderBinding>> {
+) -> UseResult<Vec<ControlProviderSelection>> {
     let mut statement = connection
         .prepare(
-            "SELECT package_id, surface_kind, surface_id, provider_id, binding_digest
-             FROM provider_binding WHERE generation = ?1
-             ORDER BY package_id, surface_kind, surface_id, provider_id",
+            "SELECT package_id, surface_kind, surface_id, provider_id,
+                    provider_build_id, capability_digest, semantics_profile_digest,
+                    enforcement_profile, selection_digest
+             FROM provider_selection WHERE generation = ?1
+             ORDER BY package_id, surface_kind, surface_id",
         )
-        .map_err(|error| schema::sqlite_error("prepare Control Store binding read", error))?;
+        .map_err(|error| schema::sqlite_error("prepare Control Store provider read", error))?;
     let rows = statement
         .query_map([to_i64(generation)?], |row| {
             Ok((
@@ -459,27 +466,38 @@ fn read_bindings(
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
             ))
         })
-        .map_err(|error| schema::sqlite_error("query Control Store bindings", error))?
+        .map_err(|error| schema::sqlite_error("query Control Store providers", error))?
         .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|error| schema::sqlite_error("read Control Store bindings", error))?;
+        .map_err(|error| schema::sqlite_error("read Control Store providers", error))?;
     rows.into_iter()
         .map(|row| {
-            if !valid_machine_id(&row.3) || !valid_sha256(&row.4) {
-                return Err(corruption_error(
-                    "A Control Store provider binding is invalid.",
-                ));
-            }
-            Ok(ControlProviderBinding {
-                package_id: row.0,
-                surface: PluginSurfaceRef {
-                    kind: parse_surface_kind(&row.1)?,
-                    id: row.2,
+            let selection = ControlProviderSelection {
+                evidence: PlannedProviderEvidence {
+                    surface: PlanQualifiedSurfaceRef {
+                        package_id: row.0,
+                        surface: PluginSurfaceRef {
+                            kind: parse_surface_kind(&row.1)?,
+                            id: row.2,
+                        },
+                    },
+                    provider_id: row.3,
+                    provider_build_id: row.4,
+                    capability_digest: row.5,
+                    semantics_profile_digest: row.6,
+                    enforcement: parse_enforcement_profile(&row.7)?,
                 },
-                provider_id: row.3,
-                binding_digest: row.4,
-            })
+                selection_digest: row.8,
+            };
+            selection
+                .validate()
+                .map_err(|_| corruption_error("A Control Store provider selection is invalid."))?;
+            Ok(selection)
         })
         .collect()
 }

@@ -100,7 +100,7 @@ transaction, outbox, backup, and migration boundaries: the SQLite/WAL backend
 may be qualified before activation, but every authoritative reader switches as
 one cutover and live WAL files are never copied as backup payloads.
 The current private Control Store kernel qualifies an installation-bound
-schema-v6 aggregate, bounded blocking executor, typed transitions and outbox,
+schema-v7 aggregate, bounded blocking executor, typed transitions and outbox,
 and canonical offline-verifiable export plus staged restore on otherwise clean
 state. It persists each complete canonical reviewed Plan envelope and versioned
 authorization record, while relational columns remain validated projections of
@@ -112,14 +112,18 @@ accepted from callers. The next snapshot, both package generation axes, and
 Grant inventory are a pure function of that evidence, the exact prior
 generation, and bounded committed history; database commit, offline export, and
 restore reject caller-selected divergence, including shared-root or reinstall
-identity reuse. Package and surface
-effects bind exact artifact incarnations, while one graph capability effect
+identity reuse. Reviewed Runtime provider selections for every enabled Tool
+and MCP surface are projected from the canonical Plan and exact prior
+generation, while unrelated selections are retained. A candidate capability
+digest binds the exact target snapshot, lifecycle identities, Grant revisions,
+and provider selections without claiming an endpoint or readiness before an
+external effect succeeds. Package and surface effects bind exact artifact incarnations, while one graph capability effect
 binds the complete target installation/capability generation; canonical
 payload bytes, their digest, and their relational projection commit together.
 Production lifecycle code does not construct
 it, so it neither mirrors nor replaces the current JSON authority. Lifecycle
-conversion still must feed the reviewed Grant evidence and derive complete
-binding, capability, and effect inventories. External-payload ownership and
+conversion still must feed the reviewed Grant evidence, derive complete effect
+inventories, and persist typed applied-provider observations. External-payload ownership and
 the coordinated reader/writer
 cutover also remain A2 work. The machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,

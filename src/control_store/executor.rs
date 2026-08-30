@@ -6,8 +6,9 @@ use tokio::sync::{mpsc, oneshot};
 use super::aggregate;
 use super::export::{self, ControlStoreExport, VerifiedControlStoreExport};
 use super::model::{
-    ClaimedControlEffect, ControlEffectClaim, ControlEffectObservation, ControlEffectRecord,
-    ControlGeneration, ControlOperationRecord, ControlTransition, ReviewedControlOperation,
+    corruption_error, ClaimedControlEffect, ControlEffectClaim, ControlEffectObservation,
+    ControlEffectRecord, ControlGeneration, ControlOperationRecord, ControlTransition,
+    ReviewedControlOperation,
 };
 use super::schema::{self, ControlStoreInspection, ControlStoreMetadata};
 
@@ -394,7 +395,12 @@ fn run_worker(mut receiver: mpsc::Receiver<ControlStoreRequest>) {
                                 "The Control Store changed while its aggregate was inspected.",
                             ));
                         }
-                        export::encode(&metadata, authority)?;
+                        export::encode(&metadata, authority).map_err(|error| {
+                            corruption_error(format!(
+                                "The live Control Store aggregate is semantically invalid: {}",
+                                error.message
+                            ))
+                        })?;
                         Ok(inspection)
                     });
                 let _ = response.send(result);

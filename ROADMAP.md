@@ -492,7 +492,7 @@ inventory prerequisite only. It neither activates the database nor completes
 an A2 checkbox.
 
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
-for a clean installation. Schema v6 binds one exact `InstallationId` and stores
+for a clean installation. Schema v7 binds one exact `InstallationId` and stores
 contiguous installation generations, canonical complete reviewed Plan
 envelopes, versioned authorization evidence, exact snapshots, full Workspace
 Grants, provider bindings, capability candidates, lifecycle checkpoints, and an
@@ -514,6 +514,17 @@ bytes, digests, or revisions. The projection covers all five actions, User and
 Workspace installations, multiple roots sharing a dependency, and removal
 followed by reinstall without reusing a package identity; callers can no longer
 select these fields.
+The same projection now derives the complete dynamic provider selection for
+every enabled Tool and MCP surface from canonical reviewed Plan evidence and
+the exact prior generation. It preserves unrelated package selections, removes
+disabled or removed surfaces, and stores canonical provider build, capability,
+semantics, and enforcement evidence with a derived digest. Static Flow, OKF,
+Skill, and UI host ownership is not fabricated as Runtime selection. The
+candidate capability descriptor digest is independently derived from the exact
+target snapshot, package lifecycle identities, Grant revisions, and provider
+selections. It intentionally contains no endpoint, readiness, compiled
+artifact, or Knowledge application claim; those facts can exist only as typed
+post-commit observations.
 Canonical typed effect payloads bind the installation, plan, action, provider,
 artifact digests, and exact package or surface lifecycle incarnation. Atomic
 graph capability publish/hide effects instead bind the complete target
@@ -535,8 +546,8 @@ Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
 not accept it. The external artifact/projection payload-owner registry,
 complete process-exit matrix, production conversion into the reviewed Grant
-evidence above, deterministic derivation of bindings, capability descriptors,
-and outbox intents, indivisible consumer cutover, and deletion of legacy
+evidence above, deterministic derivation of outbox intents, typed applied
+provider observations, indivisible consumer cutover, and deletion of legacy
 mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every

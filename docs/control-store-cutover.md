@@ -107,6 +107,13 @@ The implementation proceeds in this order:
    commit, provider acceptance, observation commit, publication, drain,
    retirement, backup, and restore activation boundary for all five actions.
 
+Current inactive-kernel progress covers deterministic graph and package
+generation projection, full Grant projection, reviewed Runtime provider
+selection, and the candidate capability descriptor. Provider selection is
+derived only for Tool and MCP surfaces; it is not an applied binding
+observation. Complete effect-intent derivation and typed endpoint/readiness,
+Flow artifact, and Knowledge application observations remain part of gate 1.
+
 Production activation is blocked until all gates below are true:
 
 | Gate | Required evidence |

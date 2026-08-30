@@ -210,7 +210,7 @@ fn projection_history_rejects_inconsistent_and_over_capacity_state() {
         snapshot: prior_snapshot,
         package_lifecycles: Vec::new(),
         grants: Vec::new(),
-        bindings: Vec::new(),
+        provider_selections: Vec::new(),
         capability: ControlCapabilitySelection {
             generation: 1,
             descriptor_digest: digest('5'),
@@ -412,11 +412,8 @@ fn generation(
         snapshot_digest: projected.snapshot.descriptor_digest().unwrap(),
         package_lifecycles: projected.package_lifecycles.clone(),
         grants: Vec::new(),
-        bindings: Vec::new(),
-        capability: ControlCapabilitySelection {
-            generation: operation.target_capability_generation().unwrap(),
-            descriptor_digest: digest('5'),
-        },
+        provider_selections: projected.provider_selections.clone(),
+        capability: projected.capability.clone(),
         capability_status: ControlCapabilityStatus::Candidate,
         capability_published_at_ms: None,
         committed_at_ms: operation.reviewed_at_ms + 10,

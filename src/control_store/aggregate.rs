@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use a3s_use_core::{
-    InstallationId, InstallationSnapshot, LockedPluginPackage, PluginSurfaceRef,
-    PluginWorkspaceGrant, UseError, UseResult,
+    InstallationId, InstallationSnapshot, LockedPluginPackage, PlanQualifiedSurfaceRef,
+    PlannedProviderEvidence, PluginSurfaceRef, PluginWorkspaceGrant, UseError, UseResult,
 };
 use olpc_cjson::CanonicalFormatter;
 use rusqlite::{params, Connection, ErrorCode, Row, Transaction, TransactionBehavior};
@@ -11,15 +11,16 @@ use sha2::{Digest, Sha256};
 
 use super::export::ControlStoreExport;
 use super::model::{
-    conflict_error, corruption_error, input_error, operation_action_name, parse_operation_action,
-    parse_surface_kind, surface_kind_name, valid_machine_id, valid_sha256,
-    validate_grant_selections, ClaimedControlEffect, ControlAuthorizationEvidence,
-    ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
-    ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectRecord,
-    ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
-    ControlOperationRecord, ControlOperationStatus, ControlPackageLifecycle,
-    ControlProjectionHistory, ControlProviderBinding, ControlStoreAuthority, ControlTransition,
-    ReviewedControlOperation, MAX_CONTROL_HISTORY_PACKAGES,
+    conflict_error, corruption_error, enforcement_profile_name, input_error, operation_action_name,
+    parse_enforcement_profile, parse_operation_action, parse_surface_kind, surface_kind_name,
+    valid_machine_id, valid_sha256, validate_grant_selections, validate_provider_selections,
+    ClaimedControlEffect, ControlAuthorizationEvidence, ControlCapabilitySelection,
+    ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent, ControlEffectKind,
+    ControlEffectObservation, ControlEffectOutcome, ControlEffectRecord, ControlEffectStatus,
+    ControlEffectSubject, ControlGeneration, ControlGrantSelection, ControlOperationRecord,
+    ControlOperationStatus, ControlPackageLifecycle, ControlProjectionHistory,
+    ControlProviderSelection, ControlStoreAuthority, ControlTransition, ReviewedControlOperation,
+    MAX_CONTROL_HISTORY_PACKAGES,
 };
 use super::schema;
 
@@ -686,7 +687,7 @@ fn generation_matches_transition(
         && generation.snapshot == transition.snapshot
         && generation.package_lifecycles == transition.package_lifecycles
         && generation.grants == transition.grants
-        && generation.bindings == transition.bindings
+        && generation.provider_selections == transition.provider_selections
         && generation.capability == transition.capability
         && generation.committed_at_ms == transition.committed_at_ms
 }

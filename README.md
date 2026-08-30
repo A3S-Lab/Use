@@ -1277,7 +1277,7 @@ The machine-checked
 current state leaf, external owner, operational file, and consumer that must
 switch together; it explicitly keeps production activation inactive and
 forbids dual writes or legacy fallback reads.
-The private A2 Control Store kernel now qualifies its clean-state schema-v6
+The private A2 Control Store kernel now qualifies its clean-state schema-v7
 aggregate. Each operation stores the canonical complete reviewed Plan envelope
 and versioned authorization evidence, then derives and revalidates its operation
 ID, Plan and authorization digests, action, root package, installation scope,
@@ -1294,19 +1294,31 @@ Grant evidence. All five actions, User and Workspace installations, multi-root
 shared dependencies, and uninstall/reinstall therefore reject caller-selected
 package or Grant identities. The offline export and restore verifier runs the
 same projection again.
+The projection also reconstructs the complete reviewed Runtime provider
+selection for every enabled Tool and MCP surface. It retains unrelated
+selections, removes disabled or removed surfaces, stores the full provider
+build/capability/semantics/enforcement evidence, and derives each selection
+digest from a versioned canonical descriptor over the reviewed Plan evidence.
+Flow, OKF, Skill, and UI remain typed host
+effects rather than being assigned fictional Runtime providers. A separate
+candidate capability digest is derived from the target snapshot, package
+lifecycle identities, Grant revisions, and provider selections. It describes
+committed desired capability identity only; endpoint, readiness, compiled
+artifact, and Knowledge application observations remain post-commit evidence.
 Canonical typed effect payloads bind installation, reviewed plan, operation
 action, provider, exact artifact identity, and package or surface incarnation;
 graph capability publish/hide instead bind the complete target installation and
 capability generation. Payload bytes, their digest, and their relational
 projection commit together and are verified again after restart. The kernel
-also qualifies typed generation transitions, full Grant and binding evidence,
-idempotent outbox reconciliation, bounded execution, corruption checks, and
+also qualifies typed generation transitions, full Grant and reviewed provider
+selection evidence, idempotent outbox reconciliation, bounded execution,
+corruption checks, and
 deterministic offline-verifiable export plus staged restore. It is not
 constructed by production lifecycle code and does not create a second
 authority beside the current JSON stores. Deterministic lifecycle conversion
-still must feed the authorization-v2 Grant evidence and derive complete
-provider-binding, capability-descriptor, and effect-intent inventories. The
-external artifact/projection payload-owner
+still must feed the authorization-v2 Grant evidence, derive the complete
+effect-intent inventory, and record typed applied-provider observations without
+conflating them with reviewed selection. The external artifact/projection payload-owner
 registry and coordinated authority cutover also remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter

@@ -8,13 +8,18 @@ use a3s_use_core::{
 };
 
 use super::{
-    generation_exhausted, input_error, valid_machine_id, ControlGeneration, ControlGrantSelection,
-    ControlPackageLifecycle, ReviewedControlOperation,
+    generation_exhausted, input_error, valid_machine_id, ControlCapabilitySelection,
+    ControlGeneration, ControlGrantSelection, ControlPackageLifecycle, ControlProviderSelection,
+    ReviewedControlOperation,
 };
 
+mod capability;
 mod grants;
+mod providers;
 
+use capability::project_capability;
 use grants::project_grants;
+use providers::project_provider_selections;
 
 pub(in crate::control_store) const MAX_CONTROL_HISTORY_PACKAGES: usize = 65_536;
 
@@ -116,6 +121,8 @@ pub(in crate::control_store) struct ProjectedControlGeneration {
     pub(in crate::control_store) snapshot: InstallationSnapshot,
     pub(in crate::control_store) package_lifecycles: Vec<ControlPackageLifecycle>,
     pub(in crate::control_store) grants: Vec<ControlGrantSelection>,
+    pub(in crate::control_store) provider_selections: Vec<ControlProviderSelection>,
+    pub(in crate::control_store) capability: ControlCapabilitySelection,
     pub(in crate::control_store) history_after: ControlProjectionHistory,
 }
 
@@ -157,6 +164,14 @@ impl ReviewedControlOperation {
             &snapshot,
         )?;
         let grants = project_grants(self, prior, &snapshot)?;
+        let provider_selections = project_provider_selections(self, prior, &snapshot)?;
+        let capability = project_capability(
+            self,
+            &snapshot,
+            &package_lifecycles,
+            &grants,
+            &provider_selections,
+        )?;
 
         let mut history_after = history.clone();
         history_after.last_lifecycle_generation = last_lifecycle_generation;
@@ -174,6 +189,8 @@ impl ReviewedControlOperation {
             snapshot,
             package_lifecycles,
             grants,
+            provider_selections,
+            capability,
             history_after,
         })
     }

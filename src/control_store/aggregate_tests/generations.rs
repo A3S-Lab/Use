@@ -28,10 +28,9 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
     store.register_operation(disable.clone()).await.unwrap();
     let mut disabled = projected_transition(&disable, &installed, &projection_history);
     disabled.grants.clear();
-    disabled.bindings.clear();
     let package_subject = disabled.effects[0].subject.clone();
     disabled.effects[0].kind = ControlEffectKind::CapabilityHide;
-    disabled.effects[0].subject = capability_subject(&disable);
+    disabled.effects[0].subject = capability_subject(&disable, &disabled.capability);
     disabled.effects[1].kind = ControlEffectKind::GrantRevoke;
     disabled.effects[1].subject = package_subject;
     let disabled_generation = store.commit_transition(disabled).await.unwrap();
@@ -62,7 +61,7 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
     let mut removed = projected_transition(&uninstall, &enabled_generation, &projection_history);
     let package_subject = removed.effects[0].subject.clone();
     removed.effects[0].kind = ControlEffectKind::CapabilityHide;
-    removed.effects[0].subject = capability_subject(&uninstall);
+    removed.effects[0].subject = capability_subject(&uninstall, &removed.capability);
     removed.effects[1].kind = ControlEffectKind::PackageRemove;
     removed.effects[1].installation_generation = 3;
     removed.effects[1].subject = package_subject;
