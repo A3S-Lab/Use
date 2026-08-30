@@ -14,6 +14,7 @@ mod inventory;
 mod quarantine;
 mod quota;
 mod reachability;
+mod rehydration;
 
 pub use audit::{
     ArtifactDigestAuditEntry, ArtifactDigestAuditStatus, ArtifactStoreDigestAudit,
@@ -36,6 +37,11 @@ pub use quota::{
     MAX_ARTIFACT_STORAGE_QUOTA_ARTIFACTS,
 };
 pub use reachability::{ArtifactCollectionGuard, ArtifactReferenceAdmission};
+pub use rehydration::{
+    ArtifactRehydrationPlan, ArtifactRehydrationRecord, ArtifactRehydrationResult,
+    ARTIFACT_REHYDRATION_PLAN_SCHEMA, ARTIFACT_REHYDRATION_RECORD_SCHEMA,
+    ARTIFACT_REHYDRATION_RESULT_SCHEMA,
+};
 
 const BLOBS_DIRECTORY: &str = "blobs";
 const EXPANDED_PACKAGES_DIRECTORY: &str = "expanded-packages";
@@ -49,6 +55,8 @@ mod audit_tests;
 mod quarantine_tests;
 #[cfg(test)]
 mod quota_tests;
+#[cfg(test)]
+mod rehydration_tests;
 pub(crate) const ARTIFACT_STAGING_PREFIX: &str = ".artifact-staging-";
 pub(crate) const MAX_ARTIFACT_CONTAINER_ENTRIES: usize = 128;
 pub(crate) const MAX_ARTIFACT_TREE_ENTRIES: usize = crate::package::MAX_PACKAGE_FILES * 2;

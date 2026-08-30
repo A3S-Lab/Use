@@ -11,6 +11,10 @@ use super::quota::{
     validate_policy_metadata, STORAGE_QUOTA_LOCK, STORAGE_QUOTA_POLICY_FILE,
     STORAGE_QUOTA_TEMPORARY_FILE,
 };
+use super::rehydration::{
+    validate_rehydration_metadata, REHYDRATION_PREPARED_RECORD, REHYDRATION_PREPARED_TEMPORARY,
+    REHYDRATION_RECORD, REHYDRATION_TEMPORARY,
+};
 use super::{
     artifact_store_error, validate_lock_metadata, validate_real_directory, validate_sha256,
     ArtifactCollectionGuard, ArtifactStore, ARTIFACT_STAGING_PREFIX, BLOBS_DIRECTORY,
@@ -336,6 +340,12 @@ async fn scan_container(
             QUARANTINE_TEMPORARY => {
                 validate_quarantine_metadata(&path, &metadata, true)?;
             }
+            REHYDRATION_PREPARED_RECORD | REHYDRATION_RECORD => {
+                validate_rehydration_metadata(&path, &metadata, false)?;
+            }
+            REHYDRATION_PREPARED_TEMPORARY | REHYDRATION_TEMPORARY => {
+                validate_rehydration_metadata(&path, &metadata, true)?;
+            }
             CONTENT_DIRECTORY => {
                 if content.is_some() {
                     return Err(ownership_error(
@@ -397,7 +407,15 @@ async fn scan_container(
         }
     }
 
-    inspect_container_state(root, kind, &format!("sha256:{sha256}")).await?;
+    let digest = format!("sha256:{sha256}");
+    let quarantine = inspect_container_state(root, kind, &digest).await?;
+    let rehydration = super::rehydration::inspect_rehydration_state(root).await?;
+    super::rehydration::validate_container_rehydration_state(
+        kind,
+        &digest,
+        &quarantine,
+        &rehydration,
+    )?;
 
     let (state, content_files, content_bytes) = match content {
         Some(measurement) => (

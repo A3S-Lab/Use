@@ -552,8 +552,12 @@ usage, and bounded quota assessment under the same guarded collection pass.
 Concurrent retirement may leave conservative extra owners. Hard quota
 admission now covers both global publication paths, and explicit digest audit
 covers both physical tiers. Exact-plan logical quarantine covers both physical
-tiers without moving content. Confirmed GC and verified rehydration remain
-release work.
+tiers without moving content. Verified rehydration now adds an independent
+candidate, exact reviewed plan, fresh global zero-reference proof, quota-aware
+staging, and prepared/completed recovery under the same collection boundary.
+Matching terminal replay is read-only and depends only on the durable records
+and verified canonical replacement, not the external candidate or a second
+zero-reference authorization. Confirmed GC remains release work.
 
 A real-process failure test terminates installation after the complete target
 has entered the verified cache but while a high-entry archive is still being

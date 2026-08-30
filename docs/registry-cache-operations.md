@@ -135,8 +135,28 @@ path-free evidence to a trusted operator, and pass only the exact
 before atomically publishing a canonical marker. The operation never moves or
 overwrites canonical bytes. Exact replay reports `changed: false`; stale review
 is rejected. New ordinary Blob and expanded-package access fails closed while
-the marker exists. This is incident containment, not repair or cleanup:
-verified rehydration and confirmed global GC remain unimplemented.
+the marker exists. This is incident containment, not repair or cleanup; the
+marker grants neither authority.
+
+Verified recovery uses `ArtifactStoreMaintenance`, not a direct content-path
+overwrite. Call `plan_rehydration(kind, digest, candidate)` with a candidate
+outside the Artifact Store, present the returned path-free plan to a trusted
+operator, then pass its exact `descriptor_digest()` to
+`apply_rehydration`. Planning and every nonterminal apply acquire the exact
+collection guard and derive a fresh global reference inventory. Registry
+observations, installation snapshots, current and retained receipts, pending
+package graphs, and nonterminal lifecycle operations must contribute zero
+references to the target before replacement. Initial apply reverifies the
+candidate and quarantine binding, persists a canonical prepared record, stages
+under the digest lock and hard-quota peak, switches the canonical content
+fail-closed, and publishes the matching completion record before ordinary
+access resumes. Matching terminal replay is read-only: it validates the durable
+completion and canonical replacement without reopening the external candidate
+or requiring later owners to retire again. Interrupted bounded phases retry
+exactly; moved, malformed, stale, or conflicting evidence fails closed. Apply
+consumes the reviewed corrupt bytes, so preserve required forensic evidence
+outside the store before confirmation. Existing open handles are not revoked.
+Confirmed global GC remains unimplemented and separate.
 
 Interrupted downloads are retained as
 `.target-<sha256>.part`. The partial must be a bounded regular file and its
@@ -304,6 +324,11 @@ source-mismatched cache state fails closed.
 | `use.artifact_store.quarantine_not_auditable` | The digest container is absent or incomplete. Preserve staging evidence and investigate; no complete mismatch exists to confirm. |
 | `use.artifact_store.quarantine_plan_mismatch` | Content or reviewed evidence changed. Re-run planning and obtain fresh explicit confirmation; never replay the stale digest blindly. |
 | `use.artifact_store.quarantine_state_invalid` | Preserve the container for incident review. A marker is malformed, noncanonical, unsafe, conflicting, or interrupted; do not bypass it or treat it as deletion authority. |
+| `use.artifact_rehydration.referenced` | Retire every Registry observation, installation snapshot or receipt, pending graph, and nonterminal lifecycle operation for the exact artifact, then create a fresh plan. |
+| `use.artifact_store.rehydration_not_quarantined` | Run digest audit and exact-plan quarantine first; a candidate or digest path alone grants no replacement authority. |
+| `use.artifact_store.rehydration_candidate_mismatch` | Preserve the candidate, investigate provenance or drift, and plan again from independently verified bytes outside the Artifact Store. |
+| `use.artifact_store.rehydration_plan_mismatch` | The candidate, quarantine evidence, or reviewed plan changed. Obtain a fresh zero-reference plan and explicit confirmation. |
+| `use.artifact_store.rehydration_state_invalid` | Keep access closed and preserve the container. Prepared/completed records are malformed, moved, conflicting, or inconsistent with the quarantine record. Retry only the exact reviewed operation after investigating state. |
 | `use.artifact_store.quota_exceeded` | Review current/projected logical bytes and containers. Increase the global policy through revision CAS or complete a future confirmed global cleanup before retrying. |
 | `use.artifact_store.quota_config_invalid` | Stop publishers, preserve the malformed `storage-quota.acl` or staging file outside the store for incident review, remove only that proven invalid state, then recreate policy through the typed API. |
 | `use.artifact_store.quota_revision_conflict` | Read the current policy and review the mutation again; never retry a stale change blindly. |
@@ -319,6 +344,7 @@ Do not repair a blob by renaming arbitrary bytes to its expected digest. The
 current write path deliberately refuses to replace corrupt global content.
 `ArtifactStore::audit_digests` can now produce read-only mismatch evidence;
 exact-plan logical quarantine can contain a reviewed complete mismatch without
-moving its bytes. Verified rehydration remains a separate unfinished control.
+moving its bytes. Verified rehydration is a separate zero-reference,
+exact-plan operation and never follows from audit or quarantine evidence alone.
 Source-cache pruning is not global Artifact Store GC, coordinated backup,
 incident response, or whole-product recovery; those remain release gates.

@@ -50,7 +50,7 @@ ownership boundaries stabilize.
 | --- | --- | --- |
 | Package aggregate | One manifest generation owns Tool, MCP, OKF, Flow, Skill, and UI surfaces; dependency preparation and retirement are ordered around one cutover. | Correct foundation. A surface must not become an independently installed mini-package. |
 | Trust and planning | TUF provenance, exact SemVer locks, read-only planning, explicit confirmation, generation compare-and-swap, and crash replay are enforced. | Correct foundation. Keep source transport, trust evidence, and package identity separate. |
-| Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. A guarded, bounded, path-free joined inventory captures physical content plus Registry, installation, receipt, pending-graph, and nonterminal lifecycle references in one collection pass, conservatively retaining owners retired during inspection; it derives checked storage usage and supports bounded quota assessment. Optional durable global quota policy serializes policy-enabled physical publication across processes and rejects growth beyond logical-byte or digest-container ceilings. Explicit digest-audit v1 rehashes both tiers under the same maintenance boundary and reports read-only mismatch evidence. Exact-plan logical quarantine preserves mismatched bytes in place and blocks new ordinary access through a canonical marker. Source observations and resumable partials remain source-scoped; verified rehydration and garbage collection are not implemented. | Partially correct. Quota, audit, and non-destructive quarantine boundaries are established. Complete verified repair and confirmed GC before deleting or replacing shared bytes. |
+| Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. A guarded, bounded, path-free joined inventory captures physical content plus Registry, installation, receipt, pending-graph, and nonterminal lifecycle references in one collection pass, conservatively retaining owners retired during inspection; it derives checked storage usage and supports bounded quota assessment. Optional durable global quota policy serializes policy-enabled physical publication across processes and rejects growth beyond logical-byte or digest-container ceilings. Explicit digest-audit v1 rehashes both tiers under the same maintenance boundary and reports read-only mismatch evidence. Exact-plan logical quarantine preserves mismatched bytes in place and blocks new ordinary access through a canonical marker. Verified rehydration requires a candidate outside the store, zero durable references under the same collection guard, exact reviewed evidence, and a quota-aware prepared/completed physical switch. Source observations and resumable partials remain source-scoped; confirmed garbage collection is not implemented. | Partially correct. Quota, audit, quarantine, and verified-recovery boundaries are established. Complete confirmed GC before deleting unreferenced shared bytes. |
 | Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. | Critical debt. A2 must make related control facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
 | Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
 | Identity | Registry ownership, accepted-call leases, cursors, and Tool/MCP host names use scoped package/generation/surface keys. The optional manifest `route` is retained only as a human alias; duplicates are legal and explicit alias lookup rejects ambiguity. | Corrected A1 foundation. Aliases may improve presentation but must never enter ownership or cursor identity. |
@@ -156,9 +156,17 @@ canonical plan digest, and atomically publishes a bounded no-clobber marker.
 The marker is validated by physical inventory, excluded from content/staging
 quota measurements, and blocks new ordinary Blob and expanded-package access
 without moving forensic content. It does not revoke existing handles or grant
-replacement or deletion authority. Verified rehydration must be implemented
-without changing an admitted generation in place, and GC still requires
-explicit confirmation.
+replacement or deletion authority. `ArtifactStoreMaintenance` now implements
+verified rehydration only after a fresh global zero-reference proof under that
+same guard. It binds an external candidate and the quarantine record into an
+exact path-free plan, reverifies both at apply, persists prepared/completed
+crash evidence, accounts for quota peak, and keeps access closed until the
+canonical switch completes. It does not revoke arbitrary already-open handles;
+the zero-reference proof prevents replacement under an admitted generation.
+Once completion is durable, exact replay is read-only and verifies canonical
+content without reopening the external candidate or reacquiring deletion
+authority from later owners.
+GC still requires explicit confirmation.
 
 Every Runtime, Flow, OKF binding/SQLite, and lifecycle journal store captures
 one `InstallationId` at construction. Scope fields retained in receipts and

@@ -2,8 +2,8 @@ use a3s_use_core::{UseError, UseResult};
 use serde::Serialize;
 
 use super::{
-    ArtifactKind, ArtifactPhysicalState, ArtifactReferenceAdmission, ArtifactStore,
-    MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
+    ArtifactCollectionGuard, ArtifactKind, ArtifactPhysicalState, ArtifactReferenceAdmission,
+    ArtifactStore, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
 };
 
 mod lock;
@@ -222,6 +222,80 @@ impl ArtifactStore {
         let exclusive = acquire_storage_quota_lock(self, StorageQuotaLockMode::Exclusive).await?;
         if let Some(policy) = load_policy(self.root()).await? {
             self.admit_storage_write(policy, &write).await?;
+        }
+        Ok(ArtifactStorageAdmission { lock: exclusive })
+    }
+
+    /// Serialize a guarded maintenance peak against quota policy changes.
+    ///
+    /// Callers already hold the exclusive reachability collection boundary and
+    /// one digest mutation lock. Ordinary writers and policy mutations acquire
+    /// reference admission first, so they cannot coexist with this lock order.
+    pub(crate) async fn acquire_rehydration_storage_admission(
+        &self,
+        collection: &ArtifactCollectionGuard,
+        kind: ArtifactKind,
+        digest: &str,
+        removed_before_write_bytes: u64,
+        added_bytes: u64,
+    ) -> UseResult<ArtifactStorageAdmission> {
+        collection.ensure_store(self)?;
+        let shared = acquire_storage_quota_lock(self, StorageQuotaLockMode::Shared).await?;
+        if load_policy(self.root()).await?.is_none() {
+            return Ok(ArtifactStorageAdmission { lock: shared });
+        }
+        drop(shared);
+
+        let exclusive = acquire_storage_quota_lock(self, StorageQuotaLockMode::Exclusive).await?;
+        if let Some(policy) = load_policy(self.root()).await? {
+            let inventory = self.scan_inventory_under_global_guard().await?;
+            let mut current_bytes = 0_u64;
+            for entry in &inventory.entries {
+                current_bytes = current_bytes
+                    .checked_add(entry.content_bytes)
+                    .and_then(|value| value.checked_add(entry.staging_bytes))
+                    .ok_or_else(quota_accounting_overflow)?;
+            }
+            let target = inventory
+                .entries
+                .iter()
+                .find(|entry| entry.kind == kind && entry.digest == digest)
+                .ok_or_else(|| {
+                    quota_config_invalid(
+                        "Artifact rehydration quota admission requires its physical digest container.",
+                    )
+                })?;
+            if removed_before_write_bytes > target.staging_bytes {
+                return Err(quota_config_invalid(
+                    "Artifact rehydration quota projection removes more staging bytes than inventory observed.",
+                ));
+            }
+            let projected_bytes = current_bytes
+                .checked_sub(removed_before_write_bytes)
+                .and_then(|value| value.checked_add(added_bytes))
+                .ok_or_else(quota_accounting_overflow)?;
+            if projected_bytes > policy.max_physical_bytes() && projected_bytes > current_bytes {
+                return Err(UseError::new(
+                    "use.artifact_store.quota_exceeded",
+                    "Artifact rehydration staging would exceed the configured global storage quota.",
+                )
+                .with_detail(
+                    "kind",
+                    match kind {
+                        ArtifactKind::Blob => "blob",
+                        ArtifactKind::ExpandedPackage => "expanded-package",
+                    },
+                )
+                .with_detail("digest", digest.to_owned())
+                .with_detail("currentPhysicalBytes", current_bytes.to_string())
+                .with_detail("removedBeforeWriteBytes", removed_before_write_bytes.to_string())
+                .with_detail("addedBytes", added_bytes.to_string())
+                .with_detail("projectedPhysicalBytes", projected_bytes.to_string())
+                .with_detail("maxPhysicalBytes", policy.max_physical_bytes().to_string())
+                .with_suggestion(
+                    "Increase the reviewed global quota before retrying exact artifact rehydration.",
+                ));
+            }
         }
         Ok(ArtifactStorageAdmission { lock: exclusive })
     }

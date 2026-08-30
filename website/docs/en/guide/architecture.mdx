@@ -88,8 +88,14 @@ and scoped uninstall never delete global bytes. Cross-source reachability,
 hard quota admission, and path-free read-only digest audit now cover both
 physical tiers. Exact-plan logical quarantine re-audits a complete mismatch,
 publishes a canonical no-clobber marker, preserves the original bytes, and
-blocks new ordinary access. Confirmed GC and verified rehydration remain open;
-the marker grants neither authority.
+blocks new ordinary access; the marker grants neither recovery nor deletion
+authority. Verified rehydration now runs separately
+through `ArtifactStoreMaintenance`: the same collection guard covers a fresh
+zero-durable-reference proof, independent candidate verification, exact
+path-free review, quota-aware staging, and prepared/completed crash recovery.
+Completed exact replay is read-only and no longer depends on the external
+candidate or retirement of references published after completion.
+Confirmed GC remains open.
 
 ## Package dependency boundary
 

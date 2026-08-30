@@ -289,19 +289,47 @@ impl ArtifactStore {
         sha256: &str,
     ) -> UseResult<()> {
         let digest = format!("sha256:{sha256}");
-        match inspect_container_state(container, kind, &digest).await? {
-            ContainerQuarantineState::None => Ok(()),
-            ContainerQuarantineState::Interrupted => Err(quarantine_state_invalid(
+        let quarantine = inspect_container_state(container, kind, &digest).await?;
+        let rehydration = super::rehydration::inspect_rehydration_state(container).await?;
+        super::rehydration::validate_container_rehydration_state(
+            kind,
+            &digest,
+            &quarantine,
+            &rehydration,
+        )?;
+        match (quarantine, rehydration) {
+            (ContainerQuarantineState::None, super::rehydration::ContainerRehydrationState::None) => Ok(()),
+            (ContainerQuarantineState::Interrupted, _) => Err(quarantine_state_invalid(
                 "Artifact Store quarantine publication is incomplete; ordinary artifact access is denied.",
             )),
-            ContainerQuarantineState::Quarantined(record) => Err(artifact_store_error(
-                "use.artifact_store.quarantined",
-                "Artifact content is logically quarantined and unavailable to ordinary consumers.",
-            )
-            .with_detail("kind", kind_name(kind))
-            .with_detail("digest", digest)
-            .with_detail("observedDigest", record.plan.observed_digest)
-            .with_detail("planDigest", record.plan_digest)),
+            (
+                ContainerQuarantineState::Quarantined(_),
+                super::rehydration::ContainerRehydrationState::Rehydrated(_),
+            ) => Ok(()),
+            (
+                ContainerQuarantineState::Quarantined(record),
+                super::rehydration::ContainerRehydrationState::None,
+            ) => {
+                Err(artifact_store_error(
+                    "use.artifact_store.quarantined",
+                    "Artifact content is logically quarantined and unavailable to ordinary consumers.",
+                )
+                .with_detail("kind", kind_name(kind))
+                .with_detail("digest", digest)
+                .with_detail("observedDigest", record.plan.observed_digest)
+                .with_detail("planDigest", record.plan_digest))
+            }
+            (
+                ContainerQuarantineState::Quarantined(_),
+                super::rehydration::ContainerRehydrationState::InterruptedPreparation
+                | super::rehydration::ContainerRehydrationState::Prepared(_)
+                | super::rehydration::ContainerRehydrationState::InterruptedCompletion(_),
+            ) => Err(super::rehydration::rehydration_state_invalid(
+                "Artifact Store rehydration is incomplete; ordinary artifact access is denied.",
+            )),
+            _ => Err(super::rehydration::rehydration_state_invalid(
+                "Artifact Store quarantine and rehydration state is inconsistent.",
+            )),
         }
     }
 

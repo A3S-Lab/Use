@@ -47,12 +47,15 @@ pub use artifact_store::{
     ArtifactCollectionGuard, ArtifactDigestAuditEntry, ArtifactDigestAuditStatus,
     ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState, ArtifactQuarantinePlan,
     ArtifactQuarantineRecord, ArtifactQuarantineResult, ArtifactReferenceAdmission,
+    ArtifactRehydrationPlan, ArtifactRehydrationRecord, ArtifactRehydrationResult,
     ArtifactStorageQuotaAction, ArtifactStorageQuotaMutation, ArtifactStorageQuotaPolicy,
     ArtifactStorageQuotaSnapshot, ArtifactStore, ArtifactStoreDigestAudit, ArtifactStoreInventory,
     ARTIFACT_QUARANTINE_PLAN_SCHEMA, ARTIFACT_QUARANTINE_RECORD_SCHEMA,
-    ARTIFACT_QUARANTINE_RESULT_SCHEMA, ARTIFACT_STORAGE_QUOTA_POLICY_SCHEMA_VERSION,
-    ARTIFACT_STORE_DIGEST_AUDIT_SCHEMA, ARTIFACT_STORE_INVENTORY_SCHEMA,
-    MAX_ARTIFACT_STORAGE_QUOTA_ARTIFACTS, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
+    ARTIFACT_QUARANTINE_RESULT_SCHEMA, ARTIFACT_REHYDRATION_PLAN_SCHEMA,
+    ARTIFACT_REHYDRATION_RECORD_SCHEMA, ARTIFACT_REHYDRATION_RESULT_SCHEMA,
+    ARTIFACT_STORAGE_QUOTA_POLICY_SCHEMA_VERSION, ARTIFACT_STORE_DIGEST_AUDIT_SCHEMA,
+    ARTIFACT_STORE_INVENTORY_SCHEMA, MAX_ARTIFACT_STORAGE_QUOTA_ARTIFACTS,
+    MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
 };
 #[doc(hidden)]
 pub use atomic_file::{
