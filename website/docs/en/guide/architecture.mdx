@@ -86,7 +86,10 @@ datastores retain canonical source observations and resumable partials;
 installation snapshots retain selections and lifecycle authority. Source prune
 and scoped uninstall never delete global bytes. Cross-source reachability,
 hard quota admission, and path-free read-only digest audit now cover both
-physical tiers. Confirmed GC, quarantine, and verified rehydration remain open.
+physical tiers. Exact-plan logical quarantine re-audits a complete mismatch,
+publishes a canonical no-clobber marker, preserves the original bytes, and
+blocks new ordinary access. Confirmed GC and verified rehydration remain open;
+the marker grants neither authority.
 
 ## Package dependency boundary
 

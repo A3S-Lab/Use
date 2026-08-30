@@ -75,6 +75,16 @@ CLI 或 Agent 调用不会隐含 confirmation。TUI 迁移及 Code 侧 manager M
 
 不得新增第二个 manager、grant store、Runtime selector、capability registry 或 generic execution protocol。
 
+`UsePaths` 持有唯一的进程级 Artifact Store。已验证的 archive、executable
+planning target、presentation media 与 expanded package tree 都按 SHA-256
+分片存放，不携带 Registry source 或 installation authority。Registry datastore
+只保留 canonical source observation 与 resumable partial；installation snapshot
+保留 selection 与 lifecycle authority。Source prune 与 scoped uninstall 永不删除
+全局字节。跨 source reachability、hard quota admission 与无路径只读 digest audit
+已覆盖两个物理层。Exact-plan 逻辑隔离会重新审计完整 mismatch，发布 canonical
+no-clobber marker，保留原始字节并阻止新的普通访问。Confirmed GC 与 verified
+rehydration 仍未完成；隔离 marker 不授予这两种权限。
+
 ## 包依赖边界
 
 Schema-v3 package 只声明 package ID 与 SemVer range；enabled 具名 Registry set

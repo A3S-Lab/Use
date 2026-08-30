@@ -13,7 +13,12 @@ const WINDOWS_PERSIST_RETRY_DELAY: std::time::Duration = std::time::Duration::fr
 #[doc(hidden)]
 pub fn persist_temporary_replace_blocking(temporary: PathBuf, target: &Path) -> io::Result<()> {
     let temporary = tempfile::TempPath::try_from_path(temporary)?;
-    persist_temporary_path_blocking(temporary, target, PersistMode::Replace)
+    persist_temporary_path_blocking(
+        temporary,
+        target,
+        PersistMode::Replace,
+        PersistFailure::RemoveTemporary,
+    )
 }
 
 /// Atomically publish a temporary path without replacing an existing target.
@@ -23,7 +28,31 @@ pub fn persist_temporary_replace_blocking(temporary: PathBuf, target: &Path) -> 
 #[doc(hidden)]
 pub fn persist_temporary_noclobber_blocking(temporary: PathBuf, target: &Path) -> io::Result<()> {
     let temporary = tempfile::TempPath::try_from_path(temporary)?;
-    persist_temporary_path_blocking(temporary, target, PersistMode::NoClobber)
+    persist_temporary_path_blocking(
+        temporary,
+        target,
+        PersistMode::NoClobber,
+        PersistFailure::RemoveTemporary,
+    )
+}
+
+/// Atomically publish a temporary path without replacing an existing target,
+/// retaining the temporary path when publication fails.
+///
+/// This is reserved for fail-closed recovery sentinels whose absence would be
+/// less safe than an interrupted publication. Callers must validate and
+/// recover the retained path explicitly.
+pub(crate) fn persist_temporary_noclobber_retain_blocking(
+    temporary: PathBuf,
+    target: &Path,
+) -> io::Result<()> {
+    let temporary = tempfile::TempPath::try_from_path(temporary)?;
+    persist_temporary_path_blocking(
+        temporary,
+        target,
+        PersistMode::NoClobber,
+        PersistFailure::RetainTemporary,
+    )
 }
 
 /// Atomically publish an already-synced named temporary file without replacing
@@ -36,7 +65,12 @@ pub fn persist_named_temporary_noclobber_blocking(
     temporary: tempfile::NamedTempFile,
     target: &Path,
 ) -> io::Result<()> {
-    persist_temporary_path_blocking(temporary.into_temp_path(), target, PersistMode::NoClobber)
+    persist_temporary_path_blocking(
+        temporary.into_temp_path(),
+        target,
+        PersistMode::NoClobber,
+        PersistFailure::RemoveTemporary,
+    )
 }
 
 /// Rename a file or directory, retrying transient Windows sharing failures.
@@ -136,10 +170,17 @@ enum PersistMode {
     NoClobber,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PersistFailure {
+    RemoveTemporary,
+    RetainTemporary,
+}
+
 fn persist_temporary_path_blocking(
     temporary: tempfile::TempPath,
     target: &Path,
     mode: PersistMode,
+    failure: PersistFailure,
 ) -> io::Result<()> {
     #[cfg(windows)]
     {
@@ -157,6 +198,9 @@ fn persist_temporary_path_blocking(
                     if !windows_path_mutation_error_is_retryable(&error)
                         || started.elapsed() >= WINDOWS_PERSIST_RETRY_TIMEOUT
                     {
+                        if failure == PersistFailure::RetainTemporary {
+                            temporary.disable_cleanup(true);
+                        }
                         return Err(error);
                     }
                     let remaining = WINDOWS_PERSIST_RETRY_TIMEOUT.saturating_sub(started.elapsed());
@@ -167,11 +211,19 @@ fn persist_temporary_path_blocking(
     }
     #[cfg(not(windows))]
     {
-        match mode {
+        let result = match mode {
             PersistMode::Replace => temporary.persist(target),
             PersistMode::NoClobber => temporary.persist_noclobber(target),
+        };
+        match result {
+            Ok(()) => Ok(()),
+            Err(mut error) => {
+                if failure == PersistFailure::RetainTemporary {
+                    error.path.disable_cleanup(true);
+                }
+                Err(error.error)
+            }
         }
-        .map_err(|error| error.error)
     }
 }
 
@@ -254,6 +306,22 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(std::fs::read(&target).unwrap(), b"old".to_vec());
         assert!(!temporary.exists());
+    }
+
+    #[test]
+    fn retained_noclobber_failure_preserves_the_temporary_sentinel() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("state.json");
+        let temporary = directory.path().join(".state.tmp");
+        std::fs::write(&target, b"old").unwrap();
+        std::fs::write(&temporary, b"sentinel").unwrap();
+
+        let error =
+            persist_temporary_noclobber_retain_blocking(temporary.clone(), &target).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&target).unwrap(), b"old");
+        assert_eq!(std::fs::read(&temporary).unwrap(), b"sentinel");
     }
 
     #[test]

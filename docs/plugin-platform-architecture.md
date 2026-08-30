@@ -539,9 +539,14 @@ it is intentionally not a parallel durable reservation ledger. The tiers still
 need a confirmed garbage-collection policy. Explicit digest audit now rehashes
 both tiers sequentially under the same exclusive guard, repeats bounded
 physical inventory, and reports path-free mismatch evidence without mutation.
-Shared-content corruption fails closed; explicit quarantine and verified
-rehydration remain part of the global policy rather than an implicit overwrite
-performed by one source or installation.
+Shared-content corruption fails closed. Exact-plan logical quarantine re-audits
+one complete mismatch under that guard, requires the reviewed canonical plan
+digest, and publishes a bounded no-clobber marker while preserving canonical
+content as forensic evidence. Inventory validates marker state without charging
+it as content or staging; new ordinary Blob and expanded-package access is
+denied. Verified rehydration remains part of the global policy rather than an
+implicit overwrite performed by one source or installation, and confirmed GC
+remains separate.
 
 Each `InstallationId(kind, id)` owns separate roots for:
 

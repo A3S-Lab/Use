@@ -502,6 +502,22 @@ read failure, measurement change, or inventory drift fails the operation;
 cryptographic mismatch is successful forensic evidence. Neither result grants
 quarantine, repair, rehydration, replacement, or deletion authority.
 
+Quarantine is a distinct reviewed mutation under the same exact store-bound
+collection guard. `ArtifactStore::plan_quarantine` derives a canonical,
+path-free plan only for one complete digest mismatch. Its plan digest binds the
+kind, expected and observed digests, and measured file/byte counts.
+`apply_quarantine` repeats the audit, rejects stale confirmation, and atomically
+publishes a bounded canonical `quarantine.json` record without replacing or
+moving `content`. Exact replay is idempotent; a bounded interrupted
+`.quarantine.tmp` publication is rewritten without first removing its
+fail-closed sentinel and may be retried. Physical inventory rejects
+malformed, linked, oversized, or conflicting marker state and excludes valid
+marker metadata from content and staging accounting. New Blob opens,
+observations, and commits plus expanded-package validation and commits then
+fail with `use.artifact_store.quarantined`. Already-open handles are not revoked,
+so the original bytes remain in place as forensic evidence. A marker grants no
+rehydration, replacement, generation-rewrite, or deletion authority.
+
 Each resumable partial is opened without following its final component and the
 same handle remains authoritative through append, checkpoint, verification,
 and global blob commit. The global blob is reopened and rehashed, then retained
@@ -535,8 +551,9 @@ reference-bearing operation. The joined view adds physical evidence, checked
 usage, and bounded quota assessment under the same guarded collection pass.
 Concurrent retirement may leave conservative extra owners. Hard quota
 admission now covers both global publication paths, and explicit digest audit
-covers both physical tiers. Confirmed GC, quarantine, and verified rehydration
-remain release work.
+covers both physical tiers. Exact-plan logical quarantine covers both physical
+tiers without moving content. Confirmed GC and verified rehydration remain
+release work.
 
 A real-process failure test terminates installation after the complete target
 has entered the verified cache but while a high-entry archive is still being

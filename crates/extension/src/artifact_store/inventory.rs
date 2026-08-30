@@ -4,6 +4,9 @@ use a3s_use_core::UseResult;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
+use super::quarantine::{
+    inspect_container_state, validate_quarantine_metadata, QUARANTINE_RECORD, QUARANTINE_TEMPORARY,
+};
 use super::quota::{
     validate_policy_metadata, STORAGE_QUOTA_LOCK, STORAGE_QUOTA_POLICY_FILE,
     STORAGE_QUOTA_TEMPORARY_FILE,
@@ -327,6 +330,12 @@ async fn scan_container(
             MUTATION_LOCK => {
                 validate_lock_metadata(&path, &metadata, "artifact mutation")?;
             }
+            QUARANTINE_RECORD => {
+                validate_quarantine_metadata(&path, &metadata, false)?;
+            }
+            QUARANTINE_TEMPORARY => {
+                validate_quarantine_metadata(&path, &metadata, true)?;
+            }
             CONTENT_DIRECTORY => {
                 if content.is_some() {
                     return Err(ownership_error(
@@ -387,6 +396,8 @@ async fn scan_container(
             }
         }
     }
+
+    inspect_container_state(root, kind, &format!("sha256:{sha256}")).await?;
 
     let (state, content_files, content_bytes) = match content {
         Some(measurement) => (

@@ -460,7 +460,11 @@ Status: pending
 - [x] Define and implement bounded, path-free, read-only digest audit for raw
   Blobs and expanded packages under the global maintenance boundary. Report
   mismatches as evidence and grant no mutation authority.
-- Define quarantine, verified rehydration, and confirmed GC.
+- [x] Define and implement exact-plan logical corruption quarantine. Re-audit
+  the reviewed mismatch under the global maintenance boundary, publish only a
+  bounded canonical marker, preserve forensic content in place, and reject new
+  ordinary access without granting repair or deletion authority.
+- Define verified rehydration and confirmed GC as separate reviewed mutations.
 - Treat the implemented standalone OKF scope quota/GC, integrity audit,
   non-overwriting verified database backup, exact-plan oldest-first backup
   rotation, derived FTS repair, and authority-bound database plus
