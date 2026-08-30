@@ -53,7 +53,7 @@ ownership boundaries stabilize.
 | Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. One collection boundary covers bounded physical/reference inventory, checked usage, optional hard quota, full digest audit, logical quarantine, verified rehydration, and explicit confirmed GC without merging their authorities. GC requires a bounded exact target allowlist, a fresh zero-reference proof, a canonical physical/lifecycle plan, durable prepared/completed evidence, and same-shard atomic retirement before bounded tombstone deletion. Source observations and resumable partials remain source-scoped. | Correct A1 storage boundary. Keep source cleanup and scoped lifecycle retirement separate from global deletion, and never turn quota, audit, quarantine, rehydration, or unreachability into implicit GC authority. |
 | Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. | Critical debt. A2 must make related control facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
 | Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
-| Identity | Registry ownership, accepted-call leases, cursors, and Tool/MCP host names use scoped package/generation/surface keys. The optional manifest `route` is retained only as a human alias; duplicates are legal and explicit alias lookup rejects ambiguity. | Corrected A1 foundation. Aliases may improve presentation but must never enter ownership or cursor identity. |
+| Identity | Registry ownership, accepted-call leases, cursors, and Tool/MCP host names use scoped package/generation/surface keys. The optional manifest `route` is retained only as a human alias; duplicates are legal and explicit alias lookup rejects ambiguity. | Qualified A1 boundary. Aliases may improve presentation but must never enter ownership or cursor identity. |
 | Observation cost | Registry watch polls at a fixed interval, and normal snapshot projection can reopen and rehash package assets. | High scalability debt. Materialize one immutable Capability Index at cutover, publish generation notifications, and reserve full hashing for admission, audit, or detected drift. |
 | Built-ins and providers | Browser, OCR, Box, Runtime, Flow, and UI are still named directly by the facade and capability projection. | High coupling. A4 must classify true bootstrap providers explicitly and move ordinary domains to injected providers or first-party packages. |
 | Code structure and language | `Plugin`, `Extension`, and `CognitivePackage` overlap; several production modules exceed 1,000 lines because persistence, orchestration, projection, and protocol concerns still meet in one file. | Medium structural debt. Rename once at a coordinated contract cutover and split files when A2/A4 move ownership; do not add forwarding facades or parallel registries. |
@@ -217,6 +217,14 @@ from those same Host bindings and Use-owned graph, enablement, and lifecycle
 stores; the adapter does not infer progress from time or maintain another
 operation journal. Equal textual IDs in different scope kinds do not alias a
 Host fence or durable request replay directory.
+
+The A1 qualification matrix composes two managers over one shared Artifact
+Store and the same textual scope ID, then runs the same signed OKF package
+through apply, restart, snapshot, leased query, upgrade, uninstall, and
+terminal replay in both User and Workspace installations. During each upgrade
+or uninstall, the opposite installation retains its exact cursor and continues
+to answer through its already admitted generation lease. Shared immutable
+bytes are therefore an optimization, never lifecycle or invocation authority.
 
 When no graph or active Use enablement exists, the standalone operation
 diagnostic may follow a digest-bound index to the newest Host-reviewed

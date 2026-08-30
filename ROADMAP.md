@@ -107,9 +107,9 @@ immutable generations, drain, and crash-replay foundations. A0 gives every
 accepted mutation one serial order inside its exact installation and rejects
 stale publication generations. A1 now has one canonical `InstallationId` and
 scopes filesystem state, receipts, Registry and capability snapshots, leases,
-backup/restore, and maintenance/mutation locks by that identity. A0 is qualified
-on the declared five-platform CI matrix. The implementation is still not the
-target architecture: one `InstallationSnapshot` now owns the desired root set,
+backup/restore, and maintenance/mutation locks by that identity. A0 and A1 are
+qualified on the declared five-platform CI matrix. The implementation is still
+not the target architecture: one `InstallationSnapshot` now owns the desired root set,
 unified resolved graph, per-package enablement, and selected-surface
 publication intent, but receipts, Grants, bindings, operation checkpoints, and
 materialized publication state remain split across several stores, and a non-A3S agent
@@ -266,15 +266,14 @@ Implementation evidence (2026-08-28):
 - [x] Freeze the new contract versions together. Because Use is pre-release,
   reject superseded disk state with a documented clean-reinstall procedure
   instead of maintaining a second live authority model.
-- [ ] Prove apply, restart, snapshot, leased invocation, upgrade, and uninstall
+- [x] Prove apply, restart, snapshot, leased invocation, upgrade, and uninstall
   for the same package in two scopes, including identical textual scope IDs
   with different scope kinds.
 
 Exit gate: all lifecycle, authorization, and capability queries can be answered
 from one exact scoped installation generation plus immutable artifact evidence.
 
-Implementation evidence (foundational slice, 2026-08-30; exit gate remains
-open):
+Implementation evidence (2026-08-30; exit gate passed):
 
 - `InstallationId(kind, id)` is the sole installation identity. Its validated
   kind and collision-resistant storage key partition every installation data
@@ -443,8 +442,14 @@ open):
   projections, never serve as cursor package keys, and cannot change Tool/MCP
   host names. The cursor revision still commits the complete projection so an
   alias-only projection change cannot evade snapshot consistency.
-- The remaining A1 work is structural, not a hidden compatibility layer: the
-  complete two-installation lifecycle/lease matrix must pass.
+- `same_package_two_scope_matrix_preserves_exact_authority_and_leased_invocation`
+  installs the same signed OKF package into concurrent User and Workspace
+  installations with an identical textual ID and one shared Artifact Store.
+  Both installations survive Host reconstruction, expose distinct
+  `InstallationSnapshot` authority, reject cross-scope snapshot and invocation
+  leases, upgrade independently while the other installation's v1 or v2 lease
+  remains callable, uninstall independently without advancing the other
+  capability cursor, and replay both terminal removals after restart.
 
 ### A2 - Consolidate mutable authority in a Control Store
 
@@ -591,10 +596,10 @@ Exit gate: MHS demonstrates the complete Registry-to-agent capability path in
 the separate virtual laboratory without granting Use direct physical-device
 authority.
 
-The protocol table below describes the currently implemented preview. A1
-through A3 will intentionally supersede affected contracts in one coordinated
-cutover; version numbers are assigned only after their invariants and negative
-fixtures are frozen.
+The protocol table below describes the currently implemented preview. A2 and
+A3 will intentionally supersede affected contracts in one coordinated cutover;
+version numbers are assigned only after their invariants and negative fixtures
+are frozen.
 
 ## Current protocol baseline
 

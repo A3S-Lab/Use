@@ -16,6 +16,14 @@ observation, revision-based watch, and explicit-user pre-admission cancellation.
 Those projections use only durable Use-owned evidence and do not create a
 second lifecycle state machine.
 
+The A1 qualification matrix composes User and Workspace managers over one
+shared Artifact Store and the same textual scope ID. The same signed OKF
+package completes apply, restart, exact snapshot, leased query, upgrade,
+uninstall, and terminal replay in both installations. An operation leaves the
+other installation cursor unchanged and its admitted generation lease
+callable: shared immutable bytes are an optimization, never lifecycle or
+invocation authority.
+
 The Use-owned `PluginManagerService` is now the typed presentation boundary
 over that Host protocol. Its standard MCP adapter exposes exactly the frozen
 ten-tool v4 inventory and delegates every operation to the same service. Apply
