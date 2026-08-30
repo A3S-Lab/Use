@@ -13,6 +13,7 @@ fn reviewed_authorization_requires_exact_unique_confirmation_evidence() {
         ReviewedControlOperation::new(
             reviewed.envelope.clone(),
             None,
+            None,
             Vec::new(),
             reviewed.expected_generation,
             reviewed.expected_capability_generation,
@@ -33,6 +34,7 @@ fn reviewed_authorization_requires_exact_unique_confirmation_evidence() {
         ReviewedControlOperation::new(
             reviewed.envelope.clone(),
             Some(wrong_confirmation),
+            None,
             Vec::new(),
             reviewed.expected_generation,
             reviewed.expected_capability_generation,
@@ -60,6 +62,7 @@ fn reviewed_authorization_requires_exact_unique_confirmation_evidence() {
         ReviewedControlOperation::new(
             reviewed.envelope.clone(),
             Some(operation_confirmation),
+            None,
             vec![grant_confirmation.clone(), grant_confirmation],
             reviewed.expected_generation,
             reviewed.expected_capability_generation,
@@ -134,6 +137,7 @@ async fn reviewed_evidence_scope_and_cursor_are_rejected_before_registration() {
     let reviewed = operation("operation:wrong-scope:1");
     let mut plan = reviewed.envelope.plan.clone();
     plan.scope = InstallationId::new(InstallationKind::User, "shared/current").unwrap();
+    plan.workspace_impacts.clear();
     let envelope = PluginOperationPlanEnvelope::new_with_package_lock(
         plan,
         reviewed.envelope.package_lock.clone().unwrap(),
@@ -149,6 +153,7 @@ async fn reviewed_evidence_scope_and_cursor_are_rejected_before_registration() {
     let wrong_scope = ReviewedControlOperation::new(
         envelope,
         Some(confirmation),
+        None,
         Vec::new(),
         reviewed.expected_generation,
         reviewed.expected_capability_generation,
@@ -181,6 +186,7 @@ async fn canonical_evidence_cannot_be_rebound_to_another_installation() {
 
     let mut plan = reviewed.envelope.plan.clone();
     plan.scope = InstallationId::new(InstallationKind::User, "shared/current").unwrap();
+    plan.workspace_impacts.clear();
     let envelope = PluginOperationPlanEnvelope::new_with_package_lock(
         plan,
         reviewed.envelope.package_lock.clone().unwrap(),
@@ -196,6 +202,7 @@ async fn canonical_evidence_cannot_be_rebound_to_another_installation() {
     let rebound = ReviewedControlOperation::new(
         envelope,
         Some(confirmation),
+        None,
         Vec::new(),
         reviewed.expected_generation,
         reviewed.expected_capability_generation,

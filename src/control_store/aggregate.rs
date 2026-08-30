@@ -12,14 +12,14 @@ use sha2::{Digest, Sha256};
 use super::export::ControlStoreExport;
 use super::model::{
     conflict_error, corruption_error, input_error, operation_action_name, parse_operation_action,
-    parse_surface_kind, surface_kind_name, valid_machine_id, valid_sha256, ClaimedControlEffect,
-    ControlAuthorizationEvidence, ControlCapabilitySelection, ControlCapabilityStatus,
-    ControlEffectClaim, ControlEffectIntent, ControlEffectKind, ControlEffectObservation,
-    ControlEffectOutcome, ControlEffectRecord, ControlEffectStatus, ControlEffectSubject,
-    ControlGeneration, ControlGrantSelection, ControlOperationRecord, ControlOperationStatus,
-    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderBinding,
-    ControlStoreAuthority, ControlTransition, ReviewedControlOperation,
-    MAX_CONTROL_HISTORY_PACKAGES,
+    parse_surface_kind, surface_kind_name, valid_machine_id, valid_sha256,
+    validate_grant_selections, ClaimedControlEffect, ControlAuthorizationEvidence,
+    ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
+    ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectRecord,
+    ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
+    ControlOperationRecord, ControlOperationStatus, ControlPackageLifecycle,
+    ControlProjectionHistory, ControlProviderBinding, ControlStoreAuthority, ControlTransition,
+    ReviewedControlOperation, MAX_CONTROL_HISTORY_PACKAGES,
 };
 use super::schema;
 

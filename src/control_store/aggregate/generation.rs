@@ -148,11 +148,12 @@ pub(super) fn insert_generation(
         transaction
             .execute(
                 "INSERT INTO control_grant(
-                    generation, package_id, grant_json, grant_digest
-                 ) VALUES (?1, ?2, ?3, ?4)",
+                    generation, package_id, receipt_revision, grant_json, grant_digest
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     to_i64(generation)?,
                     grant.package_id(),
+                    to_i64(grant.receipt_revision)?,
                     grant_json,
                     grant.grant_digest,
                 ],

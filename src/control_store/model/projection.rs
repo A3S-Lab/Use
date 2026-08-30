@@ -8,9 +8,13 @@ use a3s_use_core::{
 };
 
 use super::{
-    generation_exhausted, input_error, valid_machine_id, ControlGeneration,
+    generation_exhausted, input_error, valid_machine_id, ControlGeneration, ControlGrantSelection,
     ControlPackageLifecycle, ReviewedControlOperation,
 };
+
+mod grants;
+
+use grants::project_grants;
 
 pub(in crate::control_store) const MAX_CONTROL_HISTORY_PACKAGES: usize = 65_536;
 
@@ -111,6 +115,7 @@ impl ControlProjectionHistory {
 pub(in crate::control_store) struct ProjectedControlGeneration {
     pub(in crate::control_store) snapshot: InstallationSnapshot,
     pub(in crate::control_store) package_lifecycles: Vec<ControlPackageLifecycle>,
+    pub(in crate::control_store) grants: Vec<ControlGrantSelection>,
     pub(in crate::control_store) history_after: ControlProjectionHistory,
 }
 
@@ -151,6 +156,7 @@ impl ReviewedControlOperation {
             prior.map(|value| &value.snapshot),
             &snapshot,
         )?;
+        let grants = project_grants(self, prior, &snapshot)?;
 
         let mut history_after = history.clone();
         history_after.last_lifecycle_generation = last_lifecycle_generation;
@@ -167,6 +173,7 @@ impl ReviewedControlOperation {
         Ok(ProjectedControlGeneration {
             snapshot,
             package_lifecycles,
+            grants,
             history_after,
         })
     }

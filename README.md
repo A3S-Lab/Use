@@ -1277,19 +1277,23 @@ The machine-checked
 current state leaf, external owner, operational file, and consumer that must
 switch together; it explicitly keeps production activation inactive and
 forbids dual writes or legacy fallback reads.
-The private A2 Control Store kernel now qualifies its clean-state schema-v5
+The private A2 Control Store kernel now qualifies its clean-state schema-v6
 aggregate. Each operation stores the canonical complete reviewed Plan envelope
 and versioned authorization evidence, then derives and revalidates its operation
 ID, Plan and authorization digests, action, root package, installation scope,
 and generation cursors against relational projections after restart and during
-offline export verification. Installation generation, desired package-state
-generation, and immutable package-lifecycle generation are independent. Before
-commit, the kernel reconstructs the complete target snapshot and both package
-generation axes from the reviewed Plan, exact prior generation, and bounded
-committed history. All five actions, multi-root shared dependencies, and
-uninstall/reinstall therefore reject caller-selected package generation
-identities. The offline export and restore verifier runs the same projection
-again.
+offline export verification. Authorization evidence v2 retains only the exact
+prior Grant snapshot, reviewed change set, and confirmation facts; resolved
+Grants and their receipt revisions are derived output, not caller authority.
+Installation generation, desired package-state generation, immutable
+package-lifecycle generation, and Grant receipt revision remain distinct.
+Before commit, the kernel reconstructs the complete target snapshot, both
+package generation axes, and the complete target Grant inventory from the
+reviewed Plan, exact prior generation, bounded committed history, and reviewed
+Grant evidence. All five actions, User and Workspace installations, multi-root
+shared dependencies, and uninstall/reinstall therefore reject caller-selected
+package or Grant identities. The offline export and restore verifier runs the
+same projection again.
 Canonical typed effect payloads bind installation, reviewed plan, operation
 action, provider, exact artifact identity, and package or surface incarnation;
 graph capability publish/hide instead bind the complete target installation and
@@ -1300,8 +1304,9 @@ idempotent outbox reconciliation, bounded execution, corruption checks, and
 deterministic offline-verifiable export plus staged restore. It is not
 constructed by production lifecycle code and does not create a second
 authority beside the current JSON stores. Deterministic lifecycle conversion
-still must derive complete Grant, provider-binding, capability-descriptor, and
-effect-intent inventories. The external artifact/projection payload-owner
+still must feed the authorization-v2 Grant evidence and derive complete
+provider-binding, capability-descriptor, and effect-intent inventories. The
+external artifact/projection payload-owner
 registry and coordinated authority cutover also remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter

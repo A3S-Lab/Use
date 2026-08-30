@@ -492,7 +492,7 @@ inventory prerequisite only. It neither activates the database nor completes
 an A2 checkbox.
 
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
-for a clean installation. Schema v5 binds one exact `InstallationId` and stores
+for a clean installation. Schema v6 binds one exact `InstallationId` and stores
 contiguous installation generations, canonical complete reviewed Plan
 envelopes, versioned authorization evidence, exact snapshots, full Workspace
 Grants, provider bindings, capability candidates, lifecycle checkpoints, and an
@@ -506,9 +506,14 @@ desired-state generation. A pure projection derives the complete next
 snapshot, per-package desired-state generations, and globally monotonic
 lifecycle incarnations from the exact reviewed Plan, prior generation, and
 bounded committed history. Database commit, offline export verification, and
-staged restore all recompute it. The projection covers all five actions,
-multiple roots sharing a dependency, and removal followed by reinstall without
-reusing a package identity; callers can no longer select these fields.
+staged restore all recompute it. Authorization evidence v2 persists only the
+exact prior Grant snapshot, reviewed change set, and confirmation facts. The
+same projection re-finalizes full target Grants and their independent receipt
+revisions, retains unrelated active Grants, and rejects caller-selected Grant
+bytes, digests, or revisions. The projection covers all five actions, User and
+Workspace installations, multiple roots sharing a dependency, and removal
+followed by reinstall without reusing a package identity; callers can no longer
+select these fields.
 Canonical typed effect payloads bind the installation, plan, action, provider,
 artifact digests, and exact package or surface lifecycle incarnation. Atomic
 graph capability publish/hide effects instead bind the complete target
@@ -529,9 +534,10 @@ foreign keys, exact-schema/integrity checks, linked-path rejection, and the
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
 not accept it. The external artifact/projection payload-owner registry,
-complete process-exit matrix, deterministic lifecycle conversion of Grants,
-bindings, capability descriptors, and outbox intents, indivisible consumer
-cutover, and deletion of legacy mutable stores therefore remain open;
+complete process-exit matrix, production conversion into the reviewed Grant
+evidence above, deterministic derivation of bindings, capability descriptors,
+and outbox intents, indivisible consumer cutover, and deletion of legacy
+mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

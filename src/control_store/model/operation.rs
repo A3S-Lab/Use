@@ -1,7 +1,8 @@
 use a3s_use_core::{
     InstallationId, InstallationSnapshot, PlanAuthority, PlanPolicyDecision,
     PluginGrantConfirmation, PluginOperationAction, PluginOperationConfirmation,
-    PluginOperationPlanEnvelope, UseResult,
+    PluginOperationPlanEnvelope, PluginWorkspaceGrantChangeSet, PluginWorkspaceGrantSnapshot,
+    UseResult,
 };
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,14 @@ use super::{generation_exhausted, input_error, MAX_CONTROL_GRANTS};
 
 pub(in crate::control_store) const MAX_CONTROL_OPERATION_PLAN_BYTES: usize = 16 * 1024 * 1024;
 pub(in crate::control_store) const MAX_CONTROL_AUTHORIZATION_BYTES: usize = 4 * 1024 * 1024;
-const CONTROL_AUTHORIZATION_EVIDENCE_SCHEMA: &str = "a3s.use.control-authorization-evidence.v1";
+const CONTROL_AUTHORIZATION_EVIDENCE_SCHEMA: &str = "a3s.use.control-authorization-evidence.v2";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(in crate::control_store) struct ControlGrantAuthorizationEvidence {
+    pub(in crate::control_store) snapshot: PluginWorkspaceGrantSnapshot,
+    pub(in crate::control_store) change_set: PluginWorkspaceGrantChangeSet,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -21,6 +29,8 @@ pub(in crate::control_store) struct ControlAuthorizationEvidence {
     pub(in crate::control_store) authority: PlanAuthority,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(in crate::control_store) operation_confirmation: Option<PluginOperationConfirmation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(in crate::control_store) grant_transition: Option<ControlGrantAuthorizationEvidence>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(in crate::control_store) grant_confirmations: Vec<PluginGrantConfirmation>,
 }
@@ -29,6 +39,7 @@ impl ControlAuthorizationEvidence {
     pub(in crate::control_store) fn new(
         envelope: &PluginOperationPlanEnvelope,
         operation_confirmation: Option<PluginOperationConfirmation>,
+        grant_transition: Option<ControlGrantAuthorizationEvidence>,
         mut grant_confirmations: Vec<PluginGrantConfirmation>,
         reviewed_at_ms: u64,
     ) -> UseResult<Self> {
@@ -38,6 +49,7 @@ impl ControlAuthorizationEvidence {
             plan_digest: envelope.plan_digest.clone(),
             authority: envelope.plan.authority.clone(),
             operation_confirmation,
+            grant_transition,
             grant_confirmations,
         };
         evidence.validate(envelope, reviewed_at_ms)?;
@@ -90,6 +102,38 @@ impl ControlAuthorizationEvidence {
         {
             return Err(invalid_reviewed_operation());
         }
+
+        let grant_changes_required = envelope
+            .plan
+            .workspace_grant_changes_required()
+            .map_err(|_| invalid_reviewed_operation())?;
+        match (&self.grant_transition, grant_changes_required) {
+            (None, false) if self.grant_confirmations.is_empty() => {}
+            (Some(grant_transition), true) => {
+                grant_transition
+                    .snapshot
+                    .validate()
+                    .map_err(|_| invalid_reviewed_operation())?;
+                if grant_transition.snapshot.scope_id != envelope.plan.scope.id
+                    || grant_transition.snapshot.state_revision
+                        != envelope.plan.state.state_revision
+                {
+                    return Err(invalid_reviewed_operation());
+                }
+                grant_transition
+                    .change_set
+                    .finalize_against_plan(
+                        &envelope.plan,
+                        Some(&grant_transition.snapshot),
+                        self.operation_confirmation.as_ref(),
+                        &self.grant_confirmations,
+                        reviewed_at_ms,
+                    )
+                    .map(drop)
+                    .map_err(|_| invalid_reviewed_operation())?;
+            }
+            _ => return Err(invalid_reviewed_operation()),
+        }
         self.canonical_bytes().map(drop)
     }
 
@@ -123,6 +167,7 @@ impl ReviewedControlOperation {
     pub(in crate::control_store) fn new(
         envelope: PluginOperationPlanEnvelope,
         operation_confirmation: Option<PluginOperationConfirmation>,
+        grant_transition: Option<ControlGrantAuthorizationEvidence>,
         grant_confirmations: Vec<PluginGrantConfirmation>,
         expected_generation: u64,
         expected_capability_generation: u64,
@@ -131,6 +176,7 @@ impl ReviewedControlOperation {
         let authorization = ControlAuthorizationEvidence::new(
             &envelope,
             operation_confirmation,
+            grant_transition,
             grant_confirmations,
             reviewed_at_ms,
         )?;

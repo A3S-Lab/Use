@@ -509,6 +509,7 @@ fn reviewed_install(
     ReviewedControlOperation::new(
         envelope,
         None,
+        None,
         Vec::new(),
         expected_generation,
         expected_capability_generation,
@@ -601,6 +602,7 @@ fn reviewed_uninstall(
     let envelope = PluginOperationPlanEnvelope::new_with_package_lock(plan, lock).unwrap();
     ReviewedControlOperation::new(
         envelope,
+        None,
         None,
         Vec::new(),
         expected_generation,
