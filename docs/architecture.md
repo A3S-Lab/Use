@@ -188,8 +188,18 @@ owner root, persists a snapshot-bound durable marker, revalidates both the exact
 tree and owner-native semantic scan, and publishes the whole root by one atomic
 no-clobber directory move. Deterministic archive, record, and marker partials
 plus exact post-publication replay close each local crash boundary.
-These are owner primitives, not cross-owner restore authority. The Restore
-Coordinator adapter, complete-set orchestration, full subprocess-exit
+The Restore Coordinator is the fourth concrete snapshot owner. Its owner-native
+journal decoder archives only exact canonical completed operations for the
+bound installation. Active marker and operation bytes are excluded from restore
+authority while their bounded inventory remains manifest-bound, including the
+marker-only handoff window. Orphaned nonterminal operations, pruning and
+temporary residue, unknown layout, links, foreign history, and path rebinding
+fail closed. A second scan precedes no-clobber publication; the path-free
+receipt and streaming offline verifier bind exact terminal bytes to the same
+Control export. Active-only or empty history creates no archive.
+These are owner primitives, not cross-owner restore authority. Restore
+Coordinator activation must reconcile its own live journal with restored
+terminal history; complete-set orchestration, full subprocess-exit
 qualification, and the coordinated reader/writer cutover remain A2 work. The
 machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,

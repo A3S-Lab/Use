@@ -194,7 +194,13 @@ observation。无路径 manifest 也会保留 no-change request，而不会虚�
 legacy alias 与 lock 不会被恢复。激活要求精确的排他 maintenance fence 且 live owner root 不存在，持久化
 绑定 snapshot 的 marker，重新验证完整树与 owner-native 语义扫描，再通过一次原子 no-clobber directory
 move 发布整个 root。确定性的 archive、record 与 marker partial，加上发布后的精确 replay，覆盖每个本地
-崩溃边界。这些仍是未启用的 owner primitive；Restore Coordinator adapter、complete-set coordinator、
+崩溃边界。Restore Coordinator 现在是第四个具体 snapshot owner。其 owner-native journal decoder 只归档
+属于绑定 installation、规范编码且已完成的 operation。Active marker 与对应 operation 不进入 payload
+authority，但两者的有界数量和 digest inventory 会绑定到 manifest，marker-only handoff 也会被精确表达。
+孤儿 nonterminal operation、pruning 或 temporary 残留、未知布局、link、外来 installation history 与
+path/record rebinding 都会 fail closed。No-clobber 发布前会执行第二次扫描；流式离线 verifier 把精确终态
+字节和无路径 receipt 绑定到 Control export。空历史或仅 active 的历史不会创建 archive。这些仍是未启用的
+owner primitive；Restore Coordinator 激活及 self-hosted journal reconciliation、complete-set coordinator、
 完整 subprocess-exit 验收、生产 orchestration，以及所有消费者的协调权威切换完成前，该内核仍保持禁用。
 
 ## 运行时可见性

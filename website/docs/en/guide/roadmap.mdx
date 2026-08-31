@@ -160,10 +160,19 @@ Activation requires the exact exclusive maintenance fence and an absent live
 root, writes a snapshot-bound marker, re-audits the exact physical and semantic
 inventory, and atomically publishes the whole root without replacement.
 Deterministic archive, record, and marker partials plus post-publication replay
-cover the local crash boundaries. The Restore Coordinator adapter, complete-set
-coordination, the complete subprocess crash matrix, production conversion and
-dispatch, backup/restore and reachability integration, and the coordinated
-authority cutover remain open;
+cover the local crash boundaries. The Restore Coordinator is now the fourth
+concrete snapshot owner, but not yet a restore adapter. Its owner-native journal
+decoder archives only exact canonical completed operations for the bound
+installation. The active marker and operation are excluded while their bounded
+digest inventory remains manifest-bound, including marker-only handoff.
+Orphaned nonterminal operations, pruning or temporary residue, unknown entries,
+links, foreign history, and path rebinding fail closed. A second scan precedes
+no-clobber publication, and streaming offline verification binds exact terminal
+bytes and a path-free receipt to the Control export. Empty or active-only
+history creates no archive. Restore Coordinator activation and self-hosted
+journal reconciliation, complete-set coordination, the complete subprocess
+crash matrix, production conversion and dispatch, backup/restore and
+reachability integration, and the coordinated authority cutover remain open;
 no A2 roadmap item is complete yet.
 
 ## Implemented baseline

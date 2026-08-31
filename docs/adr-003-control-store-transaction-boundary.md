@@ -378,11 +378,24 @@ record, and marker partials recover each pre-publication boundary, and the same
 attempt revalidates exact live state after publication before returning its
 path-free result. This primitive still does not choose cross-owner activation
 order or create a second restore journal.
+The Restore Coordinator is the fourth concrete snapshot owner. Its native
+journal decoder admits only exact canonically encoded completed operations that
+belong to the bound installation. The active marker and its exact operation are
+excluded from payload authority, but a bounded digest inventory records those
+files and the marker-only handoff window. Orphaned nonterminal records, pruning
+or temporary residue, unknown entries, links, foreign history, and path/record
+rebinding fail closed. Snapshot publication is no-clobber after a second live
+scan; its path-free receipt and streaming verifier bind the exact terminal
+bytes to the Control export. Empty or active-only state produces no archive.
+This is a snapshot boundary only: its clean-target restore adapter must account
+for the coordinator's own live journal before complete-set activation can be
+qualified.
 This implementation still does not participate in production state-layout,
 reachability, diagnostics, backup, or restore orchestration. Existing JSON
-stores remain the only production authority. The Restore Coordinator I/O
-adapter, complete-set coordinator, full subprocess-exit matrix, production
-lifecycle conversion and dispatch, indivisible reader/writer cutover, and
+stores remain the only production authority. Restore Coordinator activation,
+self-hosted journal reconciliation, the complete-set coordinator, full
+subprocess-exit matrix, production lifecycle conversion and dispatch,
+indivisible reader/writer cutover, and
 deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.

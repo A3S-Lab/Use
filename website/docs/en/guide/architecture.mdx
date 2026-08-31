@@ -232,11 +232,19 @@ requires the exact exclusive maintenance fence and an absent live owner root,
 persists a snapshot-bound marker, revalidates both the exact tree and
 owner-native semantic scan, and publishes the whole root by one atomic
 no-clobber directory move. Deterministic archive, record, and marker partials
-plus exact post-publication replay close each local crash boundary. These remain
-inactive owner primitives; the Restore Coordinator adapter, complete-set
-coordination, full subprocess-exit qualification, production orchestration, and
-coordinated authority cutover remain disabled until every consumer can switch
-together.
+plus exact post-publication replay close each local crash boundary. The Restore
+Coordinator is now the fourth concrete snapshot owner. Its native journal
+decoder archives only exact canonical completed operations for the bound
+installation. Active marker and operation files are excluded while their
+bounded digest inventory remains manifest-bound, including marker-only handoff.
+Orphaned nonterminal records, pruning or temporary residue, unknown layout,
+links, foreign history, and path rebinding fail closed. A second scan precedes
+no-clobber publication; a streaming offline verifier binds exact terminal bytes
+and the path-free receipt to the Control export. Empty or active-only history
+creates no archive. These remain inactive owner primitives; Restore Coordinator
+activation and self-hosted journal reconciliation, complete-set coordination,
+full subprocess-exit qualification, production orchestration, and coordinated
+authority cutover remain disabled until every consumer can switch together.
 
 ## Runtime visibility
 

@@ -640,10 +640,20 @@ Deterministic archive, record, and marker partial recovery covers every staged
 transition, and the same attempt reconciles the post-publication/pre-result
 boundary. Drift, links, rebinding, and preexisting state fail closed; absence
 creates no owner root and the result is path-free. This adapter remains
-inactive. The Restore Coordinator adapter, complete-set orchestration, the full
-subprocess-exit matrix, production Grant conversion and effect dispatch,
-indivisible consumer cutover, and deletion of legacy mutable stores therefore
-remain open;
+inactive. The Restore Coordinator is now the fourth concrete snapshot owner,
+but does not yet have a restore adapter. Its owner-native scanner accepts only
+exact canonically encoded completed restore operations for the bound
+installation. It excludes the active marker and its exact operation while
+binding their bounded count and digest inventory, including marker-only
+handoff. Orphaned nonterminal operations, pruning or temporary residue,
+unknown entries, links, foreign installation history, and path/record rebinding
+fail closed. Snapshot creation performs a second scan before no-clobber
+publication; its path-free receipt and streaming offline verifier bind exact
+terminal bytes to the Control export, while empty or active-only history emits
+no archive. Restore Coordinator clean-target activation, self-hosted journal
+reconciliation, complete-set orchestration, the full subprocess-exit matrix,
+production Grant conversion and effect dispatch, indivisible consumer cutover,
+and deletion of legacy mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

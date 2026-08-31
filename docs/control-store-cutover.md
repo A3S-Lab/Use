@@ -116,8 +116,17 @@ and semantic inventory, writes a snapshot-bound durable marker, and publishes
 the whole directory with one atomic no-clobber move. Archive, record, and marker
 partials plus exact post-publication replay make every activation boundary
 recoverable; drift, links, rebinding, and preexisting roots fail closed. The
-Restore Coordinator adapter and complete-set orchestration are still required
-before this gate can close.
+Restore Coordinator is now the fourth concrete snapshot owner. Its owner-native
+journal decoder archives only exact canonical completed operations for the
+bound installation. Active marker and operation files are excluded while a
+bounded digest inventory records them, including marker-only handoff. Orphaned
+nonterminal records, pruning or temporary residue, unknown layout, links,
+foreign history, and path rebinding fail closed. A second scan precedes
+no-clobber publication, and a streaming offline verifier binds the path-free
+receipt and exact terminal bytes to the Control export. Empty or active-only
+history creates no archive. Restore Coordinator clean-target activation must
+reconcile its own live journal with restored terminal history; that adapter and
+complete-set orchestration are still required before this gate can close.
 
 ## Non-negotiable cutover invariants
 

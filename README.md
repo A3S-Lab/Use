@@ -1418,9 +1418,19 @@ Archive, record, and activation-marker partials recover deterministically;
 post-publication/pre-result replay accepts only the same exact snapshot.
 Candidate, live-root, link, archive, and marker drift fail closed, absence
 creates no owner root, and the result contains no host path. This adapter
-remains inactive qualification code. The Restore Coordinator adapter,
-complete-set orchestration, the full subprocess-exit matrix, and coordinated
-authority cutover remain open.
+remains inactive qualification code. The Restore Coordinator is now the fourth
+qualified snapshot owner. Its owner-native journal scanner archives only exact,
+canonically encoded completed restore operations for the bound installation.
+The active marker and its exact operation are excluded from payload authority,
+but their bounded count and digest inventory remain manifest-bound; marker-only
+handoff is represented without inventing history. Orphaned nonterminal records,
+pruning or temporary state, unknown entries, links, foreign installations, and
+path/record rebinding fail closed. A second scan precedes no-clobber archive
+publication, and the path-free receipt and streaming offline verifier bind the
+result to the exact Control export. Empty or active-only history creates no
+archive. Restore Coordinator clean-target activation, self-hosted journal
+reconciliation, complete-set orchestration, the full subprocess-exit matrix,
+and coordinated authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

@@ -127,9 +127,15 @@ package/capability generation。No-change request 会被显式保留，而不会
 可以用精确源字节与重新推导的规范 index 构造完整的 target-local owner root，并排除 legacy alias 与 lock。
 激活要求精确的排他 maintenance fence 且 live root 不存在，写入绑定 snapshot 的 marker，重新审计完整物理
 与语义 inventory，再原子发布整个 root 且不覆盖任何 target。确定性的 archive、record 与 marker partial，
-加上发布后的 replay，覆盖本地崩溃边界。Restore Coordinator adapter、complete-set coordinator、完整
-subprocess 崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与 reachability 集成和协调一致的权威
-切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+加上发布后的 replay，覆盖本地崩溃边界。Restore Coordinator 现在是第四个具体 snapshot owner，但尚未
+实现 restore adapter。其 owner-native journal decoder 只归档属于绑定 installation、规范编码且已完成的
+operation。Active marker 与 operation 被排除，但两者的有界 digest inventory 仍绑定到 manifest，并覆盖
+marker-only handoff。孤儿 nonterminal operation、pruning 或 temporary 残留、未知 entry、link、外来 history
+与 path rebinding 都会 fail closed。No-clobber 发布前会执行第二次扫描，流式离线验证把精确终态字节与无路径
+receipt 绑定到 Control export；空历史或仅 active 的历史不会创建 archive。Restore Coordinator 激活及
+self-hosted journal reconciliation、complete-set coordinator、完整 subprocess 崩溃矩阵、生产 lifecycle
+转换与 dispatch、backup/restore 与 reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2
+roadmap 项。
 
 ## 已实现基线
 

@@ -447,8 +447,11 @@ control_store_cutover {
   external_owner "restore-coordinator" {
     state_paths = ["operations/state-restores"]
     implementation = [
+      "src/control_store/payload_owner/restore_coordinator.rs",
+      "src/control_store/payload_owner/restore_coordinator/archive.rs",
       "src/state_restore.rs",
       "src/state_restore/journal.rs",
+      "src/state_restore/journal/snapshot.rs",
     ]
     payload                     = "out-of-database restore journal and bounded terminal history"
     backup_policy               = "exclude-active-register-terminal"
