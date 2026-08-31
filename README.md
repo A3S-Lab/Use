@@ -1428,9 +1428,22 @@ pruning or temporary state, unknown entries, links, foreign installations, and
 path/record rebinding fail closed. A second scan precedes no-clobber archive
 publication, and the path-free receipt and streaming offline verifier bind the
 result to the exact Control export. Empty or active-only history creates no
-archive. Restore Coordinator clean-target activation, self-hosted journal
-reconciliation, complete-set orchestration, the full subprocess-exit matrix,
-and coordinated authority cutover remain open.
+archive. An offline-verified snapshot can now build an immutable candidate
+beneath the target installation state root. Because the current restore owns
+the same journal, activation is intentionally not a clean-target merge: the
+exact exclusive maintenance guard and active marker are required, the marker
+and current operation are preserved, and only terminal history is replaced.
+A durable activation descriptor binds the snapshot, stable active identity,
+and exact before/target inventories. Existing terminal directories are moved
+to retained staging tombstones before candidate records are published without
+replacement. Replay tolerates the active operation advancing while rejecting
+marker drift, links, unknown state, candidate or tombstone tampering, and
+unexplained live changes. Marker-only handoff and absent history are supported;
+a 64-record source deterministically drops the same native oldest record the
+journal would prune so the active restore retains one slot. The canonical
+result is path-free and snapshot-bound. This remains inactive qualification
+code. Complete-set orchestration, the full subprocess-exit matrix, and
+coordinated authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

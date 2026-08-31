@@ -7,11 +7,12 @@
 //! planning-and-diagnostic owner has the same qualified boundary for terminal
 //! records. The Host projection owner now has the same qualified clean-target
 //! restore boundary for its semantic records and canonical derived indexes.
-//! The Restore Coordinator owner now snapshots and offline-verifies only its
-//! bounded terminal history while excluding active recovery evidence. No owner
-//! participates in the production state-backup path yet. The remaining
-//! Restore Coordinator activation adapter and complete-set coordinator must be
-//! complete before the coordinated authority cutover.
+//! The Restore Coordinator owner snapshots and offline-verifies only its
+//! bounded terminal history while excluding active recovery evidence. Its
+//! restore adapter preserves the exact active restore and replayably replaces
+//! only terminal history. No owner participates in the production state-backup
+//! path yet. Complete-set coordination must be qualified before the coordinated
+//! authority cutover.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
@@ -48,8 +49,10 @@ pub(in crate::control_store) use observations::{
 pub(in crate::control_store) use registry::ControlPayloadOwnerRegistry;
 #[cfg(test)]
 pub(in crate::control_store) use restore_coordinator::{
+    ControlRestoreCoordinatorRestoreResult, ControlRestoreCoordinatorRestoreState,
     ControlRestoreCoordinatorSnapshot, ControlRestoreCoordinatorState,
-    VerifiedControlRestoreCoordinatorSnapshot, CONTROL_RESTORE_COORDINATOR_SNAPSHOT_SCHEMA,
+    StagedControlRestoreCoordinatorRestore, VerifiedControlRestoreCoordinatorSnapshot,
+    CONTROL_RESTORE_COORDINATOR_SNAPSHOT_SCHEMA,
 };
 pub(in crate::control_store) use session::{
     ControlPayloadSnapshotBinding, ControlPayloadSnapshotSession,

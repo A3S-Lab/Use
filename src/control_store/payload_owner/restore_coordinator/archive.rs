@@ -24,7 +24,7 @@ pub(super) struct CapturedRestoreCoordinator {
     pub(super) archive_path: Option<PathBuf>,
 }
 
-struct RestoreCoordinatorArchiveReader<'a> {
+pub(super) struct RestoreCoordinatorArchiveReader<'a> {
     reader: fs::File,
     path: PathBuf,
     before_len: u64,
@@ -37,7 +37,7 @@ struct RestoreCoordinatorArchiveReader<'a> {
 }
 
 impl<'a> RestoreCoordinatorArchiveReader<'a> {
-    async fn open(
+    pub(super) async fn open(
         path: &Path,
         expected_bytes: u64,
         expected_digest: &str,
@@ -63,7 +63,7 @@ impl<'a> RestoreCoordinatorArchiveReader<'a> {
         })
     }
 
-    async fn next(&mut self) -> UseResult<Option<Vec<u8>>> {
+    pub(super) async fn next(&mut self) -> UseResult<Option<Vec<u8>>> {
         let Some(entry) = self.entries.get(self.index) else {
             return Ok(None);
         };
@@ -90,7 +90,7 @@ impl<'a> RestoreCoordinatorArchiveReader<'a> {
         Ok(Some(bytes))
     }
 
-    async fn finish(mut self) -> UseResult<()> {
+    pub(super) async fn finish(mut self) -> UseResult<()> {
         if self.index != self.entries.len() {
             return Err(coordinator_error(
                 "The Restore Coordinator archive was not completely consumed.",

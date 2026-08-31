@@ -17,6 +17,13 @@ use crate::state_restore::{
 };
 
 mod archive;
+mod restore;
+
+#[cfg(test)]
+pub(in crate::control_store) use restore::{
+    ControlRestoreCoordinatorRestoreResult, ControlRestoreCoordinatorRestoreState,
+    StagedControlRestoreCoordinatorRestore,
+};
 
 pub(in crate::control_store) const CONTROL_RESTORE_COORDINATOR_SNAPSHOT_SCHEMA: &str =
     "a3s.use.control-restore-coordinator-snapshot.v1";
@@ -282,19 +289,23 @@ impl ControlRestoreCoordinatorSnapshot {
         expected_binding.verify_control_export(registry, control_export)?;
         archive::verify_archive(self, archive_path.as_deref()).await?;
         Ok(VerifiedControlRestoreCoordinatorSnapshot {
-            entry_count: self.manifest.entries.len(),
+            registry: registry.clone(),
+            snapshot: self.clone(),
+            archive_path,
         })
     }
 }
 
 #[derive(Debug)]
 pub(in crate::control_store) struct VerifiedControlRestoreCoordinatorSnapshot {
-    entry_count: usize,
+    registry: ControlPayloadOwnerRegistry,
+    snapshot: ControlRestoreCoordinatorSnapshot,
+    archive_path: Option<PathBuf>,
 }
 
 impl VerifiedControlRestoreCoordinatorSnapshot {
     fn entry_count(&self) -> usize {
-        self.entry_count
+        self.snapshot.manifest.entries.len()
     }
 }
 

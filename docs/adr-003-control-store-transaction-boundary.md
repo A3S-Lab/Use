@@ -387,14 +387,26 @@ or temporary residue, unknown entries, links, foreign history, and path/record
 rebinding fail closed. Snapshot publication is no-clobber after a second live
 scan; its path-free receipt and streaming verifier bind the exact terminal
 bytes to the Control export. Empty or active-only state produces no archive.
-This is a snapshot boundary only: its clean-target restore adapter must account
-for the coordinator's own live journal before complete-set activation can be
-qualified.
+An offline-verified snapshot now stages an immutable target-local candidate.
+The adapter cannot use the other owners' clean-target rule because the active
+whole-installation restore itself owns this journal. Instead, activation
+requires the exact exclusive maintenance guard and active marker, preserves the
+marker and current operation, and durably binds the stable active identity plus
+exact before/source/target inventories before mutation. It atomically moves
+replaced terminal directories into retained staging evidence and publishes
+candidate records without replacement. Marker-only handoff remains valid, and
+replay permits the active operation status to advance only while its marker
+binding stays unchanged. A full 64-record source drops exactly the
+source-native oldest terminal record under the journal's
+`(completed_at_ms, started_at_ms, plan_digest)` ordering, reserving one slot for
+the active operation; an active/source identity collision is rejected before
+pruning. Every candidate, activation marker, retired record, and deterministic
+publication partial is validated at each replay boundary, and the result is
+path-free and snapshot-bound.
 This implementation still does not participate in production state-layout,
 reachability, diagnostics, backup, or restore orchestration. Existing JSON
-stores remain the only production authority. Restore Coordinator activation,
-self-hosted journal reconciliation, the complete-set coordinator, full
-subprocess-exit matrix, production lifecycle conversion and dispatch,
+stores remain the only production authority. The complete-set coordinator,
+full subprocess-exit matrix, production lifecycle conversion and dispatch,
 indivisible reader/writer cutover, and
 deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate

@@ -29,9 +29,11 @@ pub(crate) mod test_support;
 
 use authority::{authority_entries, validate_live_authority};
 pub(crate) use journal::{
-    read_state_restore_history_snapshot_entry, scan_state_restore_history_snapshot,
-    validate_terminal_state_restore_history_record, StateRestoreHistorySnapshotEntry,
-    StateRestoreHistorySnapshotScan, STATE_RESTORE_HISTORY_SNAPSHOT_MAX_OPERATION_FILES,
+    inspect_terminal_state_restore_history_record, read_state_restore_history_snapshot_entry,
+    scan_state_restore_history_snapshot, validate_terminal_state_restore_history_record,
+    StateRestoreHistoryRetentionKey, StateRestoreHistorySnapshotActive,
+    StateRestoreHistorySnapshotEntry, StateRestoreHistorySnapshotScan,
+    STATE_RESTORE_HISTORY_SNAPSHOT_MAX_OPERATION_FILES,
     STATE_RESTORE_HISTORY_SNAPSHOT_MAX_RECORD_BYTES,
 };
 pub use journal::{
