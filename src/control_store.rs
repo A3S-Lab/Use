@@ -15,6 +15,7 @@ mod executor;
 mod export;
 mod filesystem;
 mod model;
+mod payload_owner;
 mod schema;
 
 use executor::ControlStoreExecutor;
@@ -328,5 +329,7 @@ impl ControlStore {
 mod aggregate_tests;
 #[cfg(test)]
 mod cutover_manifest_tests;
+#[cfg(test)]
+mod payload_owner_tests;
 #[cfg(test)]
 mod tests;

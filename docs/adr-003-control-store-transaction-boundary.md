@@ -298,14 +298,21 @@ empty-graph uninstall, restart-stable canonical payloads, self-consistent
 artifact/capability tampering, incomplete outbox inventories, outbox ambiguity,
 deterministic export, lifecycle-reference tamper detection, and staged restore.
 
-The kernel remains private and no production lifecycle constructs it. It does
-not yet register external artifact/projection payload owners or participate in
-live state-layout, reachability, diagnostics, backup, or restore orchestration.
-Existing JSON stores remain the only production authority. Production
-lifecycle conversion into reviewed Grant evidence, effect dispatch through
-real typed external owners that populate this observation contract, plus the
-full process-exit matrix, the indivisible reader/writer cutover, and deletion
-of legacy mutable stores remain open;
+The kernel remains private and no production lifecycle constructs it. Its
+path-free external-payload contract now freezes five typed owner identities and
+their ACL backup policies. The global Artifact Store is excluded; the other
+four owners must form one complete, deterministic receipt set bound to an exact
+installation, Control generation, registry digest, owner snapshot schema,
+manifest/inventory digests, and bounded accounting. Decoded registry and
+snapshot evidence must revalidate before use. This registers the identity and
+evidence boundary only: it does not perform owner-specific snapshot,
+offline-verification, staged-restore, or activation I/O and does not
+participate in live state-layout, reachability, diagnostics, backup, or restore
+orchestration. Existing JSON stores remain the only production authority.
+Production lifecycle conversion into reviewed Grant evidence, effect dispatch
+through real typed external owners that populate this observation contract,
+the owner I/O adapters, full process-exit matrix, indivisible reader/writer
+cutover, and deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 

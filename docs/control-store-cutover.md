@@ -62,6 +62,15 @@ because none may authorize a package mutation. Before activation, each owner
 must provide a bounded typed inventory, deterministic digest, snapshot method,
 offline verifier, and restore contract where its backup policy requires one.
 
+The inactive kernel now freezes these five identities and their exact backup
+policies in a path-free typed registry contract. Artifact Store exclusion is
+explicit; receipts for the other four owners must be complete, canonically
+ordered, bounded, and tied to one installation and Control generation. This is
+the registration/evidence half of gate 2 only. It neither copies owner payloads
+nor replaces the production backup path scanner; owner-specific snapshot,
+offline-verification, staged-restore, and activation adapters are still
+required before this gate can close.
+
 ## Non-negotiable cutover invariants
 
 - A production process opens either the legacy stores or the Control Store for

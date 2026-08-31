@@ -139,8 +139,14 @@ replaces the current JSON authority. Lifecycle
 conversion still must feed the reviewed Grant evidence, dispatch effects
 through real typed external owners, and populate the qualified observation
 contract.
-External-payload ownership and the coordinated reader/writer cutover also
-remain A2 work. The machine-checked
+The inactive kernel now has a path-free external-payload registry/evidence
+contract: five fixed owner identities and ACL backup policies, explicit global
+Artifact Store exclusion, and one exact canonical receipt set for the four
+snapshotted owners. Receipts bind installation, Control generation, registry
+and owner schemas, manifest/inventory digests, and bounded accounting; they do
+not embed host paths. Actual owner-specific snapshot, offline-verification,
+staged-restore, and activation adapters remain A2 work, as does the coordinated
+reader/writer cutover. The machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual
 state layout. It is an implementation prerequisite, not an activated migration

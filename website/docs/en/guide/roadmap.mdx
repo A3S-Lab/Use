@@ -116,11 +116,16 @@ cannot predate provider observations. The kernel also qualifies snapshots,
 full Grants, reviewed provider selections, capability history, explicit
 unknown/expired-claim reconciliation, deterministic offline-verifiable export,
 and clean staged restore. Production lifecycle code does not construct it.
-External artifact/projection payload ownership, the complete crash matrix, deterministic
-lifecycle conversion into authorization-v2 Grant evidence, effect dispatch
-through real typed external owners that populates the qualified observation
-contract, backup/restore and reachability integration, and the coordinated
-authority cutover remain open;
+The private path-free payload contract now freezes five external owner IDs and
+their ACL backup policies. It excludes the global Artifact Store and requires
+one complete canonical receipt set for the other four owners, bound to an exact
+installation, Control generation, registry/owner schemas, digests, and bounded
+accounting. It performs no owner I/O and is not wired to the legacy backup
+scanner. Owner-specific snapshot, offline verification, staged restore, and
+activation adapters, the complete crash matrix, deterministic lifecycle
+conversion into authorization-v2 Grant evidence, effect dispatch through real
+typed external owners, backup/restore and reachability integration, and the
+coordinated authority cutover remain open;
 no A2 roadmap item is complete yet.
 
 ## Implemented baseline
