@@ -147,17 +147,23 @@ offline-verified archive can be staged without touching live owner paths;
 activation requires the exact exclusive maintenance fence, a clean initial
 record inventory, an atomic activating marker, and digest-named deterministic
 partials for exact-subset replay. The Host protocol projection now has a third
-concrete snapshot and offline-verification boundary. It archives only
-owner-validated request-to-plan, optional outcome, and canonical cancellation
-records. Derived operation and latest-enablement indexes must be complete and
-consistent but never enter the archive. A second bounded no-follow scan and
-exact Control-export reconciliation precede no-clobber publication, so the
-projection cannot choose desired state or package/capability generations.
-No-change requests remain explicit without inventing operations. Clean-target
-Host restore, the Restore Coordinator adapter, complete-set coordination, the
-complete subprocess crash matrix, production conversion and dispatch,
-backup/restore and reachability integration, and the coordinated authority
-cutover remain open;
+concrete snapshot, offline-verification, and clean-target restore boundary. It
+archives only owner-validated request-to-plan, optional outcome, and canonical
+cancellation records. Derived operation and latest-enablement indexes must be
+complete and consistent but never enter the archive. A second bounded no-follow
+scan and exact Control-export reconciliation precede no-clobber publication, so
+the projection cannot choose desired state or package/capability generations.
+No-change requests remain explicit without inventing operations. A verified
+snapshot can build a complete target-local owner root from exact source bytes
+and newly derived canonical indexes while excluding legacy aliases and locks.
+Activation requires the exact exclusive maintenance fence and an absent live
+root, writes a snapshot-bound marker, re-audits the exact physical and semantic
+inventory, and atomically publishes the whole root without replacement.
+Deterministic archive, record, and marker partials plus post-publication replay
+cover the local crash boundaries. The Restore Coordinator adapter, complete-set
+coordination, the complete subprocess crash matrix, production conversion and
+dispatch, backup/restore and reachability integration, and the coordinated
+authority cutover remain open;
 no A2 roadmap item is complete yet.
 
 ## Implemented baseline

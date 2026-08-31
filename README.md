@@ -1392,10 +1392,10 @@ snapshot subset is accepted after activation has started. Candidate, target,
 link, active-record, and archive drift fail closed, locks remain excluded, and
 the canonical result contains no host paths. Both adapters remain inactive
 qualification code and are not wired to the current backup or restore scanner.
-The Host protocol projection is now the third qualified snapshot adapter. Its
-owner-native scanner archives only immutable request-to-plan records, optional
-terminal outcomes, and one canonical cancellation per exact operation binding.
-Operation aliases and
+The Host protocol projection is now the third qualified snapshot and
+clean-target restore adapter. Its owner-native scanner archives only immutable
+request-to-plan records, optional terminal outcomes, and one canonical
+cancellation per exact operation binding. Operation aliases and
 latest-enablement diagnostic indexes remain derived: they must be complete and
 agree with their source requests, but never enter the archive. Bounded
 no-follow traversal, a second live scan, no-clobber publication, and exact
@@ -1406,10 +1406,21 @@ package/capability generations must be derivable from the exact bound Control
 export; Host receipt and health evidence remain observations and cannot select
 desired state. The manifest and receipt are path-free, represent absence
 explicitly, and preserve no-change requests without fabricating an operation.
-This inactive adapter does not yet restore Host records. A clean-target Host
-restore adapter, the Restore Coordinator adapter, complete-set orchestration,
-the full subprocess-exit matrix, and coordinated authority cutover remain
-open.
+An offline-verified snapshot can now stage a private archive copy and build one
+complete `plugin-host-manager` candidate beneath the target state root. It
+restores the exact semantic source bytes, rebuilds only canonical exact
+operation and latest-enablement indexes, and deliberately omits legacy aliases
+and lock files. Activation requires the exact target's exclusive maintenance
+guard and an absent live owner root, revalidates both the exact tree and the
+owner-native semantic scan, records a snapshot-bound durable activation marker,
+and publishes the entire owner root by one atomic no-clobber directory move.
+Archive, record, and activation-marker partials recover deterministically;
+post-publication/pre-result replay accepts only the same exact snapshot.
+Candidate, live-root, link, archive, and marker drift fail closed, absence
+creates no owner root, and the result contains no host path. This adapter
+remains inactive qualification code. The Restore Coordinator adapter,
+complete-set orchestration, the full subprocess-exit matrix, and coordinated
+authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

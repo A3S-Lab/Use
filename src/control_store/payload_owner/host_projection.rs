@@ -17,6 +17,13 @@ use crate::control_store::model::valid_sha256;
 
 mod archive;
 mod control;
+mod restore;
+
+#[cfg(test)]
+pub(in crate::control_store) use restore::{
+    ControlHostProjectionRestoreResult, ControlHostProjectionRestoreState,
+    StagedControlHostProjectionRestore,
+};
 
 pub(in crate::control_store) const CONTROL_HOST_PROJECTION_SNAPSHOT_SCHEMA: &str =
     "a3s.use.control-host-projection-snapshot.v1";
@@ -322,20 +329,20 @@ impl ControlHostProjectionSnapshot {
         let records = archive::verify_archive(self, archive_path.as_deref()).await?;
         control::reconcile(&authority, &records)?;
         Ok(VerifiedControlHostProjectionSnapshot {
-            _archive_path: archive_path,
-            _registry: registry.clone(),
+            archive_path,
+            registry: registry.clone(),
             records,
-            _snapshot: self.clone(),
+            snapshot: self.clone(),
         })
     }
 }
 
 #[derive(Debug)]
 pub(in crate::control_store) struct VerifiedControlHostProjectionSnapshot {
-    _archive_path: Option<PathBuf>,
-    _registry: ControlPayloadOwnerRegistry,
+    archive_path: Option<PathBuf>,
+    registry: ControlPayloadOwnerRegistry,
     records: Vec<crate::cognitive_package::HostProjectionSnapshotRecord>,
-    _snapshot: ControlHostProjectionSnapshot,
+    snapshot: ControlHostProjectionSnapshot,
 }
 
 impl VerifiedControlHostProjectionSnapshot {

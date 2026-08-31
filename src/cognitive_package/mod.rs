@@ -117,8 +117,8 @@ pub(crate) use host_snapshot::{
 };
 pub(crate) use host_snapshot::{
     scan_host_projection_snapshot, validate_host_projection_snapshot_record,
-    validate_host_projection_snapshot_set, HostProjectionSnapshotRecord,
-    HostProjectionSnapshotRecordKind, HostProjectionSnapshotRequest,
+    validate_host_projection_snapshot_set, HostProjectionRestoreIndexBuilder,
+    HostProjectionSnapshotRecord, HostProjectionSnapshotRecordKind, HostProjectionSnapshotRequest,
     HOST_PROJECTION_SNAPSHOT_MAX_RECORD_BYTES,
 };
 pub use hosts::{

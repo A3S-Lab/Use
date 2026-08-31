@@ -427,11 +427,16 @@ control_store_cutover {
       "src/cognitive_package/host_manager.rs",
       "src/cognitive_package/host_snapshot.rs",
       "src/cognitive_package/host_snapshot/filesystem.rs",
+      "src/cognitive_package/host_snapshot/restore.rs",
       "src/cognitive_package/host_store.rs",
       "src/control_store/payload_owner/host_projection.rs",
       "src/control_store/payload_owner/host_projection/archive.rs",
       "src/control_store/payload_owner/host_projection/archive/file.rs",
       "src/control_store/payload_owner/host_projection/control.rs",
+      "src/control_store/payload_owner/host_projection/restore.rs",
+      "src/control_store/payload_owner/host_projection/restore/filesystem.rs",
+      "src/control_store/payload_owner/host_projection/restore/filesystem/candidate.rs",
+      "src/control_store/payload_owner/host_projection/restore/filesystem/staging_archive.rs",
     ]
     payload                     = "semantic Host request, cancellation, and result records with validation-only derived indexes"
     backup_policy               = "registered-projection"
