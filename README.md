@@ -1353,12 +1353,21 @@ maintenance fence across owner I/O, without retaining a SQLite transaction or
 store-executor permit. The first typed owner adapter snapshots the scope-local
 OKF SQLite/FTS5 Knowledge database into a non-overwriting bounded archive,
 derives a canonical binding/selection inventory digest, and re-verifies the
-archive offline. An absent Knowledge database produces an explicit zero-file
-manifest without creating live directories; manifests and receipts contain no
-host paths. This remains inactive qualification code and is not wired to the
-current backup scanner. The other three snapshotted owner adapters, Knowledge
-staged restore/activation and Control-effect reconciliation, complete-set
-orchestration, and the coordinated authority cutover remain open.
+archive offline. Live receipt issuance and offline acceptance both require the
+same canonical Control export bytes named by the snapshot binding. Every
+retained Knowledge incarnation must originate from its exact Control prepare
+intent and committed OKF bundle; applied preparations must match the retained
+Knowledge observation and capability-projection digests. This join runs against
+the temporary SQLite snapshot before the destination archive is written, so a
+semantic mismatch leaves no archive or receipt. A removed or missing formerly
+applied payload requires the same lifecycle's recorded remove effect, while
+claimed or unknown outcomes remain evidence to reconcile rather than a new
+desired-state authority. An absent Knowledge database produces an explicit
+zero-file manifest without creating live directories; manifests and receipts
+contain no host paths. This remains inactive qualification code and is not
+wired to the current backup scanner. The other three snapshotted owner
+adapters, Knowledge staged restore/activation, complete-set orchestration, and
+the coordinated authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

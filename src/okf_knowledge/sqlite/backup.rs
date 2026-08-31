@@ -96,6 +96,52 @@ pub(super) fn create(
     created_at_ms: u64,
     max_archive_bytes: u64,
 ) -> UseResult<OkfKnowledgeBackupManifest> {
+    create_inner::<fn(&OkfKnowledgeRestoreInventory) -> UseResult<()>>(
+        live_database,
+        scope,
+        policy,
+        destination,
+        created_at_ms,
+        max_archive_bytes,
+        None,
+    )
+}
+
+pub(super) fn create_validated<F>(
+    live_database: &Path,
+    scope: &PlanScope,
+    policy: &OkfKnowledgeStoragePolicy,
+    destination: &Path,
+    created_at_ms: u64,
+    max_archive_bytes: u64,
+    validate_inventory: F,
+) -> UseResult<OkfKnowledgeBackupManifest>
+where
+    F: FnOnce(&OkfKnowledgeRestoreInventory) -> UseResult<()>,
+{
+    create_inner(
+        live_database,
+        scope,
+        policy,
+        destination,
+        created_at_ms,
+        max_archive_bytes,
+        Some(validate_inventory),
+    )
+}
+
+fn create_inner<F>(
+    live_database: &Path,
+    scope: &PlanScope,
+    policy: &OkfKnowledgeStoragePolicy,
+    destination: &Path,
+    created_at_ms: u64,
+    max_archive_bytes: u64,
+    validate_inventory: Option<F>,
+) -> UseResult<OkfKnowledgeBackupManifest>
+where
+    F: FnOnce(&OkfKnowledgeRestoreInventory) -> UseResult<()>,
+{
     if max_archive_bytes == 0 || max_archive_bytes > MAX_BACKUP_ARCHIVE_BYTES {
         return Err(backup_invalid(
             "The OKF Knowledge backup archive bound is invalid.",
@@ -127,6 +173,10 @@ pub(super) fn create(
     snapshot
         .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
         .map_err(|error| database_io("checkpoint Knowledge backup snapshot", error))?;
+    if let Some(validate_inventory) = validate_inventory {
+        let inventory = restore_inventory(&snapshot)?;
+        validate_inventory(&inventory)?;
+    }
     drop(snapshot);
 
     let database_bytes = regular_file_length(&snapshot_path)?;

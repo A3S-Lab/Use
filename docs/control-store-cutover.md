@@ -70,9 +70,13 @@ snapshot session now freezes the canonical export digest and generation under
 one exclusive maintenance fence without holding a database transaction across
 owner I/O. The Knowledge owner is the first qualified adapter: existing
 SQLite/FTS5 state is archived, bounded, inventoried, and verified offline;
-absence is recorded as zero files without creating live state. This does not
-replace the production backup scanner. The other owner adapters, Knowledge
-staged restore/activation and Control-effect reconciliation, and complete-set
+absence is recorded as zero files without creating live state. The adapter now
+also verifies the exact bound Control export and joins each retained lifecycle
+incarnation to its prepare intent, committed OKF bundle, applied observation
+and projection evidence, and—when removed or pruned—the matching remove
+effect. Claimed and unknown effects remain explicit ambiguity, not payload
+authority. This does not replace the production backup scanner. The other
+owner adapters, Knowledge staged restore/activation, and complete-set
 orchestration are still required before this gate can close.
 
 ## Non-negotiable cutover invariants

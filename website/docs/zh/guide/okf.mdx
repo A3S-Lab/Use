@@ -120,7 +120,10 @@ a3s-use knowledge backup-retention ./backups \
 export digest，计算精确 retained-binding/selection inventory 的摘要，并在发布前
 对包含 header 的完整 archive 执行注册大小上限。数据库缺失时会产生显式零文件
 manifest，且不会创建 live Knowledge state。这还不是 CLI 或生产 backup 路径；
-Control 协调的 staged restore 与 activation 仍未完成。
+实时与离线验证还会要求精确绑定的 Control export、精确 prepare/bundle 来源、匹配的 applied
+observation/projection evidence，以及为已删除或缺失的 applied payload 提供 remove effect。Control 对账会在
+目标 archive 写入前针对临时 SQLite snapshot 完成，因此语义失败不会留下 archive 或 receipt。Claimed 与
+unknown effect 仅保留为 reconciliation evidence。Control 协调的 staged restore 与 activation 仍未完成。
 
 `backup-retention` 会针对最多 4,096 个 directory entry、一个完整 scope 和
 有界 backup count/byte policy 返回 canonical plan。它完整验证 managed

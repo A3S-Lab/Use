@@ -147,8 +147,13 @@ binds the archive to the canonical Control export digest, hashes the exact
 retained-binding/selection inventory, and enforces the registered limit over
 the complete archive before publication. A missing database becomes an
 explicit zero-file manifest without creating live Knowledge state. This is not
-a CLI or production-backup path yet, and Control-coordinated staged restore and
-activation remain pending.
+a CLI or production-backup path yet. Both live and offline verification also
+require the exact bound Control export, exact prepare/bundle origin, matching
+applied observation/projection evidence, and a remove effect for removed or
+missing applied payload. The Control join runs against the temporary SQLite
+snapshot before the archive is written, so semantic failure leaves neither an
+archive nor a receipt. Claimed and unknown effects remain reconciliation
+evidence only. Control-coordinated staged restore and activation remain pending.
 
 `backup-retention` returns a canonical plan for at most 4,096 directory entries,
 one complete scope, and bounded backup-count/byte limits. It fully verifies

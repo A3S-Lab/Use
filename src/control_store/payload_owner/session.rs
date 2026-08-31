@@ -9,6 +9,7 @@ use super::{
     canonical_json, ControlPayloadOwnerId, ControlPayloadOwnerRegistry,
     ControlPayloadSnapshotEvidence, ControlPayloadSnapshotReceipt, ControlPayloadSnapshotSet,
 };
+use crate::control_store::export::{self, GeneratedControlStoreExport, VerifiedControlStoreExport};
 use crate::control_store::model::valid_sha256;
 
 const CONTROL_PAYLOAD_SNAPSHOT_BINDING_SCHEMA: &str = "a3s.use.control-payload-snapshot-binding.v1";
@@ -68,6 +69,30 @@ impl ControlPayloadSnapshotBinding {
         Ok(())
     }
 
+    /// Verify that canonical Control bytes are the exact authority named by
+    /// this binding before any external owner interprets their history.
+    pub(in crate::control_store) fn verify_control_export(
+        &self,
+        registry: &ControlPayloadOwnerRegistry,
+        bytes: &[u8],
+    ) -> UseResult<VerifiedControlStoreExport> {
+        self.validate(registry)?;
+        let verified = export::verify(bytes, &self.installation).map_err(|error| {
+            snapshot_error(format!(
+                "The bound Control export failed offline verification: {}",
+                error.message
+            ))
+        })?;
+        if verified.descriptor_digest != self.control_export_digest
+            || verified.export.current_generation != self.control_generation
+        {
+            return Err(snapshot_error(
+                "The canonical Control export does not match the payload snapshot binding.",
+            ));
+        }
+        Ok(verified)
+    }
+
     fn expected_descriptor_digest(&self) -> UseResult<String> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
@@ -119,20 +144,13 @@ impl ControlPayloadSnapshotSession {
     pub(in crate::control_store) fn new(
         registry: ControlPayloadOwnerRegistry,
         installation: InstallationId,
-        control_generation: u64,
-        control_export_digest: String,
-        control_export: Vec<u8>,
+        control_export: GeneratedControlStoreExport,
         state_root: PathBuf,
         maintenance: StateMaintenanceGuard,
     ) -> UseResult<Self> {
         registry.validate()?;
-        if control_export.is_empty()
-            || format!("sha256:{:x}", Sha256::digest(&control_export)) != control_export_digest
-        {
-            return Err(snapshot_error(
-                "The Control payload session export does not match its verified digest.",
-            ));
-        }
+        let (control_export, control_generation, control_export_digest) =
+            control_export.into_parts();
         let binding = ControlPayloadSnapshotBinding::new(
             &registry,
             installation,

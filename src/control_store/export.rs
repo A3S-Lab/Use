@@ -38,9 +38,19 @@ pub(super) struct VerifiedControlStoreExport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct GeneratedControlStoreExport {
-    pub(super) bytes: Vec<u8>,
-    pub(super) current_generation: u64,
-    pub(super) descriptor_digest: String,
+    bytes: Vec<u8>,
+    current_generation: u64,
+    descriptor_digest: String,
+}
+
+impl GeneratedControlStoreExport {
+    pub(super) fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+
+    pub(super) fn into_parts(self) -> (Vec<u8>, u64, String) {
+        (self.bytes, self.current_generation, self.descriptor_digest)
+    }
 }
 
 pub(super) fn encode(

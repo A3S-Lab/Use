@@ -7,11 +7,11 @@ pub(super) fn digest(seed: char) -> String {
     format!("sha256:{}", seed.to_string().repeat(64))
 }
 
-pub(super) fn operation(id: &str) -> ReviewedControlOperation {
+pub(in crate::control_store) fn operation(id: &str) -> ReviewedControlOperation {
     operation_at(id, PluginOperationAction::Install, 0, 0)
 }
 
-pub(super) fn operation_at(
+pub(in crate::control_store) fn operation_at(
     id: &str,
     action: PluginOperationAction,
     expected_generation: u64,
@@ -297,7 +297,7 @@ pub(super) fn replacement_package_lock(prior: &PluginPackageLock) -> PluginPacka
     candidate
 }
 
-pub(super) fn control_installation() -> InstallationId {
+pub(in crate::control_store) fn control_installation() -> InstallationId {
     InstallationId::new(InstallationKind::Workspace, "workspace-01").unwrap()
 }
 
@@ -352,7 +352,7 @@ pub(super) fn snapshot(installation: InstallationId, generation: u64) -> Install
     .unwrap()
 }
 
-pub(super) fn transition(
+pub(in crate::control_store) fn transition(
     installation: InstallationId,
     reviewed: &ReviewedControlOperation,
 ) -> ControlTransition {
@@ -398,7 +398,7 @@ pub(super) fn transition(
     transition_from_projection(installation, reviewed, projection, None, committed_at_ms)
 }
 
-pub(super) fn projected_transition(
+pub(in crate::control_store) fn projected_transition(
     reviewed: &ReviewedControlOperation,
     prior: &ControlGeneration,
     history: &ControlProjectionHistory,
@@ -486,7 +486,7 @@ pub(super) async fn initialized_store() -> (tempfile::TempDir, ControlStore) {
     (temporary, store)
 }
 
-pub(super) fn claim(
+pub(in crate::control_store) fn claim(
     operation_id: &str,
     token: &str,
     now_ms: u64,
@@ -503,7 +503,7 @@ pub(super) fn claim(
     }
 }
 
-pub(super) fn observation(
+pub(in crate::control_store) fn observation(
     operation_id: &str,
     intent: &ControlEffectIntent,
     claim_token: &str,
@@ -620,7 +620,7 @@ pub(super) fn canonical_json<T: Serialize>(value: &T) -> Vec<u8> {
     bytes
 }
 
-pub(super) async fn apply_all_effects(
+pub(in crate::control_store) async fn apply_all_effects(
     store: &ControlStore,
     reviewed: &ReviewedControlOperation,
     start: u64,

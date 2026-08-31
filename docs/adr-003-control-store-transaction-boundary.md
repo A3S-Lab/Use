@@ -315,13 +315,21 @@ binds its exact retained-binding and selection inventory, enforces the
 registered archive/manifest bounds before publication, and re-verifies the
 archive offline. Absence is an explicit zero-file state and creates no live
 Knowledge directory; linked roots and decoded or rebound evidence fail closed.
+Both live snapshot issuance and offline acceptance semantically verify the
+exact canonical Control export named by the binding. Each retained Knowledge
+incarnation must join its originating prepare intent and committed OKF bundle;
+applied prepare evidence must match the retained observation and capability
+projection. The join runs against the temporary SQLite snapshot before the
+destination archive is written, so semantic failure publishes neither archive
+nor receipt. Removed or pruned applied payload requires a same-incarnation
+remove effect. Claimed and unknown effects remain reconciliation evidence and
+cannot mint desired state.
 This implementation still does not participate in production state-layout,
 reachability, diagnostics, backup, or restore orchestration. Existing JSON
 stores remain the only production authority. The other retained-owner I/O
-adapters, Knowledge staged restore/activation and reconciliation against the
-bound Control effect history, full process-exit matrix, production lifecycle
-conversion and dispatch, indivisible reader/writer cutover, and deletion of
-legacy mutable stores remain open;
+adapters, Knowledge staged restore/activation, full process-exit matrix,
+production lifecycle conversion and dispatch, indivisible reader/writer
+cutover, and deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 
