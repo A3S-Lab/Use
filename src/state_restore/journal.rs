@@ -9,7 +9,15 @@ use tokio::fs;
 use super::{canonical_json, sha256, valid_sha256, StateRestoreActionSummary, StateRestorePlan};
 
 mod history;
+mod snapshot;
 mod storage;
+
+pub(crate) use snapshot::{
+    read_state_restore_history_snapshot_entry, scan_state_restore_history_snapshot,
+    validate_terminal_state_restore_history_record, StateRestoreHistorySnapshotEntry,
+    StateRestoreHistorySnapshotScan, STATE_RESTORE_HISTORY_SNAPSHOT_MAX_OPERATION_FILES,
+    STATE_RESTORE_HISTORY_SNAPSHOT_MAX_RECORD_BYTES,
+};
 
 use storage::{
     discard_unpublished_temporary_json, ensure_owned_directory, read_optional_json,
@@ -369,7 +377,7 @@ pub(super) struct ActiveStateRestoreMarker {
 }
 
 impl ActiveStateRestoreMarker {
-    fn new(operation: &StateRestoreOperation) -> UseResult<Self> {
+    pub(super) fn new(operation: &StateRestoreOperation) -> UseResult<Self> {
         let marker = Self {
             schema: ACTIVE_STATE_RESTORE_SCHEMA.to_owned(),
             plan_digest: operation.plan_digest.clone(),

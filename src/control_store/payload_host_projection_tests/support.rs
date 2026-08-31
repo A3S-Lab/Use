@@ -256,6 +256,9 @@ pub(in crate::control_store) fn registry() -> ControlPayloadOwnerRegistry {
                         ControlPayloadOwnerId::PlanningAndDiagnosticObservations => {
                             CONTROL_OBSERVATION_PAYLOAD_SNAPSHOT_SCHEMA.to_owned()
                         }
+                        ControlPayloadOwnerId::RestoreCoordinator => {
+                            CONTROL_RESTORE_COORDINATOR_SNAPSHOT_SCHEMA.to_owned()
+                        }
                         _ => format!("a3s.use.test.{}-snapshot.v1", owner.as_str()),
                     };
                     ControlPayloadOwnerRegistration::snapshotted(
