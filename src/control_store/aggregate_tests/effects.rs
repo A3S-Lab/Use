@@ -400,7 +400,7 @@ async fn explicitly_selected_optional_surface_can_degrade_without_blocking_cutov
         store
             .record_effect_observation(observation(
                 reviewed.operation_id(),
-                &claimed.intent.idempotency_key,
+                &claimed.intent,
                 &claimed.claim_token,
                 outcome,
                 char::from_digit(u32::try_from(sequence).unwrap(), 16).unwrap(),

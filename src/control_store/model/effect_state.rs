@@ -48,6 +48,7 @@ pub(in crate::control_store) struct ControlEffectRecord {
     pub(in crate::control_store) claim_owner: Option<String>,
     pub(in crate::control_store) claim_token: Option<String>,
     pub(in crate::control_store) lease_until_ms: Option<u64>,
+    pub(in crate::control_store) application: Option<ControlAppliedEffect>,
     pub(in crate::control_store) evidence_digest: Option<String>,
     pub(in crate::control_store) error_code: Option<String>,
     pub(in crate::control_store) observed_at_ms: Option<u64>,
@@ -60,7 +61,7 @@ pub(in crate::control_store) struct ControlEffectClaim {
     pub(in crate::control_store) claim_token: String,
     pub(in crate::control_store) now_ms: u64,
     pub(in crate::control_store) lease_until_ms: u64,
-    pub(in crate::control_store) reconcile_unknown: bool,
+    pub(in crate::control_store) explicit_reconciliation: bool,
 }
 
 impl ControlEffectClaim {
@@ -109,30 +110,67 @@ pub(in crate::control_store) struct ControlEffectObservation {
     pub(in crate::control_store) idempotency_key: String,
     pub(in crate::control_store) claim_token: String,
     pub(in crate::control_store) outcome: ControlEffectOutcome,
-    pub(in crate::control_store) evidence_digest: String,
+    pub(in crate::control_store) application: Option<ControlAppliedEffect>,
+    pub(in crate::control_store) failure_evidence_digest: Option<String>,
     pub(in crate::control_store) error_code: Option<String>,
     pub(in crate::control_store) observed_at_ms: u64,
 }
 
 impl ControlEffectObservation {
     pub(in crate::control_store) fn validate(&self) -> UseResult<()> {
-        let error_matches = match self.outcome {
-            ControlEffectOutcome::Applied => self.error_code.is_none(),
+        let evidence_matches = match self.outcome {
+            ControlEffectOutcome::Applied => {
+                self.application.as_ref().is_some_and(|application| {
+                    application.schema == CONTROL_APPLIED_EFFECT_SCHEMA
+                        && application.idempotency_key == self.idempotency_key
+                        && application.canonical_bytes().is_ok()
+                }) && self.failure_evidence_digest.is_none()
+                    && self.error_code.is_none()
+            }
             ControlEffectOutcome::Rejected | ControlEffectOutcome::Unknown => {
-                self.error_code.as_deref().is_some_and(valid_error_code)
+                self.application.is_none()
+                    && self
+                        .failure_evidence_digest
+                        .as_deref()
+                        .is_some_and(valid_sha256)
+                    && self.error_code.as_deref().is_some_and(valid_error_code)
             }
         };
         if !valid_machine_id(&self.operation_id)
             || !valid_sha256(&self.idempotency_key)
             || !valid_machine_id(&self.claim_token)
-            || !valid_sha256(&self.evidence_digest)
             || self.observed_at_ms == 0
-            || !error_matches
+            || !evidence_matches
         {
             return Err(input_error(
                 "The Control Store effect observation is invalid.",
             ));
         }
         Ok(())
+    }
+
+    pub(in crate::control_store) fn evidence_for(
+        &self,
+        intent: &ControlEffectIntent,
+    ) -> UseResult<(Option<Vec<u8>>, String)> {
+        self.validate()?;
+        match self.outcome {
+            ControlEffectOutcome::Applied => {
+                let application = self.application.as_ref().ok_or_else(|| {
+                    input_error("An applied Control Store effect omitted typed evidence.")
+                })?;
+                application.validate_for(intent)?;
+                Ok((
+                    Some(application.canonical_bytes()?),
+                    application.descriptor_digest()?,
+                ))
+            }
+            ControlEffectOutcome::Rejected | ControlEffectOutcome::Unknown => Ok((
+                None,
+                self.failure_evidence_digest.clone().ok_or_else(|| {
+                    input_error("A failed Control Store effect omitted diagnostic evidence.")
+                })?,
+            )),
+        }
     }
 }

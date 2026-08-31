@@ -16,17 +16,19 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use super::model::{
-    ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
-    ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectOwner,
-    ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
-    ControlOperationStatus, ControlPackageLifecycle, ControlProjectionHistory,
-    ControlProviderSelection, ControlTransition, ProjectedControlGeneration,
-    ReviewedControlOperation,
+    ControlAppliedEffect, ControlAppliedEffectEvidence, ControlCapabilitySelection,
+    ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent, ControlEffectKind,
+    ControlEffectObservation, ControlEffectOutcome, ControlEffectOwner, ControlEffectStatus,
+    ControlEffectSubject, ControlGeneration, ControlGrantSelection, ControlOperationStatus,
+    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderSelection,
+    ControlRuntimeBindingObservation, ControlSurfaceObservationState, ControlTransition,
+    ProjectedControlGeneration, ReviewedControlOperation,
 };
 use super::*;
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
 mod effect_fixtures;
+mod effect_observations;
 mod effects;
 mod fixtures;
 mod generations;
@@ -183,7 +185,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
     assert_eq!(replay.attempt, 2);
     let unknown = observation(
         reviewed.operation_id(),
-        &replay.intent.idempotency_key,
+        &replay.intent,
         &replay.claim_token,
         ControlEffectOutcome::Unknown,
         'a',
@@ -223,7 +225,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
     assert_eq!(reconciled.attempt, 3);
     let applied = observation(
         reviewed.operation_id(),
-        &reconciled.intent.idempotency_key,
+        &reconciled.intent,
         &reconciled.claim_token,
         ControlEffectOutcome::Applied,
         'b',
@@ -247,7 +249,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
         store
             .record_effect_observation(observation(
                 reviewed.operation_id(),
-                &claimed.intent.idempotency_key,
+                &claimed.intent,
                 &claimed.claim_token,
                 ControlEffectOutcome::Applied,
                 char::from_digit(u32::try_from(index).unwrap(), 16).unwrap(),
@@ -373,7 +375,7 @@ async fn required_rejection_is_terminal_and_cannot_publish_capabilities() {
     store
         .record_effect_observation(observation(
             reviewed.operation_id(),
-            &claimed.intent.idempotency_key,
+            &claimed.intent,
             &claimed.claim_token,
             ControlEffectOutcome::Rejected,
             'e',

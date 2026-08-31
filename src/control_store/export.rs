@@ -13,7 +13,7 @@ use super::model::{
 };
 use super::schema::{ControlStoreMetadata, CONTROL_STORE_SCHEMA_VERSION};
 
-const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v8";
+const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v9";
 const MAX_CONTROL_STORE_EXPORT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EXPORTED_GENERATIONS: usize = 4096;
 const MAX_EXPORTED_OPERATIONS: usize = 8192;
@@ -68,7 +68,7 @@ pub(super) fn verify(
         ));
     }
     let export: ControlStoreExport = serde_json::from_slice(bytes)
-        .map_err(|_| export_error("The Control Store export is not valid schema-v8 JSON."))?;
+        .map_err(|_| export_error("The Control Store export is not valid schema-v9 JSON."))?;
     validate_export(&export)?;
     let canonical = canonical_json(&export)?;
     if canonical != bytes {
@@ -226,50 +226,74 @@ fn validate_authority(export: &ControlStoreExport) -> UseResult<()> {
         validate_effect_sequence(operation, &operation_effects)?;
         projection_history.observe(generation)?;
 
-        match operation.status {
-            ControlOperationStatus::Completed => {
-                published_cursor = published_cursor
-                    .checked_add(1)
-                    .ok_or_else(|| corruption_error("The capability generation is exhausted."))?;
-                let expected_status = if published_cursor == export.published_capability_generation
-                {
-                    ControlCapabilityStatus::Published
-                } else {
-                    ControlCapabilityStatus::Retired
-                };
-                if generation.capability_status != expected_status {
-                    return Err(corruption_error(
-                        "A completed Control Store generation has invalid publication state.",
-                    ));
-                }
-                if generation
+        let cutover = operation_effects
+            .iter()
+            .find(|effect| effect.intent.kind == super::model::ControlEffectKind::CapabilityCutover)
+            .copied()
+            .ok_or_else(|| {
+                corruption_error("A committed Control Store operation has no capability cutover.")
+            })?;
+        let cutover_applied = cutover.status == ControlEffectStatus::Applied;
+        if cutover_applied {
+            published_cursor = published_cursor
+                .checked_add(1)
+                .ok_or_else(|| corruption_error("The capability generation is exhausted."))?;
+            let expected_status = if published_cursor == export.published_capability_generation {
+                ControlCapabilityStatus::Published
+            } else {
+                ControlCapabilityStatus::Retired
+            };
+            if generation.capability_status != expected_status
+                || generation.capability_published_at_ms != cutover.observed_at_ms
+                || generation
                     .capability_published_at_ms
                     .is_none_or(|time| time < generation.committed_at_ms)
-                {
-                    return Err(corruption_error(
-                        "A published Control Store capability generation has no valid checkpoint time.",
-                    ));
-                }
+            {
+                return Err(corruption_error(
+                    "An applied Control Store capability cutover has invalid publication state.",
+                ));
             }
+        } else if generation.capability_published_at_ms.is_some()
+            || !matches!(
+                generation.capability_status,
+                ControlCapabilityStatus::Candidate | ControlCapabilityStatus::Abandoned
+            )
+        {
+            return Err(corruption_error(
+                "An unapplied Control Store capability cutover has publication evidence.",
+            ));
+        }
+
+        match operation.status {
+            ControlOperationStatus::Completed if cutover_applied => {}
             ControlOperationStatus::Rejected => {
-                if generation.capability_status != ControlCapabilityStatus::Abandoned
-                    || generation.capability_published_at_ms.is_some()
+                if cutover_applied
+                    || generation.capability_status != ControlCapabilityStatus::Abandoned
                 {
                     return Err(corruption_error(
-                        "A rejected Control Store generation did not abandon its capability candidate.",
+                        "A rejected Control Store generation did not abandon an unpublished candidate.",
                     ));
                 }
             }
             ControlOperationStatus::EffectsPending => {
                 pending_count += 1;
+                let expected_capability_status = if cutover_applied {
+                    ControlCapabilityStatus::Published
+                } else {
+                    ControlCapabilityStatus::Candidate
+                };
                 if expected_generation != export.current_generation
-                    || generation.capability_status != ControlCapabilityStatus::Candidate
-                    || generation.capability_published_at_ms.is_some()
+                    || generation.capability_status != expected_capability_status
                 {
                     return Err(corruption_error(
-                        "An effect-pending Control Store generation is not the active candidate.",
+                        "An effect-pending Control Store generation is not the active candidate or published cutover.",
                     ));
                 }
+            }
+            ControlOperationStatus::Completed => {
+                return Err(corruption_error(
+                    "A completed Control Store operation has no applied capability cutover.",
+                ));
             }
             ControlOperationStatus::Reviewed | ControlOperationStatus::Cancelled => {
                 return Err(corruption_error(
@@ -328,13 +352,34 @@ fn validate_effect_sequence(
     operation: &ControlOperationRecord,
     effects: &[&ControlEffectRecord],
 ) -> UseResult<()> {
+    let committed_at_ms = operation.committed_at_ms.ok_or_else(|| {
+        corruption_error("A Control Store effect sequence has no committed transition.")
+    })?;
+    let mut latest_event_at_ms = committed_at_ms;
     let mut required_rejected = false;
     let mut unfinished_seen = false;
+    let cutover_sequence = effects
+        .iter()
+        .find(|effect| effect.intent.kind == super::model::ControlEffectKind::CapabilityCutover)
+        .map(|effect| effect.intent.sequence);
+    let cutover_applied = effects.iter().any(|effect| {
+        effect.intent.kind == super::model::ControlEffectKind::CapabilityCutover
+            && effect.status == ControlEffectStatus::Applied
+    });
+    let mut required_rejected_after_cutover = false;
     for (index, effect) in effects.iter().enumerate() {
         if usize::try_from(effect.intent.sequence).ok() != Some(index) {
             return Err(corruption_error(
                 "A Control Store effect sequence is not contiguous.",
             ));
+        }
+        if let Some(observed_at_ms) = effect.observed_at_ms {
+            if observed_at_ms < latest_event_at_ms {
+                return Err(corruption_error(
+                    "Control Store effect observations are not ordered after commit.",
+                ));
+            }
+            latest_event_at_ms = observed_at_ms;
         }
         let finished = effect.status == ControlEffectStatus::Applied
             || (effect.status == ControlEffectStatus::Rejected && !effect.intent.required);
@@ -346,6 +391,17 @@ fn validate_effect_sequence(
         unfinished_seen |= !finished;
         required_rejected |=
             effect.status == ControlEffectStatus::Rejected && effect.intent.required;
+        required_rejected_after_cutover |= effect.status == ControlEffectStatus::Rejected
+            && effect.intent.required
+            && cutover_sequence.is_some_and(|cutover| effect.intent.sequence > cutover);
+    }
+    if operation
+        .completed_at_ms
+        .is_some_and(|completed_at_ms| completed_at_ms < latest_event_at_ms)
+    {
+        return Err(corruption_error(
+            "A Control Store operation completed before its latest effect observation.",
+        ));
     }
     match operation.status {
         ControlOperationStatus::Completed
@@ -353,8 +409,9 @@ fn validate_effect_sequence(
                 effect.status == ControlEffectStatus::Applied
                     || (effect.status == ControlEffectStatus::Rejected && !effect.intent.required)
             }) => {}
-        ControlOperationStatus::Rejected if required_rejected => {}
-        ControlOperationStatus::EffectsPending if !required_rejected => {}
+        ControlOperationStatus::Rejected if required_rejected && !cutover_applied => {}
+        ControlOperationStatus::EffectsPending
+            if !required_rejected || (cutover_applied && required_rejected_after_cutover) => {}
         _ => {
             return Err(corruption_error(
                 "Control Store effect outcomes do not match operation status.",
@@ -400,24 +457,33 @@ fn validate_effect_record(record: &ControlEffectRecord) -> UseResult<()> {
                 && record.claim_owner.is_none()
                 && record.claim_token.is_none()
                 && record.lease_until_ms.is_none()
+                && record.application.is_none()
                 && record.evidence_digest.is_none()
                 && record.error_code.is_none()
                 && record.observed_at_ms.is_none()
         }
         ControlEffectStatus::Claimed => {
             has_claim
+                && record.application.is_none()
                 && record.evidence_digest.is_none()
                 && record.error_code.is_none()
                 && record.observed_at_ms.is_none()
         }
         ControlEffectStatus::Applied => {
             has_claim
+                && record.application.as_ref().is_some_and(|application| {
+                    application.validate_for(&record.intent).is_ok()
+                        && application.descriptor_digest().is_ok_and(|digest| {
+                            record.evidence_digest.as_deref() == Some(digest.as_str())
+                        })
+                })
                 && record.evidence_digest.as_deref().is_some_and(valid_sha256)
                 && record.error_code.is_none()
                 && valid_observation_time(record)
         }
         ControlEffectStatus::Rejected | ControlEffectStatus::Unknown => {
             has_claim
+                && record.application.is_none()
                 && record.evidence_digest.as_deref().is_some_and(valid_sha256)
                 && record
                     .error_code

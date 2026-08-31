@@ -71,8 +71,13 @@ offline verifier, and restore contract where its backup policy requires one.
 - Provider, filesystem, network, Runtime, Gateway, Flow, Knowledge, UI, OS,
   and device effects execute only after commit and never while a database
   transaction or store-executor permit is held.
-- Applied, rejected, and unknown provider outcomes retain the same idempotency
-  identity. Ambiguity cannot mint a replacement effect.
+- Applied outcomes retain canonical owner-specific evidence bound to the exact
+  idempotency identity and intent. Rejected and unknown outcomes cannot carry
+  applied state; ambiguity cannot mint a replacement effect.
+- Recording the exact applied capability-cutover observation retires the prior
+  publication, publishes the candidate, and advances the capability cursor in
+  one transaction. Later drain or teardown failure cannot roll that cursor
+  back and must reconcile with the same effect identity.
 - Capability discovery, leases, artifact reachability, diagnostics, backup,
   restore, and clean-state detection read the committed Control generation or
   a digest-bound registered external owner.
@@ -113,9 +118,13 @@ selection, the candidate capability descriptor, and the complete ordered
 effect-intent inventory for all five lifecycle actions. Provider selection is
 derived only for Tool and MCP surfaces; it is not an applied binding
 observation. Package, Grant, lifecycle, and selection facts stay inside the
-transaction instead of becoming pseudo effects. Typed endpoint/readiness, Flow
-artifact, and Knowledge application observations belong to post-effect
-orchestration in gate 3 and remain open, as does production conversion into the
+transaction instead of becoming pseudo effects. Schema v9 also persists and
+offline-verifies typed Capability Index, invocation-lease, Runtime
+Task/opaque-Service readiness, Flow artifact, Knowledge projection, and
+Skill/UI content application evidence. The cutover observation advances
+publication before drain; post-cutover required failure remains pending for
+same-key reconciliation. Real owner ports and the dispatcher that produce
+those observations remain gate 3 work, as does production conversion into the
 reviewed inputs used by the inactive kernel.
 
 Production activation is blocked until all gates below are true:

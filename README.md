@@ -1277,7 +1277,7 @@ The machine-checked
 current state leaf, external owner, operational file, and consumer that must
 switch together; it explicitly keeps production activation inactive and
 forbids dual writes or legacy fallback reads.
-The private A2 Control Store kernel now qualifies its clean-state schema-v8
+The private A2 Control Store kernel now qualifies its clean-state schema-v9
 aggregate. Each operation stores the canonical complete reviewed Plan envelope
 and versioned authorization evidence, then derives and revalidates its operation
 ID, Plan and authorization digests, action, root package, installation scope,
@@ -1319,17 +1319,29 @@ Package selection, lifecycle identity, Grants, and reviewed provider selection
 already commit in the aggregate, so they are not duplicated as pseudo external
 effects. Canonical payload bytes, their domain-separated idempotency key,
 digest, and relational projection commit together and are verified again after
-restart and by offline export verification. The kernel
-also qualifies typed generation transitions, full Grant and reviewed provider
-selection evidence, idempotent outbox reconciliation, bounded execution,
-corruption checks, and
-deterministic offline-verifiable export plus staged restore. It is not
+restart and by offline export verification. Applied outcomes persist canonical,
+owner-specific evidence instead of an arbitrary success digest: Capability
+Index and invocation-lease receipts, exact Runtime selection plus portable
+Task or opaque `gateway:` Service binding/readiness evidence, Flow artifact
+digests, Knowledge projection digests, and immutable Skill/UI content digests.
+Every application rebinds the exact idempotency key and intent; rejected or
+unknown outcomes retain diagnostic evidence only. Recording an applied
+capability-cutover observation retires the prior publication, publishes the
+exact candidate, and advances the capability cursor in that same transaction,
+before drain, retirement, or operation completion. A required post-cutover
+failure therefore remains reconciliation-pending and must reuse its original
+identity; it cannot roll back an already visible generation. Completion cannot
+predate any provider observation. The kernel also qualifies typed generation
+transitions, full Grant and reviewed provider selection evidence, idempotent
+outbox reconciliation, bounded execution, corruption checks, and deterministic
+offline-verifiable export plus staged restore. It is not
 constructed by production lifecycle code and does not create a second
 authority beside the current JSON stores. Production lifecycle conversion
 still must feed authorization-v2 Grant evidence, dispatch the derived inventory
-through typed owners, and record typed applied-provider observations without
-conflating them with reviewed selection. The external artifact/projection
-payload-owner registry and coordinated authority cutover also remain open.
+through real typed owner ports, and populate the qualified observation contract
+without conflating applied evidence with reviewed selection. The external
+artifact/projection payload-owner registry and coordinated authority cutover
+also remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

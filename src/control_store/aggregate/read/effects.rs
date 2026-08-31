@@ -18,8 +18,8 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                     c.subject_kind, c.package_id, c.package_lifecycle_generation,
                     c.surface_kind, c.surface_id, o.owner_kind, c.checkpoint_kind,
                     o.payload_json, o.payload_digest, c.required, o.status, o.attempt,
-                    o.claim_owner, o.claim_token, o.lease_until_ms, o.evidence_digest,
-                    o.error_code, o.observed_at_ms, i.scope_kind, i.scope_id,
+                    o.claim_owner, o.claim_token, o.lease_until_ms, o.application_json,
+                    o.evidence_digest, o.error_code, o.observed_at_ms, i.scope_kind, i.scope_id,
                     p.plan_digest, p.action, p.expected_generation,
                     p.expected_capability_generation
              FROM lifecycle_checkpoint c
@@ -51,15 +51,16 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                 row.get::<_, Option<String>>(15)?,
                 row.get::<_, Option<String>>(16)?,
                 row.get::<_, Option<i64>>(17)?,
-                row.get::<_, Option<String>>(18)?,
+                row.get::<_, Option<Vec<u8>>>(18)?,
                 row.get::<_, Option<String>>(19)?,
-                row.get::<_, Option<i64>>(20)?,
-                row.get::<_, String>(21)?,
+                row.get::<_, Option<String>>(20)?,
+                row.get::<_, Option<i64>>(21)?,
                 row.get::<_, String>(22)?,
                 row.get::<_, String>(23)?,
                 row.get::<_, String>(24)?,
-                row.get::<_, i64>(25)?,
+                row.get::<_, String>(25)?,
                 row.get::<_, i64>(26)?,
+                row.get::<_, i64>(27)?,
             ))
         })
         .map_err(|error| schema::sqlite_error("query Control Store effects", error))?
@@ -76,9 +77,9 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
             let installation_generation = from_i64(row.2)?;
             let package_lifecycle_generation = row.5.map(from_i64).transpose()?;
             let kind = ControlEffectKind::parse(&row.9)?;
-            let operation_action = parse_operation_action(&row.24)?;
-            let expected_generation = from_i64(row.25)?;
-            let expected_capability_generation = from_i64(row.26)?;
+            let operation_action = parse_operation_action(&row.25)?;
+            let expected_generation = from_i64(row.26)?;
+            let expected_capability_generation = from_i64(row.27)?;
             let target_generation = expected_generation
                 .checked_add(1)
                 .ok_or_else(|| corruption_error("A Control Store generation is exhausted."))?;
@@ -95,9 +96,9 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
             if usize::try_from(sequence).ok() != Some(index)
                 || intent.sequence != sequence
                 || intent.idempotency_key != row.1
-                || intent.installation.kind.as_str() != row.21
-                || intent.installation.id != row.22
-                || intent.plan_digest != row.23
+                || intent.installation.kind.as_str() != row.22
+                || intent.installation.id != row.23
+                || intent.plan_digest != row.24
                 || intent.installation_generation != installation_generation
                 || intent.owner.kind_name() != row.8
                 || intent.kind != kind
@@ -121,7 +122,7 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                 ));
             }
             intent
-                .validate_binding(installation, &row.23, operation_action)
+                .validate_binding(installation, &row.24, operation_action)
                 .map_err(|_| {
                     corruption_error(
                         "A Control Store effect payload does not bind its reviewed operation.",
@@ -169,6 +170,33 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                     "A Control Store effect payload does not bind its committed generation.",
                 ));
             }
+            let application = row
+                .18
+                .as_deref()
+                .map(|bytes| {
+                    let application = serde_json::from_slice::<ControlAppliedEffect>(bytes)
+                        .map_err(|_| {
+                            corruption_error(
+                                "A Control Store applied effect is not valid typed JSON.",
+                            )
+                        })?;
+                    if application.canonical_bytes().map_err(|_| {
+                        corruption_error(
+                            "A Control Store applied effect is not canonically encodable.",
+                        )
+                    })? != bytes
+                        || application.validate_for(&intent).is_err()
+                        || !application
+                            .descriptor_digest()
+                            .is_ok_and(|digest| Some(digest.as_str()) == row.19.as_deref())
+                    {
+                        return Err(corruption_error(
+                            "A Control Store applied effect drifted from its intent or digest.",
+                        ));
+                    }
+                    Ok(application)
+                })
+                .transpose()?;
             Ok(ControlEffectRecord {
                 operation_id: operation_id.to_string(),
                 intent,
@@ -178,9 +206,10 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                 claim_owner: row.15,
                 claim_token: row.16,
                 lease_until_ms: row.17.map(from_i64).transpose()?,
-                evidence_digest: row.18,
-                error_code: row.19,
-                observed_at_ms: row.20.map(from_i64).transpose()?,
+                application,
+                evidence_digest: row.19,
+                error_code: row.20,
+                observed_at_ms: row.21.map(from_i64).transpose()?,
             })
         })
         .collect()
@@ -260,10 +289,8 @@ pub(in crate::control_store::aggregate) fn read_next_unfinished_effect(
 ) -> UseResult<Option<ControlEffectRecord>> {
     let effects = read_effects_from(connection, installation, operation_id)?;
     Ok(effects.into_iter().find(|effect| {
-        !matches!(
-            effect.status,
-            ControlEffectStatus::Applied | ControlEffectStatus::Rejected
-        )
+        effect.status != ControlEffectStatus::Applied
+            && !(effect.status == ControlEffectStatus::Rejected && !effect.intent.required)
     }))
 }
 

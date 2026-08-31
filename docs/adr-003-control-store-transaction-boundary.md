@@ -115,7 +115,9 @@ After commit, a dispatcher claims one outbox item without retaining an open
 database transaction, calls the typed provider port, and records one of these
 observations in a later transaction:
 
-- `applied`: the exact idempotency key and evidence prove the effect;
+- `applied`: a canonical owner-specific application descriptor rebinds the
+  exact idempotency key, intent, provider selection, and portable materialized
+  evidence;
 - `rejected`: the provider proves that no effect was accepted; or
 - `unknown`: acceptance cannot be proven either way, so retry or operator
   reconciliation must reuse the same identity and fail closed on conflicting
@@ -142,6 +144,16 @@ Skill, or UI host. A caller cannot choose the sequence, owner, required policy,
 generation, or idempotency identity. Selected optional surface preparation may
 be rejected as degraded; the dependency closure of mandatory surfaces and all
 retirement effects remain required.
+
+Capability publication occurs when the exact typed cutover application is
+recorded, not when the surrounding operation later completes. That observation
+transaction retires the prior publication, publishes the candidate, and
+advances the capability cursor atomically. Drain and retirement then reconcile
+against an already-visible generation. A required failure after cutover must
+retain `effects-pending` state and reuse the same effect identity; rolling the
+cursor back would expose a combination that never existed. Event timestamps
+remain ordered as transition commit, provider observations, then terminal
+operation completion.
 
 ### Relational constraints carry ownership invariants
 
@@ -226,7 +238,7 @@ to a committed transaction plus explicit external-effect observations.
 ### Current qualification status
 
 The checked-in inactive kernel implements most of the local Control Store work
-in step 2, not the authority cutover. Schema v8 binds one exact installation
+in step 2, not the authority cutover. Schema v9 binds one exact installation
 and stores the complete generation history, canonical reviewed Plan envelopes,
 versioned authorization evidence, exact installation snapshots and relational
 graph projections, canonical full Workspace Grants, provider bindings,
@@ -261,10 +273,18 @@ payload bytes, a domain-separated idempotency key, their digest, and relational
 projection commit together. Package, Grant, lifecycle, and reviewed provider
 facts do not reappear as pseudo effects. Typed transactions
 enforce cursor compare-and-swap, root/action semantics, exact replay,
-required-effect failure,
-and capability retirement. Expired or explicitly unknown claims require an
-explicit reconciliation request and retain the same effect idempotency key,
-including after process restart.
+required-effect failure, and capability retirement. Applied observations store
+canonical owner-specific application descriptors: Capability Index and
+invocation-lease receipts, exact Runtime selection plus portable Task or opaque
+`gateway:` Service readiness evidence, Flow artifact digests, Knowledge
+projection digests, and immutable Skill/UI content digests. Rejected and
+unknown outcomes cannot carry applied state and retain only bounded diagnostic
+evidence. The cutover application advances publication in its observation
+transaction; post-cutover required failures stay reconciliation-pending rather
+than inventing a rollback. Expired, unknown, or post-cutover rejected claims
+require an explicit reconciliation request and retain the same effect
+idempotency key, including after process restart. Completion and offline
+verification enforce commit-before-observation-before-terminal time ordering.
 
 The kernel uses WAL with full synchronous durability and foreign-key
 enforcement, rejects unknown schema or filesystem state, and serializes
@@ -283,9 +303,9 @@ not yet register external artifact/projection payload owners or participate in
 live state-layout, reachability, diagnostics, backup, or restore orchestration.
 Existing JSON stores remain the only production authority. Production
 lifecycle conversion into reviewed Grant evidence, effect dispatch through
-typed external owners, and typed applied-provider observations, plus the full
-process-exit matrix, the indivisible reader/writer cutover, and deletion of
-legacy mutable stores remain open;
+real typed external owners that populate this observation contract, plus the
+full process-exit matrix, the indivisible reader/writer cutover, and deletion
+of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 

@@ -78,7 +78,7 @@ This freezes the implementation boundary only; production activation remains
 inactive and no A2 item is complete.
 
 The checked-in Control Store kernel is deliberately inactive. Its clean-state
-schema-v8 aggregate persists each canonical complete reviewed Plan envelope and
+schema-v9 aggregate persists each canonical complete reviewed Plan envelope and
 versioned authorization record. It derives operation identity, Plan and
 authorization digests, action, root package, installation scope, and generation
 cursors from that evidence and checks every relational projection after restart
@@ -105,14 +105,22 @@ exact reviewed provider selection. Package state, lifecycle identity, Grants,
 and provider selection remain transaction facts rather than pseudo effects.
 Payload bytes, a domain-separated idempotency key, digest, and relational
 projection commit together; claim and completion rebind them to the committed
-generation after restart and reject incomplete outbox inventory. The kernel also qualifies snapshots, full
-Grants, reviewed provider selections, capability history, explicit unknown/expired-claim
-reconciliation, deterministic offline-verifiable export, and clean staged
-restore. Production lifecycle code does not construct it. External
-artifact/projection payload ownership, the complete crash matrix, deterministic
+generation after restart and reject incomplete outbox inventory. Applied
+outcomes now retain canonical owner-specific Capability Index, invocation
+lease, Runtime Task/opaque-Service readiness, Flow artifact, Knowledge
+projection, or Skill/UI content evidence; rejected and unknown outcomes cannot
+carry applied state. Recording the cutover application atomically advances
+publication before drain. A later required failure remains effects-pending for
+same-key reconciliation instead of rolling back visible state, and completion
+cannot predate provider observations. The kernel also qualifies snapshots,
+full Grants, reviewed provider selections, capability history, explicit
+unknown/expired-claim reconciliation, deterministic offline-verifiable export,
+and clean staged restore. Production lifecycle code does not construct it.
+External artifact/projection payload ownership, the complete crash matrix, deterministic
 lifecycle conversion into authorization-v2 Grant evidence, effect dispatch
-through typed external owners, typed applied-provider observations, backup/restore and
-reachability integration, and the coordinated authority cutover remain open;
+through real typed external owners that populates the qualified observation
+contract, backup/restore and reachability integration, and the coordinated
+authority cutover remain open;
 no A2 roadmap item is complete yet.
 
 ## Implemented baseline
