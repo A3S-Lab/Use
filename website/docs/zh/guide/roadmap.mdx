@@ -105,10 +105,12 @@ generation；operation completion 也不能早于 provider observation。该内�
 Control generation、registry/owner schema、digest 与有界计数的 receipt。私有 session 现在会在一个
 排他 maintenance fence 下冻结精确的规范 Control export digest，并在 owner I/O 前释放 SQLite 事务。
 Knowledge owner 已能生成并独立复验受注册大小上限约束的 OKF SQLite/FTS5 archive 与规范
-binding/selection inventory；数据库缺失时使用不会创建 live state 的零文件 manifest。它仍未接入旧
-backup scanner。其余 owner adapter、Knowledge staged restore/activation 与 Control effect history
-对账、完整崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与 reachability 集成和协调一致的
-权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+binding/selection inventory；数据库缺失时使用不会创建 live state 的零文件 manifest。Snapshot 创建与
+离线验证都要求精确绑定的 Control export，把每个保留 incarnation 关联到其 prepare intent 与已提交
+OKF bundle，核对 applied observation/projection evidence，并要求已删除或缺失的 applied data 具有对应
+remove effect。Claimed 与 unknown outcome 仅作为 reconciliation evidence。它仍未接入旧 backup scanner。
+其余 owner adapter、Knowledge staged restore/activation、完整崩溃矩阵、生产 lifecycle 转换与 dispatch、
+backup/restore 与 reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

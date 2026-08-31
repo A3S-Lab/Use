@@ -109,7 +109,7 @@ impl ControlStore {
             .export(physical_database_path, self.installation.clone())
             .await?;
         filesystem::validate_initialized(&self.state_root, &self.database_path).await?;
-        Ok(export.bytes)
+        Ok(export.into_bytes())
     }
 
     /// Freeze one canonical Control export while retaining the installation's
@@ -133,9 +133,7 @@ impl ControlStore {
         ControlPayloadSnapshotSession::new(
             registry,
             self.installation.clone(),
-            export.current_generation,
-            export.descriptor_digest,
-            export.bytes,
+            export,
             self.state_root.clone(),
             maintenance,
         )

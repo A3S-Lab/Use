@@ -125,11 +125,15 @@ digest under one exclusive maintenance fence and releases the SQLite
 transaction before owner I/O. The Knowledge owner can create and independently
 verify a registered-size-bounded OKF SQLite/FTS5 archive and canonical
 binding/selection inventory; absence is a zero-file manifest that creates no
-live state. It is not wired to the legacy backup scanner. The other owner
-adapters, Knowledge staged restore/activation and reconciliation with Control
-effect history, the complete crash matrix, production conversion and dispatch,
-backup/restore and reachability integration, and the coordinated authority
-cutover remain open;
+live state. Snapshot creation and offline verification require the exact bound
+Control export, join every retained incarnation to its prepare intent and
+committed OKF bundle, compare applied observation/projection evidence, and
+require a matching remove effect for removed or missing applied data. Claimed
+and unknown outcomes remain reconciliation evidence only. It is not wired to
+the legacy backup scanner. The other owner adapters, Knowledge staged
+restore/activation, the complete crash matrix, production conversion and
+dispatch, backup/restore and reachability integration, and the coordinated
+authority cutover remain open;
 no A2 roadmap item is complete yet.
 
 ## Implemented baseline

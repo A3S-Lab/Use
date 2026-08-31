@@ -382,6 +382,8 @@ control_store_cutover {
     state_paths = ["knowledge"]
     implementation = [
       "src/control_store/payload_owner/knowledge.rs",
+      "src/control_store/payload_owner/knowledge/control.rs",
+      "src/control_store/payload_owner/knowledge/inventory.rs",
       "src/okf_knowledge/sqlite/backup.rs",
       "src/okf_knowledge/sqlite/mod.rs",
       "src/okf_knowledge/store.rs",

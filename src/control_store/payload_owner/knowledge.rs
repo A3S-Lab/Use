@@ -15,8 +15,10 @@ use crate::okf_knowledge::{
     SqliteOkfKnowledgeAdapter, VerifiedOkfKnowledgeBackup,
 };
 
+mod control;
 mod inventory;
 
+use control::VerifiedControlKnowledgeHistory;
 use inventory::knowledge_inventory_digest;
 
 pub(in crate::control_store) const CONTROL_KNOWLEDGE_PAYLOAD_SNAPSHOT_SCHEMA: &str =
@@ -248,9 +250,12 @@ impl ControlKnowledgePayloadSnapshot {
         &self,
         registry: &ControlPayloadOwnerRegistry,
         expected_binding: &ControlPayloadSnapshotBinding,
+        control_export: &[u8],
         archive_path: Option<PathBuf>,
     ) -> UseResult<VerifiedControlKnowledgePayloadSnapshot> {
         self.validate(registry, expected_binding)?;
+        let control_history =
+            VerifiedControlKnowledgeHistory::verify(registry, expected_binding, control_export)?;
         let verified = match (&self.manifest.payload, archive_path) {
             (ControlKnowledgePayloadState::Absent, None) => None,
             (
@@ -299,7 +304,9 @@ impl ControlKnowledgePayloadSnapshot {
                 ))
             }
         };
-        Ok(VerifiedControlKnowledgePayloadSnapshot { backup: verified })
+        let verified = VerifiedControlKnowledgePayloadSnapshot { backup: verified };
+        control_history.reconcile(verified.bindings())?;
+        Ok(verified)
     }
 }
 
@@ -330,6 +337,11 @@ impl ControlPayloadSnapshotSession {
         created_at_ms: u64,
     ) -> UseResult<ControlKnowledgePayloadSnapshot> {
         let limits = knowledge_contract(self.registry())?;
+        let control_history = VerifiedControlKnowledgeHistory::verify(
+            self.registry(),
+            self.binding(),
+            self.control_export(),
+        )?;
         let adapter = SqliteOkfKnowledgeAdapter::with_policy(
             self.state_root().to_path_buf(),
             self.binding().installation.clone(),
@@ -342,6 +354,7 @@ impl ControlPayloadSnapshotSession {
                 destination.clone(),
                 created_at_ms,
                 limits.max_payload_bytes,
+                move |inventory| control_history.reconcile(&inventory.bindings),
             )
             .await?;
         let (payload, bindings, selected) = match backup {

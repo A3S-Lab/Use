@@ -30,7 +30,7 @@ use crate::plugin_lifecycle::PluginLifecycleAction;
 mod effect_fixtures;
 mod effect_observations;
 mod effects;
-mod fixtures;
+pub(super) mod fixtures;
 mod generations;
 mod grant_fixtures;
 mod grants;

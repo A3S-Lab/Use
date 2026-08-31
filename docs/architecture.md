@@ -150,8 +150,13 @@ database transaction or executor permit, across owner I/O. The Knowledge owner
 has the first real adapter: it snapshots and offline-verifies a bounded
 scope-local OKF SQLite/FTS5 archive with canonical retained-binding/selection
 inventory evidence, or emits a zero-file absent manifest without mutating live
-state. The other three owner adapters, Knowledge staged restore/activation and
-Control-effect reconciliation, complete-set orchestration, and the coordinated
+state. Snapshot creation and offline verification both revalidate the exact
+bound Control export, require every retained incarnation to join its original
+prepare intent and committed OKF bundle, and compare applied observation and
+capability-projection evidence. Removed or missing applied data requires a
+same-incarnation remove effect; ambiguous claimed/unknown outcomes remain
+reconciliation evidence only. The other three owner adapters, Knowledge staged
+restore/activation, complete-set orchestration, and the coordinated
 reader/writer cutover remain A2 work. The machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual

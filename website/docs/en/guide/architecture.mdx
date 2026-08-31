@@ -189,10 +189,15 @@ freezes one canonical Control export digest under the exclusive maintenance
 fence without holding a database transaction across owner I/O. The Knowledge
 owner is the first qualified adapter: it creates and offline-verifies a bounded
 OKF SQLite/FTS5 archive and canonical binding/selection inventory, or records
-an absent database as zero files without mutating live state. The other owner
-adapters, Knowledge staged restore/activation and Control-effect
-reconciliation, production orchestration, and the coordinated authority
-cutover remain disabled until every consumer can switch together.
+an absent database as zero files without mutating live state. Both live
+snapshot creation and offline verification require the exact bound Control
+export. Every retained Knowledge incarnation must join its original prepare
+intent and committed OKF bundle; applied observation/projection evidence must
+match, and removed or missing applied payload needs the matching remove effect.
+Claimed and unknown outcomes remain reconciliation evidence, never desired
+state. The other owner adapters, Knowledge staged restore/activation,
+production orchestration, and the coordinated authority cutover remain
+disabled until every consumer can switch together.
 
 ## Runtime visibility
 

@@ -222,15 +222,21 @@ impl SqliteOkfKnowledgeAdapter {
 
     /// Snapshot an existing database while an installation-wide exclusive
     /// maintenance guard is already held. An absent database is represented
-    /// as `None` without creating Knowledge directories or lock files.
-    pub(crate) async fn backup_if_present_under_maintenance(
+    /// as `None` without creating Knowledge directories or lock files. The
+    /// caller validates the exact temporary-snapshot inventory before the
+    /// destination archive is written.
+    pub(crate) async fn backup_if_present_under_maintenance<F>(
         &self,
         maintenance: &StateMaintenanceGuard,
         scope: &PlanScope,
         destination: impl Into<PathBuf>,
         created_at_ms: u64,
         max_archive_bytes: u64,
-    ) -> UseResult<Option<OkfKnowledgeBackupManifest>> {
+        validate_inventory: F,
+    ) -> UseResult<Option<OkfKnowledgeBackupManifest>>
+    where
+        F: FnOnce(&OkfKnowledgeRestoreInventory) -> UseResult<()> + Send + 'static,
+    {
         if !maintenance.is_exclusive_for(&self.state_root) {
             return Err(UseError::new(
                 "use.okf.knowledge_maintenance_mismatch",
@@ -247,6 +253,10 @@ impl SqliteOkfKnowledgeAdapter {
         )
         .await?
         else {
+            validate_inventory(&OkfKnowledgeRestoreInventory {
+                bindings: Vec::new(),
+                selected: Vec::new(),
+            })?;
             tokio::task::spawn_blocking(move || backup::validate_new_destination(&destination))
                 .await
                 .map_err(|error| {
@@ -257,13 +267,14 @@ impl SqliteOkfKnowledgeAdapter {
         let scope = scope.clone();
         let policy = self.policy;
         tokio::task::spawn_blocking(move || {
-            backup::create(
+            backup::create_validated(
                 &database_path,
                 &scope,
                 &policy,
                 &destination,
                 created_at_ms,
                 max_archive_bytes,
+                validate_inventory,
             )
         })
         .await
