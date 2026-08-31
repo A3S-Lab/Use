@@ -348,14 +348,13 @@ async fn cleanup_quiescent_sidecars(candidate: &Path) -> UseResult<()> {
     sync_directory(parent).await
 }
 
+#[cfg(windows)]
 async fn remove_quiescent_sidecar(path: &Path) -> UseResult<()> {
-    #[cfg(windows)]
     let mut attempts = 0_u8;
     loop {
         match fs::remove_file(path).await {
             Ok(()) => return Ok(()),
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            #[cfg(windows)]
             Err(error)
                 if attempts < 80
                     && (error.kind() == io::ErrorKind::PermissionDenied
@@ -371,6 +370,18 @@ async fn remove_quiescent_sidecar(path: &Path) -> UseResult<()> {
                 ))
             }
         }
+    }
+}
+
+#[cfg(not(windows))]
+async fn remove_quiescent_sidecar(path: &Path) -> UseResult<()> {
+    match fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(restore_staging_io(
+            "remove quiescent Control SQLite sidecar",
+            error,
+        )),
     }
 }
 
