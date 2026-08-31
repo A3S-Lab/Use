@@ -18,13 +18,151 @@ use crate::cognitive_package::{
 
 mod file;
 
-use file::{inspect_owned_regular_file, open_owned_regular_file, read_record};
+use file::read_record;
+pub(super) use file::{inspect_owned_regular_file, open_owned_regular_file};
 
 pub(super) struct CapturedHostProjection {
     pub(super) payload: ControlHostProjectionState,
     pub(super) validated_index_records: u64,
     pub(super) entries: Vec<ControlHostProjectionEntry>,
     pub(super) archive_path: Option<PathBuf>,
+}
+
+pub(super) struct HostProjectionArchiveReader<'a> {
+    reader: fs::File,
+    path: PathBuf,
+    before_len: u64,
+    before_modified: Option<std::time::SystemTime>,
+    expected_digest: String,
+    entries: &'a [ControlHostProjectionEntry],
+    installation: &'a InstallationId,
+    index: usize,
+    archive_digest: Sha256,
+}
+
+impl<'a> HostProjectionArchiveReader<'a> {
+    pub(super) async fn open(
+        path: &Path,
+        expected_bytes: u64,
+        expected_digest: &str,
+        entries: &'a [ControlHostProjectionEntry],
+        installation: &'a InstallationId,
+    ) -> UseResult<Self> {
+        let (reader, before) = open_owned_regular_file(path, "Host projection archive").await?;
+        if before.len() != expected_bytes {
+            return Err(host_projection_error(
+                "The Host projection archive length differs from its manifest.",
+            ));
+        }
+        Ok(Self {
+            reader,
+            path: path.to_path_buf(),
+            before_len: before.len(),
+            before_modified: before.modified().ok(),
+            expected_digest: expected_digest.to_owned(),
+            entries,
+            installation,
+            index: 0,
+            archive_digest: Sha256::new(),
+        })
+    }
+
+    pub(super) async fn next(
+        &mut self,
+    ) -> UseResult<
+        Option<(
+            ControlHostProjectionEntry,
+            Vec<u8>,
+            HostProjectionSnapshotRecord,
+        )>,
+    > {
+        let Some(entry) = self.entries.get(self.index).cloned() else {
+            return Ok(None);
+        };
+        let length = usize::try_from(entry.length)
+            .map_err(|_| host_projection_error("A Host archive record length is invalid."))?;
+        let mut bytes = vec![0_u8; length];
+        self.reader
+            .read_exact(&mut bytes)
+            .await
+            .map_err(|_| host_projection_error("The Host projection archive is truncated."))?;
+        if sha256(&bytes) != entry.sha256 {
+            return Err(host_projection_error(
+                "A Host archive record differs from its manifest digest.",
+            ));
+        }
+        let record =
+            validate_host_projection_snapshot_record(&entry.path, &bytes, self.installation)
+                .map_err(|_| {
+                    host_projection_error("An archived Host record failed owner-native validation.")
+                })?;
+        let expected_kind = match record.kind() {
+            HostProjectionSnapshotRecordKind::Request => ControlHostProjectionEntryKind::Request,
+            HostProjectionSnapshotRecordKind::Cancellation => {
+                ControlHostProjectionEntryKind::Cancellation
+            }
+        };
+        if entry.kind != expected_kind {
+            return Err(host_projection_error(
+                "An archived Host record kind differs from its manifest.",
+            ));
+        }
+        self.archive_digest.update(&bytes);
+        self.index += 1;
+        Ok(Some((entry, bytes, record)))
+    }
+
+    pub(super) async fn finish(mut self) -> UseResult<()> {
+        if self.index != self.entries.len() {
+            return Err(host_projection_error(
+                "The Host projection archive was not completely consumed.",
+            ));
+        }
+        let mut trailing = [0_u8; 1];
+        if self
+            .reader
+            .read(&mut trailing)
+            .await
+            .map_err(|error| archive_io("finish Host projection archive", error))?
+            != 0
+        {
+            return Err(host_projection_error(
+                "The Host projection archive contains trailing unaccounted bytes.",
+            ));
+        }
+        if format!("sha256:{:x}", self.archive_digest.finalize()) != self.expected_digest {
+            return Err(host_projection_error(
+                "The Host projection archive digest differs from its manifest.",
+            ));
+        }
+        let opened_after = self
+            .reader
+            .metadata()
+            .await
+            .map_err(|error| archive_io("reinspect opened Host projection archive", error))?;
+        if a3s_use_core::metadata_is_link_or_reparse_point(&opened_after)
+            || !opened_after.is_file()
+            || opened_after.len() != self.before_len
+            || self
+                .before_modified
+                .is_some_and(|modified| opened_after.modified().ok() != Some(modified))
+        {
+            return Err(host_projection_error(
+                "The Host projection archive changed during offline verification.",
+            ));
+        }
+        let after = inspect_owned_regular_file(&self.path, "Host projection archive").await?;
+        if after.len() != self.before_len
+            || self
+                .before_modified
+                .is_some_and(|modified| after.modified().ok() != Some(modified))
+        {
+            return Err(host_projection_error(
+                "The Host projection archive changed during offline verification.",
+            ));
+        }
+        Ok(())
+    }
 }
 
 pub(super) async fn snapshot_live<F>(
@@ -200,84 +338,20 @@ async fn verify_archive_file(
     entries: &[ControlHostProjectionEntry],
     installation: &InstallationId,
 ) -> UseResult<Vec<HostProjectionSnapshotRecord>> {
-    let (mut reader, before) = open_owned_regular_file(path, "Host projection archive").await?;
-    if before.len() != expected_bytes {
-        return Err(host_projection_error(
-            "The Host projection archive length differs from its manifest.",
-        ));
-    }
-    let before_modified = before.modified().ok();
-    let mut archive_digest = Sha256::new();
+    let mut reader = HostProjectionArchiveReader::open(
+        path,
+        expected_bytes,
+        expected_digest,
+        entries,
+        installation,
+    )
+    .await?;
     let mut records = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let length = usize::try_from(entry.length)
-            .map_err(|_| host_projection_error("A Host archive record length is invalid."))?;
-        let mut bytes = vec![0_u8; length];
-        reader
-            .read_exact(&mut bytes)
-            .await
-            .map_err(|_| host_projection_error("The Host projection archive is truncated."))?;
-        if sha256(&bytes) != entry.sha256 {
-            return Err(host_projection_error(
-                "A Host archive record differs from its manifest digest.",
-            ));
-        }
-        let record = validate_host_projection_snapshot_record(&entry.path, &bytes, installation)
-            .map_err(|_| {
-                host_projection_error("An archived Host record failed owner-native validation.")
-            })?;
-        let expected_kind = match record.kind() {
-            HostProjectionSnapshotRecordKind::Request => ControlHostProjectionEntryKind::Request,
-            HostProjectionSnapshotRecordKind::Cancellation => {
-                ControlHostProjectionEntryKind::Cancellation
-            }
-        };
-        if entry.kind != expected_kind {
-            return Err(host_projection_error(
-                "An archived Host record kind differs from its manifest.",
-            ));
-        }
-        archive_digest.update(&bytes);
+    while let Some((_, _, record)) = reader.next().await? {
         records.push(record);
     }
-    let mut trailing = [0_u8; 1];
-    if reader
-        .read(&mut trailing)
-        .await
-        .map_err(|error| archive_io("finish Host projection archive", error))?
-        != 0
-    {
-        return Err(host_projection_error(
-            "The Host projection archive contains trailing unaccounted bytes.",
-        ));
-    }
-    if format!("sha256:{:x}", archive_digest.finalize()) != expected_digest {
-        return Err(host_projection_error(
-            "The Host projection archive digest differs from its manifest.",
-        ));
-    }
+    reader.finish().await?;
     validate_host_projection_snapshot_set(&records, installation)?;
-    let opened_after = reader
-        .metadata()
-        .await
-        .map_err(|error| archive_io("reinspect opened Host projection archive", error))?;
-    if a3s_use_core::metadata_is_link_or_reparse_point(&opened_after)
-        || !opened_after.is_file()
-        || opened_after.len() != before.len()
-        || before_modified.is_some_and(|modified| opened_after.modified().ok() != Some(modified))
-    {
-        return Err(host_projection_error(
-            "The Host projection archive changed during offline verification.",
-        ));
-    }
-    let after = inspect_owned_regular_file(path, "Host projection archive").await?;
-    if after.len() != before.len()
-        || before_modified.is_some_and(|modified| after.modified().ok() != Some(modified))
-    {
-        return Err(host_projection_error(
-            "The Host projection archive changed during offline verification.",
-        ));
-    }
     Ok(records)
 }
 

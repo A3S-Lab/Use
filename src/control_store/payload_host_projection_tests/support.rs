@@ -20,7 +20,7 @@ fn digest(seed: char) -> String {
     format!("sha256:{}", seed.to_string().repeat(64))
 }
 
-pub(super) fn paths(temporary: &TempDir) -> ExtensionPaths {
+pub(in crate::control_store) fn paths(temporary: &TempDir) -> ExtensionPaths {
     ExtensionPaths::new(
         temporary.path().join("data"),
         temporary.path().join("state"),
@@ -29,7 +29,7 @@ pub(super) fn paths(temporary: &TempDir) -> ExtensionPaths {
     .unwrap()
 }
 
-pub(super) async fn seed_host_projection(
+pub(in crate::control_store) async fn seed_host_projection(
     store: &ControlStore,
     paths: &ExtensionPaths,
 ) -> Vec<(String, Vec<u8>)> {
@@ -238,7 +238,7 @@ fn host_state(
     state
 }
 
-pub(super) fn registry() -> ControlPayloadOwnerRegistry {
+pub(in crate::control_store) fn registry() -> ControlPayloadOwnerRegistry {
     ControlPayloadOwnerRegistry::new(
         ControlPayloadOwnerId::ALL
             .into_iter()

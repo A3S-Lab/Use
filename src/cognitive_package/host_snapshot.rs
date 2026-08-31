@@ -16,8 +16,10 @@ use super::host_store::{
 mod filesystem;
 #[cfg(test)]
 mod fixtures;
+mod restore;
 
 pub(crate) use filesystem::scan_host_projection_snapshot;
+pub(crate) use restore::HostProjectionRestoreIndexBuilder;
 pub(crate) const HOST_PROJECTION_SNAPSHOT_MAX_RECORD_BYTES: u64 =
     super::host_store::MAX_HOST_RECORD_BYTES;
 

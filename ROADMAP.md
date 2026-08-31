@@ -615,25 +615,35 @@ record without replacement. Digest-named deterministic partials recover
 interrupted record writes; after activation starts, only an exact snapshot
 subset may replay. The final path-free result is bound to the owner manifest and
 inventory. This adapter is not connected to the legacy scanner.
-The Host protocol projection is now the third concrete snapshot adapter. Its
-owner-native scanner treats immutable request-to-plan records, optional
-terminal outcomes, and cancellations as the only semantic archive sources.
-Operation lookup aliases and latest-enablement diagnostic indexes are derived:
-the scanner validates them against their source requests, rejects missing,
-stale, orphaned, linked, or unknown layouts, and excludes them from the
-archive. Exact and legacy cancellation aliases normalize to one canonical
-binding. A bounded no-clobber archive is published only after a second live
-scan and after every Host plan, outcome, cancellation time, completion result
-digest, package identity, desired state, selected surface, package generation,
-and capability generation is reconciled with the exact bound Control export.
-Receipt and observed-health evidence remain Host observations and cannot choose
-Control desired state. The path-free manifest and receipt support exact offline
-verification, explicit zero-file absence, and no-change Host requests without
-inventing an operation. This adapter remains inactive and has no restore path.
-A clean-target Host restore adapter, the Restore Coordinator adapter,
-complete-set orchestration, the full subprocess-exit matrix, production Grant
-conversion and effect dispatch, indivisible consumer cutover, and deletion of
-legacy mutable stores therefore remain open;
+The Host protocol projection is now the third concrete snapshot and
+clean-target restore adapter. Its owner-native scanner treats immutable
+request-to-plan records, optional terminal outcomes, and cancellations as the
+only semantic archive sources. Operation lookup aliases and latest-enablement
+diagnostic indexes are derived: the scanner validates them against their source
+requests, rejects missing, stale, orphaned, linked, or unknown layouts, and
+excludes them from the archive. Exact and legacy cancellation aliases normalize
+to one canonical binding. A bounded no-clobber archive is published only after
+a second live scan and after every Host plan, outcome, cancellation time,
+completion result digest, package identity, desired state, selected surface,
+package generation, and capability generation is reconciled with the exact
+bound Control export. Receipt and observed-health evidence remain Host
+observations and cannot choose Control desired state. The path-free manifest
+and receipt support exact offline verification, explicit zero-file absence, and
+no-change Host requests without inventing an operation. An offline-verified
+snapshot can stage its archive and build a complete target-local Host owner
+root from exact semantic source bytes plus newly derived canonical operation and
+latest-enablement indexes. Legacy aliases and locks are excluded. Activation
+requires the exact exclusive maintenance guard and no existing live owner root,
+re-runs the owner-native semantic scan, persists a snapshot-bound activation
+marker, and atomically publishes the whole directory without replacement.
+Deterministic archive, record, and marker partial recovery covers every staged
+transition, and the same attempt reconciles the post-publication/pre-result
+boundary. Drift, links, rebinding, and preexisting state fail closed; absence
+creates no owner root and the result is path-free. This adapter remains
+inactive. The Restore Coordinator adapter, complete-set orchestration, the full
+subprocess-exit matrix, production Grant conversion and effect dispatch,
+indivisible consumer cutover, and deletion of legacy mutable stores therefore
+remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

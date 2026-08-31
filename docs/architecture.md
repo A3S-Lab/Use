@@ -177,10 +177,21 @@ a clean record inventory and atomically marks the archive as activating before
 publishing records without replacement. Digest-named deterministic partials
 recover interrupted writes, while replay accepts only an exact snapshot subset
 and returns a canonical path-free result.
-These are owner primitives, not cross-owner restore authority. The Host
-projection and Restore Coordinator adapters, complete-set orchestration, full
-subprocess-exit qualification, and the coordinated reader/writer cutover remain
-A2 work. The machine-checked
+The Host protocol projection is the third concrete adapter. Its owner-native
+scanner archives immutable request-to-plan records, optional outcomes, and
+canonical cancellations while treating operation aliases and latest-enablement
+diagnostics as validation-only derived indexes. A verified snapshot can build a
+complete target-local owner root from the exact semantic source bytes and
+newly derived canonical indexes; legacy aliases and locks remain excluded.
+Activation requires the exact exclusive maintenance fence and an absent live
+owner root, persists a snapshot-bound durable marker, revalidates both the exact
+tree and owner-native semantic scan, and publishes the whole root by one atomic
+no-clobber directory move. Deterministic archive, record, and marker partials
+plus exact post-publication replay close each local crash boundary.
+These are owner primitives, not cross-owner restore authority. The Restore
+Coordinator adapter, complete-set orchestration, full subprocess-exit
+qualification, and the coordinated reader/writer cutover remain A2 work. The
+machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual
 state layout. It is an implementation prerequisite, not an activated migration

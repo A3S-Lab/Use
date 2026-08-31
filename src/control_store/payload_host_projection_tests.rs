@@ -1,4 +1,4 @@
-mod support;
+pub(in crate::control_store) mod support;
 
 use tempfile::TempDir;
 

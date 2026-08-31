@@ -119,13 +119,17 @@ snapshot、离线 verifier 与 clean-target restore boundary。它复用各认�
 检查、二次扫描、no-clobber 发布与精确 archive 验证会拒绝漂移和替换。通过离线验证的 archive 可以在不
 触碰 live owner path 的前提下暂存；激活要求精确的排他 maintenance fence、干净的初始 record inventory、
 原子 activating 标记与以 digest 命名的确定性 partial，从而只重放精确 snapshot 子集。Host protocol
-projection 现在已有第三个具体 snapshot 和 offline-verification boundary。它只归档经过 owner validator
-验证的 request-to-plan、可选 outcome 与规范 cancellation record。派生 operation 与 latest-enablement index
-必须完整且一致，但不会进入 archive。第二次有界 no-follow 扫描和精确 Control-export reconciliation 会在
-no-clobber 发布前完成，因此 projection 无权选择 desired state 或 package/capability generation。No-change
-request 会被显式保留，而不会虚构 operation。Clean-target Host restore、Restore Coordinator adapter、
-complete-set coordinator、完整 subprocess 崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与
-reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+projection 现在已有第三个具体 snapshot、offline-verification 与 clean-target restore boundary。它只归档
+经过 owner validator 验证的 request-to-plan、可选 outcome 与规范 cancellation record。派生 operation 与
+latest-enablement index 必须完整且一致，但不会进入 archive。第二次有界 no-follow 扫描和精确
+Control-export reconciliation 会在 no-clobber 发布前完成，因此 projection 无权选择 desired state 或
+package/capability generation。No-change request 会被显式保留，而不会虚构 operation。通过验证的 snapshot
+可以用精确源字节与重新推导的规范 index 构造完整的 target-local owner root，并排除 legacy alias 与 lock。
+激活要求精确的排他 maintenance fence 且 live root 不存在，写入绑定 snapshot 的 marker，重新审计完整物理
+与语义 inventory，再原子发布整个 root 且不覆盖任何 target。确定性的 archive、record 与 marker partial，
+加上发布后的 replay，覆盖本地崩溃边界。Restore Coordinator adapter、complete-set coordinator、完整
+subprocess 崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与 reachability 集成和协调一致的权威
+切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

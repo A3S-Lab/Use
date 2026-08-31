@@ -44,7 +44,7 @@ pub(super) async fn read_record(path: &Path, expected_length: u64) -> UseResult<
     Ok(bytes)
 }
 
-pub(super) async fn open_owned_regular_file(
+pub(in crate::control_store::payload_owner::host_projection) async fn open_owned_regular_file(
     path: &Path,
     label: &str,
 ) -> UseResult<(fs::File, std::fs::Metadata)> {
@@ -77,7 +77,7 @@ pub(super) async fn open_owned_regular_file(
     Ok((file, metadata))
 }
 
-pub(super) async fn inspect_owned_regular_file(
+pub(in crate::control_store::payload_owner::host_projection) async fn inspect_owned_regular_file(
     path: &Path,
     label: &str,
 ) -> UseResult<std::fs::Metadata> {

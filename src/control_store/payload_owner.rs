@@ -5,11 +5,11 @@
 //! and canonical snapshot evidence. The Knowledge owner has a qualified
 //! snapshot, offline verifier, and clean-target staged restore/activation. The
 //! planning-and-diagnostic owner has the same qualified boundary for terminal
-//! records. The Host projection owner now has a qualified snapshot and offline
-//! verifier, but no restore adapter. No owner participates in the production
-//! state-backup path yet. The remaining restore/coordinator adapters and the
-//! complete-set coordinator must be complete before the coordinated authority
-//! cutover.
+//! records. The Host projection owner now has the same qualified clean-target
+//! restore boundary for its semantic records and canonical derived indexes. No
+//! owner participates in the production state-backup path yet. The remaining
+//! restore/coordinator adapters and the complete-set coordinator must be
+//! complete before the coordinated authority cutover.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
@@ -24,8 +24,10 @@ mod snapshot;
 
 #[cfg(test)]
 pub(in crate::control_store) use host_projection::{
-    ControlHostProjectionEntryKind, ControlHostProjectionSnapshot, ControlHostProjectionState,
-    VerifiedControlHostProjectionSnapshot, CONTROL_HOST_PROJECTION_SNAPSHOT_SCHEMA,
+    ControlHostProjectionEntryKind, ControlHostProjectionRestoreResult,
+    ControlHostProjectionRestoreState, ControlHostProjectionSnapshot, ControlHostProjectionState,
+    StagedControlHostProjectionRestore, VerifiedControlHostProjectionSnapshot,
+    CONTROL_HOST_PROJECTION_SNAPSHOT_SCHEMA,
 };
 #[cfg(test)]
 pub(in crate::control_store) use knowledge::{
