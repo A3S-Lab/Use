@@ -155,9 +155,15 @@ bound Control export, require every retained incarnation to join its original
 prepare intent and committed OKF bundle, and compare applied observation and
 capability-projection evidence. Removed or missing applied data requires a
 same-incarnation remove effect; ambiguous claimed/unknown outcomes remain
-reconciliation evidence only. The other three owner adapters, Knowledge staged
-restore/activation, complete-set orchestration, and the coordinated
-reader/writer cutover remain A2 work. The machine-checked
+reconciliation evidence only. An offline-verified Knowledge snapshot can also
+stage its exact SQLite database beneath a clean target state root without
+touching live payload state. Activation re-audits the candidate under the exact
+exclusive maintenance fence, refuses an unowned, existing, or ambiguous
+target, and publishes by one replayable atomic rename with a canonical
+path-free result while the same staged attempt remains available.
+This is an owner primitive, not cross-owner restore authority. The other three
+owner adapters, complete-set orchestration, full process-exit qualification,
+and the coordinated reader/writer cutover remain A2 work. The machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual
 state layout. It is an implementation prerequisite, not an activated migration

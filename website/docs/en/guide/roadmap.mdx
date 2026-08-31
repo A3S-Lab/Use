@@ -130,9 +130,14 @@ Control export, join every retained incarnation to its prepare intent and
 committed OKF bundle, compare applied observation/projection evidence, and
 require a matching remove effect for removed or missing applied data. Claimed
 and unknown outcomes remain reconciliation evidence only. It is not wired to
-the legacy backup scanner. The other owner adapters, Knowledge staged
-restore/activation, the complete crash matrix, production conversion and
-dispatch, backup/restore and reachability integration, and the coordinated
+the legacy backup scanner. A verified Knowledge snapshot can now stage and
+re-audit its exact database beneath a clean target state root, then publish it
+by one atomic rename while the exact exclusive maintenance fence is held.
+Post-rename retry is idempotent while that staged attempt and fence remain held.
+Unowned, existing, ambiguous, linked, rebound, or policy-mismatched targets
+fail closed, and absent state creates no payload. The other owner adapters,
+complete-set coordination, the complete crash matrix, production conversion
+and dispatch, backup/restore and reachability integration, and the coordinated
 authority cutover remain open;
 no A2 roadmap item is complete yet.
 

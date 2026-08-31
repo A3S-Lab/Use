@@ -45,7 +45,9 @@ pub use sqlite::{
     OKF_KNOWLEDGE_BACKUP_RETENTION_RESULT_SCHEMA, OKF_KNOWLEDGE_BACKUP_SCHEMA,
     OKF_KNOWLEDGE_INTEGRITY_REPORT_SCHEMA, OKF_KNOWLEDGE_SEARCH_INDEX_REPAIR_SCHEMA,
 };
-pub(crate) use sqlite::{ScopeDatabaseGuard, VerifiedOkfKnowledgeBackup};
+pub(crate) use sqlite::{
+    ScopeDatabaseGuard, VerifiedOkfKnowledgeBackup, MAX_BACKUP_DATABASE_BYTES,
+};
 pub use store::{
     OkfKnowledgeBindingSnapshot, OkfKnowledgeBindingStore, MAX_OKF_KNOWLEDGE_GENERATIONS,
 };

@@ -384,6 +384,8 @@ control_store_cutover {
       "src/control_store/payload_owner/knowledge.rs",
       "src/control_store/payload_owner/knowledge/control.rs",
       "src/control_store/payload_owner/knowledge/inventory.rs",
+      "src/control_store/payload_owner/knowledge/restore.rs",
+      "src/control_store/payload_owner/knowledge/restore/filesystem.rs",
       "src/okf_knowledge/sqlite/backup.rs",
       "src/okf_knowledge/sqlite/mod.rs",
       "src/okf_knowledge/store.rs",

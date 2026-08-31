@@ -6,7 +6,7 @@ use super::payload_owner::*;
 use super::ControlStore;
 use crate::okf_knowledge::{OkfKnowledgeStoragePolicy, SqliteOkfKnowledgeAdapter};
 
-mod support;
+pub(super) mod support;
 
 use support::*;
 

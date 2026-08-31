@@ -586,11 +586,21 @@ must match the retained observation and capability projection; removed or
 missing applied payload must have a same-incarnation remove effect. Claimed and
 unknown outcomes remain explicit reconciliation evidence and never select
 desired state. This code remains inactive and does not replace the legacy path
-scanner. Snapshot/verification adapters for the other three retained owners,
-Knowledge staged restore and activation, complete-set orchestration, the
-process-exit matrix, production Grant conversion and effect dispatch,
-indivisible consumer cutover, and deletion of legacy mutable stores therefore
-remain open;
+scanner. An offline-verified Knowledge owner snapshot can now stage its exact
+SQLite database into a caller-owned directory beneath the target state root,
+re-audit the staged database and canonical binding/selection inventory, and
+activate only into a clean target while the exact installation-wide exclusive
+maintenance fence is held. Activation rejects linked paths, candidate drift,
+unowned live-layout entries, unexpected absent-state bytes, an existing live
+payload, and a guard for another root. It publishes by atomic rename and
+replays an exact completed partial. While the staged attempt and exclusive
+guard remain held, it also reconciles the post-publication/pre-result boundary
+without creating a second binding authority; the canonical result is path-free
+and snapshot-bound.
+Snapshot/verification adapters for the other three retained owners,
+complete-set orchestration, the full process-exit matrix, production Grant
+conversion and effect dispatch, indivisible consumer cutover, and deletion of
+legacy mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
