@@ -269,7 +269,7 @@ pub(in crate::control_store) struct ControlObservationPayloadSnapshot {
 }
 
 impl ControlObservationPayloadSnapshot {
-    fn validate(
+    pub(in crate::control_store) fn validate(
         &self,
         registry: &ControlPayloadOwnerRegistry,
         expected_binding: &ControlPayloadSnapshotBinding,

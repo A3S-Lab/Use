@@ -663,10 +663,20 @@ oldest source record to reserve the active restore's slot; any source collision 
 the active plan fails closed before pruning. Candidate, activation, retired,
 and deterministic publication-partial evidence make every local boundary
 replayable and tamper-evident, and the result remains path-free and
-snapshot-bound. This adapter is still qualification-only. Complete-set
-orchestration, the full subprocess-exit matrix, production Grant conversion and
-effect dispatch, indivisible consumer cutover, and deletion of legacy mutable
-stores therefore remain open;
+snapshot-bound. This adapter is still qualification-only. The private
+complete-set snapshot coordinator now captures one canonical Control export
+and the Host projection, Knowledge, planning/diagnostic observation, and
+Restore Coordinator snapshots under the same exclusive maintenance fence and
+timestamp. One canonical path-free manifest binds the exact owner registry,
+receipts, schemas, digests, and byte accounting. The coordinator streams a
+single staged archive outside all Use data and state roots, reuses each
+owner-native offline verifier, and publishes only the fully verified file with
+no-clobber semantics. Explicitly absent owners add no payload bytes, and the
+global Artifact Store remains excluded. This closes complete-set snapshot
+assembly and offline verification only. Complete-set restore staging and
+activation, the full subprocess-exit matrix, production Grant conversion and
+effect dispatch, production backup/restore wiring, indivisible consumer
+cutover, and deletion of legacy mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

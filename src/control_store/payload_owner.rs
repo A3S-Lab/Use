@@ -11,13 +11,17 @@
 //! bounded terminal history while excluding active recovery evidence. Its
 //! restore adapter preserves the exact active restore and replayably replaces
 //! only terminal history. No owner participates in the production state-backup
-//! path yet. Complete-set coordination must be qualified before the coordinated
-//! authority cutover.
+//! path yet. The complete-set snapshot coordinator now publishes and
+//! offline-verifies one no-clobber archive containing the Control export and
+//! every registered owner receipt plus each present payload. Coordinated
+//! restore activation and subprocess recovery must still be qualified before
+//! the authority cutover.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 
+mod complete_set;
 mod host_projection;
 mod knowledge;
 mod observations;
@@ -26,6 +30,10 @@ mod restore_coordinator;
 mod session;
 mod snapshot;
 
+#[cfg(test)]
+pub(in crate::control_store) use complete_set::{
+    ControlInstallationSnapshotManifest, VerifiedControlInstallationSnapshot,
+};
 #[cfg(test)]
 pub(in crate::control_store) use host_projection::{
     ControlHostProjectionEntryKind, ControlHostProjectionRestoreResult,

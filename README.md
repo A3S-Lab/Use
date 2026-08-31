@@ -1442,7 +1442,18 @@ unexplained live changes. Marker-only handoff and absent history are supported;
 a 64-record source deterministically drops the same native oldest record the
 journal would prune so the active restore retains one slot. The canonical
 result is path-free and snapshot-bound. This remains inactive qualification
-code. Complete-set orchestration, the full subprocess-exit matrix, and
+code. The private complete-set snapshot coordinator now captures the canonical
+Control export and all four registered owner snapshots under one exact
+maintenance fence and timestamp. It binds the fixed owner set, receipts,
+digests, schemas, and byte accounting in one path-free canonical manifest,
+streams them into a single no-clobber archive outside every Use data and state
+root, and reuses every owner-native verifier to audit the entire staged file
+offline before publication. Absent owners contribute receipts but no invented
+payload bytes; the global Artifact Store remains outside installation backup.
+Archive header, manifest, length, payload digest, trailing-byte, link, drift,
+rebinding, and overwrite failures all fail closed. This complete-set writer is
+also inactive qualification code. Complete-set restore staging and activation,
+the full subprocess-exit matrix, production backup/restore wiring, and
 coordinated authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter

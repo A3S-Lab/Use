@@ -335,7 +335,7 @@ staged attempt and exclusive guard remain held, retry after rename but before
 the canonical path-free result reconciles the exact live database; an absent
 snapshot creates no Knowledge state. This owner primitive deliberately does
 not choose cross-owner activation order or create a second restore journal: the
-complete-set coordinator must own those facts.
+complete-set restore coordinator must own those facts.
 The planning-and-diagnostic observation owner is the second concrete snapshot
 and clean-target restore adapter. It reuses the cognitive stores' record
 decoders and invariants, archives only terminal diagnostic histories and
@@ -403,11 +403,19 @@ the active operation; an active/source identity collision is rejected before
 pruning. Every candidate, activation marker, retired record, and deterministic
 publication partial is validated at each replay boundary, and the result is
 path-free and snapshot-bound.
-This implementation still does not participate in production state-layout,
+The private complete-set snapshot coordinator now acquires the already-frozen
+Control export and captures every registered external owner under the same
+exclusive maintenance fence and timestamp. One canonical path-free manifest
+binds the fixed registry, all receipts, owner schemas and digests, and exact
+byte accounting. Its fixed-order streaming archive is staged outside all Use
+data and state roots, fully audited through the existing owner-native offline
+verifiers, and only then published without replacement. Explicitly absent
+owners add no payload bytes; the global Artifact Store remains excluded. This
+implementation still does not participate in production state layout,
 reachability, diagnostics, backup, or restore orchestration. Existing JSON
-stores remain the only production authority. The complete-set coordinator,
-full subprocess-exit matrix, production lifecycle conversion and dispatch,
-indivisible reader/writer cutover, and
+stores remain the only production authority. Complete-set restore staging and
+activation, the full subprocess-exit matrix, production lifecycle conversion
+and dispatch, indivisible reader/writer cutover, and
 deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.

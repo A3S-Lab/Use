@@ -241,10 +241,24 @@ Orphaned nonterminal records, pruning or temporary residue, unknown layout,
 links, foreign history, and path rebinding fail closed. A second scan precedes
 no-clobber publication; a streaming offline verifier binds exact terminal bytes
 and the path-free receipt to the Control export. Empty or active-only history
-creates no archive. These remain inactive owner primitives; Restore Coordinator
-activation and self-hosted journal reconciliation, complete-set coordination,
-full subprocess-exit qualification, production orchestration, and coordinated
-authority cutover remain disabled until every consumer can switch together.
+creates no archive. Its self-hosted restore adapter requires the exact exclusive
+fence and active marker, preserves that marker and current operation, replaces
+only terminal history, and binds exact before/source/target inventories in
+durable activation evidence. Replay tolerates current-operation status progress
+but rejects marker, candidate, retired-record, or publication-partial drift.
+Marker-only handoff and native 64-record retention remain deterministic.
+
+The private complete-set snapshot coordinator now captures the canonical
+Control export and all four registered owner snapshots under one maintenance
+fence and timestamp. One path-free canonical manifest binds the fixed owner
+registry, receipts, schemas, digests, and byte accounting. The coordinator
+streams a fixed-order single-file archive outside every Use data and state root,
+reuses each owner-native offline verifier, and publishes only the fully audited
+file without replacement. Absent owners add no payload bytes, and the global
+Artifact Store remains excluded. These paths remain inactive qualification
+code. Complete-set restore activation, full subprocess-exit qualification,
+production backup/restore wiring, and coordinated authority cutover remain
+disabled until every consumer can switch together.
 
 ## Runtime visibility
 

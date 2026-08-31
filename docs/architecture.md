@@ -210,9 +210,19 @@ terminal record and reserve the active operation's slot. A source/active identit
 collision fails before that pruning decision. Candidate, retired, activation,
 and deterministic publication-partial evidence are revalidated on every
 replay, and the result is path-free and snapshot-bound.
-These are owner primitives, not cross-owner restore authority. Complete-set
-orchestration, full subprocess-exit qualification, and the coordinated
-reader/writer cutover remain A2 work. The
+The private complete-set snapshot coordinator now captures one canonical
+Control export and all four registered owner snapshots under the same exclusive
+maintenance fence and timestamp. A canonical path-free manifest binds the
+fixed owner registry, receipts, schemas, digests, and byte accounting. The
+coordinator streams those inputs in protocol order into one staged archive
+outside every Use data and state root, reuses every owner-native offline
+verifier, and publishes only the fully verified file with no-clobber semantics.
+Absent owners remain explicit without contributing payload bytes, and the
+global Artifact Store stays outside installation backup. This is qualified
+cross-owner snapshot assembly, not cross-owner restore authority. Complete-set
+restore staging and activation, full subprocess-exit qualification, production
+backup/restore wiring, and the coordinated reader/writer cutover remain A2
+work. The
 machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual
