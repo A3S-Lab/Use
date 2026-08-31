@@ -118,9 +118,14 @@ snapshot、离线 verifier 与 clean-target restore boundary。它复用各认�
 与规范 path/digest inventory 绑定到 manifest；lock 永不进入 restore authority。No-follow 遍历、重复
 检查、二次扫描、no-clobber 发布与精确 archive 验证会拒绝漂移和替换。通过离线验证的 archive 可以在不
 触碰 live owner path 的前提下暂存；激活要求精确的排他 maintenance fence、干净的初始 record inventory、
-原子 activating 标记与以 digest 命名的确定性 partial，从而只重放精确 snapshot 子集。Host projection 与
-Restore Coordinator adapter、complete-set coordinator、完整 subprocess 崩溃矩阵、生产 lifecycle 转换与
-dispatch、backup/restore 与 reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+原子 activating 标记与以 digest 命名的确定性 partial，从而只重放精确 snapshot 子集。Host protocol
+projection 现在已有第三个具体 snapshot 和 offline-verification boundary。它只归档经过 owner validator
+验证的 request-to-plan、可选 outcome 与规范 cancellation record。派生 operation 与 latest-enablement index
+必须完整且一致，但不会进入 archive。第二次有界 no-follow 扫描和精确 Control-export reconciliation 会在
+no-clobber 发布前完成，因此 projection 无权选择 desired state 或 package/capability generation。No-change
+request 会被显式保留，而不会虚构 operation。Clean-target Host restore、Restore Coordinator adapter、
+complete-set coordinator、完整 subprocess 崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与
+reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

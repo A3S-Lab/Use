@@ -22,7 +22,7 @@ const HOST_OPERATION_INDEX_SCHEMA: &str = "a3s.use.plugin-host-operation-index.v
 const HOST_ENABLEMENT_DIAGNOSTIC_INDEX_SCHEMA: &str =
     "a3s.use.plugin-host-enablement-diagnostic-index.v1";
 const HOST_CANCELLATION_RECORD_SCHEMA: &str = "a3s.use.plugin-host-cancellation-record.v1";
-const MAX_HOST_RECORD_BYTES: u64 = 4 * 1024 * 1024;
+pub(super) const MAX_HOST_RECORD_BYTES: u64 = 4 * 1024 * 1024;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -241,7 +241,7 @@ impl StoredPluginHostCancellation {
         Ok(record)
     }
 
-    fn validate(&self) -> UseResult<()> {
+    pub(super) fn validate(&self) -> UseResult<()> {
         PluginOperationPlan::validate_operation_id(&self.operation_id)
             .map_err(|_| store_invalid("A Host cancellation operation ID is invalid."))?;
         if self.schema != HOST_CANCELLATION_RECORD_SCHEMA
@@ -324,13 +324,13 @@ impl StoredPluginHostRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct StoredPluginHostOperationIndex {
-    schema: String,
-    record_digest: String,
-    request_id: String,
-    request_digest: String,
-    operation_id: String,
-    plan_digest: String,
+pub(super) struct StoredPluginHostOperationIndex {
+    pub(super) schema: String,
+    pub(super) record_digest: String,
+    pub(super) request_id: String,
+    pub(super) request_digest: String,
+    pub(super) operation_id: String,
+    pub(super) plan_digest: String,
 }
 
 #[derive(Serialize)]
@@ -345,17 +345,17 @@ struct StoredPluginHostOperationIndexPayload<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct StoredPluginHostEnablementDiagnosticIndex {
-    schema: String,
-    record_digest: String,
-    scope: PlanScope,
-    managed_scope: PluginManagedScope,
-    package_id: String,
-    request_id: String,
-    request_digest: String,
-    operation_id: String,
-    plan_digest: String,
-    planned_at_ms: u64,
+pub(super) struct StoredPluginHostEnablementDiagnosticIndex {
+    pub(super) schema: String,
+    pub(super) record_digest: String,
+    pub(super) scope: PlanScope,
+    pub(super) managed_scope: PluginManagedScope,
+    pub(super) package_id: String,
+    pub(super) request_id: String,
+    pub(super) request_digest: String,
+    pub(super) operation_id: String,
+    pub(super) plan_digest: String,
+    pub(super) planned_at_ms: u64,
 }
 
 #[derive(Serialize)]
@@ -373,7 +373,7 @@ struct StoredPluginHostEnablementDiagnosticIndexPayload<'a> {
 }
 
 impl StoredPluginHostOperationIndex {
-    fn from_request(record: &StoredPluginHostRequest) -> UseResult<Option<Self>> {
+    pub(super) fn from_request(record: &StoredPluginHostRequest) -> UseResult<Option<Self>> {
         record.validate()?;
         let Some((operation_id, plan_digest)) = record.plan.operation_binding() else {
             return Ok(None);
@@ -391,7 +391,7 @@ impl StoredPluginHostOperationIndex {
         Ok(Some(index))
     }
 
-    fn validate(&self) -> UseResult<()> {
+    pub(super) fn validate(&self) -> UseResult<()> {
         PluginOperationPlan::validate_operation_id(&self.operation_id)
             .map_err(|_| store_invalid("A Host operation index identity is invalid."))?;
         if self.schema != HOST_OPERATION_INDEX_SCHEMA
@@ -414,7 +414,7 @@ impl StoredPluginHostOperationIndex {
         })
     }
 
-    fn matches(&self, record: &StoredPluginHostRequest) -> bool {
+    pub(super) fn matches(&self, record: &StoredPluginHostRequest) -> bool {
         record.plan.operation_binding().is_some_and(|binding| {
             self.request_id == record.plan.request_id()
                 && self.request_digest == record.request_digest
@@ -425,7 +425,7 @@ impl StoredPluginHostOperationIndex {
 }
 
 impl StoredPluginHostEnablementDiagnosticIndex {
-    fn from_request(record: &StoredPluginHostRequest) -> UseResult<Option<Self>> {
+    pub(super) fn from_request(record: &StoredPluginHostRequest) -> UseResult<Option<Self>> {
         record.validate()?;
         let Some((request, result)) = record.plan.enablement_parts() else {
             return Ok(None);
@@ -453,7 +453,7 @@ impl StoredPluginHostEnablementDiagnosticIndex {
         Ok(Some(index))
     }
 
-    fn validate(&self) -> UseResult<()> {
+    pub(super) fn validate(&self) -> UseResult<()> {
         self.managed_scope.validate()?;
         PluginPackageId::parse(self.package_id.clone()).map_err(|_| {
             store_invalid("A Host enablement diagnostic package identity is invalid.")
@@ -491,7 +491,7 @@ impl StoredPluginHostEnablementDiagnosticIndex {
         })
     }
 
-    fn matches(&self, record: &StoredPluginHostRequest) -> bool {
+    pub(super) fn matches(&self, record: &StoredPluginHostRequest) -> bool {
         let Some((request, result)) = record.plan.enablement_parts() else {
             return false;
         };
@@ -1231,11 +1231,11 @@ pub(super) fn digest_value<T: Serialize>(value: &T) -> UseResult<String> {
     Ok(format!("sha256:{}", sha256_hex(&bytes)))
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(super) fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn operation_binding_digest(operation_id: &str, plan_digest: &str) -> String {
+pub(super) fn operation_binding_digest(operation_id: &str, plan_digest: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"a3s.use.plugin-host-operation-binding.v1\0");
     hasher.update(operation_id.as_bytes());

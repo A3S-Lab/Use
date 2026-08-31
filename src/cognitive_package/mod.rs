@@ -18,6 +18,7 @@ mod enablement_plan;
 mod enablement_store;
 mod grant;
 mod host_manager;
+mod host_snapshot;
 mod host_store;
 mod hosts;
 mod install;
@@ -109,6 +110,17 @@ pub use grant::{
     StandaloneCognitivePackageAuthorizationProvider,
 };
 pub use host_manager::CognitivePackageHostManager;
+#[cfg(test)]
+pub(crate) use host_snapshot::{
+    host_projection_snapshot_fixture_sources, write_host_projection_no_change_fixture,
+    write_host_projection_snapshot_fixture, HostProjectionSnapshotFixtureOutcome,
+};
+pub(crate) use host_snapshot::{
+    scan_host_projection_snapshot, validate_host_projection_snapshot_record,
+    validate_host_projection_snapshot_set, HostProjectionSnapshotRecord,
+    HostProjectionSnapshotRecordKind, HostProjectionSnapshotRequest,
+    HOST_PROJECTION_SNAPSHOT_MAX_RECORD_BYTES,
+};
 pub use hosts::{
     ManagedCognitivePackageLifecycleFactory, StandaloneCognitivePackageLifecycleFactory,
     A3S_FLOW_NATIVE_TS_COMPILER_ENV,
