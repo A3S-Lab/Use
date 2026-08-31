@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-08-29
+Last updated: 2026-09-01
 
 ## Product status
 
@@ -673,11 +673,23 @@ single staged archive outside all Use data and state roots, reuses each
 owner-native offline verifier, and publishes only the fully verified file with
 no-clobber semantics. Explicitly absent owners add no payload bytes, and the
 global Artifact Store remains excluded. This closes complete-set snapshot
-assembly and offline verification only. Complete-set restore staging and
-activation, the full subprocess-exit matrix, production Grant conversion and
-effect dispatch, production backup/restore wiring, indivisible consumer
-cutover, and deletion of legacy mutable stores therefore remain open;
-no A2 checkbox is complete yet.
+assembly and offline verification. The same offline-verified aggregate can now
+stage one deterministic clean-target restore attempt. A canonical path-free
+descriptor first binds the exact complete snapshot, installation, owner
+registry, Knowledge policy, and fixed five-component set. One exclusive target
+maintenance fence is then retained while the Control database and all four
+owner-native candidates are built beneath the fixed
+`.control-installation-restore` directory. Control is reconstructed from the
+canonical export, checkpointed to one SQLite file, round-tripped semantically,
+and bound by durable physical digest evidence. No live Control, Host,
+Knowledge, observation, or restore-history path is changed. Exact retries and
+interrupted Control staging recover deterministically; target contamination,
+links, unknown entries, snapshot or policy rebinding, and completed-candidate
+drift fail closed. This closes qualification of complete-set restore staging,
+not activation. A durable cross-owner activation journal and order, the full
+subprocess-exit matrix, production Grant conversion and effect dispatch,
+production backup/restore wiring, indivisible consumer cutover, and deletion
+of legacy mutable stores remain open; no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions

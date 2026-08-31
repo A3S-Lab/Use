@@ -413,10 +413,21 @@ verifiers, and only then published without replacement. Explicitly absent
 owners add no payload bytes; the global Artifact Store remains excluded. This
 implementation still does not participate in production state layout,
 reachability, diagnostics, backup, or restore orchestration. Existing JSON
-stores remain the only production authority. Complete-set restore staging and
-activation, the full subprocess-exit matrix, production lifecycle conversion
-and dispatch, indivisible reader/writer cutover, and
-deletion of legacy mutable stores remain open;
+stores remain the only production authority. The verified aggregate now has a
+qualification-only clean-target staging coordinator. It retains one exact
+exclusive maintenance guard, durably binds the snapshot descriptor,
+installation, owner registry, Knowledge policy, and fixed component set in a
+path-free attempt descriptor, and stages Control plus every external owner
+beneath one fixed `.control-installation-restore` directory. Control is rebuilt
+from and round-tripped against the canonical export, checkpointed to a single
+SQLite file, and physically digest-bound. External candidates reuse their
+owner-native adapters under the same guard. No live authority path is changed;
+exact retries and interrupted Control construction recover, while contaminated
+targets, links, unknown state, rebinding, and completed-candidate drift fail
+closed. Coordinated activation and its durable cross-owner crash journal, the
+full subprocess-exit matrix, production lifecycle conversion and dispatch,
+indivisible reader/writer cutover, and deletion of legacy mutable stores remain
+open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 

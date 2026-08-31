@@ -142,10 +142,19 @@ manifest binds the fixed owner registry, receipts, schemas, digests, and byte
 accounting. A fixed-order single-file archive is streamed to external staging,
 audited with every owner-native offline verifier, and published only once with
 no-clobber semantics; absent owners add no payload and the global Artifact Store
-is excluded. This qualifies complete-set backup assembly only. Complete-set
-restore staging and activation, subprocess recovery, production backup/restore
-wiring, and indivisible authority cutover remain required before this gate can
-close.
+is excluded. The verified complete set can now stage one clean target under a
+single retained exclusive maintenance fence. A canonical path-free attempt
+descriptor binds the snapshot, installation, owner registry, Knowledge policy,
+and fixed five-component set before the Control and four owner-native
+candidates are created beneath `.control-installation-restore`. The Control
+candidate is single-file checkpointed, export-round-tripped, and physically
+digest-bound. No live authority path is changed, and exact retry or interrupted
+Control construction is deterministic; contaminated targets, links, unknown
+entries, rebinding, and candidate drift fail closed. This qualifies
+complete-set backup assembly and restore staging only. Coordinated activation,
+its cross-owner crash journal and subprocess recovery matrix, production
+backup/restore wiring, and indivisible authority cutover remain required before
+this gate can close.
 
 ## Non-negotiable cutover invariants
 

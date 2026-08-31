@@ -256,9 +256,18 @@ streams a fixed-order single-file archive outside every Use data and state root,
 reuses each owner-native offline verifier, and publishes only the fully audited
 file without replacement. Absent owners add no payload bytes, and the global
 Artifact Store remains excluded. These paths remain inactive qualification
-code. Complete-set restore activation, full subprocess-exit qualification,
-production backup/restore wiring, and coordinated authority cutover remain
-disabled until every consumer can switch together.
+code. The verified aggregate can now retain one target's exact exclusive fence
+and stage the Control database plus all four owner candidates beneath one fixed
+`.control-installation-restore` directory. A path-free descriptor first binds
+the snapshot, installation, owner registry, Knowledge policy, and component
+set. Control is single-file checkpointed, export-round-tripped, and physically
+digest-bound; external candidates reuse owner-native validation under the same
+guard. No live authority path changes. Exact retry and interrupted Control
+construction recover, while contaminated targets, links, unknown entries,
+rebinding, and candidate drift fail closed. Complete-set activation, its
+cross-owner crash journal and full subprocess-exit qualification, production
+backup/restore wiring, and coordinated authority cutover remain disabled until
+every consumer can switch together.
 
 ## Runtime visibility
 

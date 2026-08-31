@@ -199,27 +199,86 @@ impl VerifiedControlKnowledgePayloadSnapshot {
         staging_directory: impl Into<PathBuf>,
         policy: OkfKnowledgeStoragePolicy,
     ) -> UseResult<StagedControlKnowledgePayloadRestore> {
-        self.snapshot
-            .validate(&self.registry, &self.snapshot.manifest.binding)?;
+        self.validate_restore_policy(policy)?;
         let state_root = target_state_root.into();
         let staging_directory = staging_directory.into();
+        let adapter = self.restore_adapter(&state_root, &staging_directory, policy)?;
+        let _maintenance = StateMaintenanceLock::new(&state_root)
+            .acquire_shared()
+            .await
+            .map_err(wrap_restore_error)?;
+        self.stage_clean_restore_inner(state_root, staging_directory, policy, adapter)
+            .await
+    }
+
+    pub(in crate::control_store) async fn stage_clean_restore_under_exclusive(
+        &self,
+        target_state_root: impl Into<PathBuf>,
+        staging_directory: impl Into<PathBuf>,
+        policy: OkfKnowledgeStoragePolicy,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<StagedControlKnowledgePayloadRestore> {
+        self.validate_restore_policy(policy)?;
+        let state_root = target_state_root.into();
+        let staging_directory = staging_directory.into();
+        let adapter = self.restore_adapter(&state_root, &staging_directory, policy)?;
+        if !maintenance.is_exclusive_for(&state_root) {
+            return Err(restore_invalid(
+                "Control Knowledge staging requires the exact target's exclusive maintenance guard.",
+            ));
+        }
+        self.stage_clean_restore_inner(state_root, staging_directory, policy, adapter)
+            .await
+    }
+
+    pub(in crate::control_store) fn validate_restore_policy(
+        &self,
+        policy: OkfKnowledgeStoragePolicy,
+    ) -> UseResult<()> {
+        self.snapshot
+            .validate(&self.registry, &self.snapshot.manifest.binding)?;
+        if let Some(backup) = &self.backup {
+            if backup.manifest.validate().map_err(wrap_restore_error)? != policy {
+                return Err(restore_invalid(
+                    "The Knowledge backup storage policy differs from the restore target policy.",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn restore_adapter(
+        &self,
+        state_root: &Path,
+        staging_directory: &Path,
+        policy: OkfKnowledgeStoragePolicy,
+    ) -> UseResult<SqliteOkfKnowledgeAdapter> {
         let adapter = SqliteOkfKnowledgeAdapter::with_policy(
-            state_root.clone(),
+            state_root.to_path_buf(),
             self.snapshot.manifest.binding.installation.clone(),
             policy,
         )?;
         let live_payload_root = adapter.root().parent().ok_or_else(|| {
             restore_invalid("The configured Knowledge payload root has no state-owned parent.")
         })?;
-        if staging_directory.starts_with(live_payload_root) {
+        if staging_directory == state_root
+            || !staging_directory.starts_with(state_root)
+            || staging_directory.starts_with(live_payload_root)
+        {
             return Err(restore_invalid(
-                "The Control Knowledge restore candidate cannot be staged inside the live payload root.",
+                "The Control Knowledge restore candidate is outside its staging boundary or inside the live payload root.",
             ));
         }
-        let _maintenance = StateMaintenanceLock::new(&state_root)
-            .acquire_shared()
-            .await
-            .map_err(wrap_restore_error)?;
+        Ok(adapter)
+    }
+
+    async fn stage_clean_restore_inner(
+        &self,
+        state_root: PathBuf,
+        staging_directory: PathBuf,
+        policy: OkfKnowledgeStoragePolicy,
+        adapter: SqliteOkfKnowledgeAdapter,
+    ) -> UseResult<StagedControlKnowledgePayloadRestore> {
         ensure_owned_directory(&state_root, &staging_directory).await?;
         validate_staging_entries(&staging_directory).await?;
 

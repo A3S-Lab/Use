@@ -168,8 +168,13 @@ database only while the same staged attempt and exclusive fence remain held.
 The private complete-set snapshot coordinator now includes this exact Knowledge
 snapshot beside the canonical Control export and every registered owner in one
 fixed-order archive, then reuses the Knowledge offline verifier before
-no-clobber publication. Cross-owner restore order and activation, rollback
-policy, and production visibility remain outside this owner primitive.
+no-clobber publication. The verified aggregate can now preflight the exact
+Knowledge storage policy before touching a restore target, bind that policy in
+one path-free complete-attempt descriptor, and stage this database beside the
+Control and other owner candidates under one retained exclusive fence. It does
+not change the live Knowledge root. Cross-owner activation order, durable crash
+recovery, rollback policy, and production visibility remain outside this owner
+primitive.
 
 ## Review and apply backup retention
 

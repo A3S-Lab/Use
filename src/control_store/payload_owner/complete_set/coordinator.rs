@@ -15,12 +15,13 @@ use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
 
 #[derive(Debug)]
 pub(in crate::control_store) struct VerifiedControlInstallationSnapshot {
+    pub(super) registry: ControlPayloadOwnerRegistry,
     pub(super) manifest: ControlInstallationSnapshotManifest,
     pub(super) control_export: Vec<u8>,
-    _host_projection: VerifiedControlHostProjectionSnapshot,
-    _knowledge: VerifiedControlKnowledgePayloadSnapshot,
-    _observations: VerifiedControlObservationPayloadSnapshot,
-    _restore_coordinator: VerifiedControlRestoreCoordinatorSnapshot,
+    pub(super) host_projection: VerifiedControlHostProjectionSnapshot,
+    pub(super) knowledge: VerifiedControlKnowledgePayloadSnapshot,
+    pub(super) observations: VerifiedControlObservationPayloadSnapshot,
+    pub(super) restore_coordinator: VerifiedControlRestoreCoordinatorSnapshot,
     _temporary: tempfile::TempDir,
 }
 
@@ -92,12 +93,13 @@ impl VerifiedControlInstallationSnapshot {
             .await
             .map_err(|error| nested_snapshot_invalid("Restore Coordinator", error))?;
         Ok(Self {
+            registry,
             manifest: extracted.manifest,
             control_export: extracted.control_export,
-            _host_projection: host_projection,
-            _knowledge: knowledge,
-            _observations: observations,
-            _restore_coordinator: restore_coordinator,
+            host_projection,
+            knowledge,
+            observations,
+            restore_coordinator,
             _temporary: extracted.temporary,
         })
     }

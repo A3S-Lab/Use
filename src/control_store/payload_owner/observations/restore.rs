@@ -206,6 +206,35 @@ impl VerifiedControlObservationPayloadSnapshot {
             .acquire_shared()
             .await
             .map_err(wrap_restore_error)?;
+        self.stage_clean_restore_inner(state_root, staging_directory)
+            .await
+    }
+
+    pub(in crate::control_store) async fn stage_clean_restore_under_exclusive(
+        &self,
+        target_state_root: impl Into<PathBuf>,
+        staging_directory: impl Into<PathBuf>,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<StagedControlObservationPayloadRestore> {
+        self.snapshot
+            .validate(&self.registry, &self.snapshot.manifest.binding)?;
+        let state_root = target_state_root.into();
+        let staging_directory = staging_directory.into();
+        filesystem::validate_staging_location(&state_root, &staging_directory)?;
+        if !maintenance.is_exclusive_for(&state_root) {
+            return Err(restore_invalid(
+                "Control observation staging requires the exact target's exclusive maintenance guard.",
+            ));
+        }
+        self.stage_clean_restore_inner(state_root, staging_directory)
+            .await
+    }
+
+    async fn stage_clean_restore_inner(
+        &self,
+        state_root: PathBuf,
+        staging_directory: PathBuf,
+    ) -> UseResult<StagedControlObservationPayloadRestore> {
         filesystem::ensure_owned_directory(&state_root, &staging_directory).await?;
         filesystem::validate_staging_entries(&staging_directory, &self.snapshot).await?;
         let candidate = match (

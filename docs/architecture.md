@@ -219,10 +219,21 @@ outside every Use data and state root, reuses every owner-native offline
 verifier, and publishes only the fully verified file with no-clobber semantics.
 Absent owners remain explicit without contributing payload bytes, and the
 global Artifact Store stays outside installation backup. This is qualified
-cross-owner snapshot assembly, not cross-owner restore authority. Complete-set
-restore staging and activation, full subprocess-exit qualification, production
-backup/restore wiring, and the coordinated reader/writer cutover remain A2
-work. The
+cross-owner snapshot assembly. Its offline-verified aggregate can now retain
+one exact target's exclusive maintenance fence and build a deterministic
+five-component restore attempt beneath the fixed
+`.control-installation-restore` directory. A canonical path-free descriptor
+binds the complete snapshot, installation, owner registry, Knowledge policy,
+and component set before any candidate is created. The Control database is
+restored from the canonical export, checkpointed to a single file,
+round-tripped, and physically digest-bound; the four external candidates reuse
+their owner-native staging and validation under that same guard. No live owner
+path is changed. Exact replay, interrupted Control staging, explicit owner
+absence, and target isolation are qualified; links, unknown entries,
+rebinding, and completed-candidate drift fail closed. Cross-owner activation
+authority is still absent. Its durable activation journal and ordering, full
+subprocess-exit qualification, production backup/restore wiring, and the
+coordinated reader/writer cutover remain A2 work. The
 machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual

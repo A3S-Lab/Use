@@ -15,10 +15,10 @@ use crate::control_store::model::valid_sha256;
 mod archive;
 mod restore;
 
+pub(in crate::control_store) use restore::StagedControlObservationPayloadRestore;
 #[cfg(test)]
 pub(in crate::control_store) use restore::{
     ControlObservationPayloadRestoreResult, ControlObservationPayloadRestoreState,
-    StagedControlObservationPayloadRestore,
 };
 
 pub(in crate::control_store) const CONTROL_OBSERVATION_PAYLOAD_SNAPSHOT_SCHEMA: &str =
