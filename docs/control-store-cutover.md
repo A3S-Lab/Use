@@ -83,8 +83,18 @@ existing payloads, and unexpected bytes for an absent snapshot fail closed.
 Atomic publication is idempotent across the post-rename/pre-result boundary
 while the same staged attempt and exclusive fence remain held. This does not
 replace the production backup or restore scanner and does not choose
-cross-owner activation order. The other owner adapters and complete-set
-orchestration are still required before this gate can close.
+cross-owner activation order. The planning-and-diagnostic observation owner is
+the second concrete snapshot adapter. It reuses each owning store's semantic
+validator and archives only terminal diagnostic histories and terminal
+resolution attempts. Active resolution/download attempts and locks are
+excluded from restore authority, but a canonical count and path/digest
+inventory of active records remain bound to the manifest. Bounded no-follow
+traversal, duplicate checks, a second live scan, no-clobber publication, and
+offline verification reject drift, substitution, foreign records, unknown
+layouts, and trailing bytes. The adapter is path-free and Control-export-bound,
+but has no restore contract yet. The Host projection and Restore Coordinator
+adapters, observation restore, and complete-set orchestration are still
+required before this gate can close.
 
 ## Non-negotiable cutover invariants
 

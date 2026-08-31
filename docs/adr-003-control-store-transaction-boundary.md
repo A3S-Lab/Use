@@ -309,7 +309,7 @@ evidence boundary for every owner. A private live snapshot session additionally
 freezes one canonical Control export and binds its digest, generation,
 installation, and owner-registry digest while the same exclusive maintenance
 fence remains held. No SQLite transaction or bounded-executor permit crosses
-owner I/O. The first typed owner implementation snapshots an existing
+owner I/O. The Knowledge owner implementation snapshots an existing
 scope-local OKF SQLite/FTS5 Knowledge database into a non-overwriting archive,
 binds its exact retained-binding and selection inventory, enforces the
 registered archive/manifest bounds before publication, and re-verifies the
@@ -336,12 +336,22 @@ the canonical path-free result reconciles the exact live database; an absent
 snapshot creates no Knowledge state. This owner primitive deliberately does
 not choose cross-owner activation order or create a second restore journal: the
 complete-set coordinator must own those facts.
+The planning-and-diagnostic observation owner is the second concrete snapshot
+adapter. It reuses the cognitive stores' record decoders and invariants,
+archives only terminal diagnostic histories and terminal resolution attempts,
+and excludes active resolution/download attempts plus locks from restore
+authority. The excluded active count and canonical path/digest inventory remain
+manifest-bound. Bounded no-follow traversal, duplicate checks, a second live
+scan, no-clobber publication, and offline verification reject drift,
+substitution, foreign or moved records, unknown layouts, and trailing bytes.
+The receipt is path-free and bound to the exact Control export. This owner does
+not yet implement restore.
 This implementation still does not participate in production state-layout,
 reachability, diagnostics, backup, or restore orchestration. Existing JSON
-stores remain the only production authority. The other retained-owner I/O
-adapters, complete-set coordinator, full process-exit matrix, production
-lifecycle conversion and dispatch, indivisible reader/writer cutover, and
-deletion of legacy mutable stores remain open;
+stores remain the only production authority. The Host projection and Restore
+Coordinator I/O adapters, observation restore, complete-set coordinator, full
+process-exit matrix, production lifecycle conversion and dispatch, indivisible
+reader/writer cutover, and deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 

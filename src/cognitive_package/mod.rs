@@ -23,6 +23,7 @@ mod hosts;
 mod install;
 mod mutation_lock;
 mod native_provider;
+mod observation_snapshot;
 mod plan;
 mod planning_attempt_io;
 mod prepare_graph;
@@ -51,6 +52,12 @@ use std::sync::Arc;
 
 use crate::plugin_lifecycle::PluginLifecycleCoordinator;
 use download_attempt::PackageDownloadAttemptStore;
+#[cfg(test)]
+pub(crate) use observation_snapshot::planning_observation_snapshot_fixtures;
+pub(crate) use observation_snapshot::{
+    validate_planning_observation_snapshot_record, PlanningObservationSnapshotRecord,
+    PlanningObservationSnapshotRecordKind,
+};
 use resolution_attempt::PackageResolutionAttemptStore;
 pub(crate) use store::{
     acquire_existing_package_graph_lock_shared, inspect_pending_artifact_references_locked,

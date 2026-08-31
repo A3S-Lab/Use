@@ -316,6 +316,48 @@ fn validate_scope(scope: &PlanScope) -> UseResult<()> {
     scope.validate().map_err(|_| history_invalid())
 }
 
+pub(super) fn validate_snapshot_record(
+    relative_path: &str,
+    bytes: &[u8],
+    installation: &a3s_use_core::InstallationId,
+) -> UseResult<String> {
+    if bytes.is_empty() || bytes.len() > MAX_RETAINED_PLUGIN_OPERATION_HISTORY_BYTES {
+        return Err(history_invalid());
+    }
+    let history: StoredPluginOperationHistory =
+        serde_json::from_slice(bytes).map_err(|_| history_invalid())?;
+    history.validate()?;
+    installation
+        .ensure_same(&history.scope)
+        .map_err(|_| history_invalid())?;
+    let expected = history_path(Path::new(""), &history.scope, history.package_id.as_str())?;
+    if expected.to_string_lossy().replace('\\', "/") != relative_path {
+        return Err(history_invalid());
+    }
+    Ok(history.package_id)
+}
+
+#[cfg(test)]
+pub(super) fn snapshot_fixture(installation: &a3s_use_core::InstallationId) -> (String, Vec<u8>) {
+    let mut diagnostic =
+        crate::cognitive_package::diagnostic::tests::completed_operation_diagnostic();
+    diagnostic.scope = installation.clone();
+    diagnostic.validate().unwrap();
+    let mut history =
+        StoredPluginOperationHistory::new(installation.clone(), diagnostic.package_id.clone())
+            .unwrap();
+    history
+        .retain(&diagnostic, PluginRetainedOperationOutcome::Completed)
+        .unwrap();
+    let relative = history_path(Path::new(""), installation, &diagnostic.package_id)
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    let mut bytes = encoded_history(&history).unwrap();
+    bytes.push(b'\n');
+    (format!("package-diagnostic-history/{relative}"), bytes)
+}
+
 async fn acquire_lock(path: PathBuf) -> UseResult<StdFile> {
     match fs::symlink_metadata(&path).await {
         Ok(metadata)

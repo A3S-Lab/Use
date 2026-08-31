@@ -200,10 +200,20 @@ under a clean target state root without changing live payload state. Activation
 requires that target's exclusive maintenance fence, re-audits the database and
 inventory, rejects unowned, existing, or ambiguous state, and publishes by one
 atomic rename with a path-free result; retry is idempotent while the same staged
-attempt and fence remain held. This is an inactive owner primitive;
-the other owner adapters, complete-set restore coordinator, full process-exit
-qualification, production orchestration, and coordinated authority cutover
-remain disabled until every consumer can switch together.
+attempt and fence remain held. The planning-and-diagnostic observation owner is
+the second concrete snapshot adapter. It reuses the owning stores' validators
+and archives only terminal diagnostic histories and terminal resolution
+attempts. Active resolution/download attempts and locks are excluded from
+restore authority, while their canonical count and path/digest inventory remain
+manifest-bound. Bounded no-follow traversal, duplicate checks, a second live
+scan, no-clobber publication, and offline verification reject drift,
+substitution, foreign records, unknown layouts, and trailing bytes. Its
+path-free receipt is bound to the exact Control export, but observation restore
+is not implemented yet. These remain inactive owner primitives; the Host
+projection and Restore Coordinator adapters, observation restore, complete-set
+coordination, full process-exit qualification, production orchestration, and
+coordinated authority cutover remain disabled until every consumer can switch
+together.
 
 ## Runtime visibility
 

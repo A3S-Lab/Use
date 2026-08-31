@@ -2,7 +2,7 @@ use a3s_use_core::UseResult;
 use sha2::{Digest, Sha256};
 
 use super::diagnostic::tests::completed_operation_diagnostic;
-use super::diagnostic_history::PluginOperationHistoryStore;
+use super::diagnostic_history::{validate_snapshot_record, PluginOperationHistoryStore};
 use super::{
     PluginOperationDiagnostic, PluginRetainedOperationOutcome,
     MAX_RETAINED_PLUGIN_OPERATION_HISTORY_BYTES,
@@ -194,5 +194,38 @@ async fn history_store_rejects_a_linked_record() -> UseResult<()> {
             .code,
         "use.plugin.operation_history_store_invalid"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn snapshot_validation_reuses_history_semantics_and_owned_path() -> UseResult<()> {
+    let temp = tempfile::tempdir().unwrap();
+    let store = PluginOperationHistoryStore::new(temp.path());
+    let diagnostic = operation(1);
+    store
+        .retain(&diagnostic, PluginRetainedOperationOutcome::Completed)
+        .await?;
+    let scope = diagnostic.scope.storage_key().unwrap();
+    let relative = format!("scopes/{scope}/acme/root.json");
+    let bytes = std::fs::read(
+        temp.path()
+            .join("operations/package-diagnostic-history")
+            .join(&relative),
+    )
+    .unwrap();
+    assert_eq!(
+        validate_snapshot_record(&relative, &bytes, &diagnostic.scope)?,
+        "acme/root"
+    );
+    assert!(validate_snapshot_record(
+        &relative.replace("root.json", "moved.json"),
+        &bytes,
+        &diagnostic.scope,
+    )
+    .is_err());
+    let foreign =
+        a3s_use_core::InstallationId::new(a3s_use_core::InstallationKind::User, "user/foreign")
+            .unwrap();
+    assert!(validate_snapshot_record(&relative, &bytes, &foreign).is_err());
     Ok(())
 }

@@ -267,6 +267,106 @@ impl PendingPackageResolutionAttempt {
     }
 }
 
+pub(super) fn validate_snapshot_record(
+    relative_path: &str,
+    bytes: &[u8],
+    installation: &a3s_use_core::InstallationId,
+) -> UseResult<(String, bool)> {
+    if bytes.is_empty()
+        || u64::try_from(bytes.len())
+            .ok()
+            .is_none_or(|length| length > MAX_RESOLUTION_ATTEMPT_BYTES)
+    {
+        return Err(store_invalid());
+    }
+    let record: PendingPackageResolutionAttempt =
+        serde_json::from_slice(bytes).map_err(|_| store_invalid())?;
+    record.validate()?;
+    installation
+        .ensure_same(&record.scope)
+        .map_err(|_| store_invalid())?;
+    let expected = Path::new(action_segment(record.action)?)
+        .join(package_relative_path(
+            &record.root_package_id,
+            "json",
+            PlanningAttemptKind::Resolution,
+        )?)
+        .to_string_lossy()
+        .replace('\\', "/");
+    if expected != relative_path {
+        return Err(store_invalid());
+    }
+    Ok((
+        record.root_package_id,
+        matches!(
+            record.status,
+            PackageResolutionAttemptStatus::Resolved | PackageResolutionAttemptStatus::Failed
+        ),
+    ))
+}
+
+#[cfg(test)]
+pub(super) fn snapshot_fixtures(
+    installation: &a3s_use_core::InstallationId,
+) -> Vec<(String, Vec<u8>)> {
+    let terminal = PendingPackageResolutionAttempt {
+        schema: RESOLUTION_ATTEMPT_SCHEMA.to_owned(),
+        scope: installation.clone(),
+        action: PluginOperationAction::Install,
+        root_package_id: "acme/knowledge".to_owned(),
+        requested_version: Some("1.0.0".to_owned()),
+        channel: PluginReleaseChannel::Stable,
+        access: PackageResolutionAccess::Cached,
+        started_at_ms: 10,
+        status: PackageResolutionAttemptStatus::Resolved,
+        completed_at_ms: Some(20),
+        package_lock_digest: Some(format!("sha256:{}", "a".repeat(64))),
+        package_count: Some(1),
+        error_code: None,
+        registries: vec![PendingRegistryResolution {
+            registry_name: "packages".to_owned(),
+            role: PackageRegistryResolutionRole::Root,
+            source_identity_digest: format!("sha256:{}", "b".repeat(64)),
+            trust_root_digest: format!("sha256:{}", "c".repeat(64)),
+            status: PackageRegistryResolutionStatus::Verified,
+            root_version: Some(1),
+            timestamp_version: Some(2),
+            snapshot_version: Some(3),
+            targets_version: Some(4),
+            package_targets: Some(1),
+            observed_at_ms: Some(15),
+            error_code: None,
+        }],
+    };
+    terminal.validate().unwrap();
+
+    let mut active = terminal.clone();
+    active.root_package_id = "acme/pending".to_owned();
+    active.status = PackageResolutionAttemptStatus::Resolving;
+    active.completed_at_ms = None;
+    active.package_lock_digest = None;
+    active.package_count = None;
+    active.registries[0].status = PackageRegistryResolutionStatus::Pending;
+    active.registries[0].root_version = None;
+    active.registries[0].timestamp_version = None;
+    active.registries[0].snapshot_version = None;
+    active.registries[0].targets_version = None;
+    active.registries[0].package_targets = None;
+    active.registries[0].observed_at_ms = None;
+    active.validate().unwrap();
+
+    vec![
+        (
+            "package-resolutions/install/acme/knowledge.json".to_owned(),
+            serde_json::to_vec(&terminal).unwrap(),
+        ),
+        (
+            "package-resolutions/install/acme/pending.json".to_owned(),
+            serde_json::to_vec(&active).unwrap(),
+        ),
+    ]
+}
+
 fn valid_version_selector(selector: &str) -> bool {
     Version::parse(selector).is_ok_and(|version| version.to_string() == selector)
         || VersionReq::parse(selector).is_ok_and(|requirement| requirement.to_string() == selector)

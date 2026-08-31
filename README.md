@@ -1350,7 +1350,7 @@ and bounded file/byte accounting. Decoded evidence is revalidated before its
 descriptor digest can be accepted. A private snapshot session now freezes one
 canonical Control export and its digest while retaining the same exclusive
 maintenance fence across owner I/O, without retaining a SQLite transaction or
-store-executor permit. The first typed owner adapter snapshots the scope-local
+store-executor permit. The Knowledge owner adapter snapshots the scope-local
 OKF SQLite/FTS5 Knowledge database into a non-overwriting bounded archive,
 derives a canonical binding/selection inventory digest, and re-verifies the
 archive offline. Live receipt issuance and offline acceptance both require the
@@ -1373,10 +1373,20 @@ state, and publishes by one atomic rename. Exact completed partials are
 replayable. While the same staged attempt and exclusive guard are retained, a
 retry after publication but before returning the canonical path-free result
 reconciles the exact live database. Absent payload activation creates no
-Knowledge state. This remains inactive qualification code and is not wired to
-the current backup or restore scanner. The other three snapshotted owner
-adapters, complete-set orchestration, full process-exit matrix, and coordinated
-authority cutover remain open.
+Knowledge state. A second typed adapter now snapshots the
+planning-and-diagnostic observation owner. It archives only owner-validated
+terminal diagnostic histories and terminal resolution attempts; active
+resolution and download attempts plus operational locks are never restored as
+authority. The exact active inventory count and digest remain bound to the
+manifest. Secure bounded traversal rejects links, moved or foreign records,
+unknown layouts, duplicate package identities, and file/byte overruns. Archive
+creation is no-clobber, re-scans live state before publication, and emits a
+path-free Control-export-bound receipt that can be verified offline. This
+adapter does not yet restore observations. Both adapters remain inactive
+qualification code and are not wired to the current backup or restore scanner.
+The Host projection and Restore Coordinator adapters, observation restore,
+complete-set orchestration, full process-exit matrix, and coordinated authority
+cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

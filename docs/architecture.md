@@ -161,9 +161,21 @@ touching live payload state. Activation re-audits the candidate under the exact
 exclusive maintenance fence, refuses an unowned, existing, or ambiguous
 target, and publishes by one replayable atomic rename with a canonical
 path-free result while the same staged attempt remains available.
-This is an owner primitive, not cross-owner restore authority. The other three
-owner adapters, complete-set orchestration, full process-exit qualification,
-and the coordinated reader/writer cutover remain A2 work. The machine-checked
+The planning-and-diagnostic observation owner is the second concrete adapter.
+It delegates record semantics to the diagnostic-history, resolution-attempt,
+and download-attempt stores, then archives only terminal diagnostic histories
+and terminal resolution attempts. Active resolution/download attempts and
+locks are excluded from restore authority; the manifest still binds their
+exact count and canonical path/digest inventory. Bounded no-follow traversal,
+duplicate-identity checks, a second live scan before no-clobber publication,
+and offline archive verification fail closed on drift, substitution, unknown
+layout, foreign installation records, or trailing data. Its receipt is
+path-free and bound to the same Control export. Observation restore is not yet
+implemented.
+These are owner primitives, not cross-owner restore authority. The Host
+projection and Restore Coordinator adapters, observation restore, complete-set
+orchestration, full process-exit qualification, and the coordinated
+reader/writer cutover remain A2 work. The machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual
 state layout. It is an implementation prerequisite, not an activated migration
