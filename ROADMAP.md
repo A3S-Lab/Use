@@ -564,11 +564,20 @@ bounded worker remain qualified.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
-not accept it. The external artifact/projection payload-owner registry,
-complete process-exit matrix, production conversion into the reviewed Grant
-evidence above, a real dispatcher over typed external owners that populates the
-qualified observation contract, indivisible consumer cutover, and deletion of
-legacy mutable stores therefore remain open;
+not accept it. A private path-free registry contract now freezes all five
+external owner identities and their ACL backup policies. It excludes the
+global Artifact Store and requires an exact canonical receipt set for the
+remaining four owners, bound to one `InstallationId`, Control generation,
+registry digest, owner snapshot schemas, manifest/inventory digests, and
+bounded file/byte accounting. Deserialized evidence must pass the same
+semantic validation before hashing. This removes the duplicated owner-ID and
+policy list from the cutover test, but does not yet replace the legacy path
+scanner or perform owner I/O. Owner-specific snapshot, offline-verification,
+staged-restore, and activation adapters, the complete process-exit matrix,
+production conversion into the reviewed Grant evidence above, a real
+dispatcher over typed external owners that populates the qualified observation
+contract, indivisible consumer cutover, and deletion of legacy mutable stores
+therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

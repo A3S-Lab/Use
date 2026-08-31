@@ -3,6 +3,8 @@ use std::path::{Component, Path};
 
 use a3s_acl::{Block, Value};
 
+use super::payload_owner::ControlPayloadOwnerId;
+
 const MANIFEST: &str = include_str!("../../docs/control-store-cutover.acl");
 
 const AUTHORITY_IDS: &[&str] = &[
@@ -25,14 +27,6 @@ const CONSUMER_IDS: &[&str] = &[
     "state-backup",
     "state-layout-and-clean-initialization",
     "state-restore",
-];
-
-const EXTERNAL_OWNER_IDS: &[&str] = &[
-    "artifact-store",
-    "host-protocol-projection",
-    "knowledge-payload",
-    "planning-and-diagnostic-observations",
-    "restore-coordinator",
 ];
 
 const OPERATIONAL_STATE_IDS: &[&str] = &[
@@ -104,7 +98,14 @@ fn cutover_manifest_freezes_the_complete_current_state_layout() {
     let operational_states = blocks(&root, "operational_state");
     assert_eq!(block_ids(&authorities), expected(AUTHORITY_IDS));
     assert_eq!(block_ids(&consumers), expected(CONSUMER_IDS));
-    assert_eq!(block_ids(&external_owners), expected(EXTERNAL_OWNER_IDS));
+    assert_eq!(
+        block_ids(&external_owners),
+        ControlPayloadOwnerId::ALL
+            .into_iter()
+            .map(ControlPayloadOwnerId::as_str)
+            .map(str::to_owned)
+            .collect()
+    );
     assert_eq!(
         block_ids(&operational_states),
         expected(OPERATIONAL_STATE_IDS)
@@ -189,7 +190,12 @@ fn cutover_manifest_references_real_code_and_forbids_partial_activation() {
         assert!(boolean(owner, "registered_before_activation"));
         assert!(!boolean(owner, "may_choose_desired_state"));
         assert!(!string(owner, "payload").is_empty());
-        assert!(!string(owner, "backup_policy").is_empty());
+        let owner_id = ControlPayloadOwnerId::parse(block_id(owner))
+            .expect("the owner set was checked against the typed registry");
+        assert_eq!(
+            string(owner, "backup_policy"),
+            owner_id.backup_policy().as_str()
+        );
         assert_code_files(owner, &["implementation"]);
     }
 
@@ -240,6 +246,13 @@ fn block_ids(blocks: &[&Block]) -> BTreeSet<String> {
         assert!(ids.insert(id.clone()), "duplicate cutover block '{id}'");
     }
     ids
+}
+
+fn block_id(block: &Block) -> &str {
+    let [id] = block.labels.as_slice() else {
+        panic!("every cutover child block must have exactly one label");
+    };
+    id
 }
 
 fn expected(values: &[&str]) -> BTreeSet<String> {

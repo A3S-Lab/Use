@@ -1339,9 +1339,18 @@ constructed by production lifecycle code and does not create a second
 authority beside the current JSON stores. Production lifecycle conversion
 still must feed authorization-v2 Grant evidence, dispatch the derived inventory
 through real typed owner ports, and populate the qualified observation contract
-without conflating applied evidence with reviewed selection. The external
-artifact/projection payload-owner registry and coordinated authority cutover
-also remain open.
+without conflating applied evidence with reviewed selection. The kernel now
+also qualifies the path-free external-payload registration and
+snapshot-evidence boundary. Its five frozen owner identities and fixed backup
+policies are checked against the ACL cutover inventory. The global Artifact
+Store is explicitly excluded, while the other four owners must produce one
+complete, canonically ordered receipt set bound to the exact installation,
+Control generation, registry digest, owner schema, inventory/manifest digests,
+and bounded file/byte accounting. Decoded evidence is revalidated before its
+descriptor digest can be accepted. This contract deliberately stores no host
+paths and is not wired to the current backup scanner. Owner-specific snapshot,
+offline-verification, staged-restore, and activation adapters—and the
+coordinated authority cutover—remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.
