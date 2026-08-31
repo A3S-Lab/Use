@@ -3,9 +3,10 @@
 //!
 //! This module registers identities, fixed backup policies, safety bounds,
 //! and canonical snapshot evidence. The Knowledge owner has a qualified
-//! snapshot and offline verifier, but no owner participates in the production
-//! state-backup path yet. The remaining owner adapters, staged restore, and
-//! activation must be complete before the coordinated authority cutover.
+//! snapshot, offline verifier, and clean-target staged restore/activation, but
+//! no owner participates in the production state-backup path yet. The
+//! remaining owner adapters and complete-set coordinator must be complete
+//! before the coordinated authority cutover.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
@@ -18,8 +19,9 @@ mod snapshot;
 
 #[cfg(test)]
 pub(in crate::control_store) use knowledge::{
+    ControlKnowledgePayloadRestoreResult, ControlKnowledgePayloadRestoreState,
     ControlKnowledgePayloadSnapshot, ControlKnowledgePayloadState,
-    CONTROL_KNOWLEDGE_PAYLOAD_SNAPSHOT_SCHEMA,
+    VerifiedControlKnowledgePayloadSnapshot, CONTROL_KNOWLEDGE_PAYLOAD_SNAPSHOT_SCHEMA,
 };
 pub(in crate::control_store) use registry::ControlPayloadOwnerRegistry;
 pub(in crate::control_store) use session::{

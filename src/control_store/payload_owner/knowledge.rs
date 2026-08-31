@@ -17,9 +17,14 @@ use crate::okf_knowledge::{
 
 mod control;
 mod inventory;
+mod restore;
 
 use control::VerifiedControlKnowledgeHistory;
 use inventory::knowledge_inventory_digest;
+#[cfg(test)]
+pub(in crate::control_store) use restore::{
+    ControlKnowledgePayloadRestoreResult, ControlKnowledgePayloadRestoreState,
+};
 
 pub(in crate::control_store) const CONTROL_KNOWLEDGE_PAYLOAD_SNAPSHOT_SCHEMA: &str =
     "a3s.use.control-knowledge-payload-snapshot.v1";
@@ -304,7 +309,11 @@ impl ControlKnowledgePayloadSnapshot {
                 ))
             }
         };
-        let verified = VerifiedControlKnowledgePayloadSnapshot { backup: verified };
+        let verified = VerifiedControlKnowledgePayloadSnapshot {
+            backup: verified,
+            registry: registry.clone(),
+            snapshot: self.clone(),
+        };
         control_history.reconcile(verified.bindings())?;
         Ok(verified)
     }
@@ -313,6 +322,8 @@ impl ControlKnowledgePayloadSnapshot {
 #[derive(Debug)]
 pub(in crate::control_store) struct VerifiedControlKnowledgePayloadSnapshot {
     backup: Option<VerifiedOkfKnowledgeBackup>,
+    registry: ControlPayloadOwnerRegistry,
+    snapshot: ControlKnowledgePayloadSnapshot,
 }
 
 impl VerifiedControlKnowledgePayloadSnapshot {

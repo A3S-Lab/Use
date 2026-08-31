@@ -158,8 +158,15 @@ temporary SQLite snapshot before the destination archive is written, so a
 semantic failure leaves neither archive nor receipt. Removed or pruned applied
 data requires a matching remove effect. Claimed and unknown effects remain
 explicit reconciliation evidence and cannot select desired state. This private
-path is not a CLI command, is not connected to production state backup, and
-does not yet provide Control-coordinated staged restore or activation.
+path is not a CLI command and is not connected to production state backup or
+restore. It can now stage an offline-verified snapshot database beneath a clean
+target state root, re-audit its exact inventory, and activate it under that
+target's exclusive maintenance fence by one replayable atomic rename. It
+refuses unowned, existing, or ambiguous live state and emits a canonical
+path-free, snapshot-bound result. Retry after rename reconciles the live
+database only while the same staged attempt and exclusive fence remain held.
+Cross-owner order, durable complete-set coordination, rollback policy, and
+production visibility remain outside this owner primitive.
 
 ## Review and apply backup retention
 

@@ -75,8 +75,15 @@ also verifies the exact bound Control export and joins each retained lifecycle
 incarnation to its prepare intent, committed OKF bundle, applied observation
 and projection evidence, and—when removed or pruned—the matching remove
 effect. Claimed and unknown effects remain explicit ambiguity, not payload
-authority. This does not replace the production backup scanner. The other
-owner adapters, Knowledge staged restore/activation, and complete-set
+authority. The same verified snapshot can now stage an exact state-root-local
+database candidate without changing the live payload and activate it only into
+a clean target under the exact exclusive maintenance fence. Candidate and
+inventory drift, linked paths, unowned live-layout entries, foreign guards,
+existing payloads, and unexpected bytes for an absent snapshot fail closed.
+Atomic publication is idempotent across the post-rename/pre-result boundary
+while the same staged attempt and exclusive fence remain held. This does not
+replace the production backup or restore scanner and does not choose
+cross-owner activation order. The other owner adapters and complete-set
 orchestration are still required before this gate can close.
 
 ## Non-negotiable cutover invariants

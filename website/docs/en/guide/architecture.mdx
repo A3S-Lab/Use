@@ -195,9 +195,15 @@ export. Every retained Knowledge incarnation must join its original prepare
 intent and committed OKF bundle; applied observation/projection evidence must
 match, and removed or missing applied payload needs the matching remove effect.
 Claimed and unknown outcomes remain reconciliation evidence, never desired
-state. The other owner adapters, Knowledge staged restore/activation,
-production orchestration, and the coordinated authority cutover remain
-disabled until every consumer can switch together.
+state. An offline-verified Knowledge snapshot can now stage its exact database
+under a clean target state root without changing live payload state. Activation
+requires that target's exclusive maintenance fence, re-audits the database and
+inventory, rejects unowned, existing, or ambiguous state, and publishes by one
+atomic rename with a path-free result; retry is idempotent while the same staged
+attempt and fence remain held. This is an inactive owner primitive;
+the other owner adapters, complete-set restore coordinator, full process-exit
+qualification, production orchestration, and coordinated authority cutover
+remain disabled until every consumer can switch together.
 
 ## Runtime visibility
 

@@ -153,7 +153,13 @@ applied observation/projection evidence, and a remove effect for removed or
 missing applied payload. The Control join runs against the temporary SQLite
 snapshot before the archive is written, so semantic failure leaves neither an
 archive nor a receipt. Claimed and unknown effects remain reconciliation
-evidence only. Control-coordinated staged restore and activation remain pending.
+evidence only. A verified owner snapshot can now stage and re-audit its exact
+database beneath a clean target state root without changing live Knowledge.
+Activation requires that target's exclusive maintenance fence, rejects
+unowned, existing, or ambiguous state, and publishes by one replayable atomic
+rename. The result is path-free and snapshot-bound; post-rename retry requires
+the same staged attempt and fence. Complete-set coordination and
+production backup/restore wiring remain pending.
 
 `backup-retention` returns a canonical plan for at most 4,096 directory entries,
 one complete scope, and bounded backup-count/byte limits. It fully verifies

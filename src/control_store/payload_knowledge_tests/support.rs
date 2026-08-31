@@ -25,11 +25,11 @@ use crate::okf_knowledge::{
     SqliteOkfKnowledgeAdapter,
 };
 
-pub(super) fn control_installation() -> InstallationId {
+pub(in crate::control_store) fn control_installation() -> InstallationId {
     fixture_installation()
 }
 
-pub(super) async fn seed_control_knowledge(
+pub(in crate::control_store) async fn seed_control_knowledge(
     store: &ControlStore,
     paths: &ExtensionPaths,
 ) -> OkfKnowledgeBinding {
@@ -352,7 +352,10 @@ pub(super) async fn remove_knowledge_without_control(
         .unwrap()
 }
 
-pub(super) async fn seed_knowledge(paths: &ExtensionPaths, installation: InstallationId) {
+pub(in crate::control_store) async fn seed_knowledge(
+    paths: &ExtensionPaths,
+    installation: InstallationId,
+) {
     let files = vec![OkfBundleFile::new(
         "concept.md",
         b"---\ntype: Metric\n---\n\n# Throughput\n",
@@ -394,7 +397,10 @@ pub(super) async fn seed_knowledge(paths: &ExtensionPaths, installation: Install
     client.promote(&staged.receipt).await.unwrap();
 }
 
-pub(super) fn paths(temporary: &TempDir, installation: InstallationId) -> ExtensionPaths {
+pub(in crate::control_store) fn paths(
+    temporary: &TempDir,
+    installation: InstallationId,
+) -> ExtensionPaths {
     ExtensionPaths::new(
         temporary.path().join("data"),
         temporary.path().join("state"),
@@ -403,7 +409,7 @@ pub(super) fn paths(temporary: &TempDir, installation: InstallationId) -> Extens
     .unwrap()
 }
 
-pub(super) fn registry() -> ControlPayloadOwnerRegistry {
+pub(in crate::control_store) fn registry() -> ControlPayloadOwnerRegistry {
     registry_with_payload_limit(16 * 1024 * 1024)
 }
 
@@ -433,7 +439,7 @@ pub(super) fn registry_with_payload_limit(max_payload_bytes: u64) -> ControlPayl
     .unwrap()
 }
 
-pub(super) fn digest(seed: char) -> String {
+pub(in crate::control_store) fn digest(seed: char) -> String {
     format!("sha256:{}", seed.to_string().repeat(64))
 }
 

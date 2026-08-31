@@ -323,13 +323,25 @@ projection. The join runs against the temporary SQLite snapshot before the
 destination archive is written, so semantic failure publishes neither archive
 nor receipt. Removed or pruned applied payload requires a same-incarnation
 remove effect. Claimed and unknown effects remain reconciliation evidence and
-cannot mint desired state.
+cannot mint desired state. The same owner now has a clean-target two-phase
+restore boundary. Only an offline-verified snapshot can stream its exact
+database into a caller-owned directory beneath the target state root. Staging
+does not touch the live Knowledge root and re-audits the database plus the
+canonical binding/selection inventory. Activation requires the exact
+installation's exclusive maintenance guard, refuses any existing live payload
+or unowned live-layout entry, rejects ambiguous candidate state, and publishes
+by atomic rename. An exact completed partial is replayable. While the same
+staged attempt and exclusive guard remain held, retry after rename but before
+the canonical path-free result reconciles the exact live database; an absent
+snapshot creates no Knowledge state. This owner primitive deliberately does
+not choose cross-owner activation order or create a second restore journal: the
+complete-set coordinator must own those facts.
 This implementation still does not participate in production state-layout,
 reachability, diagnostics, backup, or restore orchestration. Existing JSON
 stores remain the only production authority. The other retained-owner I/O
-adapters, Knowledge staged restore/activation, full process-exit matrix,
-production lifecycle conversion and dispatch, indivisible reader/writer
-cutover, and deletion of legacy mutable stores remain open;
+adapters, complete-set coordinator, full process-exit matrix, production
+lifecycle conversion and dispatch, indivisible reader/writer cutover, and
+deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 

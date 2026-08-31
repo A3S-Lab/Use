@@ -1364,10 +1364,19 @@ applied payload requires the same lifecycle's recorded remove effect, while
 claimed or unknown outcomes remain evidence to reconcile rather than a new
 desired-state authority. An absent Knowledge database produces an explicit
 zero-file manifest without creating live directories; manifests and receipts
-contain no host paths. This remains inactive qualification code and is not
-wired to the current backup scanner. The other three snapshotted owner
-adapters, Knowledge staged restore/activation, complete-set orchestration, and
-the coordinated authority cutover remain open.
+contain no host paths. An offline-verified Knowledge snapshot can now stream
+its exact database into a caller-owned, state-root-local candidate without
+touching the live payload. Clean-target activation requires the exact
+installation's exclusive maintenance guard, re-audits the candidate and its
+binding/selection inventory, rejects unowned, existing, or ambiguous payload
+state, and publishes by one atomic rename. Exact completed partials are
+replayable. While the same staged attempt and exclusive guard are retained, a
+retry after publication but before returning the canonical path-free result
+reconciles the exact live database. Absent payload activation creates no
+Knowledge state. This remains inactive qualification code and is not wired to
+the current backup or restore scanner. The other three snapshotted owner
+adapters, complete-set orchestration, full process-exit matrix, and coordinated
+authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

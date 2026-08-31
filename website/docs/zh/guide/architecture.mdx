@@ -172,8 +172,12 @@ binding/selection inventory；数据库缺失时则记录零文件 manifest，�
 创建与离线验证都会要求 binding 指定的精确 Control export。每个保留的 Knowledge incarnation 必须关联
 其原始 prepare intent 与已提交 OKF bundle；applied observation/projection evidence 必须一致，而已删除或
 缺失的 applied payload 必须存在对应 remove effect。Claimed 与 unknown outcome 只保留为 reconciliation
-evidence，不能选择 desired state。其余 owner adapter、Knowledge staged restore/activation、生产
-orchestration，以及所有消费者的协调权威切换完成前，该内核仍保持禁用。
+evidence，不能选择 desired state。离线验证通过的 Knowledge snapshot 现在可以把精确数据库暂存到
+clean target 的 state root 下，且不修改 live payload。激活必须持有该 target 的排他 maintenance fence，
+重新审计数据库与 inventory，拒绝非 owner、已有或含糊状态，并通过一次原子 rename 发布无路径结果；
+仅在保留同一个 staged attempt 与 fence 时，重试才是幂等的。
+这仍是未启用的 owner primitive；其余 owner adapter、complete-set restore coordinator、完整 process-exit
+验收、生产 orchestration，以及所有消费者的协调权威切换完成前，该内核仍保持禁用。
 
 ## 运行时可见性
 

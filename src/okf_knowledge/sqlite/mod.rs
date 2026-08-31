@@ -237,21 +237,10 @@ impl SqliteOkfKnowledgeAdapter {
     where
         F: FnOnce(&OkfKnowledgeRestoreInventory) -> UseResult<()> + Send + 'static,
     {
-        if !maintenance.is_exclusive_for(&self.state_root) {
-            return Err(UseError::new(
-                "use.okf.knowledge_maintenance_mismatch",
-                "The Knowledge snapshot requires the exclusive maintenance guard for its exact installation state root.",
-            ));
-        }
-        self.installation.ensure_same(scope)?;
-        let directory = self.scope_directory(scope)?;
         let destination = destination.into();
-        let Some(database_path) = filesystem::existing_scope_database_under_maintenance(
-            &self.state_root,
-            &self.root,
-            &directory,
-        )
-        .await?
+        let Some(database_path) = self
+            .existing_database_under_maintenance(maintenance, scope)
+            .await?
         else {
             validate_inventory(&OkfKnowledgeRestoreInventory {
                 bindings: Vec::new(),
@@ -280,6 +269,29 @@ impl SqliteOkfKnowledgeAdapter {
         .await
         .map_err(|error| blocking_error("snapshot OKF Knowledge storage", error))?
         .map(Some)
+    }
+
+    /// Resolve the live database without creating payload directories while
+    /// the caller holds the exact installation-wide exclusive fence.
+    pub(crate) async fn existing_database_under_maintenance(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+        scope: &PlanScope,
+    ) -> UseResult<Option<PathBuf>> {
+        if !maintenance.is_exclusive_for(&self.state_root) {
+            return Err(UseError::new(
+                "use.okf.knowledge_maintenance_mismatch",
+                "Knowledge payload access requires the exclusive maintenance guard for its exact installation state root.",
+            ));
+        }
+        self.installation.ensure_same(scope)?;
+        let directory = self.scope_directory(scope)?;
+        filesystem::existing_scope_database_under_maintenance(
+            &self.state_root,
+            &self.root,
+            &directory,
+        )
+        .await
     }
 
     pub(crate) async fn backup_archive_evidence(
