@@ -19,10 +19,10 @@ use crate::state_restore::{
 mod archive;
 mod restore;
 
+pub(in crate::control_store) use restore::StagedControlRestoreCoordinatorRestore;
 #[cfg(test)]
 pub(in crate::control_store) use restore::{
     ControlRestoreCoordinatorRestoreResult, ControlRestoreCoordinatorRestoreState,
-    StagedControlRestoreCoordinatorRestore,
 };
 
 pub(in crate::control_store) const CONTROL_RESTORE_COORDINATOR_SNAPSHOT_SCHEMA: &str =

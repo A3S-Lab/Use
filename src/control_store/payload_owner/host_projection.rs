@@ -19,10 +19,10 @@ mod archive;
 mod control;
 mod restore;
 
+pub(in crate::control_store) use restore::StagedControlHostProjectionRestore;
 #[cfg(test)]
 pub(in crate::control_store) use restore::{
     ControlHostProjectionRestoreResult, ControlHostProjectionRestoreState,
-    StagedControlHostProjectionRestore,
 };
 
 pub(in crate::control_store) const CONTROL_HOST_PROJECTION_SNAPSHOT_SCHEMA: &str =

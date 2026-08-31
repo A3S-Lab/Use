@@ -161,8 +161,12 @@ rename. The result is path-free and snapshot-bound; post-rename retry requires
 the same staged attempt and fence. The private complete-set snapshot
 coordinator now includes this exact Knowledge snapshot in the same canonical,
 single-file archive as the Control export and every registered owner, then
-reuses this offline verifier before no-clobber publication. Complete-set restore
-activation and production backup/restore wiring remain pending.
+reuses this offline verifier before no-clobber publication. The verified
+aggregate now preflights the exact Knowledge policy before touching a target,
+binds it in one path-free complete-attempt descriptor, and stages this database
+beside Control and every owner candidate under one retained exclusive fence.
+The live Knowledge root is unchanged. Complete-set activation, durable
+cross-owner recovery, and production backup/restore wiring remain pending.
 
 `backup-retention` returns a canonical plan for at most 4,096 directory entries,
 one complete scope, and bounded backup-count/byte limits. It fully verifies

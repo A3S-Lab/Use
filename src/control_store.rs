@@ -372,6 +372,10 @@ mod payload_host_projection_restore_tests;
 #[cfg(test)]
 mod payload_host_projection_tests;
 #[cfg(test)]
+mod payload_installation_restore_staging_security_tests;
+#[cfg(test)]
+mod payload_installation_restore_staging_tests;
+#[cfg(test)]
 mod payload_installation_snapshot_security_tests;
 #[cfg(test)]
 mod payload_installation_snapshot_tests;

@@ -209,9 +209,14 @@ restore adapter 要求精确的排他 fence 与 active marker，保留该 marker
 export 与全部四个已注册 owner snapshot。一个无路径的规范 manifest 绑定固定 owner registry、receipt、schema、
 digest 和字节账目。Coordinator 按固定协议顺序把内容流式写入位于所有 Use data/state root 之外的单文件
 archive，复用每个 owner-native offline verifier，并仅以 no-clobber 方式发布通过完整审计的文件。Absent owner
-不会增加虚构 payload 字节，全局 Artifact Store 继续排除在外。这些路径仍是未启用的 qualification code；
-complete-set restore activation、完整 subprocess-exit 验收、生产 backup/restore 接线，以及所有消费者的协调
-权威切换完成前，该内核仍保持禁用。
+不会增加虚构 payload 字节，全局 Artifact Store 继续排除在外。这些路径仍是未启用的 qualification code。
+通过验证的聚合现在可以保留目标的精确排他 fence，并在固定 `.control-installation-restore` 目录下暂存
+Control 数据库和全部四个 owner candidate。无路径 descriptor 会先绑定 snapshot、installation、owner
+registry、Knowledge policy 与固定 component set。Control 会被 checkpoint 为单一文件，按规范 export
+往返复验并绑定物理摘要；外部 candidate 在同一 guard 下复用 owner-native 校验。整个过程不修改任何 live
+authority 路径。精确重试和中断的 Control 构建可以恢复；被污染的 target、link、未知 entry、重绑定与
+candidate 漂移都会 fail closed。Complete-set activation、跨 owner 崩溃 journal、完整 subprocess-exit
+验收、生产 backup/restore 接线，以及所有消费者的协调权威切换完成前，该内核仍保持禁用。
 
 ## 运行时可见性
 

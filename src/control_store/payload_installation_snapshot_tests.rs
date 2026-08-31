@@ -185,7 +185,7 @@ fn complete_snapshot_contracts_are_send_and_sync() {
     assert_send_sync::<VerifiedControlInstallationSnapshot>();
 }
 
-fn paths(temporary: &TempDir) -> ExtensionPaths {
+pub(in crate::control_store) fn paths(temporary: &TempDir) -> ExtensionPaths {
     ExtensionPaths::new(
         temporary.path().join("data"),
         temporary.path().join("state"),
@@ -230,7 +230,10 @@ pub(in crate::control_store) fn registry() -> ControlPayloadOwnerRegistry {
     .unwrap()
 }
 
-fn seed_observations(paths: &ExtensionPaths, installation: &a3s_use_core::InstallationId) {
+pub(in crate::control_store) fn seed_observations(
+    paths: &ExtensionPaths,
+    installation: &a3s_use_core::InstallationId,
+) {
     for (relative, bytes) in planning_observation_snapshot_fixtures(installation) {
         let path = paths
             .installation_state_root()

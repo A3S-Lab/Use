@@ -21,6 +21,7 @@ mod restore;
 
 use control::VerifiedControlKnowledgeHistory;
 use inventory::knowledge_inventory_digest;
+pub(in crate::control_store) use restore::StagedControlKnowledgePayloadRestore;
 #[cfg(test)]
 pub(in crate::control_store) use restore::{
     ControlKnowledgePayloadRestoreResult, ControlKnowledgePayloadRestoreState,

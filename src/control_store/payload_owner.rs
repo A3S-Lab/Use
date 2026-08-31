@@ -14,8 +14,10 @@
 //! path yet. The complete-set snapshot coordinator now publishes and
 //! offline-verifies one no-clobber archive containing the Control export and
 //! every registered owner receipt plus each present payload. Coordinated
-//! restore activation and subprocess recovery must still be qualified before
-//! the authority cutover.
+//! clean-target staging now binds the same complete set beneath one retained
+//! exclusive fence without touching live authority. Coordinated activation
+//! and subprocess recovery must still be qualified before the authority
+//! cutover.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
@@ -32,7 +34,8 @@ mod snapshot;
 
 #[cfg(test)]
 pub(in crate::control_store) use complete_set::{
-    ControlInstallationSnapshotManifest, VerifiedControlInstallationSnapshot,
+    ControlInstallationSnapshotManifest, StagedControlInstallationRestore,
+    VerifiedControlInstallationSnapshot,
 };
 #[cfg(test)]
 pub(in crate::control_store) use host_projection::{

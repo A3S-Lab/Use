@@ -1452,9 +1452,21 @@ offline before publication. Absent owners contribute receipts but no invented
 payload bytes; the global Artifact Store remains outside installation backup.
 Archive header, manifest, length, payload digest, trailing-byte, link, drift,
 rebinding, and overwrite failures all fail closed. This complete-set writer is
-also inactive qualification code. Complete-set restore staging and activation,
-the full subprocess-exit matrix, production backup/restore wiring, and
-coordinated authority cutover remain open.
+also inactive qualification code. An offline-verified complete snapshot can
+now stage the Control database and all four owner candidates beneath one fixed
+`.control-installation-restore` directory while retaining the exact target's
+exclusive maintenance fence. One canonical path-free attempt descriptor binds
+the snapshot, installation, owner registry, Knowledge storage policy, and
+fixed component set before candidate I/O begins. The Control candidate must
+round-trip to the exact canonical export, checkpoint to one SQLite file, and
+match its durable byte digest; every external candidate is built and rechecked
+by its owner-native adapter under the same guard. Present and absent owners,
+completed retries, and interrupted Control staging are deterministic, while a
+nonempty target, unknown or linked entries, snapshot/policy rebinding, and
+completed-candidate drift fail closed without touching live authority paths.
+This qualifies complete-set restore staging only. Coordinated activation, its
+cross-owner crash journal and subprocess-exit matrix, production backup/restore
+wiring, and the authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

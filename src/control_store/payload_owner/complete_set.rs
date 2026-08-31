@@ -13,10 +13,16 @@ use crate::control_store::export::MAX_CONTROL_STORE_EXPORT_BYTES;
 use crate::control_store::model::valid_sha256;
 
 mod archive;
+mod control_restore;
+mod control_restore_evidence;
 mod coordinator;
+mod restore;
+mod restore_filesystem;
 
 #[cfg(test)]
 pub(in crate::control_store) use coordinator::VerifiedControlInstallationSnapshot;
+#[cfg(test)]
+pub(in crate::control_store) use restore::StagedControlInstallationRestore;
 
 const COMPLETE_SNAPSHOT_SCHEMA: &str = "a3s.use.control-installation-snapshot.v1";
 const COMPLETE_SNAPSHOT_DOMAIN: &[u8] = b"a3s.use.control-installation-snapshot.v1\0";
