@@ -13,6 +13,13 @@ use super::{
 use crate::control_store::model::valid_sha256;
 
 mod archive;
+mod restore;
+
+#[cfg(test)]
+pub(in crate::control_store) use restore::{
+    ControlObservationPayloadRestoreResult, ControlObservationPayloadRestoreState,
+    StagedControlObservationPayloadRestore,
+};
 
 pub(in crate::control_store) const CONTROL_OBSERVATION_PAYLOAD_SNAPSHOT_SCHEMA: &str =
     "a3s.use.control-observation-payload-snapshot.v1";
@@ -303,19 +310,23 @@ impl ControlObservationPayloadSnapshot {
         expected_binding.verify_control_export(registry, control_export)?;
         archive::verify_archive(self, archive_path.as_deref()).await?;
         Ok(VerifiedControlObservationPayloadSnapshot {
-            entry_count: self.manifest.entries.len(),
+            archive_path,
+            registry: registry.clone(),
+            snapshot: self.clone(),
         })
     }
 }
 
 #[derive(Debug)]
 pub(in crate::control_store) struct VerifiedControlObservationPayloadSnapshot {
-    entry_count: usize,
+    archive_path: Option<PathBuf>,
+    registry: ControlPayloadOwnerRegistry,
+    snapshot: ControlObservationPayloadSnapshot,
 }
 
 impl VerifiedControlObservationPayloadSnapshot {
     fn entry_count(&self) -> usize {
-        self.entry_count
+        self.snapshot.manifest.entries.len()
     }
 }
 

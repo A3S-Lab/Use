@@ -598,21 +598,27 @@ guard remain held, it also reconciles the post-publication/pre-result boundary
 without creating a second binding authority; the canonical result is path-free
 and snapshot-bound.
 The planning-and-diagnostic observation owner now has the second concrete
-snapshot adapter. It uses the diagnostic-history, resolution-attempt, and
-download-attempt owners' own decoders and invariants instead of copying their
-schemas. Only terminal diagnostic histories and terminal resolution attempts
-enter the bounded no-clobber archive. Active resolution/download records and
-locks are excluded, while a canonical path/digest inventory of active records
-is bound to the manifest. Secure traversal, a second pre-publication scan, and
-offline verification reject links, moved or foreign records, unknown layouts,
-duplicate identities, substitution, trailing bytes, and registered bound
-violations. Receipts remain path-free and bound to the exact Control export.
-This adapter has no restore contract yet and is not connected to the legacy
-scanner. Snapshot/verification adapters for Host projection and Restore
-Coordinator, staged restore for terminal observations, complete-set
-orchestration, the full process-exit matrix, production Grant conversion and
-effect dispatch, indivisible consumer cutover, and deletion of legacy mutable
-stores therefore remain open;
+snapshot and clean-target restore adapter. It uses the diagnostic-history,
+resolution-attempt, and download-attempt owners' own decoders and invariants
+instead of copying their schemas. Only terminal diagnostic histories and
+terminal resolution attempts enter the bounded no-clobber archive. Active
+resolution/download records and locks are excluded, while a canonical
+path/digest inventory of active records is bound to the manifest. Secure
+traversal, a second pre-publication scan, and offline verification reject links,
+moved or foreign records, unknown layouts, duplicate identities, substitution,
+trailing bytes, and registered bound violations. Receipts remain path-free and
+bound to the exact Control export. An offline-verified archive can be staged
+beneath the target state root without touching live owner paths. Activation
+requires the exact exclusive maintenance guard and a clean record inventory,
+atomically marks the archive as activating, and publishes each owner-validated
+record without replacement. Digest-named deterministic partials recover
+interrupted record writes; after activation starts, only an exact snapshot
+subset may replay. The final path-free result is bound to the owner manifest and
+inventory. This adapter is not connected to the legacy scanner.
+Snapshot/verification adapters for Host projection and Restore Coordinator,
+complete-set orchestration, the full subprocess-exit matrix, production Grant
+conversion and effect dispatch, indivisible consumer cutover, and deletion of
+legacy mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

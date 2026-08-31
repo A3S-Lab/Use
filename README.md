@@ -1381,11 +1381,19 @@ authority. The exact active inventory count and digest remain bound to the
 manifest. Secure bounded traversal rejects links, moved or foreign records,
 unknown layouts, duplicate package identities, and file/byte overruns. Archive
 creation is no-clobber, re-scans live state before publication, and emits a
-path-free Control-export-bound receipt that can be verified offline. This
-adapter does not yet restore observations. Both adapters remain inactive
+path-free Control-export-bound receipt that can be verified offline. An
+offline-verified observation snapshot can now copy its exact archive into a
+state-root-local staging directory without touching live owner paths. First
+activation requires a clean terminal/active record inventory and the exact
+exclusive maintenance guard, then atomically changes the archive candidate to
+an `activating` marker before publishing any record. Digest-named deterministic
+partials make interrupted per-record publication replayable; only an exact
+snapshot subset is accepted after activation has started. Candidate, target,
+link, active-record, and archive drift fail closed, locks remain excluded, and
+the canonical result contains no host paths. Both adapters remain inactive
 qualification code and are not wired to the current backup or restore scanner.
-The Host projection and Restore Coordinator adapters, observation restore,
-complete-set orchestration, full process-exit matrix, and coordinated authority
+The Host projection and Restore Coordinator adapters, complete-set
+orchestration, the full subprocess-exit matrix, and coordinated authority
 cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
