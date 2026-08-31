@@ -13,7 +13,7 @@ use super::model::{
 };
 use super::schema::{ControlStoreMetadata, CONTROL_STORE_SCHEMA_VERSION};
 
-const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v7";
+const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v8";
 const MAX_CONTROL_STORE_EXPORT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EXPORTED_GENERATIONS: usize = 4096;
 const MAX_EXPORTED_OPERATIONS: usize = 8192;
@@ -68,7 +68,7 @@ pub(super) fn verify(
         ));
     }
     let export: ControlStoreExport = serde_json::from_slice(bytes)
-        .map_err(|_| export_error("The Control Store export is not valid schema-v7 JSON."))?;
+        .map_err(|_| export_error("The Control Store export is not valid schema-v8 JSON."))?;
     validate_export(&export)?;
     let canonical = canonical_json(&export)?;
     if canonical != bytes {
@@ -371,7 +371,10 @@ fn validate_effect_record(record: &ControlEffectRecord) -> UseResult<()> {
         || !valid_sha256(&record.intent.plan_digest)
         || !record.intent.subject.matches_kind(record.intent.kind)
         || !record.intent.subject.validate_identity()
-        || !valid_machine_id(&record.intent.provider_id)
+        || !record
+            .intent
+            .owner
+            .validate_shape(&record.intent.subject, record.intent.kind)
         || !valid_sha256(&record.payload_digest)
         || record.intent.installation_generation == 0
     {

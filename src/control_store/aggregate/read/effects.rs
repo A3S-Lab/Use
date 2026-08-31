@@ -16,7 +16,7 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
         .prepare(
             "SELECT c.sequence, o.idempotency_key, c.installation_generation,
                     c.subject_kind, c.package_id, c.package_lifecycle_generation,
-                    c.surface_kind, c.surface_id, o.provider_id, c.checkpoint_kind,
+                    c.surface_kind, c.surface_id, o.owner_kind, c.checkpoint_kind,
                     o.payload_json, o.payload_digest, c.required, o.status, o.attempt,
                     o.claim_owner, o.claim_token, o.lease_until_ms, o.evidence_digest,
                     o.error_code, o.observed_at_ms, i.scope_kind, i.scope_id,
@@ -99,7 +99,7 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                 || intent.installation.id != row.22
                 || intent.plan_digest != row.23
                 || intent.installation_generation != installation_generation
-                || intent.provider_id != row.8
+                || intent.owner.kind_name() != row.8
                 || intent.kind != kind
                 || intent.required != row.12
                 || intent.subject.kind_name() != row.3
@@ -160,6 +160,10 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                 &generation.capability,
                 is_target,
                 operation_action,
+            ) || !intent.owner.matches_generation(
+                &intent.subject,
+                intent.kind,
+                &generation.provider_selections,
             ) {
                 return Err(corruption_error(
                     "A Control Store effect payload does not bind its committed generation.",

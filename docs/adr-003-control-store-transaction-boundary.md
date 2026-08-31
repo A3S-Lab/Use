@@ -125,6 +125,24 @@ An in-progress claim is a lease, not completion authority. Expiry permits an
 exact replay; it does not mint a new effect identity. No transaction or store
 executor permit may be held while awaiting provider or filesystem I/O.
 
+Only facts that cannot join the Control transaction enter this outbox. Package
+selection, lifecycle generations, Grants, reviewed provider selection, and the
+candidate capability descriptor are aggregate facts; inventing apply, revoke,
+commit, or binding effects for them would create a second authority. The
+external inventory is limited to typed surface preparation, capability
+cutover, accepted-call drain, and surface stop or removal. Install and enable
+prepare dependency surfaces before dependants and then cut over. Upgrade
+prepares the candidate, cuts over, drains prior calls, and removes prior
+surfaces in reverse dependency order. Disable and uninstall cut over before
+drain and reverse-order retirement.
+
+Each intent names the port that owns it: Capability Index, invocation leases,
+the exact reviewed Runtime provider selection, or a static Flow, Knowledge,
+Skill, or UI host. A caller cannot choose the sequence, owner, required policy,
+generation, or idempotency identity. Selected optional surface preparation may
+be rejected as degraded; the dependency closure of mandatory surfaces and all
+retirement effects remain required.
+
 ### Relational constraints carry ownership invariants
 
 The schema uses foreign keys, `CHECK` constraints, uniqueness, and
@@ -208,7 +226,7 @@ to a committed transaction plus explicit external-effect observations.
 ### Current qualification status
 
 The checked-in inactive kernel implements most of the local Control Store work
-in step 2, not the authority cutover. Schema v7 binds one exact installation
+in step 2, not the authority cutover. Schema v8 binds one exact installation
 and stores the complete generation history, canonical reviewed Plan envelopes,
 versioned authorization evidence, exact installation snapshots and relational
 graph projections, canonical full Workspace Grants, provider bindings,
@@ -235,12 +253,13 @@ and enforcement evidence. The candidate capability digest is derived from the
 target snapshot, package lifecycle identities, Grant revisions, and those
 selections. Neither projection claims an applied endpoint, readiness, compiled
 artifact, or Knowledge observation before the corresponding external effect.
-Canonical effect payloads bind
-scope, plan, action, provider, artifact digests, subject, and capability
-identity; their bytes and digest are committed with a relational projection.
-Package and surface foreign keys bind the exact current or immediately prior
-incarnation, while one installation-scoped graph
-effect represents the real atomic capability cutover. Typed transactions
+The same projection derives the complete external-effect sequence for all five
+actions. It binds typed owners, exact reviewed Runtime selections, artifact and
+surface incarnations, dependency order, required policy, current or immediately
+prior generation, and the installation-scoped capability cutover. Canonical
+payload bytes, a domain-separated idempotency key, their digest, and relational
+projection commit together. Package, Grant, lifecycle, and reviewed provider
+facts do not reappear as pseudo effects. Typed transactions
 enforce cursor compare-and-swap, root/action semantics, exact replay,
 required-effect failure,
 and capability retirement. Expired or explicitly unknown claims require an
@@ -262,11 +281,11 @@ deterministic export, lifecycle-reference tamper detection, and staged restore.
 The kernel remains private and no production lifecycle constructs it. It does
 not yet register external artifact/projection payload owners or participate in
 live state-layout, reachability, diagnostics, backup, or restore orchestration.
-Existing JSON stores remain the only production authority. Deterministic
-lifecycle conversion into reviewed Grant evidence, derivation of effect
-intents, and typed applied-provider observations, plus the full process-exit
-matrix, the indivisible reader/writer cutover, and deletion of legacy mutable
-stores remain open;
+Existing JSON stores remain the only production authority. Production
+lifecycle conversion into reviewed Grant evidence, effect dispatch through
+typed external owners, and typed applied-provider observations, plus the full
+process-exit matrix, the indivisible reader/writer cutover, and deletion of
+legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 

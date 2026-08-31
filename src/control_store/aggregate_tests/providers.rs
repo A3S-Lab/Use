@@ -53,9 +53,14 @@ async fn caller_cannot_choose_provider_or_capability_projection() {
 
         let mut tampered_capability = candidate.clone();
         tampered_capability.capability.descriptor_digest = digest('e');
+        let capability_effect = tampered_capability
+            .effects
+            .iter_mut()
+            .find(|effect| effect.kind == ControlEffectKind::CapabilityCutover)
+            .unwrap();
         if let ControlEffectSubject::Installation {
             descriptor_digest, ..
-        } = &mut tampered_capability.effects[1].subject
+        } = &mut capability_effect.subject
         {
             *descriptor_digest = digest('e');
         }

@@ -1,5 +1,6 @@
 use a3s_use_core::{
-    InstallationId, InstallationSnapshot, PluginOperationAction, PluginSurfaceRef, UseResult,
+    InstallationId, InstallationSnapshot, PluginOperationAction, PluginSurfaceKind,
+    PluginSurfaceRef, UseResult,
 };
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
@@ -9,63 +10,179 @@ use crate::plugin_lifecycle::PluginLifecycleAction;
 
 use super::{
     corruption_error, input_error, valid_machine_id, valid_sha256, ControlCapabilitySelection,
-    ControlPackageLifecycle,
+    ControlPackageLifecycle, ControlProviderSelection,
 };
 
+pub(in crate::control_store) const CONTROL_EFFECT_INTENT_SCHEMA: &str =
+    "a3s.use.control-effect-intent.v1";
 pub(in crate::control_store) const MAX_CONTROL_EFFECT_PAYLOAD_BYTES: usize = 64 * 1024;
 pub(in crate::control_store) const MAX_CONTROL_EFFECT_PAYLOAD_TOTAL_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(in crate::control_store) enum ControlEffectKind {
-    PackageCommit,
     SurfacePrepare,
-    CapabilityPublish,
-    CapabilityHide,
+    CapabilityCutover,
     CallsDrain,
     SurfaceStop,
     SurfaceRemove,
-    PackageRemove,
-    GrantApply,
-    GrantRevoke,
-    BindingApply,
-    BindingRemove,
 }
 
 impl ControlEffectKind {
     pub(in crate::control_store) const fn as_str(self) -> &'static str {
         match self {
-            Self::PackageCommit => "package-commit",
             Self::SurfacePrepare => "surface-prepare",
-            Self::CapabilityPublish => "capability-publish",
-            Self::CapabilityHide => "capability-hide",
+            Self::CapabilityCutover => "capability-cutover",
             Self::CallsDrain => "calls-drain",
             Self::SurfaceStop => "surface-stop",
             Self::SurfaceRemove => "surface-remove",
-            Self::PackageRemove => "package-remove",
-            Self::GrantApply => "grant-apply",
-            Self::GrantRevoke => "grant-revoke",
-            Self::BindingApply => "binding-apply",
-            Self::BindingRemove => "binding-remove",
         }
     }
 
     pub(in crate::control_store) fn parse(value: &str) -> UseResult<Self> {
         match value {
-            "package-commit" => Ok(Self::PackageCommit),
             "surface-prepare" => Ok(Self::SurfacePrepare),
-            "capability-publish" => Ok(Self::CapabilityPublish),
-            "capability-hide" => Ok(Self::CapabilityHide),
+            "capability-cutover" => Ok(Self::CapabilityCutover),
             "calls-drain" => Ok(Self::CallsDrain),
             "surface-stop" => Ok(Self::SurfaceStop),
             "surface-remove" => Ok(Self::SurfaceRemove),
-            "package-remove" => Ok(Self::PackageRemove),
-            "grant-apply" => Ok(Self::GrantApply),
-            "grant-revoke" => Ok(Self::GrantRevoke),
-            "binding-apply" => Ok(Self::BindingApply),
-            "binding-remove" => Ok(Self::BindingRemove),
             _ => Err(corruption_error("A Control Store effect kind is invalid.")),
         }
+    }
+}
+
+/// The typed port that owns one post-commit effect.
+///
+/// Static hosts are fixed engine composition points. Tool and MCP surfaces
+/// instead bind the exact Runtime selection reviewed in the Plan. No free-form
+/// provider routing string exists outside that typed Runtime variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub(in crate::control_store) enum ControlEffectOwner {
+    CapabilityIndex,
+    InvocationLeases,
+    RuntimeProvider {
+        provider_id: String,
+        selection_digest: String,
+    },
+    FlowHost,
+    KnowledgeHost,
+    SkillHost,
+    UiHost,
+}
+
+impl ControlEffectOwner {
+    pub(in crate::control_store) const fn kind_name(&self) -> &'static str {
+        match self {
+            Self::CapabilityIndex => "capability-index",
+            Self::InvocationLeases => "invocation-leases",
+            Self::RuntimeProvider { .. } => "runtime-provider",
+            Self::FlowHost => "flow-host",
+            Self::KnowledgeHost => "knowledge-host",
+            Self::SkillHost => "skill-host",
+            Self::UiHost => "ui-host",
+        }
+    }
+
+    pub(in crate::control_store) fn validate_shape(
+        &self,
+        subject: &ControlEffectSubject,
+        kind: ControlEffectKind,
+    ) -> bool {
+        match (self, subject, kind) {
+            (
+                Self::CapabilityIndex,
+                ControlEffectSubject::Installation { .. },
+                ControlEffectKind::CapabilityCutover,
+            )
+            | (
+                Self::InvocationLeases,
+                ControlEffectSubject::Package { .. },
+                ControlEffectKind::CallsDrain,
+            ) => true,
+            (
+                Self::RuntimeProvider {
+                    provider_id,
+                    selection_digest,
+                },
+                ControlEffectSubject::Surface { surface, .. },
+                ControlEffectKind::SurfacePrepare
+                | ControlEffectKind::SurfaceStop
+                | ControlEffectKind::SurfaceRemove,
+            ) => {
+                matches!(
+                    surface.kind,
+                    PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
+                ) && valid_machine_id(provider_id)
+                    && valid_sha256(selection_digest)
+            }
+            (
+                Self::FlowHost,
+                ControlEffectSubject::Surface { surface, .. },
+                ControlEffectKind::SurfacePrepare
+                | ControlEffectKind::SurfaceStop
+                | ControlEffectKind::SurfaceRemove,
+            ) => surface.kind == PluginSurfaceKind::Flow,
+            (
+                Self::KnowledgeHost,
+                ControlEffectSubject::Surface { surface, .. },
+                ControlEffectKind::SurfacePrepare
+                | ControlEffectKind::SurfaceStop
+                | ControlEffectKind::SurfaceRemove,
+            ) => surface.kind == PluginSurfaceKind::Okf,
+            (
+                Self::SkillHost,
+                ControlEffectSubject::Surface { surface, .. },
+                ControlEffectKind::SurfacePrepare
+                | ControlEffectKind::SurfaceStop
+                | ControlEffectKind::SurfaceRemove,
+            ) => surface.kind == PluginSurfaceKind::Skill,
+            (
+                Self::UiHost,
+                ControlEffectSubject::Surface { surface, .. },
+                ControlEffectKind::SurfacePrepare
+                | ControlEffectKind::SurfaceStop
+                | ControlEffectKind::SurfaceRemove,
+            ) => surface.kind == PluginSurfaceKind::Ui,
+            _ => false,
+        }
+    }
+
+    pub(in crate::control_store) fn matches_generation(
+        &self,
+        subject: &ControlEffectSubject,
+        kind: ControlEffectKind,
+        providers: &[ControlProviderSelection],
+    ) -> bool {
+        if !self.validate_shape(subject, kind) {
+            return false;
+        }
+        let Self::RuntimeProvider {
+            provider_id,
+            selection_digest,
+        } = self
+        else {
+            return true;
+        };
+        let ControlEffectSubject::Surface {
+            package_id,
+            surface,
+            ..
+        } = subject
+        else {
+            return false;
+        };
+        providers.iter().any(|selection| {
+            selection.package_id() == package_id
+                && selection.surface() == surface
+                && selection.evidence.provider_id == *provider_id
+                && selection.selection_digest == *selection_digest
+        })
     }
 }
 
@@ -110,10 +227,7 @@ impl ControlEffectSubject {
 
     pub(in crate::control_store) fn matches_kind(&self, kind: ControlEffectKind) -> bool {
         match (self, kind) {
-            (
-                Self::Installation { .. },
-                ControlEffectKind::CapabilityPublish | ControlEffectKind::CapabilityHide,
-            ) => true,
+            (Self::Installation { .. }, ControlEffectKind::CapabilityCutover) => true,
             (Self::Package { action, .. }, kind) => package_action_matches_kind(*action, kind),
             (Self::Surface { action, .. }, kind) => surface_action_matches_kind(*action, kind),
             _ => false,
@@ -249,72 +363,59 @@ impl ControlEffectSubject {
     }
 }
 
-const fn package_action_matches_kind(
-    action: PluginLifecycleAction,
-    kind: ControlEffectKind,
-) -> bool {
+fn package_action_matches_kind(action: PluginLifecycleAction, kind: ControlEffectKind) -> bool {
+    kind == ControlEffectKind::CallsDrain
+        && matches!(
+            action,
+            PluginLifecycleAction::Disable | PluginLifecycleAction::Uninstall
+        )
+}
+
+fn surface_action_matches_kind(action: PluginLifecycleAction, kind: ControlEffectKind) -> bool {
     matches!(
         (action, kind),
         (
-            PluginLifecycleAction::Install | PluginLifecycleAction::Upgrade,
-            ControlEffectKind::PackageCommit
+            PluginLifecycleAction::Install
+                | PluginLifecycleAction::Upgrade
+                | PluginLifecycleAction::Enable,
+            ControlEffectKind::SurfacePrepare
+        ) | (
+            PluginLifecycleAction::Disable,
+            ControlEffectKind::SurfaceStop
         ) | (
             PluginLifecycleAction::Uninstall,
-            ControlEffectKind::CallsDrain | ControlEffectKind::PackageRemove
-        ) | (
-            PluginLifecycleAction::Install
-                | PluginLifecycleAction::Upgrade
-                | PluginLifecycleAction::Enable,
-            ControlEffectKind::GrantApply
-        ) | (
-            PluginLifecycleAction::Disable | PluginLifecycleAction::Uninstall,
-            ControlEffectKind::GrantRevoke
+            ControlEffectKind::SurfaceRemove
         )
     )
 }
 
-const fn surface_action_matches_kind(
-    action: PluginLifecycleAction,
-    kind: ControlEffectKind,
-) -> bool {
-    matches!(
-        (action, kind),
-        (
-            PluginLifecycleAction::Install
-                | PluginLifecycleAction::Upgrade
-                | PluginLifecycleAction::Enable,
-            ControlEffectKind::SurfacePrepare | ControlEffectKind::BindingApply
-        ) | (
-            PluginLifecycleAction::Disable | PluginLifecycleAction::Uninstall,
-            ControlEffectKind::SurfaceStop
-                | ControlEffectKind::SurfaceRemove
-                | ControlEffectKind::BindingRemove
-        )
-    )
-}
-
-const fn effect_kind_matches_operation(
-    kind: ControlEffectKind,
-    action: PluginOperationAction,
-) -> bool {
+fn effect_kind_matches_operation(kind: ControlEffectKind, action: PluginOperationAction) -> bool {
     match kind {
-        ControlEffectKind::CapabilityPublish => matches!(
+        ControlEffectKind::SurfacePrepare => matches!(
             action,
             PluginOperationAction::Install
                 | PluginOperationAction::Upgrade
                 | PluginOperationAction::Enable
         ),
-        ControlEffectKind::CapabilityHide => matches!(
+        ControlEffectKind::CapabilityCutover => true,
+        ControlEffectKind::CallsDrain => matches!(
             action,
-            PluginOperationAction::Disable | PluginOperationAction::Uninstall
+            PluginOperationAction::Upgrade
+                | PluginOperationAction::Disable
+                | PluginOperationAction::Uninstall
         ),
-        _ => true,
+        ControlEffectKind::SurfaceRemove => matches!(
+            action,
+            PluginOperationAction::Upgrade | PluginOperationAction::Uninstall
+        ),
+        ControlEffectKind::SurfaceStop => action == PluginOperationAction::Disable,
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(in crate::control_store) struct ControlEffectIntent {
+    pub(in crate::control_store) schema: String,
     pub(in crate::control_store) sequence: u32,
     pub(in crate::control_store) idempotency_key: String,
     pub(in crate::control_store) installation: InstallationId,
@@ -322,19 +423,54 @@ pub(in crate::control_store) struct ControlEffectIntent {
     pub(in crate::control_store) operation_action: PluginOperationAction,
     pub(in crate::control_store) installation_generation: u64,
     pub(in crate::control_store) subject: ControlEffectSubject,
-    pub(in crate::control_store) provider_id: String,
+    pub(in crate::control_store) owner: ControlEffectOwner,
     pub(in crate::control_store) kind: ControlEffectKind,
     pub(in crate::control_store) required: bool,
 }
 
 impl ControlEffectIntent {
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::control_store) fn new(
+        sequence: u32,
+        installation: InstallationId,
+        plan_digest: String,
+        operation_action: PluginOperationAction,
+        installation_generation: u64,
+        subject: ControlEffectSubject,
+        owner: ControlEffectOwner,
+        kind: ControlEffectKind,
+        required: bool,
+    ) -> UseResult<Self> {
+        let mut intent = Self {
+            schema: CONTROL_EFFECT_INTENT_SCHEMA.to_string(),
+            sequence,
+            idempotency_key: String::new(),
+            installation,
+            plan_digest,
+            operation_action,
+            installation_generation,
+            subject,
+            owner,
+            kind,
+            required,
+        };
+        intent.idempotency_key = intent.derived_idempotency_key()?;
+        intent.validate_binding(
+            &intent.installation,
+            &intent.plan_digest,
+            intent.operation_action,
+        )?;
+        Ok(intent)
+    }
+
     pub(in crate::control_store) fn validate_binding(
         &self,
         installation: &InstallationId,
         plan_digest: &str,
         operation_action: PluginOperationAction,
     ) -> UseResult<()> {
-        if self.installation.validate().is_err()
+        if self.schema != CONTROL_EFFECT_INTENT_SCHEMA
+            || self.installation.validate().is_err()
             || self.installation != *installation
             || !valid_sha256(&self.plan_digest)
             || self.plan_digest != plan_digest
@@ -342,8 +478,10 @@ impl ControlEffectIntent {
             || !effect_kind_matches_operation(self.kind, operation_action)
             || !self.subject.matches_kind(self.kind)
             || !self.subject.validate_identity()
-            || !valid_sha256(&self.idempotency_key)
-            || !valid_machine_id(&self.provider_id)
+            || !self.owner.validate_shape(&self.subject, self.kind)
+            || !self
+                .derived_idempotency_key()
+                .is_ok_and(|expected| expected == self.idempotency_key)
             || self.installation_generation == 0
         {
             return Err(input_error(
@@ -353,21 +491,29 @@ impl ControlEffectIntent {
         Ok(())
     }
 
+    pub(in crate::control_store) fn derived_idempotency_key(&self) -> UseResult<String> {
+        const DOMAIN: &[u8] = b"a3s.use.control-effect-idempotency.v1\0";
+        let identity = ControlEffectIdentity {
+            schema: &self.schema,
+            sequence: self.sequence,
+            installation: &self.installation,
+            plan_digest: &self.plan_digest,
+            operation_action: self.operation_action,
+            installation_generation: self.installation_generation,
+            subject: &self.subject,
+            owner: &self.owner,
+            kind: self.kind,
+            required: self.required,
+        };
+        let bytes = canonical_effect_bytes(&identity)?;
+        let mut digest = Sha256::new();
+        digest.update(DOMAIN);
+        digest.update(bytes);
+        Ok(format!("sha256:{:x}", digest.finalize()))
+    }
+
     pub(in crate::control_store) fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
-        let mut bytes = Vec::new();
-        let mut serializer =
-            serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
-        self.serialize(&mut serializer).map_err(|error| {
-            input_error(format!(
-                "Failed to encode a canonical Control Store effect payload: {error}"
-            ))
-        })?;
-        if bytes.is_empty() || bytes.len() > MAX_CONTROL_EFFECT_PAYLOAD_BYTES {
-            return Err(input_error(
-                "The canonical Control Store effect payload exceeds its size bound.",
-            ));
-        }
-        Ok(bytes)
+        canonical_effect_bytes(self)
     }
 
     pub(in crate::control_store) fn descriptor_digest(&self) -> UseResult<String> {
@@ -376,6 +522,38 @@ impl ControlEffectIntent {
             Sha256::digest(self.canonical_bytes()?)
         ))
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ControlEffectIdentity<'a> {
+    schema: &'a str,
+    sequence: u32,
+    installation: &'a InstallationId,
+    plan_digest: &'a str,
+    operation_action: PluginOperationAction,
+    installation_generation: u64,
+    subject: &'a ControlEffectSubject,
+    owner: &'a ControlEffectOwner,
+    kind: ControlEffectKind,
+    required: bool,
+}
+
+fn canonical_effect_bytes(value: &impl Serialize) -> UseResult<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut serializer =
+        serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
+    value.serialize(&mut serializer).map_err(|error| {
+        input_error(format!(
+            "Failed to encode a canonical Control Store effect payload: {error}"
+        ))
+    })?;
+    if bytes.is_empty() || bytes.len() > MAX_CONTROL_EFFECT_PAYLOAD_BYTES {
+        return Err(input_error(
+            "The canonical Control Store effect payload exceeds its size bound.",
+        ));
+    }
+    Ok(bytes)
 }
 
 fn subject_action_matches_operation(
@@ -399,7 +577,7 @@ fn subject_action_matches_operation(
                 || (!is_target && action == PluginLifecycleAction::Uninstall)
         }
         PluginOperationAction::Enable => is_target && action == PluginLifecycleAction::Enable,
-        PluginOperationAction::Disable => is_target && action == PluginLifecycleAction::Disable,
+        PluginOperationAction::Disable => !is_target && action == PluginLifecycleAction::Disable,
         PluginOperationAction::Uninstall => {
             !is_target && action == PluginLifecycleAction::Uninstall
         }

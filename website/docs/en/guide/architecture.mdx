@@ -170,6 +170,15 @@ Embedding hosts implement `CognitivePackageLifecycleFactory` to supply their exa
 
 [ADR-003](https://github.com/A3S-Lab/Use/blob/main/docs/adr-003-control-store-transaction-boundary.md) freezes the next Control Store boundary: one per-installation mutable authority, no JSON/SQLite dual writes, and an outbox around provider effects that cannot join the local transaction.
 
+The inactive schema-v8 kernel now derives that complete outbox inventory from
+the reviewed Plan and committed generation. It prepares dependency surfaces
+before dependants, cuts over once, drains accepted calls, and retires surfaces
+in reverse order through typed owners. Tool and MCP effects bind the exact
+reviewed Runtime selection; package state, Grants, lifecycle identity, and
+provider selection stay inside the aggregate rather than becoming duplicate
+effects. Production orchestration and the coordinated authority cutover remain
+disabled until every consumer can switch together.
+
 ## Runtime visibility
 
 The Surface Reconciler observes desired state, generation receipt, grants, bindings, Runtime/Gateway health, A3S Flow observation, and Skill/UI/OKF projection. OKF has a distinct Knowledge-host owner: missing is pending, staged is unpublished, and only exact promoted evidence is healthy. The Capability Registry publishes a new snapshot only when complete evidence agrees on one generation. Resident hosts can watch generation plus revision and hot-refresh without restarting.

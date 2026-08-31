@@ -26,13 +26,7 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         1,
     );
     store.register_operation(disable.clone()).await.unwrap();
-    let mut disabled = projected_transition(&disable, &installed, &projection_history);
-    disabled.grants.clear();
-    let package_subject = disabled.effects[0].subject.clone();
-    disabled.effects[0].kind = ControlEffectKind::CapabilityHide;
-    disabled.effects[0].subject = capability_subject(&disable, &disabled.capability);
-    disabled.effects[1].kind = ControlEffectKind::GrantRevoke;
-    disabled.effects[1].subject = package_subject;
+    let disabled = projected_transition(&disable, &installed, &projection_history);
     let disabled_generation = store.commit_transition(disabled).await.unwrap();
     projection_history.observe(&disabled_generation).unwrap();
     apply_all_effects(&store, &disable, 230).await;
@@ -44,9 +38,7 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         2,
     );
     store.register_operation(enable.clone()).await.unwrap();
-    let mut enabled = projected_transition(&enable, &disabled_generation, &projection_history);
-    enabled.effects[0].kind = ControlEffectKind::GrantApply;
-    enabled.effects[1].kind = ControlEffectKind::CapabilityPublish;
+    let enabled = projected_transition(&enable, &disabled_generation, &projection_history);
     let enabled_generation = store.commit_transition(enabled).await.unwrap();
     projection_history.observe(&enabled_generation).unwrap();
     apply_all_effects(&store, &enable, 430).await;
@@ -58,13 +50,7 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         3,
     );
     store.register_operation(uninstall.clone()).await.unwrap();
-    let mut removed = projected_transition(&uninstall, &enabled_generation, &projection_history);
-    let package_subject = removed.effects[0].subject.clone();
-    removed.effects[0].kind = ControlEffectKind::CapabilityHide;
-    removed.effects[0].subject = capability_subject(&uninstall, &removed.capability);
-    removed.effects[1].kind = ControlEffectKind::PackageRemove;
-    removed.effects[1].installation_generation = 3;
-    removed.effects[1].subject = package_subject;
+    let removed = projected_transition(&uninstall, &enabled_generation, &projection_history);
     let removed_generation = store.commit_transition(removed).await.unwrap();
     projection_history.observe(&removed_generation).unwrap();
     apply_all_effects(&store, &uninstall, 630).await;
@@ -112,7 +98,7 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         .iter()
         .filter(|effect| effect.operation_id == uninstall.operation_id())
         .collect::<Vec<_>>();
-    assert_eq!(uninstall_effects.len(), 2);
+    assert_eq!(uninstall_effects.len(), 4);
     assert_eq!(uninstall_effects[0].intent.installation_generation, 4);
     assert!(matches!(
         &uninstall_effects[0].intent.subject,
@@ -123,6 +109,10 @@ async fn root_lifecycle_actions_form_one_consecutive_capability_history() {
         &uninstall_effects[1].intent.subject,
         ControlEffectSubject::Package { .. }
     ));
+    assert!(uninstall_effects[2..].iter().all(|effect| {
+        effect.intent.installation_generation == 3
+            && matches!(effect.intent.subject, ControlEffectSubject::Surface { .. })
+    }));
 }
 
 #[tokio::test]
@@ -137,10 +127,10 @@ async fn invalid_effect_generation_references_roll_back_the_whole_transition() {
     assert_eq!(error.code, "use.control_store.input_invalid");
 
     let mut wrong_action = transition(control_installation(), &reviewed);
-    if let ControlEffectSubject::Package { action, .. } = &mut wrong_action.effects[0].subject {
+    if let ControlEffectSubject::Surface { action, .. } = &mut wrong_action.effects[0].subject {
         *action = PluginLifecycleAction::Upgrade;
     } else {
-        panic!("package commit must retain a package subject");
+        panic!("surface preparation must retain a surface subject");
     }
     assert_eq!(
         store
@@ -152,14 +142,14 @@ async fn invalid_effect_generation_references_roll_back_the_whole_transition() {
     );
 
     let mut wrong_lifecycle = transition(control_installation(), &reviewed);
-    if let ControlEffectSubject::Package {
+    if let ControlEffectSubject::Surface {
         lifecycle_generation,
         ..
     } = &mut wrong_lifecycle.effects[0].subject
     {
         *lifecycle_generation = 42;
     } else {
-        panic!("package commit must retain a package subject");
+        panic!("surface preparation must retain a surface subject");
     }
     assert_eq!(
         store
@@ -171,9 +161,14 @@ async fn invalid_effect_generation_references_roll_back_the_whole_transition() {
     );
 
     let mut wrong_capability = transition(control_installation(), &reviewed);
+    let capability_effect = wrong_capability
+        .effects
+        .iter_mut()
+        .find(|effect| effect.kind == ControlEffectKind::CapabilityCutover)
+        .unwrap();
     if let ControlEffectSubject::Installation {
         descriptor_digest, ..
-    } = &mut wrong_capability.effects[1].subject
+    } = &mut capability_effect.subject
     {
         *descriptor_digest = digest('e');
     } else {

@@ -16,30 +16,9 @@ const PERMISSIONED_CATALOG: &[u8] =
     include_bytes!("../../../crates/core/fixtures/plugins/catalog-record-v3.json");
 
 pub(super) fn bind_action_effects(
-    mut transition: ControlTransition,
-    reviewed: &ReviewedControlOperation,
+    transition: ControlTransition,
+    _reviewed: &ReviewedControlOperation,
 ) -> ControlTransition {
-    match reviewed.action() {
-        PluginOperationAction::Disable => {
-            let package_subject = transition.effects[0].subject.clone();
-            transition.effects[0].kind = ControlEffectKind::CapabilityHide;
-            transition.effects[0].subject = capability_subject(reviewed, &transition.capability);
-            transition.effects[1].kind = ControlEffectKind::GrantRevoke;
-            transition.effects[1].subject = package_subject;
-        }
-        PluginOperationAction::Enable => {
-            transition.effects[0].kind = ControlEffectKind::GrantApply;
-        }
-        PluginOperationAction::Uninstall => {
-            let package_subject = transition.effects[0].subject.clone();
-            transition.effects[0].kind = ControlEffectKind::CapabilityHide;
-            transition.effects[0].subject = capability_subject(reviewed, &transition.capability);
-            transition.effects[1].kind = ControlEffectKind::PackageRemove;
-            transition.effects[1].installation_generation = reviewed.expected_generation;
-            transition.effects[1].subject = package_subject;
-        }
-        PluginOperationAction::Install | PluginOperationAction::Upgrade => {}
-    }
     transition
 }
 

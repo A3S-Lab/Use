@@ -7,13 +7,6 @@ pub(super) fn digest(seed: char) -> String {
     format!("sha256:{}", seed.to_string().repeat(64))
 }
 
-pub(super) fn effect_key(operation_id: &str, sequence: u32) -> String {
-    format!(
-        "sha256:{:x}",
-        Sha256::digest(format!("{operation_id}\n{sequence}").as_bytes())
-    )
-}
-
 pub(super) fn operation(id: &str) -> ReviewedControlOperation {
     operation_at(id, PluginOperationAction::Install, 0, 0)
 }
@@ -374,6 +367,22 @@ pub(super) fn transition(
     } else {
         let snapshot = snapshot(installation.clone(), reviewed.target_generation().unwrap());
         let package_id = snapshot.packages[0].package_id().to_string();
+        let capability = ControlCapabilitySelection {
+            generation: reviewed.target_capability_generation().unwrap(),
+            descriptor_digest: digest('5'),
+        };
+        let effects = vec![ControlEffectIntent::new(
+            0,
+            installation.clone(),
+            reviewed.plan_digest().to_string(),
+            reviewed.action(),
+            snapshot.generation,
+            capability_subject(reviewed, &capability),
+            ControlEffectOwner::CapabilityIndex,
+            ControlEffectKind::CapabilityCutover,
+            true,
+        )
+        .unwrap()];
         TransitionProjectionFixture {
             snapshot,
             package_lifecycles: vec![ControlPackageLifecycle {
@@ -382,10 +391,8 @@ pub(super) fn transition(
             }],
             grants: Vec::new(),
             provider_selections: Vec::new(),
-            capability: ControlCapabilitySelection {
-                generation: reviewed.target_capability_generation().unwrap(),
-                descriptor_digest: digest('5'),
-            },
+            capability,
+            effects,
         }
     };
     transition_from_projection(installation, reviewed, projection, None, committed_at_ms)
@@ -416,6 +423,7 @@ struct TransitionProjectionFixture {
     grants: Vec<ControlGrantSelection>,
     provider_selections: Vec<ControlProviderSelection>,
     capability: ControlCapabilitySelection,
+    effects: Vec<ControlEffectIntent>,
 }
 
 impl From<ProjectedControlGeneration> for TransitionProjectionFixture {
@@ -426,12 +434,13 @@ impl From<ProjectedControlGeneration> for TransitionProjectionFixture {
             grants: projected.grants,
             provider_selections: projected.provider_selections,
             capability: projected.capability,
+            effects: projected.effects,
         }
     }
 }
 
 fn transition_from_projection(
-    installation: InstallationId,
+    _installation: InstallationId,
     reviewed: &ReviewedControlOperation,
     projection: TransitionProjectionFixture,
     prior: Option<&ControlGeneration>,
@@ -443,53 +452,9 @@ fn transition_from_projection(
         grants,
         provider_selections,
         capability,
+        effects,
     } = projection;
-    let subject_package = snapshot
-        .package_selection(reviewed.root_package_id())
-        .or_else(|| {
-            prior.and_then(|generation| {
-                generation
-                    .snapshot
-                    .package_selection(reviewed.root_package_id())
-            })
-        })
-        .unwrap();
-    let package_id = subject_package.package_id().to_string();
-    let lifecycle_generation = package_lifecycles
-        .iter()
-        .find(|lifecycle| lifecycle.package_id == package_id)
-        .or_else(|| {
-            prior.and_then(|generation| {
-                generation
-                    .package_lifecycles
-                    .iter()
-                    .find(|lifecycle| lifecycle.package_id == package_id)
-            })
-        })
-        .unwrap()
-        .lifecycle_generation;
-    let package_subject = ControlEffectSubject::Package {
-        package_id: package_id.clone(),
-        lifecycle_generation,
-        package_digest: subject_package
-            .package
-            .catalog
-            .record
-            .package
-            .sha256
-            .clone()
-            .unwrap(),
-        manifest_digest: subject_package
-            .package
-            .catalog
-            .record
-            .package
-            .manifest_sha256
-            .clone()
-            .unwrap(),
-        action: lifecycle_action(reviewed.action()),
-    };
-    let capability_effect_subject = capability_subject(reviewed, &capability);
+    let _ = prior;
     ControlTransition {
         operation_id: reviewed.operation_id().to_string(),
         plan_digest: reviewed.plan_digest().to_string(),
@@ -498,43 +463,8 @@ fn transition_from_projection(
         grants,
         provider_selections,
         capability,
-        effects: vec![
-            ControlEffectIntent {
-                sequence: 0,
-                idempotency_key: effect_key(reviewed.operation_id(), 0),
-                installation: installation.clone(),
-                plan_digest: reviewed.plan_digest().to_string(),
-                operation_action: reviewed.action(),
-                installation_generation: reviewed.target_generation().unwrap(),
-                subject: package_subject,
-                provider_id: "provider:test".to_string(),
-                kind: ControlEffectKind::PackageCommit,
-                required: true,
-            },
-            ControlEffectIntent {
-                sequence: 1,
-                idempotency_key: effect_key(reviewed.operation_id(), 1),
-                installation,
-                plan_digest: reviewed.plan_digest().to_string(),
-                operation_action: reviewed.action(),
-                installation_generation: reviewed.target_generation().unwrap(),
-                subject: capability_effect_subject,
-                provider_id: "provider:test".to_string(),
-                kind: ControlEffectKind::CapabilityPublish,
-                required: false,
-            },
-        ],
+        effects,
         committed_at_ms,
-    }
-}
-
-pub(super) fn lifecycle_action(action: PluginOperationAction) -> PluginLifecycleAction {
-    match action {
-        PluginOperationAction::Install => PluginLifecycleAction::Install,
-        PluginOperationAction::Upgrade => PluginLifecycleAction::Upgrade,
-        PluginOperationAction::Enable => PluginLifecycleAction::Enable,
-        PluginOperationAction::Disable => PluginLifecycleAction::Disable,
-        PluginOperationAction::Uninstall => PluginLifecycleAction::Uninstall,
     }
 }
 
@@ -623,7 +553,7 @@ pub(super) async fn apply_all_effects(
                 &claimed.intent.idempotency_key,
                 &claimed.claim_token,
                 ControlEffectOutcome::Applied,
-                char::from_digit((sequence % 10) + 1, 10).unwrap(),
+                char::from_digit(sequence % 16, 16).unwrap(),
                 now + 5,
             ))
             .await

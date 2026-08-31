@@ -155,6 +155,13 @@ Embedding host 实现 `CognitivePackageLifecycleFactory`，提供精确的 Runti
 
 [ADR-003](https://github.com/A3S-Lab/Use/blob/main/docs/adr-003-control-store-transaction-boundary.md) 冻结了下一阶段的 Control Store 边界：每个安装只有一个可变权威，不允许 JSON/SQLite 双写，并通过 outbox 隔离无法加入本地事务的 provider 副作用。
 
+未启用的 schema-v8 内核现已从 reviewed Plan 与已提交 generation 推导完整 outbox
+inventory：依赖 surface 先于 dependant 准备，只切换一次 capability，随后排空已接受调用，
+再通过类型化 owner 反向退休 surface。Tool 与 MCP effect 绑定精确的 reviewed Runtime
+selection；package state、Grant、lifecycle identity 与 provider selection 继续留在聚合事务内，
+不会成为重复 effect。在所有消费者能够同步切换之前，生产 orchestration 与协调权威切换
+仍保持禁用。
+
 ## 运行时可见性
 
 Surface Reconciler 观察 desired state、generation receipt、grant、binding、Runtime/Gateway health、A3S Flow observation，以及 Skill/UI/OKF projection。OKF 使用独立的 Knowledge-host owner：缺失为 pending，staged 不发布，只有精确 promoted evidence 才是 healthy。只有完整 evidence 对同一 generation 一致时，Capability Registry 才发布新 snapshot。常驻宿主可通过 generation + revision long-poll watch 热更新，无需重启。

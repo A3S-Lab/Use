@@ -1277,7 +1277,7 @@ The machine-checked
 current state leaf, external owner, operational file, and consumer that must
 switch together; it explicitly keeps production activation inactive and
 forbids dual writes or legacy fallback reads.
-The private A2 Control Store kernel now qualifies its clean-state schema-v7
+The private A2 Control Store kernel now qualifies its clean-state schema-v8
 aggregate. Each operation stores the canonical complete reviewed Plan envelope
 and versioned authorization evidence, then derives and revalidates its operation
 ID, Plan and authorization digests, action, root package, installation scope,
@@ -1305,21 +1305,31 @@ candidate capability digest is derived from the target snapshot, package
 lifecycle identities, Grant revisions, and provider selections. It describes
 committed desired capability identity only; endpoint, readiness, compiled
 artifact, and Knowledge application observations remain post-commit evidence.
-Canonical typed effect payloads bind installation, reviewed plan, operation
-action, provider, exact artifact identity, and package or surface incarnation;
-graph capability publish/hide instead bind the complete target installation and
-capability generation. Payload bytes, their digest, and their relational
-projection commit together and are verified again after restart. The kernel
+The same projection derives the complete bounded sequence of work that cannot
+join the local transaction: surface preparation, capability cutover,
+accepted-call drain, and surface stop or removal. Dependency surfaces prepare
+before dependants; retirement reverses that order; upgrade prepares the new
+incarnation before cutover and drains the old incarnation before removal.
+Every effect names a typed Capability Index, invocation-lease, Runtime, Flow,
+Knowledge, Skill, or UI owner. Tool and MCP effects carry the exact reviewed
+provider ID and selection digest; static hosts never receive a fictional
+Runtime selection. Optional selected surfaces may degrade before cutover, but
+their required dependency closure and every retirement effect remain required.
+Package selection, lifecycle identity, Grants, and reviewed provider selection
+already commit in the aggregate, so they are not duplicated as pseudo external
+effects. Canonical payload bytes, their domain-separated idempotency key,
+digest, and relational projection commit together and are verified again after
+restart and by offline export verification. The kernel
 also qualifies typed generation transitions, full Grant and reviewed provider
 selection evidence, idempotent outbox reconciliation, bounded execution,
 corruption checks, and
 deterministic offline-verifiable export plus staged restore. It is not
 constructed by production lifecycle code and does not create a second
-authority beside the current JSON stores. Deterministic lifecycle conversion
-still must feed the authorization-v2 Grant evidence, derive the complete
-effect-intent inventory, and record typed applied-provider observations without
-conflating them with reviewed selection. The external artifact/projection payload-owner
-registry and coordinated authority cutover also remain open.
+authority beside the current JSON stores. Production lifecycle conversion
+still must feed authorization-v2 Grant evidence, dispatch the derived inventory
+through typed owners, and record typed applied-provider observations without
+conflating them with reviewed selection. The external artifact/projection
+payload-owner registry and coordinated authority cutover also remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

@@ -26,7 +26,7 @@ async fn effect_payload_is_committed_canonically_and_reopens_after_restart() {
     let graph_subject: (String, Option<String>, Option<i64>, Option<String>) = connection
         .query_row(
             "SELECT subject_kind, package_id, package_lifecycle_generation, surface_id
-             FROM lifecycle_checkpoint WHERE sequence = 1",
+             FROM lifecycle_checkpoint WHERE sequence = 2",
             [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
@@ -62,9 +62,12 @@ async fn self_consistent_payload_tampering_cannot_override_relational_authority(
     store.register_operation(reviewed.clone()).await.unwrap();
     let candidate = transition(control_installation(), &reviewed);
     let mut tampered = candidate.effects[0].clone();
+    tampered.subject = candidate.effects[1].subject.clone();
+    tampered.owner = candidate.effects[1].owner.clone();
+    tampered.required = candidate.effects[1].required;
+    tampered.idempotency_key = tampered.derived_idempotency_key().unwrap();
     store.commit_transition(candidate).await.unwrap();
 
-    tampered.provider_id = "provider:tampered".to_string();
     let payload = canonical_json(&tampered);
     let payload_digest = format!("sha256:{:x}", Sha256::digest(&payload));
     let connection = Connection::open(store.database_path()).unwrap();
@@ -89,10 +92,11 @@ async fn self_consistent_artifact_tampering_cannot_retarget_execution() {
     let mut tampered = candidate.effects[0].clone();
     store.commit_transition(candidate).await.unwrap();
 
-    let ControlEffectSubject::Package { package_digest, .. } = &mut tampered.subject else {
-        panic!("package commit must retain a package subject");
+    let ControlEffectSubject::Surface { package_digest, .. } = &mut tampered.subject else {
+        panic!("surface preparation must retain a surface subject");
     };
     *package_digest = digest('e');
+    tampered.idempotency_key = tampered.derived_idempotency_key().unwrap();
     rewrite_payload(&store, 0, &tampered);
 
     let error = store
@@ -114,7 +118,12 @@ async fn self_consistent_capability_tampering_cannot_retarget_graph_cutover() {
     let reviewed = operation("operation:capability-tamper:1");
     store.register_operation(reviewed.clone()).await.unwrap();
     let candidate = transition(control_installation(), &reviewed);
-    let mut tampered = candidate.effects[1].clone();
+    let capability_sequence = candidate
+        .effects
+        .iter()
+        .position(|effect| effect.kind == ControlEffectKind::CapabilityCutover)
+        .unwrap();
+    let mut tampered = candidate.effects[capability_sequence].clone();
     store.commit_transition(candidate).await.unwrap();
 
     let ControlEffectSubject::Installation {
@@ -124,7 +133,12 @@ async fn self_consistent_capability_tampering_cannot_retarget_graph_cutover() {
         panic!("capability publication must retain an installation subject");
     };
     *descriptor_digest = digest('e');
-    rewrite_payload(&store, 1, &tampered);
+    tampered.idempotency_key = tampered.derived_idempotency_key().unwrap();
+    rewrite_payload(
+        &store,
+        u32::try_from(capability_sequence).unwrap(),
+        &tampered,
+    );
 
     let error = store.effects(reviewed.operation_id()).await.unwrap_err();
     assert_eq!(error.code, "use.control_store.corrupt");
@@ -161,27 +175,8 @@ async fn surface_payload_binds_the_exact_selected_artifact_and_surface() {
     let (_temporary, store) = initialized_store().await;
     let reviewed = operation("operation:surface-payload:1");
     store.register_operation(reviewed.clone()).await.unwrap();
-    let mut candidate = transition(control_installation(), &reviewed);
+    let candidate = transition(control_installation(), &reviewed);
     let surface = candidate.snapshot.packages[0].selected_surfaces[0].clone();
-    let ControlEffectSubject::Package {
-        package_id,
-        lifecycle_generation,
-        package_digest,
-        manifest_digest,
-        action,
-    } = candidate.effects[0].subject.clone()
-    else {
-        panic!("package commit must start with a package subject");
-    };
-    candidate.effects[0].kind = ControlEffectKind::SurfacePrepare;
-    candidate.effects[0].subject = ControlEffectSubject::Surface {
-        package_id,
-        lifecycle_generation,
-        package_digest,
-        manifest_digest,
-        action,
-        surface: surface.clone(),
-    };
 
     let mut wrong = candidate.clone();
     if let ControlEffectSubject::Surface { surface, .. } = &mut wrong.effects[0].subject {

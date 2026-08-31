@@ -240,6 +240,7 @@ impl ControlTransition {
             || self.grants != projected.grants
             || self.provider_selections != projected.provider_selections
             || self.capability != projected.capability
+            || self.effects != projected.effects
         {
             return Err(input_error(
                 "The Control Store transition differs from the deterministic reviewed projection.",
@@ -265,16 +266,18 @@ impl ControlTransition {
                 ));
             };
             let is_target = generation.is_none();
-            let (snapshot, lifecycles, capability) = generation.map_or(
+            let (snapshot, lifecycles, providers, capability) = generation.map_or(
                 (
                     &self.snapshot,
                     self.package_lifecycles.as_slice(),
+                    self.provider_selections.as_slice(),
                     &self.capability,
                 ),
                 |generation| {
                     (
                         &generation.snapshot,
                         generation.package_lifecycles.as_slice(),
+                        generation.provider_selections.as_slice(),
                         &generation.capability,
                     )
                 },
@@ -285,7 +288,10 @@ impl ControlTransition {
                 capability,
                 is_target,
                 effect.operation_action,
-            ) {
+            ) || !effect
+                .owner
+                .matches_generation(&effect.subject, effect.kind, providers)
+            {
                 return Err(input_error(
                     "A Control Store effect does not bind its exact installation, package, or surface generation.",
                 ));

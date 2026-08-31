@@ -492,7 +492,7 @@ inventory prerequisite only. It neither activates the database nor completes
 an A2 checkbox.
 
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
-for a clean installation. Schema v7 binds one exact `InstallationId` and stores
+for a clean installation. Schema v8 binds one exact `InstallationId` and stores
 contiguous installation generations, canonical complete reviewed Plan
 envelopes, versioned authorization evidence, exact snapshots, full Workspace
 Grants, provider bindings, capability candidates, lifecycle checkpoints, and an
@@ -525,15 +525,24 @@ target snapshot, package lifecycle identities, Grant revisions, and provider
 selections. It intentionally contains no endpoint, readiness, compiled
 artifact, or Knowledge application claim; those facts can exist only as typed
 post-commit observations.
-Canonical typed effect payloads bind the installation, plan, action, provider,
-artifact digests, and exact package or surface lifecycle incarnation. Atomic
-graph capability publish/hide effects instead bind the complete target
-installation and capability generation, including empty-graph uninstall,
-rather than pretending to be per-package provider calls. Payload bytes, digest,
-and relational projection commit together and survive restart. Claim and
-completion rebind every payload to the committed generation and reject an
-incomplete checkpoint/outbox inventory. Typed commands prove atomic transition
-rollback,
+The projection also derives the complete bounded external-effect inventory.
+Only work that cannot join the local transaction enters the outbox:
+`surface-prepare`, `capability-cutover`, `calls-drain`, `surface-stop`, and
+`surface-remove`. Package selection, lifecycle identity, Grants, and reviewed
+provider selection are transaction facts, not pseudo provider effects.
+Installation and enablement prepare dependency surfaces before dependants and
+then cut over. Upgrade prepares the candidate, cuts over, drains prior calls,
+and removes prior surfaces in reverse dependency order. Disable and uninstall
+cut over before drain and reverse-order retirement. Each intent binds a typed
+Capability Index, invocation-lease, Runtime, Flow, Knowledge, Skill, or UI
+owner; Runtime effects carry the exact reviewed provider selection. Optional
+selected surface preparation may be rejected without blocking cutover, while
+its required dependency closure and every teardown remain required. Sequence,
+owner, policy, generation, and a domain-separated idempotency key are all
+derived rather than accepted from callers. Payload bytes, digest, and relational
+projection commit together and survive restart and offline verification. Claim
+and completion rebind every payload to the committed generation and reject an
+incomplete checkpoint/outbox inventory. Typed commands prove atomic transition rollback,
 action/root-state semantics, terminal replay, required-effect rejection,
 capability retirement, and explicit reconciliation of unknown or expired
 claims across restart. Its bounded canonical export includes the complete
@@ -546,8 +555,8 @@ Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
 not accept it. The external artifact/projection payload-owner registry,
 complete process-exit matrix, production conversion into the reviewed Grant
-evidence above, deterministic derivation of outbox intents, typed applied
-provider observations, indivisible consumer cutover, and deletion of legacy
+evidence above, dispatch through typed external owners, typed applied-provider
+observations, indivisible consumer cutover, and deletion of legacy
 mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every

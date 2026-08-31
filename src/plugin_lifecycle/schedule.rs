@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use a3s_use_core::{PluginSurfaceRef, UseResult};
 use a3s_use_extension::{ExtensionManifest, ManifestPluginSurface};
 
+use crate::surface_graph::{schedule_surface_graph, SurfaceGraphInput};
+
 use super::model::{
     checkpoint_domain, checkpoint_key, lifecycle_error, PluginLifecycleAction,
     PluginLifecycleCheckpoint, PluginLifecycleCheckpointKind, PluginLifecycleIntent,
@@ -108,94 +110,40 @@ fn lifecycle_surfaces(
         .into_iter()
         .filter(|surface| selected.contains(&surface.surface))
         .collect::<Vec<_>>();
-    let by_ref = manifest_surfaces
+    let scheduled = schedule_surface_graph(
+        manifest_surfaces
+            .iter()
+            .map(|surface| SurfaceGraphInput {
+                surface: surface.surface.clone(),
+                optional: surface.optional,
+                dependencies: surface.dependencies.clone(),
+            })
+            .collect(),
+    )
+    .map_err(|error| lifecycle_error(error.message))?;
+    let mut by_ref = manifest_surfaces
         .iter()
+        .cloned()
         .map(|surface| (surface.surface.clone(), surface))
         .collect::<BTreeMap<_, _>>();
-
-    let levels = dependency_levels(&by_ref)?;
-    let required = required_closure(&by_ref);
-    let mut surfaces = manifest_surfaces
+    let surfaces = scheduled
         .into_iter()
-        .map(|surface| {
-            let level = levels.get(&surface.surface).copied().ok_or_else(|| {
-                lifecycle_error("A cognitive package surface has no dependency level.")
-            })?;
+        .map(|scheduled| {
+            let surface = by_ref
+                .remove(&scheduled.surface)
+                .ok_or_else(|| lifecycle_error("A scheduled lifecycle surface disappeared."))?;
             Ok(PluginLifecycleSurface {
                 host: PluginSurfaceHost::for_kind(surface.surface.kind),
-                required: required.contains(&surface.surface),
-                level,
+                required: scheduled.required,
+                level: scheduled.level,
                 activation: surface.activation,
-                dependencies: surface.dependencies,
+                dependencies: scheduled.dependencies,
                 surface: surface.surface,
             })
         })
         .collect::<UseResult<Vec<_>>>()?;
-    surfaces.sort_by(|left, right| {
-        left.level
-            .cmp(&right.level)
-            .then_with(|| left.surface.cmp(&right.surface))
-    });
     validate_surfaces(&surfaces)?;
     Ok(surfaces)
-}
-
-fn dependency_levels(
-    surfaces: &BTreeMap<PluginSurfaceRef, &ManifestPluginSurface>,
-) -> UseResult<BTreeMap<PluginSurfaceRef, u32>> {
-    let mut levels = BTreeMap::new();
-    while levels.len() < surfaces.len() {
-        let ready = surfaces
-            .iter()
-            .filter(|(reference, surface)| {
-                !levels.contains_key(*reference)
-                    && surface
-                        .dependencies
-                        .iter()
-                        .all(|dependency| levels.contains_key(dependency))
-            })
-            .map(|(reference, _)| reference.clone())
-            .collect::<Vec<_>>();
-        if ready.is_empty() {
-            return Err(lifecycle_error(
-                "The cognitive-package surface graph contains an unknown dependency or cycle.",
-            ));
-        }
-        for reference in ready {
-            let surface = surfaces.get(&reference).ok_or_else(|| {
-                lifecycle_error("A lifecycle surface disappeared during dependency planning.")
-            })?;
-            let level = surface
-                .dependencies
-                .iter()
-                .filter_map(|dependency| levels.get(dependency).copied())
-                .max()
-                .map_or(0, |level| level + 1);
-            levels.insert(reference, level);
-        }
-    }
-    Ok(levels)
-}
-
-fn required_closure(
-    surfaces: &BTreeMap<PluginSurfaceRef, &ManifestPluginSurface>,
-) -> BTreeSet<PluginSurfaceRef> {
-    let mut required = surfaces
-        .values()
-        .filter(|surface| !surface.optional)
-        .map(|surface| surface.surface.clone())
-        .collect::<BTreeSet<_>>();
-    let mut pending = required.iter().cloned().collect::<Vec<_>>();
-    while let Some(reference) = pending.pop() {
-        if let Some(surface) = surfaces.get(&reference) {
-            for dependency in &surface.dependencies {
-                if required.insert(dependency.clone()) {
-                    pending.push(dependency.clone());
-                }
-            }
-        }
-    }
-    required
 }
 
 pub(super) fn checkpoints(
