@@ -305,14 +305,23 @@ four owners must form one complete, deterministic receipt set bound to an exact
 installation, Control generation, registry digest, owner snapshot schema,
 manifest/inventory digests, and bounded accounting. Decoded registry and
 snapshot evidence must revalidate before use. This registers the identity and
-evidence boundary only: it does not perform owner-specific snapshot,
-offline-verification, staged-restore, or activation I/O and does not
-participate in live state-layout, reachability, diagnostics, backup, or restore
-orchestration. Existing JSON stores remain the only production authority.
-Production lifecycle conversion into reviewed Grant evidence, effect dispatch
-through real typed external owners that populate this observation contract,
-the owner I/O adapters, full process-exit matrix, indivisible reader/writer
-cutover, and deletion of legacy mutable stores remain open;
+evidence boundary for every owner. A private live snapshot session additionally
+freezes one canonical Control export and binds its digest, generation,
+installation, and owner-registry digest while the same exclusive maintenance
+fence remains held. No SQLite transaction or bounded-executor permit crosses
+owner I/O. The first typed owner implementation snapshots an existing
+scope-local OKF SQLite/FTS5 Knowledge database into a non-overwriting archive,
+binds its exact retained-binding and selection inventory, enforces the
+registered archive/manifest bounds before publication, and re-verifies the
+archive offline. Absence is an explicit zero-file state and creates no live
+Knowledge directory; linked roots and decoded or rebound evidence fail closed.
+This implementation still does not participate in production state-layout,
+reachability, diagnostics, backup, or restore orchestration. Existing JSON
+stores remain the only production authority. The other retained-owner I/O
+adapters, Knowledge staged restore/activation and reconciliation against the
+bound Control effect history, full process-exit matrix, production lifecycle
+conversion and dispatch, indivisible reader/writer cutover, and deletion of
+legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 

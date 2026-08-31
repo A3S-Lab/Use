@@ -16,24 +16,26 @@ pub(super) async fn prepare_initialization(
     database_path: &Path,
 ) -> UseResult<()> {
     validate_database_identity(state_root, database_path)?;
-    let inventory = inspect_root(state_root).await?;
-    if !inventory.database && (inventory.wal || inventory.shared_memory || inventory.journal) {
-        return Err(path_error(
-            "Control Store sidecar state exists without its database.",
-        ));
+    let control = inspect_control_files(state_root).await?;
+    if control.database {
+        validate_sidecar_ownership(&control)?;
+        return Ok(());
     }
+    let inventory = inspect_root(state_root).await?;
+    validate_sidecar_ownership(&inventory)?;
     Ok(())
 }
 
 pub(super) async fn require_initialized(state_root: &Path, database_path: &Path) -> UseResult<()> {
     validate_database_identity(state_root, database_path)?;
-    let inventory = inspect_root(state_root).await?;
+    let inventory = inspect_control_files(state_root).await?;
     if !inventory.database {
         return Err(UseError::new(
             "use.control_store.not_initialized",
             "The installation Control Store has not been initialized.",
         ));
     }
+    validate_sidecar_ownership(&inventory)?;
     Ok(())
 }
 
@@ -177,6 +179,25 @@ struct RootInventory {
     journal: bool,
 }
 
+async fn inspect_control_files(state_root: &Path) -> UseResult<RootInventory> {
+    validate_owned_directory(state_root).await?;
+    Ok(RootInventory {
+        database: optional_regular_file(&state_root.join(CONTROL_STORE_DATABASE_FILE)).await?,
+        wal: optional_regular_file(&state_root.join(CONTROL_STORE_WAL_FILE)).await?,
+        shared_memory: optional_regular_file(&state_root.join(CONTROL_STORE_SHM_FILE)).await?,
+        journal: optional_regular_file(&state_root.join(CONTROL_STORE_JOURNAL_FILE)).await?,
+    })
+}
+
+fn validate_sidecar_ownership(inventory: &RootInventory) -> UseResult<()> {
+    if !inventory.database && (inventory.wal || inventory.shared_memory || inventory.journal) {
+        return Err(path_error(
+            "Control Store sidecar state exists without its database.",
+        ));
+    }
+    Ok(())
+}
+
 async fn inspect_root(state_root: &Path) -> UseResult<RootInventory> {
     validate_owned_directory(state_root).await?;
     let mut inventory = RootInventory::default();
@@ -256,6 +277,22 @@ async fn validate_regular_file(path: &Path) -> UseResult<()> {
         ));
     }
     Ok(())
+}
+
+async fn optional_regular_file(path: &Path) -> UseResult<bool> {
+    match fs::symlink_metadata(path).await {
+        Ok(metadata)
+            if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                && metadata.is_file() =>
+        {
+            Ok(true)
+        }
+        Ok(_) => Err(path_error(
+            "A Control Store database or sidecar is not an owned regular file.",
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(io_error("inspect optional Control Store file", path, error)),
+    }
 }
 
 #[cfg(unix)]

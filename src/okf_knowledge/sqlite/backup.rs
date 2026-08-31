@@ -21,6 +21,11 @@ const BACKUP_MAGIC: &[u8] = b"A3S-OKF-BACKUP\n";
 const MANIFEST_DIGEST_BYTES: usize = 32;
 const MAX_BACKUP_MANIFEST_BYTES: usize = 64 * 1024;
 pub(crate) const MAX_BACKUP_DATABASE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+pub(crate) const MAX_BACKUP_ARCHIVE_BYTES: u64 = MAX_BACKUP_DATABASE_BYTES
+    + MAX_BACKUP_MANIFEST_BYTES as u64
+    + BACKUP_MAGIC.len() as u64
+    + 4
+    + MANIFEST_DIGEST_BYTES as u64;
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,7 +94,13 @@ pub(super) fn create(
     policy: &OkfKnowledgeStoragePolicy,
     destination: &Path,
     created_at_ms: u64,
+    max_archive_bytes: u64,
 ) -> UseResult<OkfKnowledgeBackupManifest> {
+    if max_archive_bytes == 0 || max_archive_bytes > MAX_BACKUP_ARCHIVE_BYTES {
+        return Err(backup_invalid(
+            "The OKF Knowledge backup archive bound is invalid.",
+        ));
+    }
     validate_new_destination(destination)?;
     let temporary_snapshot = tempfile::tempdir().map_err(|error| {
         backup_io(format!(
@@ -139,7 +150,7 @@ pub(super) fn create(
         storage: report.storage,
     };
     manifest.validate()?;
-    write_archive(destination, &manifest, &snapshot_path)?;
+    write_archive(destination, &manifest, &snapshot_path, max_archive_bytes)?;
     Ok(manifest)
 }
 
@@ -163,6 +174,11 @@ fn load_verified(
 ) -> UseResult<VerifiedOkfKnowledgeBackup> {
     validate_regular_backup_file(backup_path)?;
     let archive_bytes = regular_file_length(backup_path)?;
+    if archive_bytes == 0 || archive_bytes > MAX_BACKUP_ARCHIVE_BYTES {
+        return Err(backup_invalid(
+            "The Knowledge backup archive exceeds its safety bound.",
+        ));
+    }
     let mut reader = BufReader::new(File::open(backup_path).map_err(|error| {
         backup_io(format!(
             "Failed to open Knowledge backup '{}': {error}",
@@ -388,6 +404,7 @@ fn write_archive(
     destination: &Path,
     manifest: &OkfKnowledgeBackupManifest,
     snapshot_path: &Path,
+    max_archive_bytes: u64,
 ) -> UseResult<()> {
     let manifest_bytes = serde_json::to_vec(manifest).map_err(|error| {
         backup_invalid(format!(
@@ -401,6 +418,18 @@ fn write_archive(
     }
     let manifest_length = u32::try_from(manifest_bytes.len())
         .map_err(|_| backup_invalid("The Knowledge backup manifest length overflowed."))?;
+    let header_bytes = u64::try_from(BACKUP_MAGIC.len() + 4 + MANIFEST_DIGEST_BYTES)
+        .map_err(|_| backup_invalid("The Knowledge backup header length overflowed."))?
+        .checked_add(u64::from(manifest_length))
+        .ok_or_else(|| backup_invalid("The Knowledge backup header length overflowed."))?;
+    let archive_bytes = header_bytes
+        .checked_add(manifest.database_bytes)
+        .ok_or_else(|| backup_invalid("The Knowledge backup archive length overflowed."))?;
+    if archive_bytes > max_archive_bytes {
+        return Err(backup_invalid(
+            "The Knowledge backup archive exceeds its caller-provided byte bound.",
+        ));
+    }
     let manifest_digest = Sha256::digest(&manifest_bytes);
     let parent = destination
         .parent()
@@ -475,7 +504,7 @@ fn write_archive(
     Ok(())
 }
 
-fn validate_new_destination(destination: &Path) -> UseResult<()> {
+pub(super) fn validate_new_destination(destination: &Path) -> UseResult<()> {
     if destination.as_os_str().is_empty() || destination.file_name().is_none() {
         return Err(backup_invalid(
             "The Knowledge backup destination must name a file.",
@@ -534,6 +563,20 @@ pub(super) fn file_evidence(path: &Path) -> UseResult<(u64, String)> {
     if bytes == 0 || bytes > MAX_BACKUP_DATABASE_BYTES {
         return Err(backup_invalid(
             "The Knowledge database is empty or exceeds the restore safety bound.",
+        ));
+    }
+    Ok((bytes, hash_file(path, bytes)?))
+}
+
+pub(super) fn archive_file_evidence(
+    path: &Path,
+    max_archive_bytes: u64,
+) -> UseResult<(u64, String)> {
+    validate_regular_backup_file(path)?;
+    let bytes = regular_file_length(path)?;
+    if bytes == 0 || bytes > max_archive_bytes || bytes > MAX_BACKUP_ARCHIVE_BYTES {
+        return Err(backup_invalid(
+            "The Knowledge backup archive exceeds its caller-provided byte bound.",
         ));
     }
     Ok((bytes, hash_file(path, bytes)?))

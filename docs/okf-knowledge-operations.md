@@ -141,6 +141,18 @@ SQLite schema, invalid receipts, inconsistent storage evidence, and FTS
 corruption. Store the returned manifest with the operator's broader backup
 inventory.
 
+The inactive Control Store qualification layer now reuses this verified
+archive through a stricter owner boundary. While one exclusive installation
+maintenance fence is held, it binds the archive to the canonical Control
+export digest, derives a canonical retained-binding/selection inventory, and
+emits `a3s.use.control-knowledge-payload-snapshot.v1` plus the generic owner
+receipt. Its registered byte limit covers the complete archive, including the
+header, and is enforced before publication. If no database exists, the owner
+emits a zero-file manifest and does not create `knowledge/` or a lock file.
+This private path is not a CLI command, is not connected to production state
+backup, and does not yet provide Control-coordinated staged restore or
+activation.
+
 ## Review and apply backup retention
 
 Plan bounded retention for one owned directory and exact scope. The defaults

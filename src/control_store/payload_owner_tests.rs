@@ -66,6 +66,7 @@ fn registry_requires_the_exact_typed_external_owner_set() {
 fn snapshot_set_is_generation_bound_path_free_and_deterministic() {
     let registry = registry();
     let installation = installation();
+    let binding = binding(&registry, &installation, 7);
     let mut receipts = ControlPayloadOwnerId::SNAPSHOTTED
         .into_iter()
         .rev()
@@ -81,8 +82,7 @@ fn snapshot_set_is_generation_bound_path_free_and_deterministic() {
         })
         .collect::<Vec<_>>();
     let snapshot =
-        ControlPayloadSnapshotSet::new(&registry, installation.clone(), 7, receipts.clone())
-            .unwrap();
+        ControlPayloadSnapshotSet::new(&registry, binding.clone(), receipts.clone()).unwrap();
     snapshot.validate(&registry).unwrap();
     assert_eq!(snapshot.receipts.len(), 4);
     assert_eq!(
@@ -96,7 +96,7 @@ fn snapshot_set_is_generation_bound_path_free_and_deterministic() {
     assert!(valid_sha256(&first_digest));
 
     receipts.reverse();
-    let replay = ControlPayloadSnapshotSet::new(&registry, installation, 7, receipts).unwrap();
+    let replay = ControlPayloadSnapshotSet::new(&registry, binding, receipts).unwrap();
     assert_eq!(replay, snapshot);
     assert_eq!(replay.descriptor_digest(&registry).unwrap(), first_digest);
 
@@ -114,13 +114,14 @@ fn snapshot_set_is_generation_bound_path_free_and_deterministic() {
 fn snapshot_set_rejects_missing_rebound_or_excluded_owner_receipts() {
     let registry = registry();
     let installation = installation();
+    let binding = binding(&registry, &installation, 3);
     let receipts = ControlPayloadOwnerId::SNAPSHOTTED
         .into_iter()
         .map(|owner| receipt(&registry, owner, &installation, 3, 1))
         .collect::<Vec<_>>();
 
     assert_eq!(
-        ControlPayloadSnapshotSet::new(&registry, installation.clone(), 3, receipts[..3].to_vec(),)
+        ControlPayloadSnapshotSet::new(&registry, binding.clone(), receipts[..3].to_vec())
             .unwrap_err()
             .code,
         "use.control_store.payload_snapshot_invalid"
@@ -129,7 +130,7 @@ fn snapshot_set_rejects_missing_rebound_or_excluded_owner_receipts() {
     let mut rebound = receipts.clone();
     rebound[0].control_generation = 4;
     assert_eq!(
-        ControlPayloadSnapshotSet::new(&registry, installation.clone(), 3, rebound)
+        ControlPayloadSnapshotSet::new(&registry, binding.clone(), rebound)
             .unwrap_err()
             .code,
         "use.control_store.payload_snapshot_invalid"
@@ -140,7 +141,7 @@ fn snapshot_set_rejects_missing_rebound_or_excluded_owner_receipts() {
         a3s_use_core::InstallationId::new(a3s_use_core::InstallationKind::User, "other-user")
             .unwrap();
     assert_eq!(
-        ControlPayloadSnapshotSet::new(&registry, installation.clone(), 3, wrong_installation,)
+        ControlPayloadSnapshotSet::new(&registry, binding.clone(), wrong_installation)
             .unwrap_err()
             .code,
         "use.control_store.payload_snapshot_invalid"
@@ -160,7 +161,7 @@ fn snapshot_set_rejects_missing_rebound_or_excluded_owner_receipts() {
         byte_count: 1,
     });
     assert_eq!(
-        ControlPayloadSnapshotSet::new(&registry, installation, 3, excluded)
+        ControlPayloadSnapshotSet::new(&registry, binding, excluded)
             .unwrap_err()
             .code,
         "use.control_store.payload_snapshot_invalid"
@@ -171,6 +172,7 @@ fn snapshot_set_rejects_missing_rebound_or_excluded_owner_receipts() {
 fn owner_receipts_enforce_registered_schema_and_bounds() {
     let registry = registry();
     let installation = installation();
+    let binding = binding(&registry, &installation, 9);
     let mut schema_receipt = receipt(
         &registry,
         ControlPayloadOwnerId::KnowledgePayload,
@@ -180,7 +182,10 @@ fn owner_receipts_enforce_registered_schema_and_bounds() {
     );
     schema_receipt.owner_snapshot_schema = "a3s.use.test.wrong.v1".to_string();
     assert_eq!(
-        schema_receipt.validate(&registry).unwrap_err().code,
+        schema_receipt
+            .validate(&registry, &binding)
+            .unwrap_err()
+            .code,
         "use.control_store.payload_snapshot_invalid"
     );
 
@@ -193,19 +198,21 @@ fn owner_receipts_enforce_registered_schema_and_bounds() {
     );
     oversized_receipt.byte_count = limits().max_payload_bytes + 1;
     assert_eq!(
-        oversized_receipt.validate(&registry).unwrap_err().code,
+        oversized_receipt
+            .validate(&registry, &binding)
+            .unwrap_err()
+            .code,
         "use.control_store.payload_snapshot_invalid"
     );
 
     let zero = ControlPayloadSnapshotReceipt::new(
         &registry,
+        &binding,
         ControlPayloadOwnerId::PlanningAndDiagnosticObservations,
-        installation,
-        9,
         ControlPayloadSnapshotEvidence::new(digest('c'), digest('d'), 64, 0, 0),
     )
     .unwrap();
-    zero.validate(&registry).unwrap();
+    zero.validate(&registry, &binding).unwrap();
 }
 
 #[test]
@@ -221,11 +228,12 @@ fn decoded_registry_and_snapshot_evidence_must_revalidate() {
     );
 
     let installation = installation();
+    let binding = binding(&registry, &installation, 5);
     let receipts = ControlPayloadOwnerId::SNAPSHOTTED
         .into_iter()
         .map(|owner| receipt(&registry, owner, &installation, 5, 1))
         .collect::<Vec<_>>();
-    let snapshot = ControlPayloadSnapshotSet::new(&registry, installation, 5, receipts).unwrap();
+    let snapshot = ControlPayloadSnapshotSet::new(&registry, binding, receipts).unwrap();
     let mut snapshot_json = serde_json::to_value(&snapshot).unwrap();
     snapshot_json["receipts"][0]["controlGeneration"] = serde_json::Value::from(6_u64);
     let decoded: ControlPayloadSnapshotSet = serde_json::from_value(snapshot_json).unwrap();
@@ -241,6 +249,7 @@ fn payload_registry_contracts_are_send_and_sync() {
     assert_send_sync::<ControlPayloadOwnerRegistry>();
     assert_send_sync::<ControlPayloadOwnerRegistration>();
     assert_send_sync::<ControlPayloadSnapshotEvidence>();
+    assert_send_sync::<ControlPayloadSnapshotBinding>();
     assert_send_sync::<ControlPayloadSnapshotReceipt>();
     assert_send_sync::<ControlPayloadSnapshotSet>();
 }
@@ -281,11 +290,11 @@ fn receipt(
     control_generation: u64,
     count: u64,
 ) -> ControlPayloadSnapshotReceipt {
+    let binding = binding(registry, installation, control_generation);
     ControlPayloadSnapshotReceipt::new(
         registry,
+        &binding,
         owner,
-        installation.clone(),
-        control_generation,
         ControlPayloadSnapshotEvidence::new(
             digest('a'),
             digest('b'),
@@ -293,6 +302,20 @@ fn receipt(
             count,
             count * 1024,
         ),
+    )
+    .unwrap()
+}
+
+fn binding(
+    registry: &ControlPayloadOwnerRegistry,
+    installation: &a3s_use_core::InstallationId,
+    control_generation: u64,
+) -> ControlPayloadSnapshotBinding {
+    ControlPayloadSnapshotBinding::new(
+        registry,
+        installation.clone(),
+        control_generation,
+        digest('e'),
     )
     .unwrap()
 }

@@ -4,7 +4,9 @@ use a3s_use_core::{InstallationId, UseError, UseResult};
 use tokio::sync::{mpsc, oneshot};
 
 use super::aggregate;
-use super::export::{self, ControlStoreExport, VerifiedControlStoreExport};
+use super::export::{
+    self, ControlStoreExport, GeneratedControlStoreExport, VerifiedControlStoreExport,
+};
 use super::model::{
     corruption_error, ClaimedControlEffect, ControlEffectClaim, ControlEffectObservation,
     ControlEffectRecord, ControlGeneration, ControlOperationRecord, ControlTransition,
@@ -33,7 +35,7 @@ enum ControlStoreRequest {
     Export {
         database_path: PathBuf,
         installation: InstallationId,
-        response: oneshot::Sender<UseResult<Vec<u8>>>,
+        response: oneshot::Sender<UseResult<GeneratedControlStoreExport>>,
     },
     VerifyExport {
         bytes: Vec<u8>,
@@ -155,7 +157,7 @@ impl ControlStoreExecutor {
         &self,
         database_path: PathBuf,
         installation: InstallationId,
-    ) -> UseResult<Vec<u8>> {
+    ) -> UseResult<GeneratedControlStoreExport> {
         let (response, receiver) = oneshot::channel();
         self.send(ControlStoreRequest::Export {
             database_path,

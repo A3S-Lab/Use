@@ -102,10 +102,12 @@ generation；operation completion 也不能早于 provider observation。该内�
 显式 reconciliation、可离线验证的确定性导出，以及 clean staged restore。生产 lifecycle 代码
 仍不会构造它。私有的无路径 payload 契约现已冻结五个外部 owner ID 及其 ACL backup policy；
 全局 Artifact Store 被明确排除，另外四个 owner 必须形成一组完整、规范、绑定精确 installation、
-Control generation、registry/owner schema、digest 与有界计数的 receipt。该契约不执行 owner I/O，
-也未接入旧 backup scanner。owner-specific snapshot、离线验证、staged restore 与 activation adapter、
-完整崩溃矩阵、到 authorization-v2 Grant evidence 的 lifecycle 转换、通过真实类型化 owner port
-执行 effect 并填充已验证的 observation contract、backup/restore 与 reachability 集成和协调一致的
+Control generation、registry/owner schema、digest 与有界计数的 receipt。私有 session 现在会在一个
+排他 maintenance fence 下冻结精确的规范 Control export digest，并在 owner I/O 前释放 SQLite 事务。
+Knowledge owner 已能生成并独立复验受注册大小上限约束的 OKF SQLite/FTS5 archive 与规范
+binding/selection inventory；数据库缺失时使用不会创建 live state 的零文件 manifest。它仍未接入旧
+backup scanner。其余 owner adapter、Knowledge staged restore/activation 与 Control effect history
+对账、完整崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与 reachability 集成和协调一致的
 权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线

@@ -4,7 +4,8 @@ use sha2::{Digest, Sha256};
 
 use super::{
     canonical_json, ControlPayloadOwnerId, ControlPayloadOwnerRegistration,
-    ControlPayloadOwnerRegistry, MAX_CONTROL_PAYLOAD_OWNER_BYTES, MAX_CONTROL_PAYLOAD_OWNER_FILES,
+    ControlPayloadOwnerRegistry, ControlPayloadSnapshotBinding, MAX_CONTROL_PAYLOAD_OWNER_BYTES,
+    MAX_CONTROL_PAYLOAD_OWNER_FILES,
 };
 use crate::control_store::model::valid_sha256;
 
@@ -64,12 +65,12 @@ pub(in crate::control_store) struct ControlPayloadSnapshotReceipt {
 impl ControlPayloadSnapshotReceipt {
     pub(in crate::control_store) fn new(
         registry: &ControlPayloadOwnerRegistry,
+        binding: &ControlPayloadSnapshotBinding,
         owner: ControlPayloadOwnerId,
-        installation: InstallationId,
-        control_generation: u64,
         evidence: ControlPayloadSnapshotEvidence,
     ) -> UseResult<Self> {
         registry.validate()?;
+        binding.validate(registry)?;
         let owner_snapshot_schema = registry
             .registration(owner)
             .and_then(ControlPayloadOwnerRegistration::snapshot_contract)
@@ -80,8 +81,8 @@ impl ControlPayloadSnapshotReceipt {
         let receipt = Self {
             schema: CONTROL_PAYLOAD_SNAPSHOT_RECEIPT_SCHEMA.to_string(),
             owner,
-            installation,
-            control_generation,
+            installation: binding.installation.clone(),
+            control_generation: binding.control_generation,
             owner_snapshot_schema,
             owner_manifest_digest: evidence.owner_manifest_digest,
             inventory_digest: evidence.inventory_digest,
@@ -89,15 +90,17 @@ impl ControlPayloadSnapshotReceipt {
             file_count: evidence.file_count,
             byte_count: evidence.byte_count,
         };
-        receipt.validate(registry)?;
+        receipt.validate(registry, binding)?;
         Ok(receipt)
     }
 
     pub(in crate::control_store) fn validate(
         &self,
         registry: &ControlPayloadOwnerRegistry,
+        binding: &ControlPayloadSnapshotBinding,
     ) -> UseResult<()> {
         registry.validate()?;
+        binding.validate(registry)?;
         let Some((expected_schema, limits)) = registry
             .registration(self.owner)
             .and_then(ControlPayloadOwnerRegistration::snapshot_contract)
@@ -108,6 +111,8 @@ impl ControlPayloadSnapshotReceipt {
         };
         if self.schema != CONTROL_PAYLOAD_SNAPSHOT_RECEIPT_SCHEMA
             || self.installation.validate().is_err()
+            || self.installation != binding.installation
+            || self.control_generation != binding.control_generation
             || self.owner_snapshot_schema != expected_schema
             || !valid_sha256(&self.owner_manifest_digest)
             || !valid_sha256(&self.inventory_digest)
@@ -129,9 +134,7 @@ impl ControlPayloadSnapshotReceipt {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(in crate::control_store) struct ControlPayloadSnapshotSet {
     pub(in crate::control_store) schema: String,
-    pub(in crate::control_store) installation: InstallationId,
-    pub(in crate::control_store) control_generation: u64,
-    pub(in crate::control_store) owner_registry_digest: String,
+    pub(in crate::control_store) binding: ControlPayloadSnapshotBinding,
     pub(in crate::control_store) manifest_bytes: u64,
     pub(in crate::control_store) file_count: u64,
     pub(in crate::control_store) byte_count: u64,
@@ -141,17 +144,14 @@ pub(in crate::control_store) struct ControlPayloadSnapshotSet {
 impl ControlPayloadSnapshotSet {
     pub(in crate::control_store) fn new(
         registry: &ControlPayloadOwnerRegistry,
-        installation: InstallationId,
-        control_generation: u64,
+        binding: ControlPayloadSnapshotBinding,
         mut receipts: Vec<ControlPayloadSnapshotReceipt>,
     ) -> UseResult<Self> {
         receipts.sort_by_key(|receipt| receipt.owner);
         let (manifest_bytes, file_count, byte_count) = totals(&receipts)?;
         let snapshot = Self {
             schema: CONTROL_PAYLOAD_SNAPSHOT_SET_SCHEMA.to_string(),
-            installation,
-            control_generation,
-            owner_registry_digest: registry.descriptor_digest().to_string(),
+            binding,
             manifest_bytes,
             file_count,
             byte_count,
@@ -166,14 +166,13 @@ impl ControlPayloadSnapshotSet {
         registry: &ControlPayloadOwnerRegistry,
     ) -> UseResult<()> {
         registry.validate()?;
+        self.binding.validate(registry)?;
         let owners = self
             .receipts
             .iter()
             .map(|receipt| receipt.owner)
             .collect::<Vec<_>>();
         if self.schema != CONTROL_PAYLOAD_SNAPSHOT_SET_SCHEMA
-            || self.installation.validate().is_err()
-            || self.owner_registry_digest != registry.descriptor_digest()
             || owners.as_slice() != ControlPayloadOwnerId::SNAPSHOTTED
         {
             return Err(snapshot_error(
@@ -181,14 +180,7 @@ impl ControlPayloadSnapshotSet {
             ));
         }
         for receipt in &self.receipts {
-            receipt.validate(registry)?;
-            if receipt.installation != self.installation
-                || receipt.control_generation != self.control_generation
-            {
-                return Err(snapshot_error(
-                    "A Control payload receipt belongs to another installation generation.",
-                ));
-            }
+            receipt.validate(registry, &self.binding)?;
         }
         let (manifest_bytes, file_count, byte_count) = totals(&self.receipts)?;
         if self.manifest_bytes != manifest_bytes

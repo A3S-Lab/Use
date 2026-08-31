@@ -571,13 +571,20 @@ remaining four owners, bound to one `InstallationId`, Control generation,
 registry digest, owner snapshot schemas, manifest/inventory digests, and
 bounded file/byte accounting. Deserialized evidence must pass the same
 semantic validation before hashing. This removes the duplicated owner-ID and
-policy list from the cutover test, but does not yet replace the legacy path
-scanner or perform owner I/O. Owner-specific snapshot, offline-verification,
-staged-restore, and activation adapters, the complete process-exit matrix,
-production conversion into the reviewed Grant evidence above, a real
-dispatcher over typed external owners that populates the qualified observation
-contract, indivisible consumer cutover, and deletion of legacy mutable stores
-therefore remain open;
+policy list from the cutover test. A private snapshot session now binds the
+canonical Control export digest, generation, installation, and owner-registry
+digest under one exclusive maintenance fence, then releases the SQLite
+transaction and bounded-executor permit before owner I/O. The Knowledge owner
+now produces and offline-verifies a non-overwriting, size-bounded OKF
+SQLite/FTS5 archive plus canonical binding/selection inventory evidence. A
+missing Knowledge database is represented by a zero-file manifest without
+mutating live state, and linked owner roots fail closed. This code remains
+inactive and does not replace the legacy path scanner. Snapshot/verification
+adapters for the other three retained owners, Knowledge staged restore and
+activation, reconciliation of its inventory with the bound Control effect
+history, complete-set orchestration, the process-exit matrix, production Grant
+conversion and effect dispatch, indivisible consumer cutover, and deletion of
+legacy mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

@@ -2,23 +2,33 @@
 //! outside the Control Store transaction.
 //!
 //! This module registers identities, fixed backup policies, safety bounds,
-//! and canonical snapshot evidence. It does not copy owner data or participate
-//! in the production state-backup path; each owner still needs its own
-//! snapshot, offline-verification, staged-restore, and activation adapter
-//! before the coordinated authority cutover.
+//! and canonical snapshot evidence. The Knowledge owner has a qualified
+//! snapshot and offline verifier, but no owner participates in the production
+//! state-backup path yet. The remaining owner adapters, staged restore, and
+//! activation must be complete before the coordinated authority cutover.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 
+mod knowledge;
 mod registry;
+mod session;
 mod snapshot;
 
-pub(in crate::control_store) use registry::ControlPayloadOwnerRegistry;
 #[cfg(test)]
+pub(in crate::control_store) use knowledge::{
+    ControlKnowledgePayloadSnapshot, ControlKnowledgePayloadState,
+    CONTROL_KNOWLEDGE_PAYLOAD_SNAPSHOT_SCHEMA,
+};
+pub(in crate::control_store) use registry::ControlPayloadOwnerRegistry;
+pub(in crate::control_store) use session::{
+    ControlPayloadSnapshotBinding, ControlPayloadSnapshotSession,
+};
+#[cfg(test)]
+pub(in crate::control_store) use snapshot::CONTROL_PAYLOAD_SNAPSHOT_RECEIPT_SCHEMA;
 pub(in crate::control_store) use snapshot::{
     ControlPayloadSnapshotEvidence, ControlPayloadSnapshotReceipt, ControlPayloadSnapshotSet,
-    CONTROL_PAYLOAD_SNAPSHOT_RECEIPT_SCHEMA,
 };
 
 const MAX_CONTROL_PAYLOAD_OWNER_FILES: u64 = 100_000;

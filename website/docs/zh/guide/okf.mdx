@@ -115,6 +115,13 @@ a3s-use knowledge backup-retention ./backups \
   --scope-kind user --scope-id user/current --json
 ```
 
+未启用的 Control Store 验收层现在会在更严格的 owner snapshot 中复用该格式。
+它在一个排他 installation maintenance fence 下把 archive 绑定到规范 Control
+export digest，计算精确 retained-binding/selection inventory 的摘要，并在发布前
+对包含 header 的完整 archive 执行注册大小上限。数据库缺失时会产生显式零文件
+manifest，且不会创建 live Knowledge state。这还不是 CLI 或生产 backup 路径；
+Control 协调的 staged restore 与 activation 仍未完成。
+
 `backup-retention` 会针对最多 4,096 个 directory entry、一个完整 scope 和
 有界 backup count/byte policy 返回 canonical plan。它完整验证 managed
 candidate，只选择满足限制所需的最旧前缀，并保留最后一份已验证 scope backup。

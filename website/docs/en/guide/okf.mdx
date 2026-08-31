@@ -141,6 +141,15 @@ a3s-use knowledge backup-retention ./backups \
 
 The versioned backup manifest binds complete scope, creation time, exact database length and SHA-256, storage accounting, and policy limits. The digest detects corruption; it is not a package or Registry signature. The artifact does not contain Registry receipts, immutable package roots, Knowledge bindings, lifecycle journals, Grants, Flow history, or UI state.
 
+The inactive Control Store qualification layer now wraps this format in a
+stricter owner snapshot. Under one exclusive installation maintenance fence it
+binds the archive to the canonical Control export digest, hashes the exact
+retained-binding/selection inventory, and enforces the registered limit over
+the complete archive before publication. A missing database becomes an
+explicit zero-file manifest without creating live Knowledge state. This is not
+a CLI or production-backup path yet, and Control-coordinated staged restore and
+activation remain pending.
+
 `backup-retention` returns a canonical plan for at most 4,096 directory entries,
 one complete scope, and bounded backup-count/byte limits. It fully verifies
 managed candidates, selects the oldest required prefix, and preserves the last

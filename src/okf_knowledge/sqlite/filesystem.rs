@@ -74,6 +74,43 @@ pub(crate) async fn prepare_scope_database(
     Ok(ScopeDatabaseGuard { path, _lock: lock })
 }
 
+/// Resolve an existing scope database without creating directories, lock
+/// files, or an empty database. The caller must already hold the installation
+/// maintenance fence exclusively, so no second per-scope lock is acquired.
+pub(crate) async fn existing_scope_database_under_maintenance(
+    state_root: &Path,
+    root: &Path,
+    scope_directory: &Path,
+) -> UseResult<Option<PathBuf>> {
+    if !root.starts_with(state_root) || !scope_directory.starts_with(root) {
+        return Err(path_error(
+            "The Knowledge database directory escapes the configured state root.",
+        ));
+    }
+    validate_existing_directory(state_root).await?;
+    if !validate_optional_directory_chain(state_root, scope_directory).await? {
+        return Ok(None);
+    }
+
+    let lock = scope_directory.join(".knowledge.lock");
+    optional_regular_file_exists(&lock).await?;
+    let path = scope_directory.join("knowledge.sqlite3");
+    let database_exists = optional_regular_file_exists(&path).await?;
+    let wal_exists =
+        optional_regular_file_exists(&scope_directory.join("knowledge.sqlite3-wal")).await?;
+    let shm_exists =
+        optional_regular_file_exists(&scope_directory.join("knowledge.sqlite3-shm")).await?;
+    if !database_exists {
+        if wal_exists || shm_exists {
+            return Err(path_error(
+                "Knowledge database sidecars exist without their owned database.",
+            ));
+        }
+        return Ok(None);
+    }
+    Ok(Some(path))
+}
+
 async fn ensure_owned_directory(state_root: &Path, directory: &Path) -> UseResult<()> {
     if !directory.starts_with(state_root) {
         return Err(path_error(
@@ -116,19 +153,53 @@ async fn validate_existing_directory(path: &Path) -> UseResult<()> {
     Ok(())
 }
 
+async fn validate_optional_directory_chain(state_root: &Path, target: &Path) -> UseResult<bool> {
+    let relative = target
+        .strip_prefix(state_root)
+        .map_err(|_| path_error("The Knowledge database directory is not state-owned."))?;
+    let mut current = state_root.to_path_buf();
+    for component in relative.components() {
+        current.push(component.as_os_str());
+        match fs::symlink_metadata(&current).await {
+            Ok(metadata)
+                if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                    && metadata.is_dir() => {}
+            Ok(_) => {
+                return Err(path_error(format!(
+                    "Knowledge database directory '{}' is not an owned directory.",
+                    current.display()
+                )))
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => {
+                return Err(io_error(
+                    "inspect Knowledge database directory",
+                    &current,
+                    error,
+                ))
+            }
+        }
+    }
+    Ok(true)
+}
+
 async fn validate_optional_regular_file(path: &Path) -> UseResult<()> {
+    optional_regular_file_exists(path).await.map(|_| ())
+}
+
+async fn optional_regular_file_exists(path: &Path) -> UseResult<bool> {
     match fs::symlink_metadata(path).await {
         Ok(metadata)
             if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
                 && metadata.is_file() =>
         {
-            Ok(())
+            Ok(true)
         }
         Ok(_) => Err(path_error(format!(
             "Knowledge database file '{}' is not an owned regular file.",
             path.display()
         ))),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(io_error("inspect Knowledge database file", path, error)),
     }
 }
