@@ -186,6 +186,9 @@ pub(super) async fn remove_control_knowledge(
         let observation = if claimed.intent.owner == ControlEffectOwner::KnowledgeHost {
             assert_eq!(claimed.intent.kind, ControlEffectKind::SurfaceRemove);
             let binding = client.remove(&promoted.receipt).await.unwrap();
+            let observed_at_ms = wall_clock_ms()
+                .max(binding.observation.observed_at_ms)
+                .max(effect_clock_ms + 1);
             let application = ControlAppliedEffect::new(
                 &claimed.intent,
                 ControlAppliedEffectEvidence::KnowledgeHost {
@@ -204,7 +207,7 @@ pub(super) async fn remove_control_knowledge(
                 application: Some(application),
                 failure_evidence_digest: None,
                 error_code: None,
-                observed_at_ms: effect_clock_ms + 1,
+                observed_at_ms,
             }
         } else {
             fixture_observation(
@@ -216,9 +219,10 @@ pub(super) async fn remove_control_knowledge(
                 effect_clock_ms + 1,
             )
         };
+        let observed_at_ms = observation.observed_at_ms;
         store.record_effect_observation(observation).await.unwrap();
         claim_sequence += 1;
-        effect_clock_ms += 10;
+        effect_clock_ms = observed_at_ms + 10;
     }
     store
         .complete_operation(
