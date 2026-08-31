@@ -35,6 +35,16 @@ pub struct StateMaintenanceLock {
 #[derive(Debug)]
 pub struct StateMaintenanceGuard {
     _file: StdFile,
+    state_root: PathBuf,
+    mode: MaintenanceMode,
+}
+
+impl StateMaintenanceGuard {
+    /// Prove that this unforgeable guard owns the exclusive maintenance lock
+    /// for the exact configured state root.
+    pub fn is_exclusive_for(&self, state_root: &Path) -> bool {
+        matches!(self.mode, MaintenanceMode::Exclusive) && self.state_root == state_root
+    }
 }
 
 impl StateMaintenanceLock {
@@ -142,7 +152,11 @@ impl StateMaintenanceLock {
         if matches!(mode, MaintenanceMode::Shared) {
             reject_active_restore(&self.state_root).await?;
         }
-        Ok(Some(StateMaintenanceGuard { _file: file }))
+        Ok(Some(StateMaintenanceGuard {
+            _file: file,
+            state_root: self.state_root.clone(),
+            mode,
+        }))
     }
 }
 
@@ -222,6 +236,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let lock = StateMaintenanceLock::new(temporary.path());
         let shared = lock.acquire_shared().await.unwrap();
+        assert!(!shared.is_exclusive_for(temporary.path()));
         let exclusive_lock = lock.clone();
         let mut exclusive =
             tokio::spawn(async move { exclusive_lock.acquire_exclusive().await.unwrap() });
@@ -235,6 +250,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        assert!(exclusive.is_exclusive_for(temporary.path()));
+        assert!(!exclusive.is_exclusive_for(&temporary.path().join("other")));
 
         assert!(lock.try_acquire_shared().await.unwrap().is_none());
         let shared_lock = lock.clone();

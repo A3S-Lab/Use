@@ -65,11 +65,15 @@ offline verifier, and restore contract where its backup policy requires one.
 The inactive kernel now freezes these five identities and their exact backup
 policies in a path-free typed registry contract. Artifact Store exclusion is
 explicit; receipts for the other four owners must be complete, canonically
-ordered, bounded, and tied to one installation and Control generation. This is
-the registration/evidence half of gate 2 only. It neither copies owner payloads
-nor replaces the production backup path scanner; owner-specific snapshot,
-offline-verification, staged-restore, and activation adapters are still
-required before this gate can close.
+ordered, bounded, and tied to one installation and Control export. A private
+snapshot session now freezes the canonical export digest and generation under
+one exclusive maintenance fence without holding a database transaction across
+owner I/O. The Knowledge owner is the first qualified adapter: existing
+SQLite/FTS5 state is archived, bounded, inventoried, and verified offline;
+absence is recorded as zero files without creating live state. This does not
+replace the production backup scanner. The other owner adapters, Knowledge
+staged restore/activation and Control-effect reconciliation, and complete-set
+orchestration are still required before this gate can close.
 
 ## Non-negotiable cutover invariants
 

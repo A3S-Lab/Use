@@ -381,6 +381,8 @@ control_store_cutover {
   external_owner "knowledge-payload" {
     state_paths = ["knowledge"]
     implementation = [
+      "src/control_store/payload_owner/knowledge.rs",
+      "src/okf_knowledge/sqlite/backup.rs",
       "src/okf_knowledge/sqlite/mod.rs",
       "src/okf_knowledge/store.rs",
     ]

@@ -144,9 +144,15 @@ contract: five fixed owner identities and ACL backup policies, explicit global
 Artifact Store exclusion, and one exact canonical receipt set for the four
 snapshotted owners. Receipts bind installation, Control generation, registry
 and owner schemas, manifest/inventory digests, and bounded accounting; they do
-not embed host paths. Actual owner-specific snapshot, offline-verification,
-staged-restore, and activation adapters remain A2 work, as does the coordinated
-reader/writer cutover. The machine-checked
+not embed host paths. A private session now binds one canonical Control export
+digest under the exclusive maintenance fence and retains that fence, but no
+database transaction or executor permit, across owner I/O. The Knowledge owner
+has the first real adapter: it snapshots and offline-verifies a bounded
+scope-local OKF SQLite/FTS5 archive with canonical retained-binding/selection
+inventory evidence, or emits a zero-file absent manifest without mutating live
+state. The other three owner adapters, Knowledge staged restore/activation and
+Control-effect reconciliation, complete-set orchestration, and the coordinated
+reader/writer cutover remain A2 work. The machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual
 state layout. It is an implementation prerequisite, not an activated migration

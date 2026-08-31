@@ -120,12 +120,16 @@ The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact
 installation, Control generation, registry/owner schemas, digests, and bounded
-accounting. It performs no owner I/O and is not wired to the legacy backup
-scanner. Owner-specific snapshot, offline verification, staged restore, and
-activation adapters, the complete crash matrix, deterministic lifecycle
-conversion into authorization-v2 Grant evidence, effect dispatch through real
-typed external owners, backup/restore and reachability integration, and the
-coordinated authority cutover remain open;
+accounting. A private session now freezes the exact canonical Control export
+digest under one exclusive maintenance fence and releases the SQLite
+transaction before owner I/O. The Knowledge owner can create and independently
+verify a registered-size-bounded OKF SQLite/FTS5 archive and canonical
+binding/selection inventory; absence is a zero-file manifest that creates no
+live state. It is not wired to the legacy backup scanner. The other owner
+adapters, Knowledge staged restore/activation and reconciliation with Control
+effect history, the complete crash matrix, production conversion and dispatch,
+backup/restore and reachability integration, and the coordinated authority
+cutover remain open;
 no A2 roadmap item is complete yet.
 
 ## Implemented baseline

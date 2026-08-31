@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use a3s_use_core::{
     InstallationId, OkfKnowledgeObservation, OkfProjectionReceipt, PlanScope, UseError, UseResult,
 };
-use a3s_use_extension::ExtensionPaths;
+use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard};
 use async_trait::async_trait;
 
 use super::{
@@ -32,7 +32,8 @@ pub use audit::{
 };
 pub use backup::{OkfKnowledgeBackupManifest, OKF_KNOWLEDGE_BACKUP_SCHEMA};
 pub(crate) use backup::{
-    OkfKnowledgeRestoreInventory, VerifiedOkfKnowledgeBackup, MAX_BACKUP_DATABASE_BYTES,
+    OkfKnowledgeRestoreInventory, VerifiedOkfKnowledgeBackup, MAX_BACKUP_ARCHIVE_BYTES,
+    MAX_BACKUP_DATABASE_BYTES,
 };
 pub use backup_retention::{
     OkfKnowledgeBackupRetentionEntry, OkfKnowledgeBackupRetentionPlan,
@@ -206,10 +207,80 @@ impl SqliteOkfKnowledgeAdapter {
         let policy = self.policy;
         let created_at_ms = now_ms()?;
         tokio::task::spawn_blocking(move || {
-            backup::create(&guard.path, &scope, &policy, &destination, created_at_ms)
+            backup::create(
+                &guard.path,
+                &scope,
+                &policy,
+                &destination,
+                created_at_ms,
+                MAX_BACKUP_ARCHIVE_BYTES,
+            )
         })
         .await
         .map_err(|error| blocking_error("back up OKF Knowledge storage", error))?
+    }
+
+    /// Snapshot an existing database while an installation-wide exclusive
+    /// maintenance guard is already held. An absent database is represented
+    /// as `None` without creating Knowledge directories or lock files.
+    pub(crate) async fn backup_if_present_under_maintenance(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+        scope: &PlanScope,
+        destination: impl Into<PathBuf>,
+        created_at_ms: u64,
+        max_archive_bytes: u64,
+    ) -> UseResult<Option<OkfKnowledgeBackupManifest>> {
+        if !maintenance.is_exclusive_for(&self.state_root) {
+            return Err(UseError::new(
+                "use.okf.knowledge_maintenance_mismatch",
+                "The Knowledge snapshot requires the exclusive maintenance guard for its exact installation state root.",
+            ));
+        }
+        self.installation.ensure_same(scope)?;
+        let directory = self.scope_directory(scope)?;
+        let destination = destination.into();
+        let Some(database_path) = filesystem::existing_scope_database_under_maintenance(
+            &self.state_root,
+            &self.root,
+            &directory,
+        )
+        .await?
+        else {
+            tokio::task::spawn_blocking(move || backup::validate_new_destination(&destination))
+                .await
+                .map_err(|error| {
+                    blocking_error("validate an absent OKF Knowledge backup destination", error)
+                })??;
+            return Ok(None);
+        };
+        let scope = scope.clone();
+        let policy = self.policy;
+        tokio::task::spawn_blocking(move || {
+            backup::create(
+                &database_path,
+                &scope,
+                &policy,
+                &destination,
+                created_at_ms,
+                max_archive_bytes,
+            )
+        })
+        .await
+        .map_err(|error| blocking_error("snapshot OKF Knowledge storage", error))?
+        .map(Some)
+    }
+
+    pub(crate) async fn backup_archive_evidence(
+        backup_path: impl Into<PathBuf>,
+        max_archive_bytes: u64,
+    ) -> UseResult<(u64, String)> {
+        let backup_path = backup_path.into();
+        tokio::task::spawn_blocking(move || {
+            backup::archive_file_evidence(&backup_path, max_archive_bytes)
+        })
+        .await
+        .map_err(|error| blocking_error("hash an OKF Knowledge backup archive", error))?
     }
 
     /// Verify an offline backup without changing live Knowledge state.

@@ -165,9 +165,12 @@ invocation lease、Runtime Task/不透明 Service readiness、Flow artifact、Kn
 publication；之后的必需 effect 失败会保留为使用相同 key 显式 reconciliation 的 pending 状态，
 而不会回滚已可见 generation。私有的无路径 registry 还冻结了五个外部 payload owner ID 与精确
 ACL backup policy：全局 Artifact Store 被明确排除，另外四个 owner 必须生成完整、绑定 generation、
-且具有 schema、digest 与计数上限的规范 receipt 集。该证据契约不复制 payload，也不替换旧 backup
-scanner。在真实 owner snapshot/verification/restore adapter、owner-port dispatch、生产 orchestration
-与所有消费者的协调权威切换完成前，该内核仍保持禁用。
+且具有 schema、digest 与计数上限的规范 receipt 集。私有 snapshot session 现在会在同一个排他
+maintenance fence 下冻结规范 Control export 及其 digest，同时不会让数据库事务跨越 owner I/O。
+Knowledge owner 是首个已验收 adapter：它可以生成并离线复验有界 OKF SQLite/FTS5 archive 与规范的
+binding/selection inventory；数据库缺失时则记录零文件 manifest，且不创建 live state。其余 owner
+adapter、Knowledge staged restore/activation 与 Control effect 对账、生产 orchestration，以及所有
+消费者的协调权威切换完成前，该内核仍保持禁用。
 
 ## 运行时可见性
 

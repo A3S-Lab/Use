@@ -36,10 +36,17 @@ pub(super) struct VerifiedControlStoreExport {
     pub(super) descriptor_digest: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct GeneratedControlStoreExport {
+    pub(super) bytes: Vec<u8>,
+    pub(super) current_generation: u64,
+    pub(super) descriptor_digest: String,
+}
+
 pub(super) fn encode(
     metadata: &ControlStoreMetadata,
     authority: ControlStoreAuthority,
-) -> UseResult<Vec<u8>> {
+) -> UseResult<GeneratedControlStoreExport> {
     let export = ControlStoreExport {
         schema: CONTROL_STORE_EXPORT_SCHEMA.to_string(),
         store_schema_version: metadata.schema_version,
@@ -55,7 +62,11 @@ pub(super) fn encode(
             "The canonical Control Store export exceeds its byte bound.",
         ));
     }
-    Ok(bytes)
+    Ok(GeneratedControlStoreExport {
+        descriptor_digest: sha256_digest(&bytes),
+        current_generation: metadata.current_generation,
+        bytes,
+    })
 }
 
 pub(super) fn verify(

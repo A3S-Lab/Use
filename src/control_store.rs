@@ -25,6 +25,7 @@ use model::{
     ClaimedControlEffect, ControlEffectClaim, ControlEffectObservation, ControlEffectRecord,
     ControlGeneration, ControlOperationRecord, ControlTransition, ReviewedControlOperation,
 };
+use payload_owner::{ControlPayloadOwnerRegistry, ControlPayloadSnapshotSession};
 use schema::{ControlStoreInspection, ControlStoreMetadata};
 
 #[cfg(test)]
@@ -108,7 +109,36 @@ impl ControlStore {
             .export(physical_database_path, self.installation.clone())
             .await?;
         filesystem::validate_initialized(&self.state_root, &self.database_path).await?;
-        Ok(export)
+        Ok(export.bytes)
+    }
+
+    /// Freeze one canonical Control export while retaining the installation's
+    /// exclusive maintenance fence for owner-specific payload snapshots.
+    async fn begin_payload_snapshot(
+        &self,
+        registry: ControlPayloadOwnerRegistry,
+    ) -> UseResult<ControlPayloadSnapshotSession> {
+        registry.validate()?;
+        let maintenance = StateMaintenanceLock::new(&self.state_root)
+            .acquire_exclusive()
+            .await?;
+        filesystem::require_initialized(&self.state_root, &self.database_path).await?;
+        let physical_database_path =
+            filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
+        let export = self
+            .executor
+            .export(physical_database_path, self.installation.clone())
+            .await?;
+        filesystem::validate_initialized(&self.state_root, &self.database_path).await?;
+        ControlPayloadSnapshotSession::new(
+            registry,
+            self.installation.clone(),
+            export.current_generation,
+            export.descriptor_digest,
+            export.bytes,
+            self.state_root.clone(),
+            maintenance,
+        )
     }
 
     async fn verify_export(&self, bytes: Vec<u8>) -> UseResult<VerifiedControlStoreExport> {
@@ -330,6 +360,10 @@ mod aggregate_tests;
 #[cfg(test)]
 mod cutover_manifest_tests;
 #[cfg(test)]
+mod payload_knowledge_tests;
+#[cfg(test)]
 mod payload_owner_tests;
+#[cfg(test)]
+mod payload_snapshot_session_tests;
 #[cfg(test)]
 mod tests;

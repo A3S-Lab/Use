@@ -184,11 +184,15 @@ pending for same-key reconciliation instead of rolling back visible state.
 A private path-free registry also freezes the five external payload-owner IDs
 and exact ACL backup policies. Artifact Store exclusion is explicit; the four
 snapshotted owners must produce one complete, generation-bound canonical
-receipt set with schema, digest, and accounting bounds. This evidence contract
-does not copy payloads or replace the legacy backup scanner. Real owner
-snapshot/verification/restore adapters, owner-port dispatch, production
-orchestration, and the coordinated authority cutover remain disabled until
-every consumer can switch together.
+receipt set with schema, digest, and accounting bounds. A private session now
+freezes one canonical Control export digest under the exclusive maintenance
+fence without holding a database transaction across owner I/O. The Knowledge
+owner is the first qualified adapter: it creates and offline-verifies a bounded
+OKF SQLite/FTS5 archive and canonical binding/selection inventory, or records
+an absent database as zero files without mutating live state. The other owner
+adapters, Knowledge staged restore/activation and Control-effect
+reconciliation, production orchestration, and the coordinated authority
+cutover remain disabled until every consumer can switch together.
 
 ## Runtime visibility
 

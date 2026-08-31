@@ -31,7 +31,6 @@ pub use recovery::{
     OKF_KNOWLEDGE_RESTORE_DIAGNOSTIC_SCHEMA, OKF_KNOWLEDGE_RESTORE_OPERATION_SCHEMA,
     OKF_KNOWLEDGE_RESTORE_PLAN_SCHEMA, OKF_KNOWLEDGE_RESTORE_RESULT_SCHEMA,
 };
-pub(crate) use sqlite::ScopeDatabaseGuard;
 pub use sqlite::{
     OkfKnowledgeBackupManifest, OkfKnowledgeBackupRetentionEntry, OkfKnowledgeBackupRetentionPlan,
     OkfKnowledgeBackupRetentionPolicy, OkfKnowledgeBackupRetentionResult,
@@ -46,6 +45,7 @@ pub use sqlite::{
     OKF_KNOWLEDGE_BACKUP_RETENTION_RESULT_SCHEMA, OKF_KNOWLEDGE_BACKUP_SCHEMA,
     OKF_KNOWLEDGE_INTEGRITY_REPORT_SCHEMA, OKF_KNOWLEDGE_SEARCH_INDEX_REPAIR_SCHEMA,
 };
+pub(crate) use sqlite::{ScopeDatabaseGuard, VerifiedOkfKnowledgeBackup};
 pub use store::{
     OkfKnowledgeBindingSnapshot, OkfKnowledgeBindingStore, MAX_OKF_KNOWLEDGE_GENERATIONS,
 };

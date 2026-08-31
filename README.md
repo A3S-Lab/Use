@@ -1347,10 +1347,18 @@ Store is explicitly excluded, while the other four owners must produce one
 complete, canonically ordered receipt set bound to the exact installation,
 Control generation, registry digest, owner schema, inventory/manifest digests,
 and bounded file/byte accounting. Decoded evidence is revalidated before its
-descriptor digest can be accepted. This contract deliberately stores no host
-paths and is not wired to the current backup scanner. Owner-specific snapshot,
-offline-verification, staged-restore, and activation adapters—and the
-coordinated authority cutover—remain open.
+descriptor digest can be accepted. A private snapshot session now freezes one
+canonical Control export and its digest while retaining the same exclusive
+maintenance fence across owner I/O, without retaining a SQLite transaction or
+store-executor permit. The first typed owner adapter snapshots the scope-local
+OKF SQLite/FTS5 Knowledge database into a non-overwriting bounded archive,
+derives a canonical binding/selection inventory digest, and re-verifies the
+archive offline. An absent Knowledge database produces an explicit zero-file
+manifest without creating live directories; manifests and receipts contain no
+host paths. This remains inactive qualification code and is not wired to the
+current backup scanner. The other three snapshotted owner adapters, Knowledge
+staged restore/activation and Control-effect reconciliation, complete-set
+orchestration, and the coordinated authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.
