@@ -170,7 +170,11 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
     let lifecycle_paths = ["acme/base", "acme/worker"]
         .map(|package_id| lifecycle_root.join(package_id).join("active.json"));
     let mut graph_prepared = false;
-    for _ in 0..500 {
+    // The initial graph workers have the same cold-start cost as the
+    // replacement and uninstall workers below. Keep the wait bounded while
+    // giving a cold Windows runner enough scheduling headroom to publish both
+    // journals.
+    for _ in 0..3_000 {
         graph_prepared = lifecycle_paths.iter().all(|path| {
             std::fs::read(path)
                 .ok()

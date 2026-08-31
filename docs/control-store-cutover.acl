@@ -411,6 +411,9 @@ control_store_cutover {
       "src/control_store/payload_owner/observations/archive.rs",
       "src/control_store/payload_owner/observations/archive/file.rs",
       "src/control_store/payload_owner/observations/archive/live.rs",
+      "src/control_store/payload_owner/observations/restore.rs",
+      "src/control_store/payload_owner/observations/restore/filesystem.rs",
+      "src/control_store/payload_owner/observations/restore/filesystem/publication.rs",
     ]
     payload                     = "bounded planning attempts and read-only diagnostic history"
     backup_policy               = "registered-terminal-snapshot"

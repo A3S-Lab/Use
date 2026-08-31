@@ -170,12 +170,17 @@ exact count and canonical path/digest inventory. Bounded no-follow traversal,
 duplicate-identity checks, a second live scan before no-clobber publication,
 and offline archive verification fail closed on drift, substitution, unknown
 layout, foreign installation records, or trailing data. Its receipt is
-path-free and bound to the same Control export. Observation restore is not yet
-implemented.
+path-free and bound to the same Control export. An offline-verified archive can
+now be copied into a target-local staging directory without touching live owner
+paths. Under the exact exclusive maintenance fence, first activation requires
+a clean record inventory and atomically marks the archive as activating before
+publishing records without replacement. Digest-named deterministic partials
+recover interrupted writes, while replay accepts only an exact snapshot subset
+and returns a canonical path-free result.
 These are owner primitives, not cross-owner restore authority. The Host
-projection and Restore Coordinator adapters, observation restore, complete-set
-orchestration, full process-exit qualification, and the coordinated
-reader/writer cutover remain A2 work. The machine-checked
+projection and Restore Coordinator adapters, complete-set orchestration, full
+subprocess-exit qualification, and the coordinated reader/writer cutover remain
+A2 work. The machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual
 state layout. It is an implementation prerequisite, not an activated migration

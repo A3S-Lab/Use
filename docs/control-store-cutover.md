@@ -91,10 +91,15 @@ excluded from restore authority, but a canonical count and path/digest
 inventory of active records remain bound to the manifest. Bounded no-follow
 traversal, duplicate checks, a second live scan, no-clobber publication, and
 offline verification reject drift, substitution, foreign records, unknown
-layouts, and trailing bytes. The adapter is path-free and Control-export-bound,
-but has no restore contract yet. The Host projection and Restore Coordinator
-adapters, observation restore, and complete-set orchestration are still
-required before this gate can close.
+layouts, and trailing bytes. The adapter is path-free and Control-export-bound.
+An offline-verified archive can be staged beneath the target state root without
+touching live owner paths. First activation requires a clean record inventory
+and the exact exclusive maintenance guard, then atomically marks the candidate
+as activating before no-clobber record publication. Digest-named deterministic
+partials make incomplete publication replayable, and only an exact snapshot
+subset is accepted after activation starts. The Host projection and Restore
+Coordinator adapters and complete-set orchestration are still required before
+this gate can close.
 
 ## Non-negotiable cutover invariants
 

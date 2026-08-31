@@ -364,6 +364,10 @@ mod payload_knowledge_restore_tests;
 #[cfg(test)]
 mod payload_knowledge_tests;
 #[cfg(test)]
+mod payload_observation_restore_security_tests;
+#[cfg(test)]
+mod payload_observation_restore_tests;
+#[cfg(test)]
 mod payload_observation_security_tests;
 #[cfg(test)]
 mod payload_observation_tests;

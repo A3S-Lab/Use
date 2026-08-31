@@ -180,9 +180,12 @@ clean target 的 state root 下，且不修改 live payload。激活必须持有
 终态 resolution attempt。活跃 resolution/download attempt 与 lock 不进入 restore authority，但其规范化
 数量和 path/digest inventory 仍绑定在 manifest 中。有界 no-follow 遍历、重复检查、发布前二次扫描、
 no-clobber 发布与离线验证会拒绝漂移、替换、外来记录、未知布局和尾随字节。其无路径 receipt 绑定精确
-Control export，但 observation restore 尚未实现。这些仍是未启用的 owner primitive；Host projection、
-Restore Coordinator adapter、observation restore、complete-set coordinator、完整 process-exit 验收、生产
-orchestration，以及所有消费者的协调权威切换完成前，该内核仍保持禁用。
+Control export。通过离线验证的 archive 现在可以暂存到 target state root 下，而不触碰 live owner path。
+首次激活必须持有精确的排他 maintenance fence，并面对干净的 record inventory；随后先原子标记 archive
+为 activating，再逐条 no-clobber 发布。以 digest 命名的确定性 partial 支持中断恢复；激活开始后只接受
+snapshot 的精确子集，结果仍不包含路径。这些仍是未启用的 owner primitive；Host projection、Restore
+Coordinator adapter、complete-set coordinator、完整 subprocess-exit 验收、生产 orchestration，以及所有
+消费者的协调权威切换完成前，该内核仍保持禁用。
 
 ## 运行时可见性
 

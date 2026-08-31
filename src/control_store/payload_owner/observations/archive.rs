@@ -18,7 +18,8 @@ use crate::cognitive_package::{
 mod file;
 mod live;
 
-use file::{inspect_owned_regular_file, open_owned_regular_file, read_record};
+use file::read_record;
+pub(super) use file::{inspect_owned_regular_file, open_owned_regular_file};
 use live::{scan_live, sync_directory, validate_destination};
 
 pub(super) struct CapturedObservationPayload {
@@ -27,6 +28,144 @@ pub(super) struct CapturedObservationPayload {
     pub(super) excluded_active_inventory_digest: String,
     pub(super) entries: Vec<ControlObservationPayloadEntry>,
     pub(super) archive_path: Option<PathBuf>,
+}
+
+pub(super) struct LiveObservationInventory {
+    pub(super) terminal: Vec<ControlObservationPayloadEntry>,
+    pub(super) active_count: u64,
+}
+
+pub(super) struct ObservationArchiveReader<'a> {
+    reader: fs::File,
+    path: PathBuf,
+    before_len: u64,
+    before_modified: Option<std::time::SystemTime>,
+    expected_digest: String,
+    entries: &'a [ControlObservationPayloadEntry],
+    installation: &'a InstallationId,
+    index: usize,
+    archive_digest: Sha256,
+    package_records: BTreeSet<(&'static str, String)>,
+}
+
+impl<'a> ObservationArchiveReader<'a> {
+    pub(super) async fn open(
+        path: &Path,
+        expected_bytes: u64,
+        expected_digest: &str,
+        entries: &'a [ControlObservationPayloadEntry],
+        installation: &'a InstallationId,
+    ) -> UseResult<Self> {
+        let (reader, before) = open_owned_regular_file(path, "observation archive").await?;
+        if before.len() != expected_bytes {
+            return Err(observation_error(
+                "The observation archive length differs from its manifest.",
+            ));
+        }
+        Ok(Self {
+            reader,
+            path: path.to_path_buf(),
+            before_len: before.len(),
+            before_modified: before.modified().ok(),
+            expected_digest: expected_digest.to_owned(),
+            entries,
+            installation,
+            index: 0,
+            archive_digest: Sha256::new(),
+            package_records: BTreeSet::new(),
+        })
+    }
+
+    pub(super) async fn next(
+        &mut self,
+    ) -> UseResult<Option<(ControlObservationPayloadEntry, Vec<u8>)>> {
+        let Some(entry) = self.entries.get(self.index).cloned() else {
+            return Ok(None);
+        };
+        let length = usize::try_from(entry.length)
+            .map_err(|_| observation_error("An observation record length is invalid."))?;
+        let mut bytes = vec![0_u8; length];
+        self.reader
+            .read_exact(&mut bytes)
+            .await
+            .map_err(|_| observation_error("The observation archive is truncated."))?;
+        if sha256(&bytes) != entry.sha256 {
+            return Err(observation_error(
+                "An observation archive record differs from its manifest digest.",
+            ));
+        }
+        let record = validate_terminal_entry(&entry, &bytes, self.installation)?;
+        let family = match record.kind {
+            PlanningObservationSnapshotRecordKind::DiagnosticHistory => "history",
+            PlanningObservationSnapshotRecordKind::TerminalResolution => "resolution",
+            PlanningObservationSnapshotRecordKind::ActiveResolution
+            | PlanningObservationSnapshotRecordKind::ActiveDownload => {
+                return Err(observation_error(
+                    "An active planning attempt appeared in a terminal archive.",
+                ))
+            }
+        };
+        if !self.package_records.insert((family, record.package_id)) {
+            return Err(observation_error(
+                "The observation archive contains duplicate package records.",
+            ));
+        }
+        self.archive_digest.update(&bytes);
+        self.index += 1;
+        Ok(Some((entry, bytes)))
+    }
+
+    pub(super) async fn finish(mut self) -> UseResult<()> {
+        if self.index != self.entries.len() {
+            return Err(observation_error(
+                "The observation archive was not completely consumed.",
+            ));
+        }
+        let mut trailing = [0_u8; 1];
+        if self
+            .reader
+            .read(&mut trailing)
+            .await
+            .map_err(|error| archive_io("finish observation archive", error))?
+            != 0
+        {
+            return Err(observation_error(
+                "The observation archive contains trailing unaccounted bytes.",
+            ));
+        }
+        if format!("sha256:{:x}", self.archive_digest.finalize()) != self.expected_digest {
+            return Err(observation_error(
+                "The observation archive digest differs from its manifest.",
+            ));
+        }
+        let opened_after = self
+            .reader
+            .metadata()
+            .await
+            .map_err(|error| archive_io("reinspect opened observation archive", error))?;
+        if a3s_use_core::metadata_is_link_or_reparse_point(&opened_after)
+            || !opened_after.is_file()
+            || opened_after.len() != self.before_len
+            || self
+                .before_modified
+                .is_some_and(|modified| opened_after.modified().ok() != Some(modified))
+        {
+            return Err(observation_error(
+                "The observation archive changed during offline verification.",
+            ));
+        }
+        let after = inspect_owned_regular_file(&self.path, "observation archive").await?;
+        if after.len() != self.before_len
+            || self
+                .before_modified
+                .is_some_and(|modified| after.modified().ok() != Some(modified))
+        {
+            return Err(observation_error(
+                "The observation archive changed during offline verification.",
+            ));
+        }
+        Ok(())
+    }
 }
 
 pub(super) async fn snapshot_live(
@@ -170,84 +309,32 @@ async fn verify_archive_file(
     entries: &[ControlObservationPayloadEntry],
     installation: &InstallationId,
 ) -> UseResult<()> {
-    let (mut reader, before) = open_owned_regular_file(path, "observation archive").await?;
-    if before.len() != expected_bytes {
-        return Err(observation_error(
-            "The observation archive length differs from its manifest.",
-        ));
-    }
-    let before_modified = before.modified().ok();
-    let mut archive_digest = Sha256::new();
-    let mut package_records = BTreeSet::new();
-    for entry in entries {
-        let length = usize::try_from(entry.length)
-            .map_err(|_| observation_error("An observation record length is invalid."))?;
-        let mut bytes = vec![0_u8; length];
-        reader
-            .read_exact(&mut bytes)
-            .await
-            .map_err(|_| observation_error("The observation archive is truncated."))?;
-        if sha256(&bytes) != entry.sha256 {
-            return Err(observation_error(
-                "An observation archive record differs from its manifest digest.",
-            ));
-        }
-        let record = validate_terminal_entry(entry, &bytes, installation)?;
-        let family = match record.kind {
-            PlanningObservationSnapshotRecordKind::DiagnosticHistory => "history",
-            PlanningObservationSnapshotRecordKind::TerminalResolution => "resolution",
-            PlanningObservationSnapshotRecordKind::ActiveResolution
-            | PlanningObservationSnapshotRecordKind::ActiveDownload => {
-                return Err(observation_error(
-                    "An active planning attempt appeared in a terminal archive.",
-                ))
-            }
-        };
-        if !package_records.insert((family, record.package_id)) {
-            return Err(observation_error(
-                "The observation archive contains duplicate package records.",
-            ));
-        }
-        archive_digest.update(&bytes);
-    }
-    let mut trailing = [0_u8; 1];
-    if reader
-        .read(&mut trailing)
-        .await
-        .map_err(|error| archive_io("finish observation archive", error))?
-        != 0
-    {
-        return Err(observation_error(
-            "The observation archive contains trailing unaccounted bytes.",
-        ));
-    }
-    if format!("sha256:{:x}", archive_digest.finalize()) != expected_digest {
-        return Err(observation_error(
-            "The observation archive digest differs from its manifest.",
-        ));
-    }
-    let opened_after = reader
-        .metadata()
-        .await
-        .map_err(|error| archive_io("reinspect opened observation archive", error))?;
-    if a3s_use_core::metadata_is_link_or_reparse_point(&opened_after)
-        || !opened_after.is_file()
-        || opened_after.len() != before.len()
-        || before_modified.is_some_and(|modified| opened_after.modified().ok() != Some(modified))
-    {
-        return Err(observation_error(
-            "The observation archive changed during offline verification.",
-        ));
-    }
-    let after = inspect_owned_regular_file(path, "observation archive").await?;
-    if after.len() != before.len()
-        || before_modified.is_some_and(|modified| after.modified().ok() != Some(modified))
-    {
-        return Err(observation_error(
-            "The observation archive changed during offline verification.",
-        ));
-    }
-    Ok(())
+    let mut reader = ObservationArchiveReader::open(
+        path,
+        expected_bytes,
+        expected_digest,
+        entries,
+        installation,
+    )
+    .await?;
+    while reader.next().await?.is_some() {}
+    reader.finish().await
+}
+
+pub(super) async fn inspect_live_inventory(
+    state_root: &Path,
+    installation: &InstallationId,
+    limits: ControlPayloadOwnerLimits,
+) -> UseResult<LiveObservationInventory> {
+    let scan = scan_live(state_root, installation, limits).await?;
+    Ok(LiveObservationInventory {
+        terminal: scan
+            .terminal
+            .into_iter()
+            .map(|entry| entry.evidence)
+            .collect(),
+        active_count: scan.active_count,
+    })
 }
 
 fn validate_terminal_entry(
