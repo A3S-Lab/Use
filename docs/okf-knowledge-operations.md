@@ -165,8 +165,11 @@ target's exclusive maintenance fence by one replayable atomic rename. It
 refuses unowned, existing, or ambiguous live state and emits a canonical
 path-free, snapshot-bound result. Retry after rename reconciles the live
 database only while the same staged attempt and exclusive fence remain held.
-Cross-owner order, durable complete-set coordination, rollback policy, and
-production visibility remain outside this owner primitive.
+The private complete-set snapshot coordinator now includes this exact Knowledge
+snapshot beside the canonical Control export and every registered owner in one
+fixed-order archive, then reuses the Knowledge offline verifier before
+no-clobber publication. Cross-owner restore order and activation, rollback
+policy, and production visibility remain outside this owner primitive.
 
 ## Review and apply backup retention
 

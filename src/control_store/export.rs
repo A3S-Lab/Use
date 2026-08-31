@@ -14,7 +14,7 @@ use super::model::{
 use super::schema::{ControlStoreMetadata, CONTROL_STORE_SCHEMA_VERSION};
 
 const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v9";
-const MAX_CONTROL_STORE_EXPORT_BYTES: usize = 64 * 1024 * 1024;
+pub(in crate::control_store) const MAX_CONTROL_STORE_EXPORT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EXPORTED_GENERATIONS: usize = 4096;
 const MAX_EXPORTED_OPERATIONS: usize = 8192;
 const MAX_EXPORTED_EFFECTS: usize = 65_536;

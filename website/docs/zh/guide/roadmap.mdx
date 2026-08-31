@@ -127,15 +127,21 @@ package/capability generation。No-change request 会被显式保留，而不会
 可以用精确源字节与重新推导的规范 index 构造完整的 target-local owner root，并排除 legacy alias 与 lock。
 激活要求精确的排他 maintenance fence 且 live root 不存在，写入绑定 snapshot 的 marker，重新审计完整物理
 与语义 inventory，再原子发布整个 root 且不覆盖任何 target。确定性的 archive、record 与 marker partial，
-加上发布后的 replay，覆盖本地崩溃边界。Restore Coordinator 现在是第四个具体 snapshot owner，但尚未
-实现 restore adapter。其 owner-native journal decoder 只归档属于绑定 installation、规范编码且已完成的
+加上发布后的 replay，覆盖本地崩溃边界。Restore Coordinator 现在是第四个具体 snapshot 与 restore owner。
+其 owner-native journal decoder 只归档属于绑定 installation、规范编码且已完成的
 operation。Active marker 与 operation 被排除，但两者的有界 digest inventory 仍绑定到 manifest，并覆盖
 marker-only handoff。孤儿 nonterminal operation、pruning 或 temporary 残留、未知 entry、link、外来 history
 与 path rebinding 都会 fail closed。No-clobber 发布前会执行第二次扫描，流式离线验证把精确终态字节与无路径
-receipt 绑定到 Control export；空历史或仅 active 的历史不会创建 archive。Restore Coordinator 激活及
-self-hosted journal reconciliation、complete-set coordinator、完整 subprocess 崩溃矩阵、生产 lifecycle
-转换与 dispatch、backup/restore 与 reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2
-roadmap 项。
+receipt 绑定到 Control export；空历史或仅 active 的历史不会创建 archive。其 self-hosted restore adapter
+会保留 active marker 与当前 operation，同时以可重放方式只替换终态历史。持久化 activation evidence 绑定
+精确 before/source/target inventory；marker-only handoff、状态前进、原生 retention 和每个本地 partial 都
+保持确定且可检测篡改。私有 complete-set snapshot coordinator 现在会在同一个 maintenance fence 与
+timestamp 下捕获一份规范 Control export 和全部四个已注册 owner snapshot。无路径规范 manifest 绑定精确
+registry、receipt、schema、digest 与字节账目。单一固定顺序 archive 会流式写到所有 Use data/state root
+之外，经所有 owner-native offline verifier 完整审计后才以 no-clobber 方式发布。Absent owner 不增加 payload，
+全局 Artifact Store 继续排除在外。Complete-set restore activation、完整 subprocess 崩溃矩阵、生产
+lifecycle 转换与 dispatch、backup/restore 与 reachability 集成和协调一致的权威切换仍未完成，因此尚未
+完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

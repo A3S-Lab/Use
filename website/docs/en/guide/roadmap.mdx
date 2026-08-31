@@ -161,7 +161,7 @@ root, writes a snapshot-bound marker, re-audits the exact physical and semantic
 inventory, and atomically publishes the whole root without replacement.
 Deterministic archive, record, and marker partials plus post-publication replay
 cover the local crash boundaries. The Restore Coordinator is now the fourth
-concrete snapshot owner, but not yet a restore adapter. Its owner-native journal
+concrete snapshot and restore owner. Its owner-native journal
 decoder archives only exact canonical completed operations for the bound
 installation. The active marker and operation are excluded while their bounded
 digest inventory remains manifest-bound, including marker-only handoff.
@@ -169,9 +169,19 @@ Orphaned nonterminal operations, pruning or temporary residue, unknown entries,
 links, foreign history, and path rebinding fail closed. A second scan precedes
 no-clobber publication, and streaming offline verification binds exact terminal
 bytes and a path-free receipt to the Control export. Empty or active-only
-history creates no archive. Restore Coordinator activation and self-hosted
-journal reconciliation, complete-set coordination, the complete subprocess
-crash matrix, production conversion and dispatch, backup/restore and
+history creates no archive. Its self-hosted restore adapter preserves the active
+marker and current operation while replayably replacing only terminal history.
+Durable activation evidence binds exact before/source/target inventories;
+marker-only handoff, status progress, native retention, and every local partial
+are deterministic and tamper-evident. The private complete-set snapshot
+coordinator now captures one canonical Control export and all four registered
+owner snapshots beneath one maintenance fence and timestamp. A path-free
+canonical manifest binds the exact registry, receipts, schemas, digests, and
+byte accounting. One fixed-order archive is streamed outside every Use data and
+state root, fully audited through the owner-native offline verifiers, and
+published without replacement. Absent owners add no payload, and the global
+Artifact Store stays excluded. Complete-set restore activation, the complete
+subprocess crash matrix, production conversion and dispatch, backup/restore and
 reachability integration, and the coordinated authority cutover remain open;
 no A2 roadmap item is complete yet.
 

@@ -137,6 +137,7 @@ pub(in crate::control_store) struct ControlPayloadSnapshotSession {
     binding: ControlPayloadSnapshotBinding,
     control_export: Vec<u8>,
     state_root: PathBuf,
+    owned_roots: Vec<PathBuf>,
     maintenance: StateMaintenanceGuard,
 }
 
@@ -146,6 +147,7 @@ impl ControlPayloadSnapshotSession {
         installation: InstallationId,
         control_export: GeneratedControlStoreExport,
         state_root: PathBuf,
+        owned_roots: Vec<PathBuf>,
         maintenance: StateMaintenanceGuard,
     ) -> UseResult<Self> {
         registry.validate()?;
@@ -162,6 +164,7 @@ impl ControlPayloadSnapshotSession {
             binding,
             control_export,
             state_root,
+            owned_roots,
             maintenance,
         })
     }
@@ -180,6 +183,10 @@ impl ControlPayloadSnapshotSession {
 
     pub(super) fn state_root(&self) -> &Path {
         &self.state_root
+    }
+
+    pub(super) fn owned_roots(&self) -> &[PathBuf] {
+        &self.owned_roots
     }
 
     pub(in crate::control_store) fn receipt(

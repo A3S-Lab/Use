@@ -248,7 +248,7 @@ pub(in crate::control_store) struct ControlRestoreCoordinatorSnapshot {
 }
 
 impl ControlRestoreCoordinatorSnapshot {
-    fn validate(
+    pub(in crate::control_store) fn validate(
         &self,
         registry: &ControlPayloadOwnerRegistry,
         expected_binding: &ControlPayloadSnapshotBinding,

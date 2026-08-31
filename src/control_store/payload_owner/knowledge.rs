@@ -222,7 +222,7 @@ pub(in crate::control_store) struct ControlKnowledgePayloadSnapshot {
 }
 
 impl ControlKnowledgePayloadSnapshot {
-    fn validate(
+    pub(in crate::control_store) fn validate(
         &self,
         registry: &ControlPayloadOwnerRegistry,
         expected_binding: &ControlPayloadSnapshotBinding,

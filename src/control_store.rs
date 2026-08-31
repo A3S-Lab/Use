@@ -42,6 +42,7 @@ use schema::{CONTROL_STORE_SCHEMA_VERSION, SQLITE_SYNCHRONOUS_FULL};
 struct ControlStore {
     installation: InstallationId,
     state_root: PathBuf,
+    owned_roots: Vec<PathBuf>,
     database_path: PathBuf,
     executor: ControlStoreExecutor,
 }
@@ -54,6 +55,7 @@ impl ControlStore {
         let executor = ControlStoreExecutor::new()?;
         Ok(Self {
             installation,
+            owned_roots: vec![state_root.clone()],
             state_root,
             database_path,
             executor,
@@ -61,10 +63,15 @@ impl ControlStore {
     }
 
     fn from_extension_paths(paths: &ExtensionPaths) -> UseResult<Self> {
-        Self::new(
+        let mut store = Self::new(
             paths.installation_state_root(),
             paths.installation().clone(),
-        )
+        )?;
+        store.owned_roots = vec![
+            paths.use_paths().data_root().to_path_buf(),
+            paths.use_paths().state_root().to_path_buf(),
+        ];
+        Ok(store)
     }
 
     async fn initialize(&self) -> UseResult<ControlStoreMetadata> {
@@ -135,6 +142,7 @@ impl ControlStore {
             self.installation.clone(),
             export,
             self.state_root.clone(),
+            self.owned_roots.clone(),
             maintenance,
         )
     }
@@ -363,6 +371,10 @@ mod payload_host_projection_restore_security_tests;
 mod payload_host_projection_restore_tests;
 #[cfg(test)]
 mod payload_host_projection_tests;
+#[cfg(test)]
+mod payload_installation_snapshot_security_tests;
+#[cfg(test)]
+mod payload_installation_snapshot_tests;
 #[cfg(test)]
 mod payload_knowledge_restore_security_tests;
 #[cfg(test)]

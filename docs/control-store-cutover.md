@@ -135,8 +135,17 @@ completion-time/start-time/plan-digest ordering as journal retention removes
 exactly the source-native oldest record to reserve the active operation's slot.
 Source and active identities may never collide. Durable activation, retired, candidate,
 and deterministic publication-partial evidence make each local crash boundary
-replayable and tamper-evident. Complete-set orchestration is still required
-before this gate can close.
+replayable and tamper-evident. The private complete-set snapshot coordinator
+now captures the canonical Control export and every registered owner beneath
+one exclusive maintenance fence and timestamp. Its path-free canonical
+manifest binds the fixed owner registry, receipts, schemas, digests, and byte
+accounting. A fixed-order single-file archive is streamed to external staging,
+audited with every owner-native offline verifier, and published only once with
+no-clobber semantics; absent owners add no payload and the global Artifact Store
+is excluded. This qualifies complete-set backup assembly only. Complete-set
+restore staging and activation, subprocess recovery, production backup/restore
+wiring, and indivisible authority cutover remain required before this gate can
+close.
 
 ## Non-negotiable cutover invariants
 

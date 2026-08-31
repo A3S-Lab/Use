@@ -199,9 +199,19 @@ move 发布整个 root。确定性的 archive、record 与 marker partial，加�
 authority，但两者的有界数量和 digest inventory 会绑定到 manifest，marker-only handoff 也会被精确表达。
 孤儿 nonterminal operation、pruning 或 temporary 残留、未知布局、link、外来 installation history 与
 path/record rebinding 都会 fail closed。No-clobber 发布前会执行第二次扫描；流式离线 verifier 把精确终态
-字节和无路径 receipt 绑定到 Control export。空历史或仅 active 的历史不会创建 archive。这些仍是未启用的
-owner primitive；Restore Coordinator 激活及 self-hosted journal reconciliation、complete-set coordinator、
-完整 subprocess-exit 验收、生产 orchestration，以及所有消费者的协调权威切换完成前，该内核仍保持禁用。
+字节和无路径 receipt 绑定到 Control export。空历史或仅 active 的历史不会创建 archive。其 self-hosted
+restore adapter 要求精确的排他 fence 与 active marker，保留该 marker 和当前 operation，只替换终态历史，
+并在持久化 activation evidence 中绑定精确 before/source/target inventory。Replay 允许当前 operation 的状态
+前进，但会拒绝 marker、candidate、retired record 或 publication partial 漂移。Marker-only handoff 与原生
+64-record retention 都保持确定性。
+
+私有 complete-set snapshot coordinator 现在会在同一个 maintenance fence 和 timestamp 下捕获规范 Control
+export 与全部四个已注册 owner snapshot。一个无路径的规范 manifest 绑定固定 owner registry、receipt、schema、
+digest 和字节账目。Coordinator 按固定协议顺序把内容流式写入位于所有 Use data/state root 之外的单文件
+archive，复用每个 owner-native offline verifier，并仅以 no-clobber 方式发布通过完整审计的文件。Absent owner
+不会增加虚构 payload 字节，全局 Artifact Store 继续排除在外。这些路径仍是未启用的 qualification code；
+complete-set restore activation、完整 subprocess-exit 验收、生产 backup/restore 接线，以及所有消费者的协调
+权威切换完成前，该内核仍保持禁用。
 
 ## 运行时可见性
 

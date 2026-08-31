@@ -84,6 +84,35 @@ pub(in crate::control_store) async fn seed_host_projection(
         .unwrap()
 }
 
+pub(in crate::control_store) async fn seed_host_projection_for_completed_operation(
+    store: &ControlStore,
+    paths: &ExtensionPaths,
+    completed: &ReviewedControlOperation,
+) -> Vec<(String, Vec<u8>)> {
+    let record = store
+        .operation(completed.operation_id())
+        .await
+        .unwrap()
+        .expect("the completed Control operation must exist");
+    let generation = store.current_generation().await.unwrap().unwrap();
+    write_host_projection_snapshot_fixture(
+        paths.state_root(),
+        &control_installation(),
+        completed.envelope.clone(),
+        host_state(&generation, &completed.envelope),
+        HostProjectionSnapshotFixtureOutcome::Completed {
+            completed_at_ms: record.completed_at_ms.unwrap(),
+            result_digest: record.result_digest.unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+
+    host_projection_snapshot_fixture_sources(paths.state_root(), &control_installation())
+        .await
+        .unwrap()
+}
+
 pub(super) async fn seed_host_no_change(store: &ControlStore, paths: &ExtensionPaths) {
     let installation = control_installation();
     let (completed, generation, _) =
