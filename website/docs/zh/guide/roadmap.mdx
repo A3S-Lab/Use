@@ -71,7 +71,7 @@ diagnostic、backup 与 restore 的读取方必须一起切换。
 禁止旧状态回退读取的前提下同步切换的消费者。这只冻结了实现边界；生产启用仍保持关闭，
 也尚未完成任何 A2 项。
 
-当前检入的 Control Store 内核仍刻意保持未启用状态。其 clean-state schema-v8
+当前检入的 Control Store 内核仍刻意保持未启用状态。其 clean-state schema-v9
 聚合会持久化每个规范化的完整 reviewed Plan envelope 与带版本的 authorization
 evidence，并从中推导 operation identity、Plan/authorization digest、action、root
 package、installation scope 与 generation cursor；重启、离线导出验证和 staged restore
@@ -92,13 +92,18 @@ invocation lease、Runtime、Flow、Knowledge、Skill 或 UI owner；Tool 与 MC
 精确的 reviewed provider selection。Package state、lifecycle identity、Grant 与 provider
 selection 是事务事实，不会再被复制为伪 effect。Payload 字节、带域分离的 idempotency key、
 digest 与关系投影在同一事务提交；claim 与 completion 会在重启后把它们
-重新绑定到已提交 generation，并拒绝不完整的 outbox inventory。该内核还验证了
-snapshot、完整 Grant、reviewed provider selection、capability history、跨重启的
-unknown/expired claim 显式 reconciliation、可离线验证的确定性导出，以及 clean staged
-restore。生产 lifecycle 代码仍不会构造它；外部 artifact/projection payload ownership、
-完整崩溃矩阵、到 authorization-v2 Grant evidence 的 lifecycle 转换、通过类型化外部 owner
-执行 effect、类型化 applied-provider observation、backup/restore 与 reachability 集成和协调一致
-的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+重新绑定到已提交 generation，并拒绝不完整的 outbox inventory。Applied outcome 现在会保存
+规范化、owner-specific 的 Capability Index、invocation lease、Runtime Task/不透明 Service
+readiness、Flow artifact、Knowledge projection 或 Skill/UI content evidence；rejected 与 unknown
+outcome 不能携带 applied state。记录 cutover application 的事务会在 drain 前原子推进 publication；
+之后的必需 effect 失败保持 effects-pending，并以同一 key 显式 reconciliation，而不会回滚已可见
+generation；operation completion 也不能早于 provider observation。该内核还验证了 snapshot、
+完整 Grant、reviewed provider selection、capability history、跨重启的 unknown/expired claim
+显式 reconciliation、可离线验证的确定性导出，以及 clean staged restore。生产 lifecycle 代码
+仍不会构造它；外部 artifact/projection payload ownership、完整崩溃矩阵、到 authorization-v2
+Grant evidence 的 lifecycle 转换、通过真实类型化 owner port 执行 effect 并填充已验证的 observation
+contract、backup/restore 与 reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何
+A2 roadmap 项。
 
 ## 已实现基线
 

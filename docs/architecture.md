@@ -100,7 +100,7 @@ transaction, outbox, backup, and migration boundaries: the SQLite/WAL backend
 may be qualified before activation, but every authoritative reader switches as
 one cutover and live WAL files are never copied as backup payloads.
 The current private Control Store kernel qualifies an installation-bound
-schema-v8 aggregate, bounded blocking executor, typed transitions and outbox,
+schema-v9 aggregate, bounded blocking executor, typed transitions and outbox,
 and canonical offline-verifiable export plus staged restore on otherwise clean
 state. It persists each complete canonical reviewed Plan envelope and versioned
 authorization record, while relational columns remain validated projections of
@@ -124,14 +124,23 @@ before dependants, retires in reverse order, and binds every Tool or MCP effect
 to its exact reviewed Runtime selection. Package state, Grants, lifecycle
 identity, and provider selection remain transaction facts rather than pseudo
 effects. Canonical payload bytes, domain-separated idempotency key, digest, and
-relational projection commit together.
-Production lifecycle code does not construct
-it, so it neither mirrors nor replaces the current JSON authority. Lifecycle
+relational projection commit together. Applied outcomes retain a canonical
+owner-specific descriptor that binds the exact intent to portable Runtime
+Task/opaque `gateway:` Service readiness, Flow artifact, Knowledge projection,
+Skill/UI content, Capability Index, or invocation-lease receipt evidence;
+rejected and unknown outcomes cannot carry applied state. The applied cutover
+observation atomically retires the prior publication and advances the
+capability cursor before drain and teardown. A post-cutover required failure
+stays pending for explicit same-key reconciliation rather than rolling back a
+visible generation, and completion cannot predate its observations.
+
+Production lifecycle code does not construct it, so it neither mirrors nor
+replaces the current JSON authority. Lifecycle
 conversion still must feed the reviewed Grant evidence, dispatch effects
-through typed external owners, and persist typed applied-provider observations.
-External-payload ownership and
-the coordinated reader/writer
-cutover also remain A2 work. The machine-checked
+through real typed external owners, and populate the qualified observation
+contract.
+External-payload ownership and the coordinated reader/writer cutover also
+remain A2 work. The machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual
 state layout. It is an implementation prerequisite, not an activated migration

@@ -491,7 +491,7 @@ pub(super) fn claim(
     token: &str,
     now_ms: u64,
     lease_until_ms: u64,
-    reconcile_unknown: bool,
+    explicit_reconciliation: bool,
 ) -> ControlEffectClaim {
     ControlEffectClaim {
         operation_id: operation_id.to_string(),
@@ -499,13 +499,13 @@ pub(super) fn claim(
         claim_token: token.to_string(),
         now_ms,
         lease_until_ms,
-        reconcile_unknown,
+        explicit_reconciliation,
     }
 }
 
 pub(super) fn observation(
     operation_id: &str,
-    idempotency_key: &str,
+    intent: &ControlEffectIntent,
     claim_token: &str,
     outcome: ControlEffectOutcome,
     seed: char,
@@ -513,14 +513,103 @@ pub(super) fn observation(
 ) -> ControlEffectObservation {
     ControlEffectObservation {
         operation_id: operation_id.to_string(),
-        idempotency_key: idempotency_key.to_string(),
+        idempotency_key: intent.idempotency_key.clone(),
         claim_token: claim_token.to_string(),
         outcome,
-        evidence_digest: digest(seed),
+        application: matches!(outcome, ControlEffectOutcome::Applied)
+            .then(|| application(intent, seed)),
+        failure_evidence_digest: (!matches!(outcome, ControlEffectOutcome::Applied))
+            .then(|| digest(seed)),
         error_code: (!matches!(outcome, ControlEffectOutcome::Applied))
             .then(|| "provider.rejected".to_string()),
         observed_at_ms,
     }
+}
+
+pub(super) fn application(intent: &ControlEffectIntent, seed: char) -> ControlAppliedEffect {
+    let receipt_digest = digest(seed);
+    let state = match intent.kind {
+        ControlEffectKind::SurfacePrepare => ControlSurfaceObservationState::Prepared,
+        ControlEffectKind::SurfaceStop => ControlSurfaceObservationState::Stopped,
+        ControlEffectKind::SurfaceRemove => ControlSurfaceObservationState::Removed,
+        ControlEffectKind::CapabilityCutover | ControlEffectKind::CallsDrain => {
+            ControlSurfaceObservationState::Prepared
+        }
+    };
+    let evidence = match (&intent.owner, &intent.subject) {
+        (
+            ControlEffectOwner::CapabilityIndex,
+            ControlEffectSubject::Installation {
+                capability_generation,
+                descriptor_digest,
+                ..
+            },
+        ) => ControlAppliedEffectEvidence::CapabilityIndex {
+            capability_generation: *capability_generation,
+            descriptor_digest: descriptor_digest.clone(),
+            receipt_digest,
+        },
+        (
+            ControlEffectOwner::InvocationLeases,
+            ControlEffectSubject::Package {
+                package_id,
+                lifecycle_generation,
+                ..
+            },
+        ) => ControlAppliedEffectEvidence::InvocationLeases {
+            package_id: package_id.clone(),
+            lifecycle_generation: *lifecycle_generation,
+            receipt_digest,
+        },
+        (
+            ControlEffectOwner::RuntimeProvider {
+                provider_id,
+                selection_digest,
+            },
+            ControlEffectSubject::Surface { .. },
+        ) => ControlAppliedEffectEvidence::RuntimeProvider {
+            state,
+            provider_id: provider_id.clone(),
+            selection_digest: selection_digest.clone(),
+            receipt_digest,
+            binding: (intent.kind == ControlEffectKind::SurfacePrepare)
+                .then_some(ControlRuntimeBindingObservation::Task),
+        },
+        (ControlEffectOwner::FlowHost, ControlEffectSubject::Surface { .. }) => {
+            ControlAppliedEffectEvidence::FlowHost {
+                state,
+                receipt_digest,
+                artifact_digest: (intent.kind == ControlEffectKind::SurfacePrepare)
+                    .then(|| digest('a')),
+            }
+        }
+        (ControlEffectOwner::KnowledgeHost, ControlEffectSubject::Surface { .. }) => {
+            ControlAppliedEffectEvidence::KnowledgeHost {
+                state,
+                receipt_digest,
+                projection_digest: (intent.kind == ControlEffectKind::SurfacePrepare)
+                    .then(|| digest('b')),
+            }
+        }
+        (ControlEffectOwner::SkillHost, ControlEffectSubject::Surface { .. }) => {
+            ControlAppliedEffectEvidence::SkillHost {
+                state,
+                receipt_digest,
+                content_digest: (intent.kind == ControlEffectKind::SurfacePrepare)
+                    .then(|| digest('c')),
+            }
+        }
+        (ControlEffectOwner::UiHost, ControlEffectSubject::Surface { .. }) => {
+            ControlAppliedEffectEvidence::UiHost {
+                state,
+                receipt_digest,
+                content_digest: (intent.kind == ControlEffectKind::SurfacePrepare)
+                    .then(|| digest('d')),
+            }
+        }
+        _ => panic!("the test effect owner and subject must agree"),
+    };
+    ControlAppliedEffect::new(intent, evidence).unwrap()
 }
 
 pub(super) fn canonical_json<T: Serialize>(value: &T) -> Vec<u8> {
@@ -550,7 +639,7 @@ pub(super) async fn apply_all_effects(
         store
             .record_effect_observation(observation(
                 reviewed.operation_id(),
-                &claimed.intent.idempotency_key,
+                &claimed.intent,
                 &claimed.claim_token,
                 ControlEffectOutcome::Applied,
                 char::from_digit(sequence % 16, 16).unwrap(),

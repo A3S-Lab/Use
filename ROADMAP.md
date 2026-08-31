@@ -492,7 +492,7 @@ inventory prerequisite only. It neither activates the database nor completes
 an A2 checkbox.
 
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
-for a clean installation. Schema v8 binds one exact `InstallationId` and stores
+for a clean installation. Schema v9 binds one exact `InstallationId` and stores
 contiguous installation generations, canonical complete reviewed Plan
 envelopes, versioned authorization evidence, exact snapshots, full Workspace
 Grants, provider bindings, capability candidates, lifecycle checkpoints, and an
@@ -542,22 +542,33 @@ owner, policy, generation, and a domain-separated idempotency key are all
 derived rather than accepted from callers. Payload bytes, digest, and relational
 projection commit together and survive restart and offline verification. Claim
 and completion rebind every payload to the committed generation and reject an
-incomplete checkpoint/outbox inventory. Typed commands prove atomic transition rollback,
-action/root-state semantics, terminal replay, required-effect rejection,
-capability retirement, and explicit reconciliation of unknown or expired
-claims across restart. Its bounded canonical export includes the complete
-aggregate, is semantically verifiable without the live database, and supports
-clean-state staged restore with exact authority round-trip. WAL/full durability,
-foreign keys, exact-schema/integrity checks, linked-path rejection, and the
-16-entry bounded worker remain qualified.
+incomplete checkpoint/outbox inventory. Applied outcomes now retain a canonical
+owner-specific application descriptor, not a caller-selected success digest.
+It binds the exact effect identity to Capability Index or invocation-lease
+receipts, the reviewed Runtime selection and portable Task/opaque `gateway:`
+Service readiness evidence, or Flow artifact, Knowledge projection, and
+Skill/UI content digests. Rejected and unknown outcomes retain diagnostic
+evidence only. An applied capability-cutover observation atomically retires the
+prior publication, publishes the candidate, and advances the capability cursor
+before drain or teardown. A required failure after that boundary remains
+effects-pending for explicit same-key reconciliation and cannot roll back the
+published generation; terminal completion must follow every observation.
+Typed commands prove atomic transition rollback, action/root-state semantics,
+terminal replay, pre-cutover required-effect rejection, post-cutover
+reconciliation, and explicit reconciliation of unknown or expired claims
+across restart. Its bounded canonical export includes the complete aggregate,
+is semantically verifiable without the live database, and supports clean-state
+staged restore with exact authority round-trip. WAL/full durability, foreign
+keys, exact-schema/integrity checks, linked-path rejection, and the 16-entry
+bounded worker remain qualified.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
 not accept it. The external artifact/projection payload-owner registry,
 complete process-exit matrix, production conversion into the reviewed Grant
-evidence above, dispatch through typed external owners, typed applied-provider
-observations, indivisible consumer cutover, and deletion of legacy
-mutable stores therefore remain open;
+evidence above, a real dispatcher over typed external owners that populates the
+qualified observation contract, indivisible consumer cutover, and deletion of
+legacy mutable stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

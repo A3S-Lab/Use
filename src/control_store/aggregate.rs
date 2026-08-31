@@ -14,13 +14,13 @@ use super::model::{
     conflict_error, corruption_error, enforcement_profile_name, input_error, operation_action_name,
     parse_enforcement_profile, parse_operation_action, parse_surface_kind, surface_kind_name,
     valid_machine_id, valid_sha256, validate_grant_selections, validate_provider_selections,
-    ClaimedControlEffect, ControlAuthorizationEvidence, ControlCapabilitySelection,
-    ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent, ControlEffectKind,
-    ControlEffectObservation, ControlEffectOutcome, ControlEffectRecord, ControlEffectStatus,
-    ControlEffectSubject, ControlGeneration, ControlGrantSelection, ControlOperationRecord,
-    ControlOperationStatus, ControlPackageLifecycle, ControlProjectionHistory,
-    ControlProviderSelection, ControlStoreAuthority, ControlTransition, ReviewedControlOperation,
-    MAX_CONTROL_HISTORY_PACKAGES,
+    ClaimedControlEffect, ControlAppliedEffect, ControlAuthorizationEvidence,
+    ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
+    ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectRecord,
+    ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
+    ControlOperationRecord, ControlOperationStatus, ControlPackageLifecycle,
+    ControlProjectionHistory, ControlProviderSelection, ControlStoreAuthority, ControlTransition,
+    ReviewedControlOperation, MAX_CONTROL_HISTORY_PACKAGES,
 };
 use super::schema;
 
@@ -419,16 +419,21 @@ pub(super) fn claim_next_effect(
                 .map_err(|error| schema::sqlite_error("finish busy Control Store claim", error))?;
             return Ok(None);
         }
-        ControlEffectStatus::Claimed | ControlEffectStatus::Unknown if !claim.reconcile_unknown => {
+        ControlEffectStatus::Claimed
+        | ControlEffectStatus::Unknown
+        | ControlEffectStatus::Rejected
+            if !claim.explicit_reconciliation =>
+        {
             return Err(UseError::new(
                 "use.control_store.reconciliation_required",
-                "An ambiguous Control Store effect requires explicit reconciliation before replay.",
-            ))
+                "A claimed, ambiguous, or post-cutover rejected Control Store effect requires explicit reconciliation before replay.",
+            ));
         }
         ControlEffectStatus::Pending
         | ControlEffectStatus::Claimed
-        | ControlEffectStatus::Unknown => {}
-        ControlEffectStatus::Applied | ControlEffectStatus::Rejected => {
+        | ControlEffectStatus::Unknown
+        | ControlEffectStatus::Rejected => {}
+        ControlEffectStatus::Applied => {
             return Err(corruption_error(
                 "A terminal Control Store effect remained in the unfinished sequence.",
             ))
@@ -443,7 +448,8 @@ pub(super) fn claim_next_effect(
             "UPDATE effect_outbox
              SET status = 'claimed', attempt = ?2, claim_owner = ?3,
                  claim_token = ?4, lease_until_ms = ?5,
-                 evidence_digest = NULL, error_code = NULL, observed_at_ms = NULL
+                 application_json = NULL, evidence_digest = NULL,
+                 error_code = NULL, observed_at_ms = NULL
              WHERE idempotency_key = ?1",
             params![
                 effect.intent.idempotency_key,
@@ -481,13 +487,41 @@ pub(super) fn record_effect_observation(
             "The Control Store effect belongs to a different operation.",
         ));
     }
+    let committed_at_ms =
+        read_operation_from(&transaction, installation, &observation.operation_id)?
+            .and_then(|operation| operation.committed_at_ms)
+            .ok_or_else(|| {
+                corruption_error("A Control Store effect has no committed operation transition.")
+            })?;
+    let prior_observed_at_ms = transaction
+        .query_row(
+            "SELECT MAX(observed_at_ms) FROM effect_outbox
+             WHERE operation_id = ?1 AND sequence < ?2",
+            params![observation.operation_id, i64::from(current.intent.sequence)],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .map_err(|error| {
+            schema::sqlite_error("inspect prior Control Store effect observations", error)
+        })?
+        .map(from_i64)
+        .transpose()?;
+    let earliest_observation_ms = prior_observed_at_ms
+        .map(|observed_at_ms| observed_at_ms.max(committed_at_ms))
+        .unwrap_or(committed_at_ms);
+    if observation.observed_at_ms < earliest_observation_ms {
+        return Err(conflict_error(
+            "The Control Store effect observation predates its transition or prior observation.",
+        ));
+    }
+    let (application_json, evidence_digest) = observation.evidence_for(&current.intent)?;
     if matches!(
         current.status,
         ControlEffectStatus::Applied | ControlEffectStatus::Rejected | ControlEffectStatus::Unknown
     ) {
         if current.status == observation.outcome.status()
             && current.claim_token.as_deref() == Some(&observation.claim_token)
-            && current.evidence_digest.as_deref() == Some(&observation.evidence_digest)
+            && current.application == observation.application
+            && current.evidence_digest.as_deref() == Some(&evidence_digest)
             && current.error_code == observation.error_code
             && current.observed_at_ms == Some(observation.observed_at_ms)
         {
@@ -513,19 +547,28 @@ pub(super) fn record_effect_observation(
     transaction
         .execute(
             "UPDATE effect_outbox
-             SET status = ?2, evidence_digest = ?3, error_code = ?4,
-                 observed_at_ms = ?5
+             SET status = ?2, application_json = ?3, evidence_digest = ?4,
+                 error_code = ?5, observed_at_ms = ?6
              WHERE idempotency_key = ?1 AND status = 'claimed'",
             params![
                 observation.idempotency_key,
                 observation.outcome.status().as_str(),
-                observation.evidence_digest,
+                application_json,
+                evidence_digest,
                 observation.error_code,
                 to_i64(observation.observed_at_ms)?,
             ],
         )
         .map_err(|error| mutation_error("record Control Store outbox observation", error))?;
-    if observation.outcome == ControlEffectOutcome::Rejected && current.intent.required {
+    if observation.outcome == ControlEffectOutcome::Applied
+        && current.intent.kind == ControlEffectKind::CapabilityCutover
+    {
+        publish_capability_cutover(&transaction, &current.intent, observation.observed_at_ms)?;
+    }
+    if observation.outcome == ControlEffectOutcome::Rejected
+        && current.intent.required
+        && !capability_cutover_applied(&transaction, &observation.operation_id)?
+    {
         transaction
             .execute(
                 "UPDATE control_operation
@@ -534,7 +577,7 @@ pub(super) fn record_effect_observation(
                 params![
                     observation.operation_id,
                     to_i64(observation.observed_at_ms)?,
-                    observation.evidence_digest,
+                    evidence_digest,
                 ],
             )
             .map_err(|error| mutation_error("reject Control Store operation", error))?;
@@ -558,6 +601,98 @@ pub(super) fn record_effect_observation(
         .commit()
         .map_err(|error| schema::sqlite_error("commit Control Store effect observation", error))?;
     Ok(true)
+}
+
+fn publish_capability_cutover(
+    transaction: &Transaction<'_>,
+    intent: &ControlEffectIntent,
+    published_at_ms: u64,
+) -> UseResult<()> {
+    let ControlEffectSubject::Installation {
+        expected_capability_generation,
+        capability_generation,
+        descriptor_digest,
+    } = &intent.subject
+    else {
+        return Err(corruption_error(
+            "A capability cutover effect has a non-installation subject.",
+        ));
+    };
+    if *expected_capability_generation > 0 {
+        let retired = transaction
+            .execute(
+                "UPDATE capability_generation
+                 SET publication_state = 'retired'
+                 WHERE capability_generation = ?1 AND publication_state = 'published'",
+                [to_i64(*expected_capability_generation)?],
+            )
+            .map_err(|error| {
+                mutation_error("retire prior Control Store capability generation", error)
+            })?;
+        if retired != 1 {
+            return Err(conflict_error(
+                "The prior published Control Store capability generation is missing.",
+            ));
+        }
+    }
+    let published = transaction
+        .execute(
+            "UPDATE capability_generation
+             SET publication_state = 'published', published_at_ms = ?4
+             WHERE capability_generation = ?1
+               AND installation_generation = ?2
+               AND descriptor_digest = ?3
+               AND publication_state = 'candidate'",
+            params![
+                to_i64(*capability_generation)?,
+                to_i64(intent.installation_generation)?,
+                descriptor_digest,
+                to_i64(published_at_ms)?,
+            ],
+        )
+        .map_err(|error| mutation_error("publish Control Store capability generation", error))?;
+    if published != 1 {
+        return Err(conflict_error(
+            "The Control Store capability generation changed before cutover observation.",
+        ));
+    }
+    let advanced = transaction
+        .execute(
+            "UPDATE control_installation
+             SET published_capability_generation = ?3
+             WHERE singleton = 1 AND current_generation = ?1
+               AND published_capability_generation = ?2",
+            params![
+                to_i64(intent.installation_generation)?,
+                to_i64(*expected_capability_generation)?,
+                to_i64(*capability_generation)?,
+            ],
+        )
+        .map_err(|error| mutation_error("advance published capability generation", error))?;
+    if advanced != 1 {
+        return Err(generation_changed());
+    }
+    Ok(())
+}
+
+fn capability_cutover_applied(
+    transaction: &Transaction<'_>,
+    operation_id: &str,
+) -> UseResult<bool> {
+    transaction
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM lifecycle_checkpoint c
+                JOIN effect_outbox o
+                  ON o.operation_id = c.operation_id AND o.sequence = c.sequence
+                WHERE c.operation_id = ?1
+                  AND c.checkpoint_kind = 'capability-cutover'
+                  AND o.status = 'applied'
+             )",
+            [operation_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| schema::sqlite_error("inspect Control Store capability cutover", error))
 }
 
 pub(super) fn complete_operation(
@@ -607,59 +742,38 @@ pub(super) fn complete_operation(
             "The Control Store operation still has unfinished or rejected required effects.",
         ));
     }
-    let target_generation = current.reviewed.target_generation()?;
-    let target_capability_generation = current.reviewed.target_capability_generation()?;
-    if current.reviewed.expected_capability_generation > 0 {
-        let retired = transaction
-            .execute(
-                "UPDATE capability_generation
-                 SET publication_state = 'retired'
-                 WHERE capability_generation = ?1 AND publication_state = 'published'",
-                [to_i64(current.reviewed.expected_capability_generation)?],
-            )
-            .map_err(|error| {
-                mutation_error("retire prior Control Store capability generation", error)
-            })?;
-        if retired != 1 {
-            return Err(conflict_error(
-                "The prior published Control Store capability generation is missing.",
-            ));
-        }
-    }
-    let changed = transaction
-        .execute(
-            "UPDATE capability_generation
-             SET publication_state = 'published', published_at_ms = ?3
-             WHERE capability_generation = ?1
-               AND installation_generation = ?2
-               AND publication_state = 'candidate'",
-            params![
-                to_i64(target_capability_generation)?,
-                to_i64(target_generation)?,
-                to_i64(completed_at_ms)?,
-            ],
-        )
-        .map_err(|error| mutation_error("publish Control Store capability generation", error))?;
-    if changed != 1 {
+    if effects
+        .iter()
+        .filter_map(|effect| effect.observed_at_ms)
+        .max()
+        .is_some_and(|observed_at_ms| observed_at_ms > completed_at_ms)
+    {
         return Err(conflict_error(
-            "The Control Store capability generation changed before publication.",
+            "The Control Store completion predates an external-effect observation.",
         ));
     }
-    let changed = transaction
-        .execute(
-            "UPDATE control_installation
-             SET published_capability_generation = ?3
-             WHERE singleton = 1 AND current_generation = ?1
-               AND published_capability_generation = ?2",
+    let target_generation = current.reviewed.target_generation()?;
+    let target_capability_generation = current.reviewed.target_capability_generation()?;
+    let completed_at_i64 = to_i64(completed_at_ms)?;
+    let (publication_state, published_at_ms): (String, Option<i64>) = transaction
+        .query_row(
+            "SELECT publication_state, published_at_ms FROM capability_generation
+             WHERE installation_generation = ?1 AND capability_generation = ?2",
             params![
                 to_i64(target_generation)?,
-                to_i64(current.reviewed.expected_capability_generation)?,
-                to_i64(target_capability_generation)?,
+                to_i64(target_capability_generation)?
             ],
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .map_err(|error| mutation_error("advance published capability generation", error))?;
-    if changed != 1 {
-        return Err(generation_changed());
+        .map_err(|error| schema::sqlite_error("verify applied capability cutover", error))?;
+    let (_, published_cursor) = read_cursors(&transaction)?;
+    if publication_state != "published"
+        || published_cursor != target_capability_generation
+        || published_at_ms.is_none_or(|time| time <= 0 || time > completed_at_i64)
+    {
+        return Err(conflict_error(
+            "The Control Store capability cutover has not been durably observed.",
+        ));
     }
     transaction
         .execute(

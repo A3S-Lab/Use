@@ -155,12 +155,16 @@ Embedding host 实现 `CognitivePackageLifecycleFactory`，提供精确的 Runti
 
 [ADR-003](https://github.com/A3S-Lab/Use/blob/main/docs/adr-003-control-store-transaction-boundary.md) 冻结了下一阶段的 Control Store 边界：每个安装只有一个可变权威，不允许 JSON/SQLite 双写，并通过 outbox 隔离无法加入本地事务的 provider 副作用。
 
-未启用的 schema-v8 内核现已从 reviewed Plan 与已提交 generation 推导完整 outbox
+未启用的 schema-v9 内核现已从 reviewed Plan 与已提交 generation 推导完整 outbox
 inventory：依赖 surface 先于 dependant 准备，只切换一次 capability，随后排空已接受调用，
 再通过类型化 owner 反向退休 surface。Tool 与 MCP effect 绑定精确的 reviewed Runtime
 selection；package state、Grant、lifecycle identity 与 provider selection 继续留在聚合事务内，
-不会成为重复 effect。在所有消费者能够同步切换之前，生产 orchestration 与协调权威切换
-仍保持禁用。
+不会成为重复 effect。Applied outcome 会持久化规范化、owner-specific 的 Capability Index、
+invocation lease、Runtime Task/不透明 Service readiness、Flow artifact、Knowledge projection
+或 Skill/UI content evidence。记录 applied cutover observation 的事务会在 drain 之前原子推进
+publication；之后的必需 effect 失败会保留为使用相同 key 显式 reconciliation 的 pending 状态，
+而不会回滚已可见 generation。在真实 owner-port dispatch、生产 orchestration 与所有消费者
+的协调权威切换完成前，该内核仍保持禁用。
 
 ## 运行时可见性
 

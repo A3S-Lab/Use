@@ -161,12 +161,17 @@ fn restore_effect_record(
     transaction: &Transaction<'_>,
     effect: &ControlEffectRecord,
 ) -> UseResult<()> {
+    let application_json = effect
+        .application
+        .as_ref()
+        .map(ControlAppliedEffect::canonical_bytes)
+        .transpose()?;
     transaction
         .execute(
             "UPDATE effect_outbox
              SET status = ?2, attempt = ?3, claim_owner = ?4, claim_token = ?5,
-                 lease_until_ms = ?6, evidence_digest = ?7, error_code = ?8,
-                 observed_at_ms = ?9
+                 lease_until_ms = ?6, application_json = ?7, evidence_digest = ?8,
+                 error_code = ?9, observed_at_ms = ?10
              WHERE idempotency_key = ?1",
             params![
                 effect.intent.idempotency_key,
@@ -175,6 +180,7 @@ fn restore_effect_record(
                 effect.claim_owner,
                 effect.claim_token,
                 effect.lease_until_ms.map(to_i64).transpose()?,
+                application_json,
                 effect.evidence_digest,
                 effect.error_code,
                 effect.observed_at_ms.map(to_i64).transpose()?,
