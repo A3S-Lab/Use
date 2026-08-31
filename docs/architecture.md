@@ -1,7 +1,7 @@
 # A3S Use Architecture
 
 Status: development preview; not production-ready
-Last updated: 2026-08-30
+Last updated: 2026-08-31
 
 ## Product boundary
 
@@ -100,7 +100,7 @@ transaction, outbox, backup, and migration boundaries: the SQLite/WAL backend
 may be qualified before activation, but every authoritative reader switches as
 one cutover and live WAL files are never copied as backup payloads.
 The current private Control Store kernel qualifies an installation-bound
-schema-v7 aggregate, bounded blocking executor, typed transitions and outbox,
+schema-v8 aggregate, bounded blocking executor, typed transitions and outbox,
 and canonical offline-verifiable export plus staged restore on otherwise clean
 state. It persists each complete canonical reviewed Plan envelope and versioned
 authorization record, while relational columns remain validated projections of
@@ -117,13 +117,19 @@ and MCP surface are projected from the canonical Plan and exact prior
 generation, while unrelated selections are retained. A candidate capability
 digest binds the exact target snapshot, lifecycle identities, Grant revisions,
 and provider selections without claiming an endpoint or readiness before an
-external effect succeeds. Package and surface effects bind exact artifact incarnations, while one graph capability effect
-binds the complete target installation/capability generation; canonical
-payload bytes, their digest, and their relational projection commit together.
+external effect succeeds. The same pure projection derives only the effects
+that cannot join the transaction: typed surface prepare, capability cutover,
+accepted-call drain, and surface stop or removal. It prepares dependencies
+before dependants, retires in reverse order, and binds every Tool or MCP effect
+to its exact reviewed Runtime selection. Package state, Grants, lifecycle
+identity, and provider selection remain transaction facts rather than pseudo
+effects. Canonical payload bytes, domain-separated idempotency key, digest, and
+relational projection commit together.
 Production lifecycle code does not construct
 it, so it neither mirrors nor replaces the current JSON authority. Lifecycle
-conversion still must feed the reviewed Grant evidence, derive complete effect
-inventories, and persist typed applied-provider observations. External-payload ownership and
+conversion still must feed the reviewed Grant evidence, dispatch effects
+through typed external owners, and persist typed applied-provider observations.
+External-payload ownership and
 the coordinated reader/writer
 cutover also remain A2 work. The machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,

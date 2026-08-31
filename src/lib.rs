@@ -49,6 +49,8 @@ pub mod state_backup;
 #[cfg(feature = "extensions")]
 pub mod state_restore;
 #[cfg(feature = "extensions")]
+mod surface_graph;
+#[cfg(feature = "extensions")]
 mod surface_reconciler;
 
 #[cfg(all(test, feature = "extensions", any(unix, windows)))]

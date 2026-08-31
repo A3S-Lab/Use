@@ -14,10 +14,12 @@ use super::{
 };
 
 mod capability;
+mod effects;
 mod grants;
 mod providers;
 
 use capability::project_capability;
+use effects::project_effects;
 use grants::project_grants;
 use providers::project_provider_selections;
 
@@ -123,6 +125,7 @@ pub(in crate::control_store) struct ProjectedControlGeneration {
     pub(in crate::control_store) grants: Vec<ControlGrantSelection>,
     pub(in crate::control_store) provider_selections: Vec<ControlProviderSelection>,
     pub(in crate::control_store) capability: ControlCapabilitySelection,
+    pub(in crate::control_store) effects: Vec<super::ControlEffectIntent>,
     pub(in crate::control_store) history_after: ControlProjectionHistory,
 }
 
@@ -172,6 +175,14 @@ impl ReviewedControlOperation {
             &grants,
             &provider_selections,
         )?;
+        let effects = project_effects(
+            self,
+            prior,
+            &snapshot,
+            &package_lifecycles,
+            &provider_selections,
+            &capability,
+        )?;
 
         let mut history_after = history.clone();
         history_after.last_lifecycle_generation = last_lifecycle_generation;
@@ -191,6 +202,7 @@ impl ReviewedControlOperation {
             grants,
             provider_selections,
             capability,
+            effects,
             history_after,
         })
     }

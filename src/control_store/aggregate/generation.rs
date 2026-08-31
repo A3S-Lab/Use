@@ -235,14 +235,14 @@ pub(super) fn insert_generation(
         transaction
             .execute(
                 "INSERT INTO effect_outbox(
-                    idempotency_key, operation_id, sequence, provider_id,
+                    idempotency_key, operation_id, sequence, owner_kind,
                     payload_json, payload_digest, status, attempt
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', 0)",
                 params![
                     effect.idempotency_key,
                     transition.operation_id,
                     i64::from(effect.sequence),
-                    effect.provider_id,
+                    effect.owner.kind_name(),
                     payload_json,
                     payload_digest,
                 ],

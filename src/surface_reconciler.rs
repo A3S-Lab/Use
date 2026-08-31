@@ -3,11 +3,13 @@
 //! This module does not deploy Runtime workloads. Provider and host adapters
 //! submit observations; missing adapters remain explicit `pending` evidence.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use a3s_use_core::{PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult};
 use a3s_use_extension::{ExtensionManifest, SurfaceActivation};
 use serde::Serialize;
+
+use crate::surface_graph::{schedule_surface_graph, SurfaceGraphInput};
 
 pub(crate) use a3s_use_core::{PluginDesiredState, PluginObservedState};
 
@@ -132,20 +134,22 @@ pub(crate) fn reconcile(
         )));
     }
     validate_observations(&nodes, observations)?;
-    let levels = dependency_levels(&nodes)?;
-    let required = required_closure(&nodes);
+    let scheduled = schedule_surface_graph(
+        nodes
+            .values()
+            .map(|node| SurfaceGraphInput {
+                surface: node.surface.clone(),
+                optional: node.optional,
+                dependencies: node.dependencies.clone(),
+            })
+            .collect(),
+    )
+    .map_err(|error| reconcile_error(error.message))?;
     let mut evaluated = BTreeMap::new();
-    let mut ordered = nodes.keys().cloned().collect::<Vec<_>>();
-    ordered.sort_by(|left, right| {
-        levels
-            .get(left)
-            .cmp(&levels.get(right))
-            .then_with(|| left.cmp(right))
-    });
 
     let mut surfaces = Vec::with_capacity(nodes.len());
-    for reference in ordered {
-        let node = nodes.get(&reference).ok_or_else(|| {
+    for scheduled in scheduled {
+        let node = nodes.get(&scheduled.surface).ok_or_else(|| {
             reconcile_error("The surface graph changed while it was being evaluated.")
         })?;
         let surface_desired = desired_surface_state(node, desired);
@@ -153,20 +157,18 @@ pub(crate) fn reconcile(
             node,
             desired,
             compatible,
-            observations.get(&reference).copied(),
+            observations.get(&scheduled.surface).copied(),
             &evaluated,
         );
-        evaluated.insert(reference.clone(), (surface_desired, observed));
+        evaluated.insert(scheduled.surface.clone(), (surface_desired, observed));
         surfaces.push(ReconciledSurface {
-            surface: reference,
+            surface: scheduled.surface,
             owner: node.owner,
-            level: *levels
-                .get(&node.surface)
-                .ok_or_else(|| reconcile_error("A reconciled surface has no dependency level."))?,
-            required: required.contains(&node.surface),
+            level: scheduled.level,
+            required: scheduled.required,
             desired: surface_desired,
             observed,
-            dependencies: node.dependencies.clone(),
+            dependencies: scheduled.dependencies,
             published: false,
             reason,
         });
@@ -247,62 +249,6 @@ fn insert_node(
         )));
     }
     Ok(())
-}
-
-fn dependency_levels(
-    nodes: &BTreeMap<PluginSurfaceRef, SurfaceNode>,
-) -> UseResult<BTreeMap<PluginSurfaceRef, u32>> {
-    let mut levels = BTreeMap::new();
-    while levels.len() < nodes.len() {
-        let ready = nodes
-            .iter()
-            .filter(|(reference, node)| {
-                !levels.contains_key(*reference)
-                    && node
-                        .dependencies
-                        .iter()
-                        .all(|dependency| levels.contains_key(dependency))
-            })
-            .map(|(reference, _)| reference.clone())
-            .collect::<Vec<_>>();
-        if ready.is_empty() {
-            return Err(reconcile_error(
-                "The named surface dependency graph contains a cycle.",
-            ));
-        }
-        for reference in ready {
-            let node = nodes.get(&reference).ok_or_else(|| {
-                reconcile_error("A dependency-level surface disappeared during evaluation.")
-            })?;
-            let level = node
-                .dependencies
-                .iter()
-                .filter_map(|dependency| levels.get(dependency).copied())
-                .max()
-                .map_or(0, |level| level + 1);
-            levels.insert(reference, level);
-        }
-    }
-    Ok(levels)
-}
-
-fn required_closure(nodes: &BTreeMap<PluginSurfaceRef, SurfaceNode>) -> BTreeSet<PluginSurfaceRef> {
-    let mut required = nodes
-        .values()
-        .filter(|node| !node.optional)
-        .map(|node| node.surface.clone())
-        .collect::<BTreeSet<_>>();
-    let mut pending = required.iter().cloned().collect::<Vec<_>>();
-    while let Some(reference) = pending.pop() {
-        if let Some(node) = nodes.get(&reference) {
-            for dependency in &node.dependencies {
-                if required.insert(dependency.clone()) {
-                    pending.push(dependency.clone());
-                }
-            }
-        }
-    }
-    required
 }
 
 fn validate_observations(

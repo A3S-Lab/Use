@@ -269,6 +269,24 @@ fn projection_merges_two_roots_without_reallocating_the_shared_dependency() {
         )
         .unwrap();
     let first_generation = generation(&first, &first_projection);
+    assert_eq!(
+        effect_package_ids(&first_projection.effects),
+        ["acme/shared", "acme/shared", "acme/root-a", "acme/root-a"]
+    );
+    assert_eq!(
+        first_projection
+            .effects
+            .iter()
+            .map(|effect| effect.kind)
+            .collect::<Vec<_>>(),
+        [
+            ControlEffectKind::SurfacePrepare,
+            ControlEffectKind::SurfacePrepare,
+            ControlEffectKind::SurfacePrepare,
+            ControlEffectKind::SurfacePrepare,
+            ControlEffectKind::CapabilityCutover,
+        ]
+    );
     let shared_before = first_projection
         .snapshot
         .package_selection("acme/shared")
@@ -323,6 +341,22 @@ fn projection_merges_two_roots_without_reallocating_the_shared_dependency() {
         second_projection.history_after.last_lifecycle_generation(),
         3
     );
+    assert_eq!(
+        effect_package_ids(&second_projection.effects),
+        ["acme/root-b", "acme/root-b"]
+    );
+    assert_eq!(
+        second_projection
+            .effects
+            .iter()
+            .map(|effect| effect.kind)
+            .collect::<Vec<_>>(),
+        [
+            ControlEffectKind::SurfacePrepare,
+            ControlEffectKind::SurfacePrepare,
+            ControlEffectKind::CapabilityCutover,
+        ]
+    );
 
     let second_generation = generation(&second, &second_projection);
     let uninstall = reviewed_uninstall(
@@ -363,6 +397,23 @@ fn projection_merges_two_roots_without_reallocating_the_shared_dependency() {
         shared_lifecycle_before
     );
     assert_eq!(removed.history_after.last_lifecycle_generation(), 3);
+    assert_eq!(
+        effect_package_ids(&removed.effects),
+        ["acme/root-b", "acme/root-b", "acme/root-b"]
+    );
+    assert_eq!(
+        removed
+            .effects
+            .iter()
+            .map(|effect| effect.kind)
+            .collect::<Vec<_>>(),
+        [
+            ControlEffectKind::CapabilityCutover,
+            ControlEffectKind::CallsDrain,
+            ControlEffectKind::SurfaceRemove,
+            ControlEffectKind::SurfaceRemove,
+        ]
+    );
 
     let removed_generation = generation(&uninstall, &removed);
     let reinstall = reviewed_install(
@@ -646,4 +697,16 @@ fn verified_record(
 
 fn test_host() -> PluginPackageLockHost {
     PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap()
+}
+
+fn effect_package_ids(effects: &[ControlEffectIntent]) -> Vec<&str> {
+    effects
+        .iter()
+        .filter_map(|effect| {
+            effect
+                .subject
+                .package_identity()
+                .map(|(package_id, _)| package_id)
+        })
+        .collect()
 }

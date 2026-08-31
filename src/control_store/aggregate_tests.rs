@@ -17,14 +17,17 @@ use sha2::{Digest, Sha256};
 
 use super::model::{
     ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
-    ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectStatus,
-    ControlEffectSubject, ControlGeneration, ControlGrantSelection, ControlOperationStatus,
-    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderSelection, ControlTransition,
-    ProjectedControlGeneration, ReviewedControlOperation,
+    ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectOwner,
+    ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
+    ControlOperationStatus, ControlPackageLifecycle, ControlProjectionHistory,
+    ControlProviderSelection, ControlTransition, ProjectedControlGeneration,
+    ReviewedControlOperation,
 };
 use super::*;
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
+mod effect_fixtures;
+mod effects;
 mod fixtures;
 mod generations;
 mod grant_fixtures;
@@ -89,7 +92,7 @@ async fn aggregate_transition_is_atomic_idempotent_and_generation_bound() {
         ControlOperationStatus::EffectsPending
     );
     let effects = store.effects(reviewed.operation_id()).await.unwrap();
-    assert_eq!(effects.len(), 2);
+    assert_eq!(effects.len(), 3);
     assert!(effects
         .iter()
         .all(|effect| effect.status == ControlEffectStatus::Pending));
@@ -232,31 +235,29 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
         .unwrap());
     assert!(!store.record_effect_observation(applied).await.unwrap());
 
-    let optional = store
-        .claim_next_effect(claim(
-            reviewed.operation_id(),
-            "claim:optional",
-            61,
-            70,
-            false,
-        ))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(optional.intent, candidate.effects[1]);
-    store
-        .record_effect_observation(observation(
-            reviewed.operation_id(),
-            &optional.intent.idempotency_key,
-            &optional.claim_token,
-            ControlEffectOutcome::Rejected,
-            'c',
-            65,
-        ))
-        .await
-        .unwrap();
+    for (index, expected) in candidate.effects.iter().enumerate().skip(1) {
+        let now = 61 + u64::try_from(index).unwrap() * 10;
+        let token = format!("claim:remaining:{index}");
+        let claimed = store
+            .claim_next_effect(claim(reviewed.operation_id(), &token, now, now + 9, false))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&claimed.intent, expected);
+        store
+            .record_effect_observation(observation(
+                reviewed.operation_id(),
+                &claimed.intent.idempotency_key,
+                &claimed.claim_token,
+                ControlEffectOutcome::Applied,
+                char::from_digit(u32::try_from(index).unwrap(), 16).unwrap(),
+                now + 5,
+            ))
+            .await
+            .unwrap();
+    }
     assert!(store
-        .claim_next_effect(claim(reviewed.operation_id(), "claim:none", 71, 80, false))
+        .claim_next_effect(claim(reviewed.operation_id(), "claim:none", 91, 100, false))
         .await
         .unwrap()
         .is_none());
@@ -266,7 +267,7 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
             reviewed.operation_id(),
             reviewed.plan_digest(),
             &digest('d'),
-            80,
+            100,
         )
         .await
         .unwrap();
@@ -454,7 +455,7 @@ async fn authority_export_is_complete_and_semantically_verified_offline() {
     assert_eq!(verified.export.published_capability_generation, 0);
     assert_eq!(verified.export.authority.generations.len(), 1);
     assert_eq!(verified.export.authority.operations.len(), 1);
-    assert_eq!(verified.export.authority.effects.len(), 2);
+    assert_eq!(verified.export.authority.effects.len(), 3);
 
     tokio::fs::remove_file(store.database_path()).await.unwrap();
     assert_eq!(

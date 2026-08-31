@@ -89,7 +89,7 @@ The implementation proceeds in this order:
 1. **Complete deterministic input derivation.** Derive the full target Grant
    set, receipt revisions, provider bindings, capability descriptor, and effect
    inventory solely from the canonical reviewed Plan, authorization evidence,
-   prior committed generation, and typed provider preparation evidence.
+   prior committed generation, and reviewed provider-selection evidence.
 2. **Register external owners.** Replace manual path discovery with typed
    owner descriptors and prove bounded snapshot, digest, verification, and
    restore behavior. Operational files remain explicitly excluded.
@@ -109,10 +109,14 @@ The implementation proceeds in this order:
 
 Current inactive-kernel progress covers deterministic graph and package
 generation projection, full Grant projection, reviewed Runtime provider
-selection, and the candidate capability descriptor. Provider selection is
+selection, the candidate capability descriptor, and the complete ordered
+effect-intent inventory for all five lifecycle actions. Provider selection is
 derived only for Tool and MCP surfaces; it is not an applied binding
-observation. Complete effect-intent derivation and typed endpoint/readiness,
-Flow artifact, and Knowledge application observations remain part of gate 1.
+observation. Package, Grant, lifecycle, and selection facts stay inside the
+transaction instead of becoming pseudo effects. Typed endpoint/readiness, Flow
+artifact, and Knowledge application observations belong to post-effect
+orchestration in gate 3 and remain open, as does production conversion into the
+reviewed inputs used by the inactive kernel.
 
 Production activation is blocked until all gates below are true:
 
