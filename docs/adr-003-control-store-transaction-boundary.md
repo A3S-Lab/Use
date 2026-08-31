@@ -353,11 +353,24 @@ partials make incomplete publication replayable; an activating attempt accepts
 only an exact snapshot subset and the final result is path-free and
 snapshot-bound. This owner primitive does not choose cross-owner activation
 order or create a second restore journal.
+The Host protocol projection is the third concrete snapshot adapter. Its
+owner-native validator treats request-to-plan records, optional outcomes, and
+cancellations as semantic sources while operation aliases and latest
+enablement diagnostics remain validation-only derived indexes. Missing, stale,
+or orphaned indexes fail closed; exact and legacy cancellation aliases collapse
+to one canonical binding. A bounded no-follow scan and a second scan precede
+no-clobber publication. Before any archive is published, the exact Host Plan,
+completion or cancellation time, completion result digest, package identity,
+desired state, selected surfaces, package generation, and capability generation
+must reconcile with the bound Control export. Receipt and observed-health fields
+remain Host observations. The path-free manifest and offline verifier preserve
+active, terminal, and no-change request semantics without allowing the
+projection to choose Control state. Restore remains deliberately separate.
 This implementation still does not participate in production state-layout,
 reachability, diagnostics, backup, or restore orchestration. Existing JSON
-stores remain the only production authority. The Host projection and Restore
-Coordinator I/O adapters, complete-set coordinator, full subprocess-exit
-matrix, production lifecycle conversion and dispatch, indivisible reader/writer
+stores remain the only production authority. The Host restore adapter, Restore
+Coordinator I/O adapter, complete-set coordinator, full subprocess-exit matrix,
+production lifecycle conversion and dispatch, indivisible reader/writer
 cutover, and deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.

@@ -183,9 +183,15 @@ no-clobber 发布与离线验证会拒绝漂移、替换、外来记录、未知
 Control export。通过离线验证的 archive 现在可以暂存到 target state root 下，而不触碰 live owner path。
 首次激活必须持有精确的排他 maintenance fence，并面对干净的 record inventory；随后先原子标记 archive
 为 activating，再逐条 no-clobber 发布。以 digest 命名的确定性 partial 支持中断恢复；激活开始后只接受
-snapshot 的精确子集，结果仍不包含路径。这些仍是未启用的 owner primitive；Host projection、Restore
-Coordinator adapter、complete-set coordinator、完整 subprocess-exit 验收、生产 orchestration，以及所有
-消费者的协调权威切换完成前，该内核仍保持禁用。
+snapshot 的精确子集，结果仍不包含路径。Host protocol projection 是第三个具体 snapshot adapter。其
+owner-native scanner 只归档不可变的 request-to-plan record、可选 outcome 和规范 cancellation。Operation
+alias 与 latest-enablement diagnostic 是派生 index：它们必须与源 request 一致，但永不进入 archive。有界
+no-follow 遍历、发布前二次扫描、no-clobber 发布与离线 owner decoding 会拒绝漂移和替换。发布前，Host
+Plan、完成/取消证据、desired package state、所选 surface，以及 package/capability generation 必须与精确
+绑定的 Control export 一致；Host receipt 与 health 字段仍然只是 observation。无路径 manifest 也会保留
+no-change request，而不会虚构 operation。这些仍是未启用的 owner primitive；clean-target Host restore、
+Restore Coordinator adapter、complete-set coordinator、完整 subprocess-exit 验收、生产 orchestration，
+以及所有消费者的协调权威切换完成前，该内核仍保持禁用。
 
 ## 运行时可见性
 

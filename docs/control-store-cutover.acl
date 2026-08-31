@@ -425,9 +425,15 @@ control_store_cutover {
     state_paths = ["plugin-host-manager"]
     implementation = [
       "src/cognitive_package/host_manager.rs",
+      "src/cognitive_package/host_snapshot.rs",
+      "src/cognitive_package/host_snapshot/filesystem.rs",
       "src/cognitive_package/host_store.rs",
+      "src/control_store/payload_owner/host_projection.rs",
+      "src/control_store/payload_owner/host_projection/archive.rs",
+      "src/control_store/payload_owner/host_projection/archive/file.rs",
+      "src/control_store/payload_owner/host_projection/control.rs",
     ]
-    payload                     = "request-to-plan, operation-to-request, cancellation, result, and observation indexes"
+    payload                     = "semantic Host request, cancellation, and result records with validation-only derived indexes"
     backup_policy               = "registered-projection"
     registered_before_activation = true
     may_choose_desired_state    = false

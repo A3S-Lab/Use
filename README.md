@@ -1392,9 +1392,24 @@ snapshot subset is accepted after activation has started. Candidate, target,
 link, active-record, and archive drift fail closed, locks remain excluded, and
 the canonical result contains no host paths. Both adapters remain inactive
 qualification code and are not wired to the current backup or restore scanner.
-The Host projection and Restore Coordinator adapters, complete-set
-orchestration, the full subprocess-exit matrix, and coordinated authority
-cutover remain open.
+The Host protocol projection is now the third qualified snapshot adapter. Its
+owner-native scanner archives only immutable request-to-plan records, optional
+terminal outcomes, and one canonical cancellation per exact operation binding.
+Operation aliases and
+latest-enablement diagnostic indexes remain derived: they must be complete and
+agree with their source requests, but never enter the archive. Bounded
+no-follow traversal, a second live scan, no-clobber publication, and exact
+offline decoding reject linked, moved, missing, stale, or orphaned records and
+archive substitution. Before publication, Host plans, completion/cancellation
+evidence, package identity, desired state, selected surfaces, and
+package/capability generations must be derivable from the exact bound Control
+export; Host receipt and health evidence remain observations and cannot select
+desired state. The manifest and receipt are path-free, represent absence
+explicitly, and preserve no-change requests without fabricating an operation.
+This inactive adapter does not yet restore Host records. A clean-target Host
+restore adapter, the Restore Coordinator adapter, complete-set orchestration,
+the full subprocess-exit matrix, and coordinated authority cutover remain
+open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

@@ -97,9 +97,19 @@ touching live owner paths. First activation requires a clean record inventory
 and the exact exclusive maintenance guard, then atomically marks the candidate
 as activating before no-clobber record publication. Digest-named deterministic
 partials make incomplete publication replayable, and only an exact snapshot
-subset is accepted after activation starts. The Host projection and Restore
-Coordinator adapters and complete-set orchestration are still required before
-this gate can close.
+subset is accepted after activation starts. The Host protocol projection is
+the third concrete snapshot adapter. Its owner-native scanner archives only
+request-to-plan records, optional outcomes, and canonical cancellations;
+operation aliases and latest enablement diagnostics must validate against
+those sources but are never restored as authority. Bounded no-follow traversal,
+a second scan, and no-clobber publication reject layout drift and substitution.
+Every mutation Plan, completion or cancellation fact, desired package state,
+selected surface set, package generation, and capability generation is joined
+to the exact bound Control export before publication, while Host receipt and
+health evidence remain observations. The path-free offline verifier also
+preserves no-change requests without inventing an operation. A clean-target
+Host restore adapter, the Restore Coordinator adapter, and complete-set
+orchestration are still required before this gate can close.
 
 ## Non-negotiable cutover invariants
 
