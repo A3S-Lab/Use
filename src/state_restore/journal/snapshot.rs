@@ -30,8 +30,30 @@ pub(crate) struct StateRestoreHistorySnapshotEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StateRestoreHistorySnapshotScan {
     pub(crate) terminal: Vec<StateRestoreHistorySnapshotEntry>,
+    pub(crate) active: Option<StateRestoreHistorySnapshotActive>,
     pub(crate) excluded_active_files: u64,
     pub(crate) excluded_active_inventory_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StateRestoreHistorySnapshotActive {
+    pub(crate) plan_digest: String,
+    pub(crate) marker_length: u64,
+    pub(crate) marker_sha256: String,
+    operation: Option<StateRestoreHistorySnapshotActiveOperation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StateRestoreHistorySnapshotActiveOperation {
+    length: u64,
+    sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct StateRestoreHistoryRetentionKey {
+    completed_at_ms: u64,
+    started_at_ms: u64,
+    plan_digest: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -57,6 +79,16 @@ pub(crate) async fn scan_state_restore_history_snapshot(
     installation.validate().map_err(wrap_invalid)?;
     validate_owned_directory(state_root, "state root").await?;
     let marker = read_active_marker(state_root).await?;
+    let mut active = if let Some((marker, length, sha256)) = &marker {
+        Some(StateRestoreHistorySnapshotActive {
+            plan_digest: marker.plan_digest.clone(),
+            marker_length: *length,
+            marker_sha256: sha256.clone(),
+            operation: None,
+        })
+    } else {
+        None
+    };
     let mut excluded = Vec::new();
     if let Some((marker, length, sha256)) = &marker {
         excluded.push(ExcludedActiveFile {
@@ -70,10 +102,10 @@ pub(crate) async fn scan_state_restore_history_snapshot(
     let operations = state_root.join("operations");
     let root = operations.join("state-restores");
     if !optional_owned_directory(&operations, "operations root").await? {
-        return finish_scan(Vec::new(), excluded);
+        return finish_scan(Vec::new(), active, excluded);
     }
     if !optional_owned_directory(&root, "restore history root").await? {
-        return finish_scan(Vec::new(), excluded);
+        return finish_scan(Vec::new(), active, excluded);
     }
     validate_directory_chain(state_root, &root)
         .await
@@ -127,12 +159,19 @@ pub(crate) async fn scan_state_restore_history_snapshot(
                     "The active restore marker does not bind its retained operation.",
                 ));
             }
+            let operation_sha256 = sha256.clone();
             excluded.push(ExcludedActiveFile {
                 kind: ExcludedActiveKind::Operation,
                 plan_digest,
                 length,
                 sha256,
             });
+            if let Some(active) = &mut active {
+                active.operation = Some(StateRestoreHistorySnapshotActiveOperation {
+                    length,
+                    sha256: operation_sha256,
+                });
+            }
         } else if operation.status == StateRestoreOperationStatus::Completed {
             terminal.push(StateRestoreHistorySnapshotEntry {
                 source: path,
@@ -146,7 +185,7 @@ pub(crate) async fn scan_state_restore_history_snapshot(
             ));
         }
     }
-    finish_scan(terminal, excluded)
+    finish_scan(terminal, active, excluded)
 }
 
 pub(crate) async fn read_state_restore_history_snapshot_entry(
@@ -168,13 +207,28 @@ pub(crate) fn validate_terminal_state_restore_history_record(
     bytes: &[u8],
     installation: &InstallationId,
 ) -> UseResult<()> {
+    inspect_terminal_state_restore_history_record(plan_digest, bytes, installation).map(|_| ())
+}
+
+pub(crate) fn inspect_terminal_state_restore_history_record(
+    plan_digest: &str,
+    bytes: &[u8],
+    installation: &InstallationId,
+) -> UseResult<StateRestoreHistoryRetentionKey> {
     let operation = decode_operation(plan_digest, bytes, installation)?;
     if operation.status != StateRestoreOperationStatus::Completed {
         return Err(snapshot_invalid(
             "A restore history archive contains a nonterminal operation.",
         ));
     }
-    Ok(())
+    let completed_at_ms = operation.completed_at_ms.ok_or_else(|| {
+        snapshot_invalid("A completed restore history operation has no completion time.")
+    })?;
+    Ok(StateRestoreHistoryRetentionKey {
+        completed_at_ms,
+        started_at_ms: operation.started_at_ms,
+        plan_digest: operation.plan_digest,
+    })
 }
 
 fn decode_operation(
@@ -205,6 +259,7 @@ fn decode_operation(
 
 fn finish_scan(
     terminal: Vec<StateRestoreHistorySnapshotEntry>,
+    active: Option<StateRestoreHistorySnapshotActive>,
     mut excluded: Vec<ExcludedActiveFile>,
 ) -> UseResult<StateRestoreHistorySnapshotScan> {
     excluded.sort();
@@ -217,6 +272,7 @@ fn finish_scan(
     hasher.update(bytes);
     Ok(StateRestoreHistorySnapshotScan {
         terminal,
+        active,
         excluded_active_files,
         excluded_active_inventory_digest: format!("sha256:{:x}", hasher.finalize()),
     })

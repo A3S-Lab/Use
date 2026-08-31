@@ -640,8 +640,8 @@ Deterministic archive, record, and marker partial recovery covers every staged
 transition, and the same attempt reconciles the post-publication/pre-result
 boundary. Drift, links, rebinding, and preexisting state fail closed; absence
 creates no owner root and the result is path-free. This adapter remains
-inactive. The Restore Coordinator is now the fourth concrete snapshot owner,
-but does not yet have a restore adapter. Its owner-native scanner accepts only
+inactive. The Restore Coordinator is now the fourth concrete snapshot and
+restore owner. Its owner-native scanner accepts only
 exact canonically encoded completed restore operations for the bound
 installation. It excludes the active marker and its exact operation while
 binding their bounded count and digest inventory, including marker-only
@@ -650,10 +650,23 @@ unknown entries, links, foreign installation history, and path/record rebinding
 fail closed. Snapshot creation performs a second scan before no-clobber
 publication; its path-free receipt and streaming offline verifier bind exact
 terminal bytes to the Control export, while empty or active-only history emits
-no archive. Restore Coordinator clean-target activation, self-hosted journal
-reconciliation, complete-set orchestration, the full subprocess-exit matrix,
-production Grant conversion and effect dispatch, indivisible consumer cutover,
-and deletion of legacy mutable stores therefore remain open;
+no archive. An offline-verified snapshot now builds an immutable target-local
+candidate. Activation requires the exact exclusive maintenance guard and an
+active whole-installation restore marker; it binds that stable marker identity
+plus exact before/source/target inventories before changing live state. It
+atomically retires only terminal directories, publishes the target without
+replacement, and leaves the current active operation untouched even as its
+status advances between replays. A marker-only handoff is valid. If the source
+already contains 64 terminal records, the adapter applies the journal's native
+`(completed_at_ms, started_at_ms, plan_digest)` ordering and omits exactly the
+oldest source record to reserve the active restore's slot; any source collision with
+the active plan fails closed before pruning. Candidate, activation, retired,
+and deterministic publication-partial evidence make every local boundary
+replayable and tamper-evident, and the result remains path-free and
+snapshot-bound. This adapter is still qualification-only. Complete-set
+orchestration, the full subprocess-exit matrix, production Grant conversion and
+effect dispatch, indivisible consumer cutover, and deletion of legacy mutable
+stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

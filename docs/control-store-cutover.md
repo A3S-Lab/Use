@@ -124,9 +124,19 @@ nonterminal records, pruning or temporary residue, unknown layout, links,
 foreign history, and path rebinding fail closed. A second scan precedes
 no-clobber publication, and a streaming offline verifier binds the path-free
 receipt and exact terminal bytes to the Control export. Empty or active-only
-history creates no archive. Restore Coordinator clean-target activation must
-reconcile its own live journal with restored terminal history; that adapter and
-complete-set orchestration are still required before this gate can close.
+history creates no archive. A verified snapshot now stages an immutable
+target-local candidate. Activation requires the exact exclusive maintenance
+guard and an active restore marker, binds its stable identity plus exact before
+and target terminal inventories, retires replaced terminal directories into
+staging, and publishes candidate records without replacing live paths. The
+active marker/current operation is preserved, including marker-only handoff and
+operation-status progress across replay. At native capacity, the same
+completion-time/start-time/plan-digest ordering as journal retention removes
+exactly the source-native oldest record to reserve the active operation's slot.
+Source and active identities may never collide. Durable activation, retired, candidate,
+and deterministic publication-partial evidence make each local crash boundary
+replayable and tamper-evident. Complete-set orchestration is still required
+before this gate can close.
 
 ## Non-negotiable cutover invariants
 

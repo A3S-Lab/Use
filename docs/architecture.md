@@ -196,11 +196,23 @@ marker-only handoff window. Orphaned nonterminal operations, pruning and
 temporary residue, unknown layout, links, foreign history, and path rebinding
 fail closed. A second scan precedes no-clobber publication; the path-free
 receipt and streaming offline verifier bind exact terminal bytes to the same
-Control export. Active-only or empty history creates no archive.
-These are owner primitives, not cross-owner restore authority. Restore
-Coordinator activation must reconcile its own live journal with restored
-terminal history; complete-set orchestration, full subprocess-exit
-qualification, and the coordinated reader/writer cutover remain A2 work. The
+Control export. Active-only or empty history creates no archive. Its restore
+adapter stages an immutable candidate beneath the target installation root.
+Activation is self-hosted rather than clean-target: it requires the exact
+exclusive fence and active marker, preserves that marker and current operation,
+durably binds exact before and target inventories, retires only terminal
+directories, and publishes candidate records without replacement. Replay
+accepts operation-status progress only while the marker's stable identity
+remains exact. Marker-only handoff and absence are first-class states. At the
+64-operation native limit, the adapter uses the journal's
+completion-time/start-time/plan-digest ordering to omit the source-native oldest
+terminal record and reserve the active operation's slot. A source/active identity
+collision fails before that pruning decision. Candidate, retired, activation,
+and deterministic publication-partial evidence are revalidated on every
+replay, and the result is path-free and snapshot-bound.
+These are owner primitives, not cross-owner restore authority. Complete-set
+orchestration, full subprocess-exit qualification, and the coordinated
+reader/writer cutover remain A2 work. The
 machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual

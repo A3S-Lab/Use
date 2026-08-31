@@ -380,6 +380,10 @@ mod payload_observation_tests;
 #[cfg(test)]
 mod payload_owner_tests;
 #[cfg(test)]
+mod payload_restore_coordinator_restore_security_tests;
+#[cfg(test)]
+mod payload_restore_coordinator_restore_tests;
+#[cfg(test)]
 mod payload_restore_coordinator_security_tests;
 #[cfg(test)]
 mod payload_restore_coordinator_tests;
