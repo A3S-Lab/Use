@@ -3,16 +3,19 @@
 //!
 //! This module registers identities, fixed backup policies, safety bounds,
 //! and canonical snapshot evidence. The Knowledge owner has a qualified
-//! snapshot, offline verifier, and clean-target staged restore/activation, but
-//! no owner participates in the production state-backup path yet. The
-//! remaining owner adapters and complete-set coordinator must be complete
-//! before the coordinated authority cutover.
+//! snapshot, offline verifier, and clean-target staged restore/activation. The
+//! planning-and-diagnostic owner has a qualified terminal-record snapshot and
+//! offline verifier, but not restore. No owner participates in the production
+//! state-backup path yet. The remaining adapters, restore contracts, and
+//! complete-set coordinator must be complete before the coordinated authority
+//! cutover.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 
 mod knowledge;
+mod observations;
 mod registry;
 mod session;
 mod snapshot;
@@ -22,6 +25,12 @@ pub(in crate::control_store) use knowledge::{
     ControlKnowledgePayloadRestoreResult, ControlKnowledgePayloadRestoreState,
     ControlKnowledgePayloadSnapshot, ControlKnowledgePayloadState,
     VerifiedControlKnowledgePayloadSnapshot, CONTROL_KNOWLEDGE_PAYLOAD_SNAPSHOT_SCHEMA,
+};
+#[cfg(test)]
+pub(in crate::control_store) use observations::{
+    ControlObservationPayloadEntryKind, ControlObservationPayloadSnapshot,
+    ControlObservationPayloadState, VerifiedControlObservationPayloadSnapshot,
+    CONTROL_OBSERVATION_PAYLOAD_SNAPSHOT_SCHEMA,
 };
 pub(in crate::control_store) use registry::ControlPayloadOwnerRegistry;
 pub(in crate::control_store) use session::{

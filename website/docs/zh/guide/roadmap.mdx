@@ -112,9 +112,13 @@ remove effect。Claimed 与 unknown outcome 仅作为 reconciliation evidence。
 通过验证的 Knowledge snapshot 现在可以在 clean target 的 state root 下暂存并重新审计精确数据库，
 随后在持有对应排他 maintenance fence 时，通过一次原子 rename 发布；仅在保留该 staged attempt 与 fence
 时，rename 后的重试才是幂等的。非 owner、已有、含糊、链接、重新绑定或 policy 不匹配的 target 会
-fail closed，absent state 不创建 payload。其余 owner adapter、
-complete-set coordinator、完整崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与 reachability
-集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+fail closed，absent state 不创建 payload。planning-and-diagnostic observation owner 现在已有具体的有界
+snapshot 与离线 verifier。它复用各认知 store 自己的 validator，只归档终态 diagnostic history 和终态
+resolution attempt，并把被排除的活跃 resolution/download record 的数量与规范 path/digest inventory
+绑定到 manifest；lock 永不进入 restore authority。No-follow 遍历、重复检查、二次扫描、no-clobber
+发布与精确 archive 验证会拒绝漂移和替换。observation restore、Host projection 与 Restore Coordinator
+adapter、complete-set coordinator、完整崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与
+reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

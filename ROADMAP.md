@@ -597,10 +597,22 @@ replays an exact completed partial. While the staged attempt and exclusive
 guard remain held, it also reconciles the post-publication/pre-result boundary
 without creating a second binding authority; the canonical result is path-free
 and snapshot-bound.
-Snapshot/verification adapters for the other three retained owners,
-complete-set orchestration, the full process-exit matrix, production Grant
-conversion and effect dispatch, indivisible consumer cutover, and deletion of
-legacy mutable stores therefore remain open;
+The planning-and-diagnostic observation owner now has the second concrete
+snapshot adapter. It uses the diagnostic-history, resolution-attempt, and
+download-attempt owners' own decoders and invariants instead of copying their
+schemas. Only terminal diagnostic histories and terminal resolution attempts
+enter the bounded no-clobber archive. Active resolution/download records and
+locks are excluded, while a canonical path/digest inventory of active records
+is bound to the manifest. Secure traversal, a second pre-publication scan, and
+offline verification reject links, moved or foreign records, unknown layouts,
+duplicate identities, substitution, trailing bytes, and registered bound
+violations. Receipts remain path-free and bound to the exact Control export.
+This adapter has no restore contract yet and is not connected to the legacy
+scanner. Snapshot/verification adapters for Host projection and Restore
+Coordinator, staged restore for terminal observations, complete-set
+orchestration, the full process-exit matrix, production Grant conversion and
+effect dispatch, indivisible consumer cutover, and deletion of legacy mutable
+stores therefore remain open;
 no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and

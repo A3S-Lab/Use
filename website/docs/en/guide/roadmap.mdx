@@ -135,10 +135,18 @@ re-audit its exact database beneath a clean target state root, then publish it
 by one atomic rename while the exact exclusive maintenance fence is held.
 Post-rename retry is idempotent while that staged attempt and fence remain held.
 Unowned, existing, ambiguous, linked, rebound, or policy-mismatched targets
-fail closed, and absent state creates no payload. The other owner adapters,
-complete-set coordination, the complete crash matrix, production conversion
-and dispatch, backup/restore and reachability integration, and the coordinated
-authority cutover remain open;
+fail closed, and absent state creates no payload. The
+planning-and-diagnostic observation owner now has a concrete bounded snapshot
+and offline verifier. It uses each cognitive store's own validator, archives
+only terminal diagnostic histories and terminal resolution attempts, and
+manifest-binds the count and canonical path/digest inventory of excluded active
+resolution/download records. Locks never enter restore authority. No-follow
+traversal, duplicate checks, a second scan, no-clobber publication, and exact
+archive verification reject drift and substitution. Observation restore, the
+Host projection and Restore Coordinator adapters, complete-set coordination,
+the complete crash matrix, production conversion and dispatch, backup/restore
+and reachability integration, and the coordinated authority cutover remain
+open;
 no A2 roadmap item is complete yet.
 
 ## Implemented baseline

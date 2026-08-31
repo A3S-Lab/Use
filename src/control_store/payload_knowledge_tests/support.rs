@@ -421,10 +421,14 @@ pub(super) fn registry_with_payload_limit(max_payload_bytes: u64) -> ControlPayl
                 if owner == ControlPayloadOwnerId::ArtifactStore {
                     ControlPayloadOwnerRegistration::excluded_global(owner).unwrap()
                 } else {
-                    let schema = if owner == ControlPayloadOwnerId::KnowledgePayload {
-                        CONTROL_KNOWLEDGE_PAYLOAD_SNAPSHOT_SCHEMA.to_string()
-                    } else {
-                        format!("a3s.use.test.{}-snapshot.v1", owner.as_str())
+                    let schema = match owner {
+                        ControlPayloadOwnerId::KnowledgePayload => {
+                            CONTROL_KNOWLEDGE_PAYLOAD_SNAPSHOT_SCHEMA.to_string()
+                        }
+                        ControlPayloadOwnerId::PlanningAndDiagnosticObservations => {
+                            CONTROL_OBSERVATION_PAYLOAD_SNAPSHOT_SCHEMA.to_string()
+                        }
+                        _ => format!("a3s.use.test.{}-snapshot.v1", owner.as_str()),
                     };
                     ControlPayloadOwnerRegistration::snapshotted(
                         owner,

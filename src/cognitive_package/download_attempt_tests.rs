@@ -6,7 +6,9 @@ use a3s_use_core::{
     VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V3,
 };
 
-use super::download_attempt::{PackageDownloadAttemptStore, PendingPackageDownloadAttempt};
+use super::download_attempt::{
+    validate_snapshot_record, PackageDownloadAttemptStore, PendingPackageDownloadAttempt,
+};
 
 const CATALOG: &[u8] =
     include_bytes!("../../crates/core/fixtures/plugins/catalog-record-okf-v3.json");
@@ -55,6 +57,26 @@ fn attempt(lock: &PluginPackageLock, started_at_ms: u64) -> PendingPackageDownlo
         started_at_ms,
     )
     .unwrap()
+}
+
+#[test]
+fn snapshot_validation_reuses_download_semantics_and_owned_path() {
+    let lock = package_lock();
+    let attempt = attempt(&lock, 10);
+    let bytes = serde_json::to_vec(&attempt).unwrap();
+    let relative = "install/acme/knowledge.json";
+    assert_eq!(
+        validate_snapshot_record(relative, &bytes, &attempt.scope).unwrap(),
+        lock.root_package_id
+    );
+    assert!(
+        validate_snapshot_record("upgrade/acme/knowledge.json", &bytes, &attempt.scope).is_err()
+    );
+    let foreign = PlanScope {
+        kind: PlanScopeKind::Workspace,
+        id: attempt.scope.id.clone(),
+    };
+    assert!(validate_snapshot_record(relative, &bytes, &foreign).is_err());
 }
 
 #[tokio::test]

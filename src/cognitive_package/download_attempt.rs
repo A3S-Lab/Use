@@ -321,6 +321,33 @@ fn package_relative_path(package_id: &str, extension: &str) -> UseResult<PathBuf
     )
 }
 
+pub(super) fn validate_snapshot_record(
+    relative_path: &str,
+    bytes: &[u8],
+    installation: &a3s_use_core::InstallationId,
+) -> UseResult<String> {
+    if bytes.is_empty()
+        || u64::try_from(bytes.len())
+            .ok()
+            .is_none_or(|length| length > MAX_DOWNLOAD_ATTEMPT_BYTES)
+    {
+        return Err(store_invalid());
+    }
+    let record: PendingPackageDownloadAttempt =
+        serde_json::from_slice(bytes).map_err(|_| store_invalid())?;
+    record.validate()?;
+    installation
+        .ensure_same(&record.scope)
+        .map_err(|_| store_invalid())?;
+    let expected = attempt_record_path(Path::new(""), record.action, &record.root_package_id)?
+        .to_string_lossy()
+        .replace('\\', "/");
+    if expected != relative_path {
+        return Err(store_invalid());
+    }
+    Ok(record.root_package_id)
+}
+
 async fn read_optional(path: &Path) -> UseResult<Option<PendingPackageDownloadAttempt>> {
     read_optional_json(
         path,

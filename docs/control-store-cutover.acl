@@ -405,7 +405,12 @@ control_store_cutover {
     implementation = [
       "src/cognitive_package/diagnostic_history.rs",
       "src/cognitive_package/download_attempt.rs",
+      "src/cognitive_package/observation_snapshot.rs",
       "src/cognitive_package/resolution_attempt.rs",
+      "src/control_store/payload_owner/observations.rs",
+      "src/control_store/payload_owner/observations/archive.rs",
+      "src/control_store/payload_owner/observations/archive/file.rs",
+      "src/control_store/payload_owner/observations/archive/live.rs",
     ]
     payload                     = "bounded planning attempts and read-only diagnostic history"
     backup_policy               = "registered-terminal-snapshot"
