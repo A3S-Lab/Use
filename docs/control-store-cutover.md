@@ -150,11 +150,16 @@ candidates are created beneath `.control-installation-restore`. The Control
 candidate is single-file checkpointed, export-round-tripped, and physically
 digest-bound. No live authority path is changed, and exact retry or interrupted
 Control construction is deterministic; contaminated targets, links, unknown
-entries, rebinding, and candidate drift fail closed. This qualifies
-complete-set backup assembly and restore staging only. Coordinated activation,
-its cross-owner crash journal and subprocess recovery matrix, production
-backup/restore wiring, and indivisible authority cutover remain required before
-this gate can close.
+entries, rebinding, and candidate drift fail closed. The Control component can
+now publish only its exact candidate under the still-retained guard. It
+revalidates the attempt, canonical export, physical bytes, and sidecar-free
+state, uses no-clobber atomic publication, and reconciles the exact
+post-publication state to the same path-free result. Both-present,
+both-missing, linked, or drifted states fail closed. This qualifies complete-set
+backup assembly, restore staging, and one in-process component publication
+boundary only. Coordinated activation, its durable cross-owner journal and
+subprocess recovery matrix, production backup/restore wiring, and indivisible
+authority cutover remain required before this gate can close.
 
 ## Non-negotiable cutover invariants
 

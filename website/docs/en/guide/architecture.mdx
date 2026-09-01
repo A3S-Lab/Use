@@ -264,10 +264,15 @@ set. Control is single-file checkpointed, export-round-tripped, and physically
 digest-bound; external candidates reuse owner-native validation under the same
 guard. No live authority path changes. Exact retry and interrupted Control
 construction recover, while contaminated targets, links, unknown entries,
-rebinding, and candidate drift fail closed. Complete-set activation, its
-cross-owner crash journal and full subprocess-exit qualification, production
-backup/restore wiring, and coordinated authority cutover remain disabled until
-every consumer can switch together.
+rebinding, and candidate drift fail closed. Control also owns a separate
+clean-target publication primitive under the still-retained exact attempt and
+guard. It rechecks semantic export, physical evidence, and sidecar absence,
+publishes without replacement, and reconciles exact post-publication replay to
+one path-free result. Ambiguous or drifted candidate/live state fails closed.
+Complete-set activation, its durable cross-owner journal and full
+subprocess-exit qualification, production backup/restore wiring, and
+coordinated authority cutover remain disabled until every consumer can switch
+together.
 
 ## Runtime visibility
 

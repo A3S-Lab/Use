@@ -1464,9 +1464,16 @@ by its owner-native adapter under the same guard. Present and absent owners,
 completed retries, and interrupted Control staging are deterministic, while a
 nonempty target, unknown or linked entries, snapshot/policy rebinding, and
 completed-candidate drift fail closed without touching live authority paths.
-This qualifies complete-set restore staging only. Coordinated activation, its
-cross-owner crash journal and subprocess-exit matrix, production backup/restore
-wiring, and the authority cutover remain open.
+The Control component now also owns a qualification-only clean-target
+publication primitive. While that same attempt and exclusive guard remain
+retained, it revalidates the canonical export, physical database evidence,
+sidecar-free state, and attempt descriptor, then atomically publishes
+`control.sqlite3` without replacement. Candidate-before-publication and exact
+live-after-publication states converge to one path-free result; ambiguous,
+linked, missing, or drifted state fails closed. This qualifies complete-set
+staging and the Control component's retained-guard publication boundary only.
+Coordinated activation, a durable cross-owner journal and process-exit matrix,
+production backup/restore wiring, and the authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

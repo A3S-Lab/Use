@@ -230,10 +230,16 @@ round-tripped, and physically digest-bound; the four external candidates reuse
 their owner-native staging and validation under that same guard. No live owner
 path is changed. Exact replay, interrupted Control staging, explicit owner
 absence, and target isolation are qualified; links, unknown entries,
-rebinding, and completed-candidate drift fail closed. Cross-owner activation
-authority is still absent. Its durable activation journal and ordering, full
-subprocess-exit qualification, production backup/restore wiring, and the
-coordinated reader/writer cutover remain A2 work. The
+rebinding, and completed-candidate drift fail closed. Control now also owns a
+separate clean-target publication primitive: while the same exact attempt and
+guard remain retained, it rechecks semantic export and physical evidence,
+rejects sidecars or ambiguous candidate/live states, atomically publishes
+without replacement, and returns the same path-free result on exact
+post-publication replay. Cross-owner activation authority and process-exit
+recovery are still absent because no durable top-level marker/journal has been
+committed. Its activation ordering, full subprocess-exit qualification,
+production backup/restore wiring, and the coordinated reader/writer cutover
+remain A2 work. The
 machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual

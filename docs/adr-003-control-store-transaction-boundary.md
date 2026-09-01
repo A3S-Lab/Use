@@ -421,13 +421,18 @@ path-free attempt descriptor, and stages Control plus every external owner
 beneath one fixed `.control-installation-restore` directory. Control is rebuilt
 from and round-tripped against the canonical export, checkpointed to a single
 SQLite file, and physically digest-bound. External candidates reuse their
-owner-native adapters under the same guard. No live authority path is changed;
-exact retries and interrupted Control construction recover, while contaminated
-targets, links, unknown state, rebinding, and completed-candidate drift fail
-closed. Coordinated activation and its durable cross-owner crash journal, the
-full subprocess-exit matrix, production lifecycle conversion and dispatch,
-indivisible reader/writer cutover, and deletion of legacy mutable stores remain
-open;
+owner-native adapters under the same guard. Staging changes no live authority
+path; exact retries and interrupted Control construction recover, while
+contaminated targets, links, unknown state, rebinding, and completed-candidate
+drift fail closed. The Control component separately qualifies its own
+clean-target publication boundary under that retained guard: it revalidates
+the attempt, semantic export, physical evidence, and sidecar-free state before
+a no-clobber atomic move, then reconciles the exact post-move state to one
+path-free result. This is not a cross-process transaction because no durable
+top-level active marker exists yet. Coordinated activation and its durable
+cross-owner crash journal, the full subprocess-exit matrix, production
+lifecycle conversion and dispatch, indivisible reader/writer cutover, and
+deletion of legacy mutable stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 
