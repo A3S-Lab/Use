@@ -168,8 +168,9 @@ publication；之后的必需 effect 失败会保留为使用相同 key 显式 r
 executor，再把精确 identity 路由到彼此独立的 Capability Index、invocation lease、
 Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后记录 applied、deferred、rejected 或 unknown observation。
 Deferred 只用于 owner 已证明未接受任何 effect 的结果；有界、持久化的 not-before 时间会阻止提前 claim，
-并在到期后允许自动复用原 key。Provider timeout 必须在 claim lease 内保留固定的 observation 预算并作为 unknown evidence；取消、
-可能已产生 effect 后的进程退出、过期 claim 与含糊结果都必须显式重放已提交 key。生产 lifecycle
+并在到期后允许自动复用原 key。Provider timeout 必须在 claim lease 内保留固定的 observation 预算并作为 unknown evidence。
+超时或调用方取消只会停止等待，不会取消可能已被接受的 owner task；该 task 会继续持有同一个共享
+maintenance guard，直到自身真正结束。可能已产生 effect 后的进程退出、过期 claim 与含糊结果都必须显式重放已提交 key。生产 lifecycle
 仍不会构造它。首个真实的 post-commit adapter 现已覆盖 immutable Skill/UI preparation：它会从
 owner-shaped committed request 重新派生 typed owner 与原始 idempotency key，通过 verified Artifact
 Store lease 获取精确 package，在不暴露 package root 的情况下读取一个 named surface，并在读取后

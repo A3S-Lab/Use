@@ -189,7 +189,9 @@ Skill, or UI ports, and records a later applied, deferred, rejected, or unknown
 observation. Deferred is reserved for owner-proven safe-no-effect outcomes; its
 bounded durable not-before time blocks early claims and then permits automatic
 same-key retry. Provider timeout leaves a fixed observation budget inside the
-claim lease and becomes unknown evidence; cancellation, process exit after a
+claim lease and becomes unknown evidence. Timeout or caller cancellation
+detaches only the wait: the possibly accepted owner task retains the same
+shared maintenance guard until it actually completes. Process exit after a
 possible effect, expired claims, and ambiguity require explicit replay of the
 committed key. Production lifecycle still does not construct it. The first
 concrete post-commit adapter now covers immutable Skill and UI preparation. It

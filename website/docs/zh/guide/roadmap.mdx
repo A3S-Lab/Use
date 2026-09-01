@@ -106,14 +106,16 @@ dispatcher 现在会在 `claim → owner I/O → observation` 全过程持有 in
 彼此独立的 Capability Index、invocation lease、Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后
 记录 owner-shaped observation。经 owner 证明的 safe-no-effect deferral 会在持久化 not-before 时间之前
 阻止 claim，到期后无需 reconciliation，只自动重试原 key。Provider timeout 必须在 claim lease 内保留固定的 observation 预算，
-并记录为 unknown evidence；进程退出、取消、过期 claim 与含糊结果都必须显式复用同一 key 完成
-reconciliation。测试已覆盖 provider I/O 期间重入 Store、七类路由、挂起 provider 的有界终止，以及
-effect 后 observation 前退出。同一个 claim 事务现在还会推导 owner-shaped committed context：package
+并记录为 unknown evidence。Timeout 或调用方取消只会停止等待，不会取消可能已被接受的 owner task；
+该 task 会继续持有同一个共享 maintenance guard，直到自身真正结束。进程退出、过期 claim 与含糊结果
+都必须显式复用同一 key 完成 reconciliation。测试已覆盖 provider I/O 期间重入 Store、七类路由、
+挂起 provider 的有界等待、task panic、取消等待，以及 effect 后 observation 前退出。同一个 claim 事务现在还会推导 owner-shaped committed context：package
 端口只接收精确的 selection、lifecycle、host、snapshot identity 与 Grant；Runtime 额外接收完整的 reviewed
 provider selection；Capability Index 接收 candidate generation，以及每个已启用 selected surface 的最新终态
 prepare，包括跨 multi-root generation 保留的历史 observation 与显式 optional degradation。Grant coverage
 缺失、最新状态仍非终态、teardown 冒充 prepare 或 generation 漂移，都会在 owner I/O 前 fail closed。
-并发的 whole-installation restore 在 observation 持久化之前无法取得排他 maintenance fence。
+并发的 whole-installation restore 在 observation 持久化之前，或仍有分离的进程内 effect task 运行时，
+无法取得排他 maintenance fence。
 多 package generation 提交也已改为先写入完整 node set，再在同一事务写入带立即外键的 dependency edge。
 Artifact Store 现在提供不可克隆的 verified package lease：它同时持有全局 reachability 与单 artifact
 mutation 共享锁，拒绝 quarantine 或未完成 GC，绑定完整 package fingerprint、受限 manifest、精确文件/字节

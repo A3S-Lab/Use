@@ -146,12 +146,15 @@ later applied, deferred, rejected, or unknown observation. A deferred effect
 blocks claims until its persisted not-before time, then becomes eligible for
 automatic retry with the same committed idempotency key. Its enforced provider
 timeout leaves a fixed budget inside the claim lease and is classified as
-unknown, leaving time for the observation transaction. Cancellation, process
-exit after a possible effect, and expired or unknown claims require explicit
-replay with that key. Qualification tests cover all routes, Store
-re-entry during owner I/O, a hung owner, and the unobserved-effect crash
-boundary. A concurrent whole-installation restore cannot acquire its exclusive
-maintenance fence until the provider observation is durable.
+unknown, leaving time for the observation transaction. Timeout or caller
+cancellation detaches the wait but leaves the possibly accepted owner future
+running with a reference to the same shared maintenance guard. Process exit
+after a possible effect and expired or unknown claims require explicit replay
+with that key. Qualification tests cover all routes, Store re-entry during
+owner I/O, a hung owner, task panic, cancelled waits, and the unobserved-effect
+crash boundary. A concurrent whole-installation restore cannot acquire its
+exclusive maintenance fence until the provider observation is durable and any
+detached in-process effect future has actually finished.
 
 Production lifecycle code does not construct it, so it neither mirrors nor
 replaces the current JSON authority. The first concrete post-commit adapter now

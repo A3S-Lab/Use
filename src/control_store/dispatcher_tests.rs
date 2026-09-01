@@ -39,6 +39,7 @@ use crate::plugin_lifecycle::PluginLifecycleAction;
 enum Disposition {
     Applied,
     Deferred,
+    Panic,
     Rejected,
     Unknown,
 }
@@ -115,6 +116,7 @@ impl RecordingPorts {
             Disposition::Deferred => ControlEffectPortOutcome::deferred(
                 ControlEffectFailure::new(digest('d'), "provider.temporarily_unavailable").unwrap(),
             ),
+            Disposition::Panic => panic!("simulated provider task panic"),
             Disposition::Rejected => ControlEffectPortOutcome::rejected(
                 ControlEffectFailure::new(digest('e'), "provider.rejected").unwrap(),
             ),
@@ -603,13 +605,14 @@ async fn expired_claim_after_process_exit_replays_only_with_the_committed_key() 
 #[tokio::test]
 async fn dispatcher_bounds_a_hung_provider_and_records_unknown_acceptance() {
     let (_temporary, store) = initialized_store().await;
+    let state_root = store.state_root.clone();
     let reviewed = operation("operation:dispatcher");
     store.register_operation(reviewed.clone()).await.unwrap();
     store
         .commit_transition(transition(control_installation(), &reviewed))
         .await
         .unwrap();
-    let recording = Arc::new(RecordingPorts::new([Disposition::Applied]).with_delay_ms(100));
+    let recording = Arc::new(RecordingPorts::new([Disposition::Applied]).with_delay_ms(500));
     let dispatcher = ControlEffectDispatcher::new(
         store.clone(),
         ports(recording.clone()),
@@ -633,6 +636,19 @@ async fn dispatcher_bounds_a_hung_provider_and_records_unknown_acceptance() {
             ..
         }
     ));
+    let maintenance = StateMaintenanceLock::new(state_root);
+    let mut exclusive = tokio::spawn(async move { maintenance.acquire_exclusive().await.unwrap() });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), &mut exclusive)
+            .await
+            .is_err(),
+        "the still-running timed-out effect must retain a shared restore fence"
+    );
+    let exclusive = tokio::time::timeout(std::time::Duration::from_secs(2), exclusive)
+        .await
+        .expect("restore may acquire after the timed-out effect future completes")
+        .unwrap();
+    drop(exclusive);
     let effect = &store.effects(reviewed.operation_id()).await.unwrap()[0];
     assert_eq!(effect.status, ControlEffectStatus::Unknown);
     assert_eq!(
@@ -640,6 +656,88 @@ async fn dispatcher_bounds_a_hung_provider_and_records_unknown_acceptance() {
         Some("provider.deadline_exceeded")
     );
     assert_eq!(recording.calls(), vec!["knowledge-host"]);
+}
+
+#[tokio::test]
+async fn cancelling_dispatch_wait_keeps_the_in_flight_effect_restore_fenced() {
+    let (_temporary, store) = initialized_store().await;
+    let reviewed = operation("operation:dispatcher");
+    store.register_operation(reviewed.clone()).await.unwrap();
+    store
+        .commit_transition(transition(control_installation(), &reviewed))
+        .await
+        .unwrap();
+    let gate = Arc::new(DispatchGate::default());
+    let recording = Arc::new(RecordingPorts::new([Disposition::Applied]).with_gate(gate.clone()));
+    let dispatcher = ControlEffectDispatcher::new(
+        store.clone(),
+        ports(recording),
+        Arc::new(TestClock::new([30, 40])),
+    );
+    let state_root = store.state_root.clone();
+
+    let dispatch = tokio::spawn(async move {
+        dispatcher
+            .dispatch_next(dispatch_request("claim:cancelled-wait", false))
+            .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), gate.entered.notified())
+        .await
+        .expect("the owner must enter before the dispatch wait is cancelled");
+    dispatch.abort();
+    assert!(dispatch.await.unwrap_err().is_cancelled());
+
+    let maintenance = StateMaintenanceLock::new(state_root);
+    let mut exclusive = tokio::spawn(async move { maintenance.acquire_exclusive().await.unwrap() });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), &mut exclusive)
+            .await
+            .is_err(),
+        "cancelling the wait must not cancel a possibly accepted owner effect"
+    );
+    gate.release.notify_one();
+    let exclusive = tokio::time::timeout(std::time::Duration::from_secs(5), exclusive)
+        .await
+        .expect("restore may acquire after the detached effect future completes")
+        .unwrap();
+    drop(exclusive);
+    assert_eq!(
+        store.effects(reviewed.operation_id()).await.unwrap()[0].status,
+        ControlEffectStatus::Applied
+    );
+}
+
+#[tokio::test]
+async fn provider_task_panic_is_durable_unknown_evidence() {
+    let (_temporary, store) = initialized_store().await;
+    let reviewed = operation("operation:dispatcher");
+    store.register_operation(reviewed.clone()).await.unwrap();
+    store
+        .commit_transition(transition(control_installation(), &reviewed))
+        .await
+        .unwrap();
+    let recording = Arc::new(RecordingPorts::new([Disposition::Panic]));
+    let dispatcher = ControlEffectDispatcher::new(
+        store.clone(),
+        ports(recording),
+        Arc::new(TestClock::new([30, 40])),
+    );
+
+    let result = dispatcher
+        .dispatch_next(dispatch_request("claim:provider-task-panic", false))
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        result,
+        ControlEffectDispatchResult::Observed {
+            outcome: ControlEffectOutcome::Unknown,
+            ..
+        }
+    ));
+    let effect = &store.effects(reviewed.operation_id()).await.unwrap()[0];
+    assert_eq!(effect.status, ControlEffectStatus::Unknown);
+    assert_eq!(effect.error_code.as_deref(), Some("provider.task_failed"));
 }
 
 #[tokio::test]
