@@ -139,7 +139,8 @@ pub(crate) fn remove_file_with_windows_retry_blocking(path: &Path) -> io::Result
 /// Retrying the same exact root finishes that residual tree after the lock is
 /// released. This function may sleep, so callers must run it on a blocking
 /// worker.
-pub(crate) fn remove_dir_all_with_windows_retry_blocking(path: &Path) -> io::Result<()> {
+#[doc(hidden)]
+pub fn remove_dir_all_with_windows_retry_blocking(path: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
         let started = std::time::Instant::now();

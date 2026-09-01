@@ -65,7 +65,8 @@ pub use artifact_store::{
 #[doc(hidden)]
 pub use atomic_file::{
     persist_named_temporary_noclobber_blocking, persist_temporary_noclobber_blocking,
-    persist_temporary_replace_blocking, rename_path_with_windows_retry_blocking,
+    persist_temporary_replace_blocking, remove_dir_all_with_windows_retry_blocking,
+    rename_path_with_windows_retry_blocking,
 };
 pub use paths::{ExtensionPaths, UsePaths};
 pub use plugin_manifest::{

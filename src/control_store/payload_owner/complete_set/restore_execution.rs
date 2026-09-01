@@ -8,17 +8,21 @@ use a3s_use_core::UseResult;
 #[cfg(test)]
 use super::control_restore::StagedControlStoreRestore;
 use super::control_restore_result::ControlStoreRestoreResult;
-#[cfg(test)]
-use super::restore::restore_activation_invalid;
 use super::restore::{
-    wrap_activation_error, wrap_owner_error, RestoreComponent, StagedControlInstallationRestore,
+    restore_activation_invalid, wrap_activation_error, wrap_owner_error,
+    ControlInstallationRestoreState, PreparedControlInstallationRestore, RestoreComponent,
+    StagedControlInstallationRestore,
 };
 use super::restore_activation::{self, ControlInstallationRestoreResult};
+use super::restore_retirement;
 
 impl StagedControlInstallationRestore {
     pub(in crate::control_store) async fn activate(
         &self,
     ) -> UseResult<ControlInstallationRestoreResult> {
+        if let ControlInstallationRestoreState::Retired(result) = &self.state {
+            return Ok(result.clone());
+        }
         if restore_activation::journal_exists(&self.staging_directory)
             .await
             .map_err(wrap_activation_error)?
@@ -35,18 +39,21 @@ impl StagedControlInstallationRestore {
                     .await
                     .map_err(wrap_activation_error)?
             {
-                return current
-                    .completed_result(&self.attempt_digest)
-                    .map_err(wrap_activation_error);
+                return self.finish_terminal().await;
             }
         }
 
         for component in RestoreComponent::ALL {
             self.activate_component(component, true).await?;
         }
-        restore_activation::complete(
+        self.finish_terminal().await
+    }
+
+    async fn finish_terminal(&self) -> UseResult<ControlInstallationRestoreResult> {
+        restore_retirement::finish(
             &self.state_root,
             &self.staging_directory,
+            &self.attempt_bytes,
             &self.attempt_digest,
         )
         .await
@@ -63,11 +70,13 @@ impl StagedControlInstallationRestore {
         &self,
         checkpoint: bool,
     ) -> UseResult<ControlStoreRestoreResult> {
+        let prepared = self.prepared()?;
         if restore_activation::journal_exists(&self.staging_directory)
             .await
             .map_err(wrap_activation_error)?
         {
-            self.control
+            prepared
+                .control
                 .preflight(&self.maintenance)
                 .await
                 .map_err(wrap_activation_error)?;
@@ -79,17 +88,17 @@ impl StagedControlInstallationRestore {
             &self.staging_directory,
             &self.attempt_bytes,
             &self.attempt_digest,
-            self.control.candidate_path(),
+            prepared.control.candidate_path(),
         )
         .await
         .map_err(wrap_activation_error)?;
-        let result = self
+        let result = prepared
             .control
             .activate(&self.maintenance)
             .await
             .map_err(wrap_activation_error)?;
         restore_activation::maybe_test_crash("control-store-effect");
-        restore_activation::validate_result_registry(&self.control.registry, &result)
+        restore_activation::validate_result_registry(&prepared.control.registry, &result)
             .map_err(wrap_activation_error)?;
         if checkpoint {
             restore_activation::checkpoint_control(
@@ -105,29 +114,35 @@ impl StagedControlInstallationRestore {
     }
 
     async fn preflight_clean(&self) -> UseResult<()> {
-        self.control
+        let prepared = self.prepared()?;
+        prepared
+            .control
             .preflight(&self.maintenance)
             .await
             .map_err(wrap_activation_error)?;
-        self.host_projection
+        prepared
+            .host_projection
             .preflight_clean(&self.maintenance)
             .await
             .map_err(|error| {
                 wrap_activation_error(wrap_owner_error("Host projection preflight", error))
             })?;
-        self.knowledge
+        prepared
+            .knowledge
             .preflight_clean(&self.maintenance)
             .await
             .map_err(|error| {
                 wrap_activation_error(wrap_owner_error("Knowledge preflight", error))
             })?;
-        self.observations
+        prepared
+            .observations
             .preflight_clean(&self.maintenance)
             .await
             .map_err(|error| {
                 wrap_activation_error(wrap_owner_error("observations preflight", error))
             })?;
-        self.restore_coordinator
+        prepared
+            .restore_coordinator
             .preflight_clean(&self.maintenance)
             .await
             .map_err(|error| {
@@ -140,12 +155,13 @@ impl StagedControlInstallationRestore {
         component: RestoreComponent,
         checkpoint: bool,
     ) -> UseResult<()> {
+        let prepared = self.prepared()?;
         match component {
             RestoreComponent::ControlStore => {
                 self.activate_control_component(checkpoint).await?;
             }
             RestoreComponent::HostProjection => {
-                let result = self
+                let result = prepared
                     .host_projection
                     .activate(&self.maintenance)
                     .await
@@ -154,14 +170,14 @@ impl StagedControlInstallationRestore {
                     })?;
                 restore_activation::maybe_test_crash("host-projection-effect");
                 result
-                    .validate(&self.control.registry)
+                    .validate(&prepared.control.registry)
                     .map_err(wrap_activation_error)?;
                 if checkpoint {
                     self.checkpoint(component, &result).await?;
                 }
             }
             RestoreComponent::Knowledge => {
-                let result = self
+                let result = prepared
                     .knowledge
                     .activate(&self.maintenance)
                     .await
@@ -170,14 +186,14 @@ impl StagedControlInstallationRestore {
                     })?;
                 restore_activation::maybe_test_crash("knowledge-effect");
                 result
-                    .validate(&self.control.registry)
+                    .validate(&prepared.control.registry)
                     .map_err(wrap_activation_error)?;
                 if checkpoint {
                     self.checkpoint(component, &result).await?;
                 }
             }
             RestoreComponent::Observations => {
-                let result = self
+                let result = prepared
                     .observations
                     .activate(&self.maintenance)
                     .await
@@ -186,7 +202,7 @@ impl StagedControlInstallationRestore {
                     })?;
                 restore_activation::maybe_test_crash("observations-effect");
                 result
-                    .validate(&self.control.registry)
+                    .validate(&prepared.control.registry)
                     .map_err(wrap_activation_error)?;
                 if checkpoint {
                     self.checkpoint(component, &result).await?;
@@ -203,7 +219,7 @@ impl StagedControlInstallationRestore {
                 let marker_bytes = activation
                     .active_marker_bytes()
                     .map_err(wrap_activation_error)?;
-                let result = self
+                let result = prepared
                     .restore_coordinator
                     .activate_for_complete_restore(
                         &self.maintenance,
@@ -241,6 +257,15 @@ impl StagedControlInstallationRestore {
         .await
         .map(|_| ())
         .map_err(wrap_activation_error)
+    }
+
+    fn prepared(&self) -> UseResult<&PreparedControlInstallationRestore> {
+        match &self.state {
+            ControlInstallationRestoreState::Prepared(prepared) => Ok(prepared.as_ref()),
+            ControlInstallationRestoreState::Retired(_) => Err(restore_activation_invalid(
+                "A retired complete restore has no mutable staging payload.",
+            )),
+        }
     }
 
     #[cfg(test)]
@@ -282,7 +307,9 @@ impl StagedControlInstallationRestore {
     pub(in crate::control_store) async fn begin_control_activation_for_test(
         &self,
     ) -> UseResult<()> {
-        self.control
+        let prepared = self.prepared()?;
+        prepared
+            .control
             .preflight(&self.maintenance)
             .await
             .map_err(wrap_activation_error)?;
@@ -291,7 +318,7 @@ impl StagedControlInstallationRestore {
             &self.staging_directory,
             &self.attempt_bytes,
             &self.attempt_digest,
-            self.control.candidate_path(),
+            prepared.control.candidate_path(),
         )
         .await
         .map(|_| ())
@@ -319,7 +346,12 @@ impl StagedControlInstallationRestore {
 
     #[cfg(test)]
     pub(in crate::control_store) fn control_restore_for_test(&self) -> &StagedControlStoreRestore {
-        &self.control
+        match &self.state {
+            ControlInstallationRestoreState::Prepared(prepared) => &prepared.control,
+            ControlInstallationRestoreState::Retired(_) => {
+                panic!("a retired complete restore has no Control staging payload")
+            }
+        }
     }
 
     #[cfg(test)]
@@ -329,27 +361,27 @@ impl StagedControlInstallationRestore {
 
     #[cfg(test)]
     pub(in crate::control_store) fn control_candidate_path(&self) -> &Path {
-        self.control.candidate_path()
+        self.control_restore_for_test().candidate_path()
     }
 
     #[cfg(test)]
     pub(in crate::control_store) fn host_projection_candidate_path(&self) -> Option<&Path> {
-        self.host_projection.candidate_path()
+        self.prepared().ok()?.host_projection.candidate_path()
     }
 
     #[cfg(test)]
     pub(in crate::control_store) fn knowledge_candidate_path(&self) -> Option<&Path> {
-        self.knowledge.candidate_path()
+        self.prepared().ok()?.knowledge.candidate_path()
     }
 
     #[cfg(test)]
     pub(in crate::control_store) fn observation_candidate_path(&self) -> Option<&Path> {
-        self.observations.candidate_path()
+        self.prepared().ok()?.observations.candidate_path()
     }
 
     #[cfg(test)]
     pub(in crate::control_store) fn restore_coordinator_candidate_path(&self) -> Option<&Path> {
-        self.restore_coordinator.candidate_path()
+        self.prepared().ok()?.restore_coordinator.candidate_path()
     }
 
     #[cfg(test)]

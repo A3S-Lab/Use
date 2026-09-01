@@ -9,13 +9,15 @@ use super::control_restore_reopen;
 use super::coordinator::VerifiedControlInstallationSnapshot;
 use super::restore::{
     restore_activation_invalid, wrap_activation_error, wrap_owner_error,
-    ControlInstallationRestoreAttempt, StagedControlInstallationRestore,
+    ControlInstallationRestoreAttempt, ControlInstallationRestoreState,
+    PreparedControlInstallationRestore, StagedControlInstallationRestore,
 };
 use super::restore_activation;
 use super::restore_filesystem::{
     self, CONTROL_DIRECTORY, HOST_PROJECTION_DIRECTORY, KNOWLEDGE_DIRECTORY,
     OBSERVATIONS_DIRECTORY, RESTORE_COORDINATOR_DIRECTORY,
 };
+use super::restore_retirement;
 use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
 
 impl VerifiedControlInstallationSnapshot {
@@ -44,6 +46,45 @@ impl VerifiedControlInstallationSnapshot {
             ));
         }
         let staging_directory = state_root.join(restore_filesystem::ATTEMPT_DIRECTORY);
+        restore_filesystem::validate_attempt_evidence(&staging_directory, &attempt_bytes)
+            .await
+            .map_err(wrap_activation_error)?;
+        if restore_activation::journal_exists(&staging_directory)
+            .await
+            .map_err(wrap_activation_error)?
+        {
+            let activation =
+                restore_activation::load_journal(&staging_directory, attempt.descriptor_digest())
+                    .await
+                    .map_err(wrap_activation_error)?
+                    .ok_or_else(|| {
+                        wrap_activation_error(restore_activation_invalid(
+                            "The complete restore journal disappeared while it was reopened.",
+                        ))
+                    })?;
+            if activation.is_complete()
+                && !restore_activation::marker_exists(&state_root)
+                    .await
+                    .map_err(wrap_activation_error)?
+            {
+                let result = restore_retirement::finish(
+                    &state_root,
+                    &staging_directory,
+                    &attempt_bytes,
+                    attempt.descriptor_digest(),
+                )
+                .await
+                .map_err(wrap_activation_error)?;
+                return Ok(StagedControlInstallationRestore {
+                    state_root,
+                    staging_directory,
+                    attempt_bytes,
+                    attempt_digest: attempt.descriptor_digest().to_owned(),
+                    state: ControlInstallationRestoreState::Retired(result),
+                    maintenance,
+                });
+            }
+        }
         restore_filesystem::validate_attempt(&staging_directory, &attempt_bytes)
             .await
             .map_err(wrap_activation_error)?;
@@ -129,11 +170,15 @@ impl VerifiedControlInstallationSnapshot {
             staging_directory,
             attempt_bytes,
             attempt_digest: attempt.descriptor_digest().to_owned(),
-            control,
-            host_projection,
-            knowledge,
-            observations,
-            restore_coordinator,
+            state: ControlInstallationRestoreState::Prepared(Box::new(
+                PreparedControlInstallationRestore {
+                    control,
+                    host_projection,
+                    knowledge,
+                    observations,
+                    restore_coordinator,
+                },
+            )),
             maintenance,
         })
     }

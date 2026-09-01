@@ -30,6 +30,7 @@ const CONSUMER_IDS: &[&str] = &[
 ];
 
 const OPERATIONAL_STATE_IDS: &[&str] = &[
+    "complete-restore-attempt",
     "generation-leases",
     "legacy-package-graph-lock",
     "outer-fences",
@@ -60,6 +61,7 @@ const EXTERNAL_OWNER_PATHS: &[&str] = &[
 ];
 
 const OPERATIONAL_STATE_PATHS: &[&str] = &[
+    ".control-installation-restore",
     ".installation-mutation.lock",
     ".maintenance.lock",
     ".maintenance.restore.json",
@@ -212,7 +214,11 @@ fn cutover_manifest_references_real_code_and_forbids_partial_activation() {
         assert_eq!(string(operational, "backup_policy"), "excluded");
         assert!(matches!(
             string(operational, "disposition"),
-            "delete" | "retain" | "retain-outside-database" | "rebind-to-control-generation"
+            "delete"
+                | "retain"
+                | "retain-outside-database"
+                | "rebind-to-control-generation"
+                | "retire-staging-retain-terminal"
         ));
         assert_code_files(operational, &["implementation"]);
     }
@@ -276,6 +282,13 @@ fn collect_unique_paths(blocks: &[&Block], attribute: &str) -> BTreeSet<String> 
 fn assert_supported_state_path(path: &str) {
     let parts = path.split('/').collect::<Vec<_>>();
     let first = parts[0];
+    if first == crate::installation_state_layout::CONTROL_INSTALLATION_RESTORE_ATTEMPT_DIRECTORY {
+        assert_eq!(parts.len(), 1);
+        assert!(!crate::installation_state_layout::supported_root_entry(
+            first, true
+        ));
+        return;
+    }
     let root_is_directory = !matches!(
         first,
         ".installation-mutation.lock"

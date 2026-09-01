@@ -18,8 +18,10 @@
 //! exclusive fence without touching live authority. Qualification activation
 //! preflights every candidate, then publishes and checkpoints Control, Host,
 //! Knowledge, observations, and Restore Coordinator state in one fixed order.
-//! Its global marker is retired only after all five checkpoints are durable,
-//! and subprocess-exit tests cover every top-level effect boundary. Production
+//! Its global marker is retired only after all five checkpoints are durable.
+//! The five staging trees are then retired in fixed order, leaving the exact
+//! attempt descriptor and complete journal as a terminal receipt. Subprocess
+//! tests cover every top-level effect and retirement boundary. Production
 //! backup/restore wiring and the indivisible authority cutover remain separate.
 
 use a3s_use_core::{UseError, UseResult};
@@ -35,6 +37,7 @@ mod restore_coordinator;
 mod session;
 mod snapshot;
 
+pub(in crate::control_store) use complete_set::validate_terminal_receipt_blocking;
 #[cfg(test)]
 pub(in crate::control_store) use complete_set::{
     ControlInstallationSnapshotManifest, ControlStoreRestoreResult,

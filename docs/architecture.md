@@ -248,10 +248,15 @@ every candidate/live boundary. Safe journal and marker partial states, all five
 post-effect/pre-checkpoint boundaries, the fifth checkpoint before marker
 retirement, and exit after deletion converge. Marker absence is accepted only
 with a complete journal; out-of-order live roots, ambiguous markers, links,
-rebinding, and evidence drift fail closed. Completed replay is read-only, and a
-13-boundary real-child-process matrix qualifies the top-level protocol.
-Production backup/restore wiring, retained-attempt lifecycle, and the
-coordinated reader/writer cutover remain A2 work. The
+rebinding, and evidence drift fail closed. Completed replay performs no owner
+effect and can only resume bounded fixed-order retirement of the five link-free
+staging trees. An 18-boundary real-child-process matrix qualifies the top-level
+protocol, including every retirement boundary. The surviving canonical
+`attempt.json` and complete `activation.json` form the exact
+installation-bound terminal receipt. Legacy backup and artifact reachability
+exclude only that receipt; incomplete, extended, linked, or tampered evidence
+fails closed. Production backup/restore wiring and the coordinated
+reader/writer cutover remain A2 work. The
 machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual

@@ -55,10 +55,20 @@ impl ControlPayloadSnapshotBinding {
         registry: &ControlPayloadOwnerRegistry,
     ) -> UseResult<()> {
         registry.validate()?;
+        self.validate_descriptor()?;
+        if self.owner_registry_digest != registry.descriptor_digest() {
+            return Err(snapshot_error(
+                "The Control payload snapshot binding is invalid or was rebound.",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(in crate::control_store) fn validate_descriptor(&self) -> UseResult<()> {
         if self.schema != CONTROL_PAYLOAD_SNAPSHOT_BINDING_SCHEMA
             || self.installation.validate().is_err()
             || !valid_sha256(&self.control_export_digest)
-            || self.owner_registry_digest != registry.descriptor_digest()
+            || !valid_sha256(&self.owner_registry_digest)
             || !valid_sha256(&self.descriptor_digest)
             || self.expected_descriptor_digest()? != self.descriptor_digest
         {

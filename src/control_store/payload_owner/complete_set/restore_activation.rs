@@ -215,6 +215,18 @@ impl ControlInstallationRestoreActivation {
         Ok(bytes)
     }
 
+    pub(super) fn decode_canonical(bytes: &[u8], attempt_digest: &str) -> UseResult<Self> {
+        let activation: Self = serde_json::from_slice(bytes)
+            .map_err(|_| restore_activation_invalid("The activation journal is invalid JSON."))?;
+        activation.validate(attempt_digest)?;
+        if activation.canonical_bytes()? != bytes {
+            return Err(restore_activation_invalid(
+                "The activation journal is not canonically encoded.",
+            ));
+        }
+        Ok(activation)
+    }
+
     fn expected_descriptor_digest(&self) -> UseResult<String> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
@@ -412,6 +424,13 @@ pub(super) async fn load(
     attempt_digest: &str,
 ) -> UseResult<ControlInstallationRestoreActivation> {
     filesystem::load_active(state_root, attempt, attempt_digest).await
+}
+
+pub(super) async fn load_journal(
+    attempt: &Path,
+    attempt_digest: &str,
+) -> UseResult<Option<ControlInstallationRestoreActivation>> {
+    filesystem::read_journal(attempt, attempt_digest).await
 }
 
 pub(super) fn journal_path(attempt: &Path) -> std::path::PathBuf {

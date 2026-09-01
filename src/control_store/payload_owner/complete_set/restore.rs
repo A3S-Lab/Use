@@ -1,7 +1,7 @@
 use std::io;
 use std::path::PathBuf;
 
-use a3s_use_core::{UseError, UseResult};
+use a3s_use_core::{InstallationId, UseError, UseResult};
 use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -13,6 +13,7 @@ use super::super::restore_coordinator::StagedControlRestoreCoordinatorRestore;
 use super::super::{ControlPayloadOwnerId, ControlPayloadSnapshotBinding};
 use super::control_restore::{self, StagedControlStoreRestore};
 use super::coordinator::VerifiedControlInstallationSnapshot;
+use super::restore_activation::ControlInstallationRestoreResult;
 use super::restore_filesystem::{
     self, CONTROL_DIRECTORY, HOST_PROJECTION_DIRECTORY, KNOWLEDGE_DIRECTORY,
     OBSERVATIONS_DIRECTORY, RESTORE_COORDINATOR_DIRECTORY,
@@ -22,7 +23,7 @@ use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
 
 const RESTORE_ATTEMPT_SCHEMA: &str = "a3s.use.control-installation-restore-attempt.v1";
 const RESTORE_ATTEMPT_DOMAIN: &[u8] = b"a3s.use.control-installation-restore-attempt.v1\0";
-const MAX_RESTORE_ATTEMPT_BYTES: usize = 128 * 1024;
+pub(super) const MAX_RESTORE_ATTEMPT_BYTES: usize = 128 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -53,6 +54,16 @@ impl RestoreComponent {
         }
     }
 
+    pub(super) const fn staging_directory_name(self) -> &'static str {
+        match self {
+            Self::ControlStore => CONTROL_DIRECTORY,
+            Self::HostProjection => HOST_PROJECTION_DIRECTORY,
+            Self::Knowledge => KNOWLEDGE_DIRECTORY,
+            Self::Observations => OBSERVATIONS_DIRECTORY,
+            Self::RestoreCoordinator => RESTORE_COORDINATOR_DIRECTORY,
+        }
+    }
+
     pub(super) const fn payload_owner(self) -> Option<ControlPayloadOwnerId> {
         match self {
             Self::ControlStore => None,
@@ -77,8 +88,8 @@ impl RestoreComponent {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct KnowledgePolicyEvidence {
     max_scope_expanded_bytes: u64,
     max_scope_projections: u64,
@@ -101,12 +112,34 @@ impl KnowledgePolicyEvidence {
             })?,
         })
     }
+
+    fn validate(&self) -> UseResult<()> {
+        OkfKnowledgeStoragePolicy::new(
+            self.max_scope_expanded_bytes,
+            usize::try_from(self.max_scope_projections).map_err(|_| {
+                restore_staging_invalid("The Knowledge projection policy overflowed.")
+            })?,
+            usize::try_from(self.max_surface_generations).map_err(|_| {
+                restore_staging_invalid("The Knowledge generation policy overflowed.")
+            })?,
+            usize::try_from(self.max_scope_tombstones).map_err(|_| {
+                restore_staging_invalid("The Knowledge tombstone policy overflowed.")
+            })?,
+        )
+        .map(|_| ())
+        .map_err(|error| {
+            restore_staging_invalid(format!(
+                "The Knowledge policy evidence is invalid: {}",
+                error.message
+            ))
+        })
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct ControlInstallationRestoreAttempt {
-    schema: &'static str,
+    schema: String,
     snapshot_created_at_ms: u64,
     snapshot_descriptor_digest: String,
     binding: ControlPayloadSnapshotBinding,
@@ -129,7 +162,7 @@ impl ControlInstallationRestoreAttempt {
             ))
         })?;
         let mut attempt = Self {
-            schema: RESTORE_ATTEMPT_SCHEMA,
+            schema: RESTORE_ATTEMPT_SCHEMA.to_owned(),
             snapshot_created_at_ms: snapshot.created_at_ms,
             snapshot_descriptor_digest: snapshot.descriptor_digest.clone(),
             binding: snapshot.snapshot_set.binding.clone(),
@@ -148,17 +181,38 @@ impl ControlInstallationRestoreAttempt {
         registry: &ControlPayloadOwnerRegistry,
         snapshot: &ControlInstallationSnapshotManifest,
     ) -> UseResult<()> {
+        self.validate_descriptor()?;
         self.binding.validate(registry).map_err(|error| {
             restore_staging_invalid(format!(
                 "The complete restore binding is invalid: {}",
                 error.message
             ))
         })?;
-        if self.schema != RESTORE_ATTEMPT_SCHEMA
-            || self.snapshot_created_at_ms != snapshot.created_at_ms
+        if self.snapshot_created_at_ms != snapshot.created_at_ms
             || self.snapshot_descriptor_digest != snapshot.descriptor_digest
             || self.binding != snapshot.snapshot_set.binding
             || self.owner_registry_digest != registry.descriptor_digest()
+        {
+            return Err(restore_staging_invalid(
+                "The complete restore attempt is incomplete, noncanonical, or was rebound.",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_descriptor(&self) -> UseResult<()> {
+        self.binding.validate_descriptor().map_err(|error| {
+            restore_staging_invalid(format!(
+                "The complete restore binding descriptor is invalid: {}",
+                error.message
+            ))
+        })?;
+        self.knowledge_policy.validate()?;
+        if self.schema != RESTORE_ATTEMPT_SCHEMA
+            || self.snapshot_created_at_ms == 0
+            || !crate::control_store::model::valid_sha256(&self.snapshot_descriptor_digest)
+            || !crate::control_store::model::valid_sha256(&self.owner_registry_digest)
+            || self.owner_registry_digest != self.binding.owner_registry_digest
             || self.components != RestoreComponent::ALL
             || !crate::control_store::model::valid_sha256(&self.descriptor_digest)
             || self.expected_digest()? != self.descriptor_digest
@@ -183,7 +237,7 @@ impl ControlInstallationRestoreAttempt {
             components: &'a [RestoreComponent],
         }
         let bytes = canonical_json(&Descriptor {
-            schema: self.schema,
+            schema: &self.schema,
             snapshot_created_at_ms: self.snapshot_created_at_ms,
             snapshot_descriptor_digest: &self.snapshot_descriptor_digest,
             binding: &self.binding,
@@ -203,6 +257,7 @@ impl ControlInstallationRestoreAttempt {
     }
 
     pub(super) fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
+        self.validate_descriptor()?;
         let bytes = canonical_json(self).map_err(|error| {
             restore_staging_invalid(format!(
                 "Failed to encode the complete restore descriptor: {error}"
@@ -219,6 +274,28 @@ impl ControlInstallationRestoreAttempt {
     pub(super) fn descriptor_digest(&self) -> &str {
         &self.descriptor_digest
     }
+
+    pub(super) fn installation(&self) -> &InstallationId {
+        &self.binding.installation
+    }
+
+    pub(super) fn decode_canonical(bytes: &[u8]) -> UseResult<Self> {
+        if bytes.is_empty() || bytes.len() > MAX_RESTORE_ATTEMPT_BYTES {
+            return Err(restore_staging_invalid(
+                "The complete restore descriptor exceeds its byte bound.",
+            ));
+        }
+        let attempt: Self = serde_json::from_slice(bytes).map_err(|_| {
+            restore_staging_invalid("The complete restore descriptor is invalid JSON.")
+        })?;
+        attempt.validate_descriptor()?;
+        if attempt.canonical_bytes()? != bytes {
+            return Err(restore_staging_invalid(
+                "The complete restore descriptor is not canonically encoded.",
+            ));
+        }
+        Ok(attempt)
+    }
 }
 
 #[derive(Debug)]
@@ -227,12 +304,23 @@ pub(in crate::control_store) struct StagedControlInstallationRestore {
     pub(super) staging_directory: PathBuf,
     pub(super) attempt_bytes: Vec<u8>,
     pub(super) attempt_digest: String,
+    pub(super) state: ControlInstallationRestoreState,
+    pub(super) maintenance: StateMaintenanceGuard,
+}
+
+#[derive(Debug)]
+pub(super) enum ControlInstallationRestoreState {
+    Prepared(Box<PreparedControlInstallationRestore>),
+    Retired(ControlInstallationRestoreResult),
+}
+
+#[derive(Debug)]
+pub(super) struct PreparedControlInstallationRestore {
     pub(super) control: StagedControlStoreRestore,
     pub(super) host_projection: StagedControlHostProjectionRestore,
     pub(super) knowledge: StagedControlKnowledgePayloadRestore,
     pub(super) observations: StagedControlObservationPayloadRestore,
     pub(super) restore_coordinator: StagedControlRestoreCoordinatorRestore,
-    pub(super) maintenance: StateMaintenanceGuard,
 }
 
 impl VerifiedControlInstallationSnapshot {
@@ -334,11 +422,15 @@ impl VerifiedControlInstallationSnapshot {
             staging_directory,
             attempt_bytes,
             attempt_digest: attempt.descriptor_digest,
-            control,
-            host_projection,
-            knowledge,
-            observations,
-            restore_coordinator,
+            state: ControlInstallationRestoreState::Prepared(Box::new(
+                PreparedControlInstallationRestore {
+                    control,
+                    host_projection,
+                    knowledge,
+                    observations,
+                    restore_coordinator,
+                },
+            )),
             maintenance,
         })
     }

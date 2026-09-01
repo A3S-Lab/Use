@@ -1481,14 +1481,19 @@ global marker retirement. Reopening reacquires the exact exclusive guard,
 rebinds the same verified snapshot, attempt, owner registry, and Knowledge
 policy, and reconstructs or verifies every owner at its exact candidate/live
 boundary. Journal and marker partials, every owner effect before checkpoint,
-the final checkpoint before marker deletion, and process exit immediately after
-marker deletion all converge deterministically. A 13-boundary subprocess matrix
-exercises those top-level exits. A missing marker is accepted only with the
-complete five-checkpoint journal; ambiguous markers, out-of-order live roots,
-snapshot rebinding, linked paths, or evidence drift fail closed. Completed
-replay is read-only. Production Grant conversion and effect dispatch,
-backup/restore command wiring, retained-attempt lifecycle, indivisible consumer
-cutover, and deletion of legacy mutable stores remain open.
+the final checkpoint before marker deletion, process exit immediately after
+marker deletion, and exit after each fixed-order staging retirement all converge
+deterministically. An 18-boundary subprocess matrix exercises those top-level
+exits. A missing marker is accepted only with the complete five-checkpoint
+journal; ambiguous markers, out-of-order live roots, snapshot rebinding, linked
+paths, or evidence drift fail closed. Completed replay performs no owner effect;
+it can only resume bounded retirement of the five link-free staging trees. The
+surviving canonical `attempt.json` and complete `activation.json` form the exact
+installation-bound terminal receipt. Legacy backup and artifact reachability
+exclude only that two-file receipt; incomplete, extended, linked, or tampered
+evidence fails closed. Production Grant conversion and effect dispatch,
+backup/restore command wiring, indivisible consumer cutover, and deletion of
+legacy mutable stores remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

@@ -244,6 +244,32 @@ async fn reopen_rejects_a_missing_marker_after_a_later_owner_effect() {
     assert_eq!(error.code, ERROR_CODE);
 }
 
+#[tokio::test]
+async fn reopen_revalidates_complete_live_state_before_marker_retirement() {
+    let verified = absent_snapshot(15_180).await;
+    let target = TempDir::new().unwrap();
+    let state_root = target.path().join("state");
+    let staged = verified
+        .stage_clean_restore(state_root.clone(), OkfKnowledgeStoragePolicy::default())
+        .await
+        .unwrap();
+    for _ in 0..5 {
+        staged.activate_next_for_test().await.unwrap();
+    }
+    let attempt = state_root.join(".control-installation-restore");
+    std::fs::write(state_root.join("control.sqlite3"), b"tamper").unwrap();
+    drop(staged);
+
+    let error = verified
+        .reopen_activation(state_root.clone(), OkfKnowledgeStoragePolicy::default())
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ERROR_CODE);
+    assert!(state_root.join(ACTIVE_STATE_RESTORE_MARKER).is_file());
+    assert!(attempt.join("control").is_dir());
+}
+
 #[cfg(any(unix, windows))]
 #[tokio::test]
 async fn reopen_rejects_a_linked_active_marker() {
@@ -294,4 +320,113 @@ async fn reopen_rejects_a_linked_activation_journal() {
         .unwrap_err();
     assert_eq!(error.code, ERROR_CODE);
     crate::test_filesystem::remove_directory_link(&journal);
+}
+
+#[tokio::test]
+async fn terminal_retirement_rejects_unknown_attempt_evidence_before_marker_removal() {
+    let verified = absent_snapshot(15_400).await;
+    let target = TempDir::new().unwrap();
+    let state_root = target.path().join("state");
+    let staged = verified
+        .stage_clean_restore(state_root.clone(), OkfKnowledgeStoragePolicy::default())
+        .await
+        .unwrap();
+    for _ in 0..5 {
+        staged.activate_next_for_test().await.unwrap();
+    }
+    let attempt = state_root.join(".control-installation-restore");
+    std::fs::write(attempt.join("foreign.json"), b"foreign").unwrap();
+
+    let error = staged.activate().await.unwrap_err();
+
+    assert_eq!(error.code, ERROR_CODE);
+    assert!(state_root.join(ACTIVE_STATE_RESTORE_MARKER).is_file());
+    assert!(attempt.join("control").is_dir());
+    assert!(attempt.join("host-projection").is_dir());
+    assert!(attempt.join("knowledge").is_dir());
+    assert!(attempt.join("observations").is_dir());
+    assert!(attempt.join("restore-coordinator").is_dir());
+}
+
+#[tokio::test]
+async fn terminal_retirement_rejects_attempt_descriptor_drift_before_deletion() {
+    let verified = absent_snapshot(15_500).await;
+    let target = TempDir::new().unwrap();
+    let state_root = target.path().join("state");
+    let staged = verified
+        .stage_clean_restore(state_root.clone(), OkfKnowledgeStoragePolicy::default())
+        .await
+        .unwrap();
+    for _ in 0..5 {
+        staged.activate_next_for_test().await.unwrap();
+    }
+    let attempt = state_root.join(".control-installation-restore");
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(attempt.join("attempt.json"))
+        .unwrap()
+        .write_all(b"tamper")
+        .unwrap();
+
+    let error = staged.activate().await.unwrap_err();
+
+    assert_eq!(error.code, ERROR_CODE);
+    assert!(state_root.join(ACTIVE_STATE_RESTORE_MARKER).is_file());
+    assert!(attempt.join("control").is_dir());
+    assert!(attempt.join("restore-coordinator").is_dir());
+}
+
+#[tokio::test]
+async fn terminal_retirement_rejects_missing_staging_before_marker_retirement() {
+    let verified = absent_snapshot(15_550).await;
+    let target = TempDir::new().unwrap();
+    let state_root = target.path().join("state");
+    let staged = verified
+        .stage_clean_restore(state_root.clone(), OkfKnowledgeStoragePolicy::default())
+        .await
+        .unwrap();
+    for _ in 0..5 {
+        staged.activate_next_for_test().await.unwrap();
+    }
+    let attempt = state_root.join(".control-installation-restore");
+    std::fs::remove_dir_all(attempt.join("knowledge")).unwrap();
+
+    let error = staged.activate().await.unwrap_err();
+
+    assert_eq!(error.code, ERROR_CODE);
+    assert!(state_root.join(ACTIVE_STATE_RESTORE_MARKER).is_file());
+    assert!(attempt.join("control").is_dir());
+    assert!(attempt.join("restore-coordinator").is_dir());
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test]
+async fn terminal_retirement_never_traverses_a_linked_staging_tree() {
+    let verified = absent_snapshot(15_600).await;
+    let target = TempDir::new().unwrap();
+    let state_root = target.path().join("state");
+    let staged = verified
+        .stage_clean_restore(state_root.clone(), OkfKnowledgeStoragePolicy::default())
+        .await
+        .unwrap();
+    for _ in 0..5 {
+        staged.activate_next_for_test().await.unwrap();
+    }
+    let outside = target.path().join("outside-retirement");
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("preserved"), b"preserved").unwrap();
+    let linked = state_root
+        .join(".control-installation-restore")
+        .join("linked-retirement");
+    crate::test_filesystem::create_directory_link(&outside, &linked);
+
+    let error = staged.activate().await.unwrap_err();
+
+    assert_eq!(error.code, ERROR_CODE);
+    assert!(state_root.join(ACTIVE_STATE_RESTORE_MARKER).is_file());
+    assert_eq!(
+        std::fs::read(outside.join("preserved")).unwrap(),
+        b"preserved"
+    );
+    crate::test_filesystem::remove_directory_link(&linked);
 }

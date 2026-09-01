@@ -264,7 +264,7 @@ async fn recover_journal_temporary(attempt: &Path, attempt_digest: &str) -> UseR
     sync_directory(attempt).await
 }
 
-async fn read_journal(
+pub(super) async fn read_journal(
     attempt: &Path,
     attempt_digest: &str,
 ) -> UseResult<Option<ControlInstallationRestoreActivation>> {
@@ -280,15 +280,7 @@ fn decode_journal(
     bytes: &[u8],
     attempt_digest: &str,
 ) -> UseResult<ControlInstallationRestoreActivation> {
-    let activation: ControlInstallationRestoreActivation = serde_json::from_slice(bytes)
-        .map_err(|_| restore_activation_invalid("The activation journal is invalid JSON."))?;
-    activation.validate(attempt_digest)?;
-    if activation.canonical_bytes()? != bytes {
-        return Err(restore_activation_invalid(
-            "The activation journal is not canonically encoded.",
-        ));
-    }
-    Ok(activation)
+    ControlInstallationRestoreActivation::decode_canonical(bytes, attempt_digest)
 }
 
 async fn read_exact_marker(

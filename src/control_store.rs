@@ -28,6 +28,12 @@ use model::{
 use payload_owner::{ControlPayloadOwnerRegistry, ControlPayloadSnapshotSession};
 use schema::{ControlStoreInspection, ControlStoreMetadata};
 
+pub(crate) fn validate_terminal_restore_receipt_blocking(
+    attempt: &std::path::Path,
+) -> UseResult<InstallationId> {
+    payload_owner::validate_terminal_receipt_blocking(attempt)
+}
+
 #[cfg(test)]
 use executor::MAX_QUEUED_CONTROL_STORE_OPERATIONS;
 #[cfg(test)]
@@ -379,6 +385,8 @@ mod payload_host_projection_tests;
 mod payload_installation_restore_activation_security_tests;
 #[cfg(test)]
 mod payload_installation_restore_activation_tests;
+#[cfg(test)]
+mod payload_installation_restore_retirement_security_tests;
 #[cfg(test)]
 mod payload_installation_restore_staging_security_tests;
 #[cfg(test)]

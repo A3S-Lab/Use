@@ -167,12 +167,17 @@ and reconstructs or verifies every candidate/live boundary. Journal and marker
 partials, each post-effect/pre-checkpoint boundary, the fifth checkpoint before
 retirement, and exit after marker deletion converge. Marker absence is accepted
 only with all five checkpoints; out-of-order live roots, ambiguous markers,
-links, rebinding, and evidence drift fail closed. Exact completed replay is
-read-only. A real-child-process matrix covers 13 top-level durable exits. This
+links, rebinding, and evidence drift fail closed. Exact completed replay performs
+no owner effect and can only resume bounded fixed-order retirement of the five
+link-free staging trees. A real-child-process matrix covers 18 top-level durable
+exits, including each retirement boundary. The canonical `attempt.json` and
+complete `activation.json` then remain as the exact installation-bound terminal
+receipt. Legacy backup and artifact reachability exclude only that two-file
+receipt; incomplete, extended, linked, or tampered evidence fails closed. This
 qualifies complete-set assembly, staging, ordered activation, checkpointing,
-marker retirement, and subprocess recovery. Production backup/restore wiring,
-retained-attempt lifecycle, and indivisible authority cutover remain required
-before this gate can close.
+marker and staging retirement, terminal receipt admission, and subprocess
+recovery. Production backup/restore wiring and indivisible authority cutover
+remain required before this gate can close.
 
 ## Non-negotiable cutover invariants
 

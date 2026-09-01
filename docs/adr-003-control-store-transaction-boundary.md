@@ -444,12 +444,16 @@ partials, each post-effect/pre-checkpoint boundary, the final checkpoint before
 marker retirement, and process exit after deletion converge deterministically.
 Marker absence is accepted only after all five checkpoints are durable;
 out-of-order live roots, ambiguous markers, rebinding, links, and evidence drift
-fail closed. Exact completed replay is read-only, and a real-child-process
-matrix covers 13 top-level durable exits. Production lifecycle conversion and
-dispatch, backup/restore wiring, retained-attempt lifecycle, indivisible
-reader/writer cutover, and deletion of legacy mutable stores remain open;
-activating or mirroring the kernel before that coordinated change would violate
-this decision.
+fail closed. Exact completed replay performs no owner effect and can only resume
+bounded fixed-order retirement of the five link-free staging trees. A
+real-child-process matrix covers 18 top-level durable exits, including every
+retirement boundary. The canonical `attempt.json` and complete `activation.json`
+then remain as the exact installation-bound terminal receipt. Legacy backup and
+artifact reachability exclude only that receipt; incomplete, extended, linked,
+or tampered evidence fails closed. Production lifecycle conversion and
+dispatch, backup/restore wiring, indivisible reader/writer cutover, and deletion
+of legacy mutable stores remain open; activating or mirroring the kernel before
+that coordinated change would violate this decision.
 
 The machine-checked
 [cutover inventory](control-store-cutover.md) now freezes every supported

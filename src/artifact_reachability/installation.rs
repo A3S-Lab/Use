@@ -131,6 +131,9 @@ async fn scan_installation(
         let name = entry_name(&entry, "installation state directory")?;
         let path = entry.path();
         let metadata = owned_metadata(&path, "installation state entry").await?;
+        if validate_terminal_complete_restore_receipt(&name, &path, &metadata, location).await? {
+            continue;
+        }
         if !installation_state_layout::supported_root_entry(&name, metadata.is_dir()) {
             return Err(inventory_invalid(
                 "An installation state root contains an unknown or mistyped state family.",
@@ -187,6 +190,40 @@ async fn scan_installation(
         facts.merge(lifecycle::scan(&root, location, budget).await?)?;
     }
     Ok(facts)
+}
+
+async fn validate_terminal_complete_restore_receipt(
+    name: &str,
+    path: &Path,
+    metadata: &std::fs::Metadata,
+    location: &InstallationLocation,
+) -> UseResult<bool> {
+    if name != installation_state_layout::CONTROL_INSTALLATION_RESTORE_ATTEMPT_DIRECTORY {
+        return Ok(false);
+    }
+    if a3s_use_core::metadata_is_link_or_reparse_point(metadata) || !metadata.is_dir() {
+        return Err(inventory_invalid(
+            "A complete restore terminal receipt is not an owned directory.",
+        ));
+    }
+    let worker_path = path.to_path_buf();
+    let installation = tokio::task::spawn_blocking(move || {
+        crate::control_store::validate_terminal_restore_receipt_blocking(&worker_path)
+    })
+    .await
+    .map_err(|error| {
+        inventory_invalid(format!(
+            "The complete restore terminal receipt worker did not complete: {error}"
+        ))
+    })?
+    .map_err(|error| {
+        inventory_invalid(format!(
+            "A complete Control Store restore attempt is not exact terminal evidence: {}",
+            error.message
+        ))
+    })?;
+    location.validate_identity(&installation)?;
+    Ok(true)
 }
 
 async fn scan_snapshot(path: &Path, location: &InstallationLocation) -> UseResult<SourceFacts> {

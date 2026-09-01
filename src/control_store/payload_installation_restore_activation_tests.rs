@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use a3s_use_extension::{StateMaintenanceLock, ACTIVE_STATE_RESTORE_MARKER};
 use tempfile::TempDir;
@@ -242,6 +242,10 @@ async fn complete_activation_checkpoints_every_owner_and_retires_the_marker() {
     assert!(state_root.join("plugin-host-manager").is_dir());
     assert!(state_root.join("knowledge").is_dir());
     assert!(state_root.join("operations").is_dir());
+    assert_eq!(
+        terminal_attempt_entries(&state_root),
+        ["activation.json", "attempt.json"]
+    );
     drop(staged);
 
     assert!(StateMaintenanceLock::new(&state_root)
@@ -369,6 +373,11 @@ async fn every_complete_restore_checkpoint_recovers_after_process_exit() {
         "restore-coordinator-effect",
         "restore-coordinator-checkpoint",
         "marker-retired",
+        "control-store-staging-retired",
+        "host-projection-staging-retired",
+        "knowledge-staging-retired",
+        "observations-staging-retired",
+        "restore-coordinator-staging-retired",
     ] {
         let state_root = temporary.path().join(format!("state-{checkpoint}"));
         let output = tokio::process::Command::new(std::env::current_exe().unwrap())
@@ -406,7 +415,20 @@ async fn every_complete_restore_checkpoint_recovers_after_process_exit() {
         assert_eq!(result.checkpoint_count_for_test(), 5);
         assert!(state_root.join("control.sqlite3").is_file());
         assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
+        assert_eq!(
+            terminal_attempt_entries(&state_root),
+            ["activation.json", "attempt.json"]
+        );
     }
+}
+
+fn terminal_attempt_entries(state_root: &Path) -> Vec<String> {
+    let mut entries = std::fs::read_dir(state_root.join(".control-installation-restore"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries
 }
 
 #[tokio::test]

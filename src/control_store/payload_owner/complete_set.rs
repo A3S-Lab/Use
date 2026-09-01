@@ -27,6 +27,9 @@ mod restore_activation_storage;
 mod restore_execution;
 mod restore_filesystem;
 mod restore_reopen;
+mod restore_retirement;
+
+pub(in crate::control_store) use restore_retirement::validate_terminal_receipt_blocking;
 
 #[cfg(test)]
 pub(in crate::control_store) use control_restore_result::ControlStoreRestoreResult;
