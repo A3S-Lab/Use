@@ -252,8 +252,18 @@ Task/opaque-Service readiness, Flow artifact, Knowledge projection, and
 Skill/UI content application evidence. The cutover observation advances
 publication before drain; post-cutover required failure remains pending for
 same-key reconciliation. Real owner ports and the dispatcher that produce
-those observations remain gate 3 work, as does production conversion into the
-reviewed inputs used by the inactive kernel.
+those observations now receive committed owner-shaped context derived inside
+the claim transaction. Static, lease, and Flow/Knowledge/Skill/UI owners see
+only one exact package incarnation and Grant; Runtime also sees the complete
+reviewed provider selection. Capability Index sees the candidate generation and
+the latest terminal preparation for every enabled selected surface, including
+retained observations across multi-root generations and optional degradation.
+Missing Grant coverage, nonterminal or teardown observations, and generation
+drift fail closed before provider I/O. Multi-package generation insertion now
+writes all selected package nodes before immediate-foreign-key dependency edges
+in the same transaction. Immutable-artifact verification, real adapter
+implementations, dispatcher composition, and production conversion into the
+reviewed inputs used by the inactive kernel remain gate 3 work.
 
 Production activation is blocked until all gates below are true:
 

@@ -1344,12 +1344,22 @@ its claim lease; timeout is durable unknown evidence, and cancellation or
 process exit requires explicit same-key reconciliation. Tests prove
 commit-before-effect, Store re-entry during provider I/O, exact-key recovery
 after an unobserved process exit, hung-provider bounding, and all seven owner
-routes. The dispatcher is not constructed by production lifecycle code and does
-not create a second authority beside the current JSON stores. Production
-lifecycle conversion still must feed authorization-v2 Grant evidence and
-compose real owner adapters that reconstruct their complete inputs only from
-committed Control authority and immutable artifacts, without conflating applied
-evidence with reviewed selection. The kernel now also qualifies the path-free
+routes. The claim transaction now also derives an owner-shaped committed
+context: package ports receive only the exact package selection, lifecycle,
+host, snapshot identity, and Grant; Runtime also receives its full reviewed
+provider selection; Capability Index receives the candidate generation plus the
+latest terminal preparation of every enabled selected surface across retained
+multi-root history. Optional rejection is explicit degradation, while missing
+Grant coverage, nonterminal or teardown state, and generation drift fail closed
+before owner I/O. The multi-root test also fixed generation insertion so all
+package nodes precede their immediate-foreign-key dependency edges within the
+same transaction. The dispatcher is not constructed by production lifecycle
+code and does not create a second authority beside the current JSON stores.
+Production lifecycle conversion still must feed authorization-v2 Grant evidence
+and compose real owner adapters that verify the exact immutable artifact and
+derive manifests and surface inputs only from it plus this committed context,
+without conflating applied evidence with reviewed selection. The kernel now
+also qualifies the path-free
 external-payload registration and
 snapshot-evidence boundary. Its five frozen owner identities and fixed backup
 policies are checked against the ACL cutover inventory. The global Artifact

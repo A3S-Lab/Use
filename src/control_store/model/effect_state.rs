@@ -82,6 +82,7 @@ impl ControlEffectClaim {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::control_store) struct ClaimedControlEffect {
     pub(in crate::control_store) intent: ControlEffectIntent,
+    pub(in crate::control_store) authority: ControlEffectAuthority,
     pub(in crate::control_store) attempt: u32,
     pub(in crate::control_store) claim_token: String,
     pub(in crate::control_store) lease_until_ms: u64,

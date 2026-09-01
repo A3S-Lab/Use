@@ -2,7 +2,8 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use a3s_use_core::{
-    InstallationId, PluginOperationAction, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
+    InstallationId, PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlannedProviderEvidence,
+    PluginOperationAction, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
 };
 use async_trait::async_trait;
 
@@ -23,9 +24,11 @@ use super::effect_port::{
     ControlSurfaceEffectRequest, ControlUiEffectPort,
 };
 use super::model::{
-    ClaimedControlEffect, ControlEffectIntent, ControlEffectKind, ControlEffectOutcome,
-    ControlEffectOwner, ControlEffectStatus, ControlEffectSubject, ControlOperationStatus,
-    ControlRuntimeBindingObservation,
+    ClaimedControlEffect, ControlCapabilityEffectAuthority, ControlCapabilityStatus,
+    ControlEffectAuthority, ControlEffectIntent, ControlEffectKind, ControlEffectOutcome,
+    ControlEffectOwner, ControlEffectStatus, ControlEffectSubject, ControlGeneration,
+    ControlOperationStatus, ControlPackageEffectAuthority, ControlProviderSelection,
+    ControlRuntimeBindingObservation, ControlRuntimeEffectAuthority,
 };
 use super::ControlStore;
 use crate::plugin_lifecycle::PluginLifecycleAction;
@@ -40,6 +43,7 @@ enum Disposition {
 struct RecordingPorts {
     dispositions: Mutex<VecDeque<Disposition>>,
     calls: Mutex<Vec<&'static str>>,
+    authority_generations: Mutex<Vec<u64>>,
     inspect_store: Option<ControlStore>,
     delay_ms: u64,
 }
@@ -49,6 +53,7 @@ impl RecordingPorts {
         Self {
             dispositions: Mutex::new(dispositions.into_iter().collect()),
             calls: Mutex::new(Vec::new()),
+            authority_generations: Mutex::new(Vec::new()),
             inspect_store: None,
             delay_ms: 0,
         }
@@ -64,11 +69,15 @@ impl RecordingPorts {
         self
     }
 
-    async fn before_call(&self, owner: &'static str) {
+    async fn before_call(&self, owner: &'static str, authority_generation: u64) {
         if let Some(store) = &self.inspect_store {
             store.inspect().await.unwrap();
         }
         self.calls.lock().unwrap().push(owner);
+        self.authority_generations
+            .lock()
+            .unwrap()
+            .push(authority_generation);
         if self.delay_ms > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(self.delay_ms)).await;
         }
@@ -95,15 +104,23 @@ impl RecordingPorts {
     fn calls(&self) -> Vec<&'static str> {
         self.calls.lock().unwrap().clone()
     }
+
+    fn authority_generations(&self) -> Vec<u64> {
+        self.authority_generations.lock().unwrap().clone()
+    }
 }
 
 #[async_trait]
 impl ControlCapabilityIndexEffectPort for RecordingPorts {
     async fn cutover(
         &self,
-        _request: &ControlCapabilityCutoverRequest,
+        request: &ControlCapabilityCutoverRequest,
     ) -> ControlEffectPortOutcome<ControlReceiptApplication> {
-        self.before_call("capability-index").await;
+        self.before_call(
+            "capability-index",
+            request.authority.generation.snapshot.generation,
+        )
+        .await;
         self.outcome(ControlReceiptApplication::new(digest('1')).unwrap())
     }
 }
@@ -112,9 +129,13 @@ impl ControlCapabilityIndexEffectPort for RecordingPorts {
 impl ControlInvocationLeaseEffectPort for RecordingPorts {
     async fn drain(
         &self,
-        _request: &ControlInvocationDrainRequest,
+        request: &ControlInvocationDrainRequest,
     ) -> ControlEffectPortOutcome<ControlReceiptApplication> {
-        self.before_call("invocation-leases").await;
+        self.before_call(
+            "invocation-leases",
+            request.authority.installation_generation,
+        )
+        .await;
         self.outcome(ControlReceiptApplication::new(digest('2')).unwrap())
     }
 }
@@ -125,7 +146,11 @@ impl ControlRuntimeEffectPort for RecordingPorts {
         &self,
         request: &ControlRuntimeEffectRequest,
     ) -> ControlEffectPortOutcome<ControlRuntimeApplication> {
-        self.before_call("runtime-provider").await;
+        self.before_call(
+            "runtime-provider",
+            request.authority.package.installation_generation,
+        )
+        .await;
         let binding = (request.surface.action == ControlSurfaceEffectAction::Prepare)
             .then_some(ControlRuntimeBindingObservation::Task);
         self.outcome(ControlRuntimeApplication::new(request, digest('3'), binding).unwrap())
@@ -140,7 +165,8 @@ macro_rules! surface_port {
                 &self,
                 request: &ControlSurfaceEffectRequest,
             ) -> ControlEffectPortOutcome<ControlSurfaceApplication> {
-                self.before_call($owner).await;
+                self.before_call($owner, request.authority.installation_generation)
+                    .await;
                 let materialization =
                     (request.action == ControlSurfaceEffectAction::Prepare).then(|| digest('4'));
                 self.outcome(
@@ -248,6 +274,7 @@ async fn dispatcher_enters_provider_only_after_commit_and_releases_store_resourc
         }
     ));
     assert_eq!(recording.calls(), vec!["knowledge-host"]);
+    assert_eq!(recording.authority_generations(), vec![1]);
     assert_eq!(
         store.effects(reviewed.operation_id()).await.unwrap()[0].status,
         ControlEffectStatus::Applied
@@ -503,6 +530,7 @@ async fn dispatcher_routes_every_owner_through_its_typed_port() {
 
     for effect in effects {
         let claimed = ClaimedControlEffect {
+            authority: routed_authority(&effect),
             intent: effect,
             attempt: 1,
             claim_token: "claim:routing".to_string(),
@@ -530,11 +558,90 @@ async fn dispatcher_routes_every_owner_through_its_typed_port() {
     );
 }
 
+fn routed_authority(intent: &ControlEffectIntent) -> ControlEffectAuthority {
+    let reviewed = operation("operation:routing-authority");
+    let candidate = transition(control_installation(), &reviewed);
+    let generation = ControlGeneration {
+        operation_id: reviewed.operation_id().to_string(),
+        snapshot_digest: candidate.snapshot.descriptor_digest().unwrap(),
+        snapshot: candidate.snapshot,
+        package_lifecycles: candidate.package_lifecycles,
+        grants: candidate.grants,
+        provider_selections: candidate.provider_selections,
+        capability: candidate.capability,
+        capability_status: ControlCapabilityStatus::Candidate,
+        capability_published_at_ms: None,
+        committed_at_ms: candidate.committed_at_ms,
+    };
+    if matches!(intent.owner, ControlEffectOwner::CapabilityIndex) {
+        return ControlEffectAuthority::CapabilityIndex(ControlCapabilityEffectAuthority {
+            generation,
+            materializations: Vec::new(),
+        });
+    }
+    let package = generation.snapshot.packages[0].clone();
+    let package_authority = ControlPackageEffectAuthority {
+        generation_operation_id: generation.operation_id,
+        installation_generation: intent.installation_generation,
+        snapshot_digest: generation.snapshot_digest,
+        committed_at_ms: generation.committed_at_ms,
+        host: generation.snapshot.host,
+        package,
+        lifecycle_generation: intent
+            .subject
+            .package_identity()
+            .map(|(_, generation)| generation)
+            .unwrap(),
+        grant: None,
+    };
+    match &intent.owner {
+        ControlEffectOwner::CapabilityIndex => unreachable!(),
+        ControlEffectOwner::InvocationLeases => {
+            ControlEffectAuthority::InvocationLeases(package_authority)
+        }
+        ControlEffectOwner::RuntimeProvider {
+            provider_id,
+            selection_digest,
+        } => ControlEffectAuthority::RuntimeProvider(ControlRuntimeEffectAuthority {
+            package: package_authority,
+            provider_selection: ControlProviderSelection {
+                evidence: PlannedProviderEvidence {
+                    surface: PlanQualifiedSurfaceRef {
+                        package_id: "acme/package".to_string(),
+                        surface: intent.subject.surface().unwrap().clone(),
+                    },
+                    provider_id: provider_id.clone(),
+                    provider_build_id: "runtime-build:test".to_string(),
+                    capability_digest: digest('b'),
+                    semantics_profile_digest: digest('c'),
+                    enforcement: PlanEnforcementProfile::Sandbox,
+                },
+                selection_digest: selection_digest.clone(),
+            },
+        }),
+        ControlEffectOwner::FlowHost => ControlEffectAuthority::FlowHost(package_authority),
+        ControlEffectOwner::KnowledgeHost => {
+            ControlEffectAuthority::KnowledgeHost(package_authority)
+        }
+        ControlEffectOwner::SkillHost => ControlEffectAuthority::SkillHost(package_authority),
+        ControlEffectOwner::UiHost => ControlEffectAuthority::UiHost(package_authority),
+    }
+}
+
 #[test]
 fn owner_application_types_reject_action_incompatible_evidence() {
     let request = surface_request(ControlSurfaceEffectAction::Stop, PluginSurfaceKind::Tool);
+    let runtime_intent = routed_effects(control_installation())
+        .into_iter()
+        .find(|intent| matches!(intent.owner, ControlEffectOwner::RuntimeProvider { .. }))
+        .unwrap();
+    let ControlEffectAuthority::RuntimeProvider(authority) = routed_authority(&runtime_intent)
+    else {
+        panic!("the Runtime route must carry Runtime authority");
+    };
     let runtime = ControlRuntimeEffectRequest {
         surface: request.clone(),
+        authority,
         provider_id: "runtime:test".to_string(),
         selection_digest: digest('d'),
     };
@@ -652,6 +759,13 @@ fn surface_request(
 ) -> ControlSurfaceEffectRequest {
     use super::effect_port::ControlEffectRequestIdentity;
 
+    let invocation = routed_effects(control_installation())
+        .into_iter()
+        .find(|intent| matches!(intent.owner, ControlEffectOwner::InvocationLeases))
+        .unwrap();
+    let ControlEffectAuthority::InvocationLeases(authority) = routed_authority(&invocation) else {
+        panic!("the invocation route must carry package authority");
+    };
     ControlSurfaceEffectRequest {
         identity: ControlEffectRequestIdentity {
             operation_id: "operation:application-shape".to_string(),
@@ -665,6 +779,7 @@ fn surface_request(
             attempt: 1,
             deadline_at_ms: 100,
         },
+        authority,
         package_id: "acme/package".to_string(),
         lifecycle_generation: 1,
         package_digest: digest('c'),

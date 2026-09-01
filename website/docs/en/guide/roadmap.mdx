@@ -123,10 +123,18 @@ Provider timeout must leave a fixed observation budget inside the claim lease
 and becomes unknown evidence; process exit, cancellation, expired claims, and
 ambiguity require explicit same-key reconciliation. Tests cover Store re-entry
 during provider I/O, all seven routes, hung-provider bounding, and exit after an
-unobserved effect.
-Production lifecycle code does not construct it, and real adapters must derive
-their complete inputs only from committed Control authority and immutable
-artifacts.
+unobserved effect. The same claim transaction now derives owner-shaped committed
+context. Package ports receive only the exact selection, lifecycle, host,
+snapshot identity, and Grant; Runtime also receives the complete reviewed
+provider selection. Capability Index receives the candidate generation and the
+latest terminal preparation for every enabled selected surface, including
+retained multi-root history and optional degradation. Missing Grant coverage,
+nonterminal or teardown state, and generation drift fail closed before owner
+I/O. Multi-package generation commit now inserts the complete node set before
+immediate-foreign-key dependency edges in the same transaction. Production
+lifecycle code does not construct this dispatcher, and real adapters must still
+verify exact immutable artifacts and derive manifests and surface inputs only
+from those bytes plus committed Control context.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact

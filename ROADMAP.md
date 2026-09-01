@@ -573,10 +573,22 @@ Cancellation, process exit after an accepted effect, an expired claim, and an
 unknown outcome all require explicit replay with the original committed
 idempotency key. Qualification tests prove commit-before-effect, Store re-entry
 during provider I/O, all owner routes, action/evidence compatibility, timeout
-bounding, and exact-key recovery. This is ADR-003 step-3 infrastructure only:
-production adapters still must derive complete manifest, Grant, Runtime, and
-capability-publication inputs from the immutable artifact plus the exact
-committed Control generation, never from legacy authority.
+bounding, and exact-key recovery. Every successful claim now also projects its
+owner-shaped authority inside the claim transaction. Package owners receive
+only the exact committed package selection, lifecycle incarnation, host,
+snapshot identity, and Grant; Runtime additionally receives the complete
+reviewed provider selection. Capability Index receives the complete candidate
+generation and one latest terminal preparation for every enabled selected
+surface, including retained multi-root surfaces from earlier generations and
+explicit optional degradation. Missing Grant coverage, a nonterminal latest
+observation, teardown masquerading as preparation, or generation drift fails
+closed before provider I/O. The multi-root qualification exposed and fixed an
+immediate-foreign-key ordering defect: generation commit now writes the complete
+package node set before dependency edges and surfaces in the same transaction.
+This is still ADR-003 step-3 infrastructure only. Production adapters must next
+open and verify the exact immutable package artifact, derive the manifest and
+surface inputs from it plus this committed context, and persist only typed
+observations; no adapter may read legacy authority.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do

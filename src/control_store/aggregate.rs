@@ -13,17 +13,19 @@ use super::export::ControlStoreExport;
 use super::model::{
     conflict_error, corruption_error, enforcement_profile_name, input_error, operation_action_name,
     parse_enforcement_profile, parse_operation_action, parse_surface_kind, surface_kind_name,
-    valid_machine_id, valid_sha256, validate_grant_selections, validate_provider_selections,
-    ClaimedControlEffect, ControlAppliedEffect, ControlAuthorizationEvidence,
-    ControlCapabilitySelection, ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent,
-    ControlEffectKind, ControlEffectObservation, ControlEffectOutcome, ControlEffectRecord,
-    ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
-    ControlOperationRecord, ControlOperationStatus, ControlPackageLifecycle,
-    ControlProjectionHistory, ControlProviderSelection, ControlStoreAuthority, ControlTransition,
-    ReviewedControlOperation, MAX_CONTROL_HISTORY_PACKAGES,
+    valid_error_code, valid_machine_id, valid_sha256, validate_grant_selections,
+    validate_provider_selections, ClaimedControlEffect, ControlAppliedEffect,
+    ControlAuthorizationEvidence, ControlCapabilitySelection, ControlCapabilityStatus,
+    ControlEffectClaim, ControlEffectIntent, ControlEffectKind, ControlEffectObservation,
+    ControlEffectOutcome, ControlEffectRecord, ControlEffectStatus, ControlEffectSubject,
+    ControlGeneration, ControlGrantSelection, ControlOperationRecord, ControlOperationStatus,
+    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderSelection,
+    ControlStoreAuthority, ControlTransition, ReviewedControlOperation,
+    MAX_CONTROL_HISTORY_PACKAGES,
 };
 use super::schema;
 
+mod effect_authority;
 mod generation;
 mod read;
 mod restore;
@@ -443,6 +445,8 @@ pub(super) fn claim_next_effect(
         .attempt
         .checked_add(1)
         .ok_or_else(|| conflict_error("The Control Store effect attempt count is exhausted."))?;
+    let authority =
+        effect_authority::derive_claim_authority(&transaction, installation, &operation, &effect)?;
     transaction
         .execute(
             "UPDATE effect_outbox
@@ -462,6 +466,7 @@ pub(super) fn claim_next_effect(
         .map_err(|error| mutation_error("claim Control Store outbox effect", error))?;
     let claimed = ClaimedControlEffect {
         intent: effect.intent,
+        authority,
         attempt,
         claim_token: claim.claim_token.clone(),
         lease_until_ms: claim.lease_until_ms,

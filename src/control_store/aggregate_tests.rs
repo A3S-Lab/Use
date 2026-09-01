@@ -17,16 +17,18 @@ use sha2::{Digest, Sha256};
 
 use super::model::{
     ControlAppliedEffect, ControlAppliedEffectEvidence, ControlCapabilitySelection,
-    ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent, ControlEffectKind,
-    ControlEffectObservation, ControlEffectOutcome, ControlEffectOwner, ControlEffectStatus,
-    ControlEffectSubject, ControlGeneration, ControlGrantSelection, ControlOperationStatus,
-    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderSelection,
-    ControlRuntimeBindingObservation, ControlSurfaceObservationState, ControlTransition,
-    ProjectedControlGeneration, ReviewedControlOperation,
+    ControlCapabilityStatus, ControlCapabilitySurfaceState, ControlEffectAuthority,
+    ControlEffectClaim, ControlEffectIntent, ControlEffectKind, ControlEffectObservation,
+    ControlEffectOutcome, ControlEffectOwner, ControlEffectStatus, ControlEffectSubject,
+    ControlGeneration, ControlGrantSelection, ControlOperationStatus, ControlPackageLifecycle,
+    ControlProjectionHistory, ControlProviderSelection, ControlRuntimeBindingObservation,
+    ControlSurfaceObservationState, ControlTransition, ProjectedControlGeneration,
+    ReviewedControlOperation,
 };
 use super::*;
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
+mod effect_authority;
 mod effect_fixtures;
 mod effect_observations;
 mod effects;
