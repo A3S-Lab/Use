@@ -301,11 +301,15 @@ the owner accepted no effect, blocks claims until its bounded durable
 not-before time, and then permits automatic same-key retry. Provider timeout is
 enforced by the dispatcher, must leave a fixed observation budget inside the
 claim lease, and becomes an unknown observation; it is never inferred to be a
-rejection. Cancellation, process exit
-between effect and observation, expired claim, and unknown acceptance converge
-only through explicit replay of the original idempotency key. Qualification
-tests also let a provider re-enter the Store during its call, proving no
-executor permit spans the I/O. The immutable Skill/UI port is now the first
+rejection. The provider runs in an owned task holding a reference to the same
+shared maintenance guard. Timeout or caller cancellation detaches the wait but
+cannot cancel that possibly accepted task; an exclusive restore remains fenced
+until the task actually completes. Process exit between effect and observation,
+expired claim, and unknown acceptance converge only through explicit replay of
+the original idempotency key. Qualification tests also let a provider re-enter
+the Store during its call, prove no executor permit spans the I/O, retain the
+fence across timeout and cancellation, and classify task panic as unknown. The
+immutable Skill/UI port is now the first
 concrete post-commit adapter. It reconstructs and revalidates its typed owner
 and original idempotency key from the owner-shaped committed request, acquires
 package evidence only through the verified Artifact Store lease, reads one

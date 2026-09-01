@@ -1358,12 +1358,15 @@ records owner-specific applied, deferred, rejected, or unknown evidence in a
 later transaction. A deferred effect cannot be reclaimed before its durable
 not-before time and is then retried automatically with the same key. A provider
 timeout must leave a fixed observation budget inside its claim lease; timeout
-is durable unknown evidence, and cancellation or process exit requires explicit
-same-key reconciliation. Tests prove
+is durable unknown evidence. Timeout or cancellation detaches only the wait,
+not the possibly accepted effect task: that task retains the same shared fence
+until it actually finishes. Process exit still requires explicit same-key
+reconciliation. Tests prove
 commit-before-effect, Store re-entry during provider I/O, exact-key recovery
 after an unobserved process exit, hung-provider bounding, and all seven owner
 routes. A concurrent whole-installation restore cannot acquire its exclusive
-maintenance fence until the provider observation is durable. The claim
+maintenance fence until the provider observation is durable and any detached
+in-process effect future has finished. The claim
 transaction now also derives an owner-shaped committed
 context: package ports receive only the exact package selection, lifecycle,
 host, snapshot identity, and Grant; Runtime also receives its full reviewed

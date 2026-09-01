@@ -125,11 +125,14 @@ Knowledge, Skill, or UI ports, and records a later owner-shaped observation.
 An owner-proven safe-no-effect deferral blocks claims until its durable
 not-before time and then retries only the original key without reconciliation.
 Provider timeout must leave a fixed observation budget inside the claim lease
-and becomes unknown evidence; process exit, cancellation, expired claims, and
-ambiguity require explicit same-key reconciliation. Tests cover Store re-entry
-during provider I/O, all seven routes, hung-provider bounding, and exit after an
-unobserved effect. A concurrent whole-installation restore cannot acquire its
-exclusive fence before the observation is durable. The same claim transaction now derives owner-shaped committed
+and becomes unknown evidence. Timeout or caller cancellation detaches only the
+wait; the possibly accepted owner task retains the same shared maintenance
+guard until it actually completes. Process exit, expired claims, and ambiguity
+require explicit same-key reconciliation. Tests cover Store re-entry during
+provider I/O, all seven routes, hung-provider bounding, task panic, cancelled
+waits, and exit after an unobserved effect. A concurrent whole-installation
+restore cannot acquire its exclusive fence before the observation is durable
+or while a detached in-process effect remains active. The same claim transaction now derives owner-shaped committed
 context. Package ports receive only the exact selection, lifecycle, host,
 snapshot identity, and Grant; Runtime also receives the complete reviewed
 provider selection. Capability Index receives the candidate generation and the

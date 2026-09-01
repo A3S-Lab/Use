@@ -577,12 +577,16 @@ a maximum-five-minute not-before time, blocks early claims, survives export and
 clean restore, and automatically retries only the original key when due. A hard
 provider timeout must leave a fixed observation budget inside the claim lease;
 timeout is recorded as unknown rather than being misclassified as rejection.
-Cancellation, process exit after an accepted effect, an expired claim, and an
-unknown outcome all require explicit replay with the original committed
-idempotency key. Qualification tests prove commit-before-effect, Store re-entry
-during provider I/O, all owner routes, action/evidence compatibility, timeout
-bounding, exact-key recovery, and that a concurrent restore cannot acquire its
-exclusive fence between claim and observation. Every successful claim now also
+Timeout and caller cancellation stop waiting but do not cancel the possibly
+accepted owner future; that detached task retains the same shared maintenance
+guard until it actually completes. Process exit after an accepted effect, an
+expired claim, and an unknown outcome all require explicit replay with the
+original committed idempotency key. Qualification tests prove
+commit-before-effect, Store re-entry during provider I/O, all owner routes,
+action/evidence compatibility, timeout bounding, task-panic classification,
+exact-key recovery, and that a concurrent restore cannot acquire its exclusive
+fence before observation or while a timed-out/cancelled effect remains in
+flight. Every successful claim now also
 projects its
 owner-shaped authority inside the claim transaction. Package owners receive
 only the exact committed package selection, lifecycle incarnation, host,

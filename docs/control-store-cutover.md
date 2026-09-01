@@ -74,8 +74,10 @@ permits automatic retry of the same key. A hard provider timeout must leave a
 fixed observation budget inside the claim lease and is recorded as unknown.
 The maintenance fence owns neither a database transaction nor an executor
 permit, but prevents an exclusive whole-installation restore from replacing
-Control and owner state before the observation is durable.
-Process exit, cancellation, expired claim, and
+Control and owner state before the observation is durable. Timeout and caller
+cancellation detach only the wait; the possibly accepted owner task continues
+to hold a reference to that fence until it actually completes. Process exit,
+expired claim, and
 ambiguous acceptance can resume only by explicitly reusing the committed
 idempotency key. Remaining production owner adapters and dispatcher
 composition remain part of the indivisible cutover; they may derive full inputs

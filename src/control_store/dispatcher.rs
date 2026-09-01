@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use a3s_use_core::{UseError, UseResult};
-use a3s_use_extension::StateMaintenanceLock;
+use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
 use sha2::{Digest, Sha256};
 
 use super::effect_port::{
@@ -78,9 +78,30 @@ impl ControlEffectDispatcher {
         // transaction or executor permit, so owner I/O remains outside the
         // transactional boundary while it cannot report into another restored
         // Control history.
-        let _maintenance = StateMaintenanceLock::new(&self.store.state_root)
-            .acquire_shared()
-            .await?;
+        let maintenance = Arc::new(
+            StateMaintenanceLock::new(&self.store.state_root)
+                .acquire_shared()
+                .await?,
+        );
+        // Once a claim may be committed, caller cancellation must not create
+        // a claim/effect/observation gap. The owned coordinator outlives this
+        // wait if its JoinHandle is dropped and retains the maintenance fence
+        // through its observation transaction.
+        let dispatcher = self.clone();
+        tokio::spawn(async move {
+            dispatcher
+                .dispatch_under_maintenance(request, maintenance)
+                .await
+        })
+        .await
+        .map_err(dispatch_task_error)?
+    }
+
+    async fn dispatch_under_maintenance(
+        &self,
+        request: ControlEffectDispatchRequest,
+        maintenance: Arc<StateMaintenanceGuard>,
+    ) -> UseResult<ControlEffectDispatchResult> {
         let now_ms = self.clock.now_ms()?;
         let lease_until_ms = now_ms
             .checked_add(request.lease_duration_ms)
@@ -99,13 +120,29 @@ impl ControlEffectDispatcher {
             return Ok(ControlEffectDispatchResult::Idle);
         };
 
+        // A timeout bounds the dispatcher's wait, not the external effect.
+        // Keep the in-flight future alive with its own reference to the same
+        // maintenance guard. If provider I/O or a blocking implementation
+        // outlives the wait, restore remains fenced until that future really
+        // finishes; dropping the JoinHandle below only detaches the task.
+        let effect_dispatcher = self.clone();
+        let effect_operation_id = request.operation_id.clone();
+        let effect_claim = claimed.clone();
+        let effect_maintenance = maintenance.clone();
+        let mut effect = tokio::spawn(async move {
+            let _maintenance = effect_maintenance;
+            effect_dispatcher
+                .apply_claimed(&effect_operation_id, &effect_claim)
+                .await
+        });
         let routed = match tokio::time::timeout(
             std::time::Duration::from_millis(request.provider_timeout_ms),
-            self.apply_claimed(&request.operation_id, &claimed),
+            &mut effect,
         )
         .await
         {
-            Ok(result) => result?,
+            Ok(Ok(result)) => result?,
+            Ok(Err(_)) => RoutedControlEffectOutcome::Unknown(task_failure(&claimed)?),
             Err(_) => RoutedControlEffectOutcome::Unknown(deadline_failure(&claimed)?),
         };
         let observed_at_ms = self.clock.now_ms()?;
@@ -135,14 +172,16 @@ impl ControlEffectDispatcher {
             retry_not_before_ms,
         };
         let observation_changed = self.store.record_effect_observation(observation).await?;
-        Ok(ControlEffectDispatchResult::Observed {
+        let result = ControlEffectDispatchResult::Observed {
             idempotency_key: claimed.intent.idempotency_key,
             sequence: claimed.intent.sequence,
             attempt: claimed.attempt,
             outcome,
             retry_not_before_ms,
             observation_changed,
-        })
+        };
+        drop(maintenance);
+        Ok(result)
     }
 
     pub(in crate::control_store) async fn apply_claimed(
@@ -482,6 +521,13 @@ fn dispatch_error(message: impl Into<String>) -> UseError {
     UseError::new("use.control_store.dispatch_invalid", message)
 }
 
+fn dispatch_task_error(_error: tokio::task::JoinError) -> UseError {
+    UseError::new(
+        "use.control_store.dispatch_task_failed",
+        "The owned Control effect coordinator task failed before returning a result.",
+    )
+}
+
 fn deadline_failure(claimed: &ClaimedControlEffect) -> UseResult<ControlEffectFailure> {
     const DOMAIN: &[u8] = b"a3s.use.control-effect-provider-timeout.v1\0";
     let mut digest = Sha256::new();
@@ -491,5 +537,17 @@ fn deadline_failure(claimed: &ClaimedControlEffect) -> UseResult<ControlEffectFa
     ControlEffectFailure::new(
         format!("sha256:{:x}", digest.finalize()),
         "provider.deadline_exceeded",
+    )
+}
+
+fn task_failure(claimed: &ClaimedControlEffect) -> UseResult<ControlEffectFailure> {
+    const DOMAIN: &[u8] = b"a3s.use.control-effect-provider-task-failed.v1\0";
+    let mut digest = Sha256::new();
+    digest.update(DOMAIN);
+    digest.update(claimed.intent.idempotency_key.as_bytes());
+    digest.update(claimed.attempt.to_be_bytes());
+    ControlEffectFailure::new(
+        format!("sha256:{:x}", digest.finalize()),
+        "provider.task_failed",
     )
 }
