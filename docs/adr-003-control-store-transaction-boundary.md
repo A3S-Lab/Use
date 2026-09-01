@@ -281,20 +281,25 @@ projection digests, and immutable Skill/UI content digests. Rejected and
 unknown outcomes cannot carry applied state and retain only bounded diagnostic
 evidence. The cutover application advances publication in its observation
 transaction; post-cutover required failures stay reconciliation-pending rather
-than inventing a rollback. Expired, unknown, or post-cutover rejected claims
-require an explicit reconciliation request and retain the same effect
-idempotency key, including after process restart. Completion and offline
-verification enforce commit-before-observation-before-terminal time ordering.
+than inventing a rollback. An owner-proven safe-no-effect result persists a
+bounded not-before time and becomes automatically eligible only with the same
+key. Expired, unknown, or post-cutover rejected claims require an explicit
+reconciliation request and retain that effect idempotency key, including after
+process restart. Completion and offline verification enforce
+commit-before-observation-before-terminal time ordering.
 
 The inactive kernel now includes a one-effect dispatcher that exercises this
 boundary without activating it. Claim is one short Control transaction. The
 dispatcher then releases both that transaction and the bounded executor before
 routing the exact committed identity through a separate typed Capability Index,
 invocation-lease, Runtime, Flow, Knowledge, Skill, or UI port. A second short
-transaction records owner-shaped applied evidence or explicit rejected/unknown
-failure evidence. Provider timeout is enforced by the dispatcher, must leave a
-fixed observation budget inside the claim lease, and becomes an unknown
-observation; it is never inferred to be a rejection. Cancellation, process exit
+transaction records owner-shaped applied evidence or explicit
+deferred/rejected/unknown failure evidence. A deferred observation proves that
+the owner accepted no effect, blocks claims until its bounded durable
+not-before time, and then permits automatic same-key retry. Provider timeout is
+enforced by the dispatcher, must leave a fixed observation budget inside the
+claim lease, and becomes an unknown observation; it is never inferred to be a
+rejection. Cancellation, process exit
 between effect and observation, expired claim, and unknown acceptance converge
 only through explicit replay of the original idempotency key. Qualification
 tests also let a provider re-enter the Store during its call, proving no
@@ -339,8 +344,9 @@ applied prepare evidence must match the retained observation and capability
 projection. The join runs against the temporary SQLite snapshot before the
 destination archive is written, so semantic failure publishes neither archive
 nor receipt. Removed or pruned applied payload requires a same-incarnation
-remove effect. Claimed and unknown effects remain reconciliation evidence and
-cannot mint desired state. The same owner now has a clean-target two-phase
+remove effect. Deferred effects remain safe-no-effect scheduling evidence;
+claimed and unknown effects remain reconciliation evidence. None can mint
+desired state. The same owner now has a clean-target two-phase
 restore boundary. Only an offline-verified snapshot can stream its exact
 database into a caller-owned directory beneath the target state root. Staging
 does not touch the live Knowledge root and re-audits the database plus the

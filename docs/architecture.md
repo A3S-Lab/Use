@@ -37,7 +37,8 @@ that constraint:
 4. External agents receive portable protocols and opaque references, while the
    host retains local paths, credentials, providers, and generation leases.
 5. Provider and device effects cannot join a local transaction, so durable
-   checkpoints must distinguish rejected, applied, and unknown outcomes.
+   checkpoints must distinguish applied, safe-no-effect deferred, rejected,
+   and unknown outcomes.
 6. Steady-state discovery and watch work must scale with changed generations,
    not with the total installed filesystem.
 
@@ -100,7 +101,7 @@ transaction, outbox, backup, and migration boundaries: the SQLite/WAL backend
 may be qualified before activation, but every authoritative reader switches as
 one cutover and live WAL files are never copied as backup payloads.
 The current private Control Store kernel qualifies an installation-bound
-schema-v9 aggregate, bounded blocking executor, typed transitions and outbox,
+schema-v10 aggregate, bounded blocking executor, typed transitions and outbox,
 and canonical offline-verifiable export plus staged restore on otherwise clean
 state. It persists each complete canonical reviewed Plan envelope and versioned
 authorization record, while relational columns remain validated projections of
@@ -128,7 +129,9 @@ relational projection commit together. Applied outcomes retain a canonical
 owner-specific descriptor that binds the exact intent to portable Runtime
 Task/opaque `gateway:` Service readiness, Flow artifact, Knowledge projection,
 Skill/UI content, Capability Index, or invocation-lease receipt evidence;
-rejected and unknown outcomes cannot carry applied state. The applied cutover
+deferred, rejected, and unknown outcomes cannot carry applied state. Deferred
+is valid only when the owner proves it accepted no effect and carries a bounded
+durable not-before time for automatic same-key retry. The applied cutover
 observation atomically retires the prior publication and advances the
 capability cursor before drain and teardown. A post-cutover required failure
 stays pending for explicit same-key reconciliation rather than rolling back a
@@ -137,11 +140,13 @@ visible generation, and completion cannot predate its observations.
 The inactive dispatcher now realizes the post-commit half of that protocol. It
 claims one durable effect, releases the database transaction and bounded worker,
 routes the exact identity through one of seven typed owner ports, and records a
-later applied, rejected, or unknown observation. Its enforced provider timeout
-leaves a fixed budget inside the claim lease and is classified as unknown,
-leaving time for the observation transaction. Cancellation, process exit after
-a possible effect, and expired or unknown claims require explicit replay with
-the same committed idempotency key. Qualification tests cover all routes, Store
+later applied, deferred, rejected, or unknown observation. A deferred effect
+blocks claims until its persisted not-before time, then becomes eligible for
+automatic retry with the same committed idempotency key. Its enforced provider
+timeout leaves a fixed budget inside the claim lease and is classified as
+unknown, leaving time for the observation transaction. Cancellation, process
+exit after a possible effect, and expired or unknown claims require explicit
+replay with that key. Qualification tests cover all routes, Store
 re-entry during owner I/O, a hung owner, and the unobserved-effect crash
 boundary.
 
@@ -165,7 +170,8 @@ state. Snapshot creation and offline verification both revalidate the exact
 bound Control export, require every retained incarnation to join its original
 prepare intent and committed OKF bundle, and compare applied observation and
 capability-projection evidence. Removed or missing applied data requires a
-same-incarnation remove effect; ambiguous claimed/unknown outcomes remain
+same-incarnation remove effect. Deferred outcomes remain safe-no-effect
+scheduling evidence, while ambiguous claimed/unknown outcomes remain
 reconciliation evidence only. An offline-verified Knowledge snapshot can also
 stage its exact SQLite database beneath a clean target state root without
 touching live payload state. Activation re-audits the candidate under the exact

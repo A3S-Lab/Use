@@ -281,16 +281,18 @@ fn validate_binding_origin(
         OkfKnowledgeObservedState::Promoted => match origin.status {
             ControlEffectStatus::Applied => validate_applied_preparation(origin, binding),
             ControlEffectStatus::Claimed | ControlEffectStatus::Unknown => Ok(()),
-            ControlEffectStatus::Pending | ControlEffectStatus::Rejected => {
-                Err(reconciliation_error(
-                    "Promoted Knowledge payload contradicts its Control preparation outcome.",
-                ))
-            }
+            ControlEffectStatus::Pending
+            | ControlEffectStatus::Deferred
+            | ControlEffectStatus::Rejected => Err(reconciliation_error(
+                "Promoted Knowledge payload contradicts its Control preparation outcome.",
+            )),
         },
         OkfKnowledgeObservedState::Staged | OkfKnowledgeObservedState::Failed => {
             if matches!(
                 origin.status,
-                ControlEffectStatus::Applied | ControlEffectStatus::Pending
+                ControlEffectStatus::Applied
+                    | ControlEffectStatus::Pending
+                    | ControlEffectStatus::Deferred
             ) {
                 Err(reconciliation_error(
                     "Nonterminal Knowledge payload contradicts its Control preparation outcome.",
@@ -300,7 +302,10 @@ fn validate_binding_origin(
             }
         }
         OkfKnowledgeObservedState::Removed => {
-            if origin.status == ControlEffectStatus::Pending {
+            if matches!(
+                origin.status,
+                ControlEffectStatus::Pending | ControlEffectStatus::Deferred
+            ) {
                 Err(reconciliation_error(
                     "Removed Knowledge payload has a Control preparation that never started.",
                 ))

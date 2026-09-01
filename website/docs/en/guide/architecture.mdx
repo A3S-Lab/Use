@@ -170,7 +170,7 @@ Embedding hosts implement `CognitivePackageLifecycleFactory` to supply their exa
 
 [ADR-003](https://github.com/A3S-Lab/Use/blob/main/docs/adr-003-control-store-transaction-boundary.md) freezes the next Control Store boundary: one per-installation mutable authority, no JSON/SQLite dual writes, and an outbox around provider effects that cannot join the local transaction.
 
-The inactive schema-v9 kernel now derives that complete outbox inventory from
+The inactive schema-v10 kernel now derives that complete outbox inventory from
 the reviewed Plan and committed generation. It prepares dependency surfaces
 before dependants, cuts over once, drains accepted calls, and retires surfaces
 in reverse order through typed owners. Tool and MCP effects bind the exact
@@ -184,8 +184,10 @@ pending for same-key reconciliation instead of rolling back visible state.
 The inactive one-effect dispatcher now commits a claim, releases the SQLite
 transaction and bounded executor before owner I/O, routes the exact identity
 through separate Capability Index, invocation-lease, Runtime, Flow, Knowledge,
-Skill, or UI ports, and records a later applied, rejected, or unknown
-observation. Provider timeout leaves a fixed observation budget inside the
+Skill, or UI ports, and records a later applied, deferred, rejected, or unknown
+observation. Deferred is reserved for owner-proven safe-no-effect outcomes; its
+bounded durable not-before time blocks early claims and then permits automatic
+same-key retry. Provider timeout leaves a fixed observation budget inside the
 claim lease and becomes unknown evidence; cancellation, process exit after a
 possible effect, expired claims, and ambiguity require explicit replay of the
 committed key. Production lifecycle still does not construct it. Real adapters
@@ -204,8 +206,9 @@ snapshot creation and offline verification require the exact bound Control
 export. Every retained Knowledge incarnation must join its original prepare
 intent and committed OKF bundle; applied observation/projection evidence must
 match, and removed or missing applied payload needs the matching remove effect.
-Claimed and unknown outcomes remain reconciliation evidence, never desired
-state. An offline-verified Knowledge snapshot can now stage its exact database
+Deferred outcomes remain safe-no-effect scheduling evidence; claimed and
+unknown outcomes remain reconciliation evidence. None is desired state. An
+offline-verified Knowledge snapshot can now stage its exact database
 under a clean target state root without changing live payload state. Activation
 requires that target's exclusive maintenance fence, re-audits the database and
 inventory, rejects unowned, existing, or ambiguous state, and publishes by one

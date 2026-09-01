@@ -24,6 +24,7 @@ pub(super) use provider::*;
 pub(super) const MAX_CONTROL_EFFECTS: usize = 4096;
 pub(super) const MAX_CONTROL_GRANTS: usize = 4096;
 const MAX_EFFECT_LEASE_MS: u64 = 5 * 60 * 1000;
+pub(in crate::control_store) const MAX_EFFECT_DEFERRAL_MS: u64 = 5 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

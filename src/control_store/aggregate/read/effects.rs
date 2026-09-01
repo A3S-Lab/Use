@@ -21,7 +21,7 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                     o.claim_owner, o.claim_token, o.lease_until_ms, o.application_json,
                     o.evidence_digest, o.error_code, o.observed_at_ms, i.scope_kind, i.scope_id,
                     p.plan_digest, p.action, p.expected_generation,
-                    p.expected_capability_generation
+                    p.expected_capability_generation, o.retry_not_before_ms
              FROM lifecycle_checkpoint c
              JOIN effect_outbox o
                ON o.operation_id = c.operation_id AND o.sequence = c.sequence
@@ -61,6 +61,7 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                 row.get::<_, String>(25)?,
                 row.get::<_, i64>(26)?,
                 row.get::<_, i64>(27)?,
+                row.get::<_, Option<i64>>(28)?,
             ))
         })
         .map_err(|error| schema::sqlite_error("query Control Store effects", error))?
@@ -210,6 +211,7 @@ pub(in crate::control_store::aggregate) fn read_effects_from(
                 evidence_digest: row.19,
                 error_code: row.20,
                 observed_at_ms: row.21.map(from_i64).transpose()?,
+                retry_not_before_ms: row.28.map(from_i64).transpose()?,
             })
         })
         .collect()

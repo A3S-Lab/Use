@@ -7,6 +7,7 @@ use super::*;
 pub(in crate::control_store) enum ControlEffectStatus {
     Pending,
     Claimed,
+    Deferred,
     Applied,
     Rejected,
     Unknown,
@@ -17,6 +18,7 @@ impl ControlEffectStatus {
         match self {
             Self::Pending => "pending",
             Self::Claimed => "claimed",
+            Self::Deferred => "deferred",
             Self::Applied => "applied",
             Self::Rejected => "rejected",
             Self::Unknown => "unknown",
@@ -27,6 +29,7 @@ impl ControlEffectStatus {
         match value {
             "pending" => Ok(Self::Pending),
             "claimed" => Ok(Self::Claimed),
+            "deferred" => Ok(Self::Deferred),
             "applied" => Ok(Self::Applied),
             "rejected" => Ok(Self::Rejected),
             "unknown" => Ok(Self::Unknown),
@@ -52,6 +55,7 @@ pub(in crate::control_store) struct ControlEffectRecord {
     pub(in crate::control_store) evidence_digest: Option<String>,
     pub(in crate::control_store) error_code: Option<String>,
     pub(in crate::control_store) observed_at_ms: Option<u64>,
+    pub(in crate::control_store) retry_not_before_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +95,7 @@ pub(in crate::control_store) struct ClaimedControlEffect {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::control_store) enum ControlEffectOutcome {
     Applied,
+    Deferred,
     Rejected,
     Unknown,
 }
@@ -99,6 +104,7 @@ impl ControlEffectOutcome {
     pub(in crate::control_store) const fn status(self) -> ControlEffectStatus {
         match self {
             Self::Applied => ControlEffectStatus::Applied,
+            Self::Deferred => ControlEffectStatus::Deferred,
             Self::Rejected => ControlEffectStatus::Rejected,
             Self::Unknown => ControlEffectStatus::Unknown,
         }
@@ -115,6 +121,7 @@ pub(in crate::control_store) struct ControlEffectObservation {
     pub(in crate::control_store) failure_evidence_digest: Option<String>,
     pub(in crate::control_store) error_code: Option<String>,
     pub(in crate::control_store) observed_at_ms: u64,
+    pub(in crate::control_store) retry_not_before_ms: Option<u64>,
 }
 
 impl ControlEffectObservation {
@@ -127,6 +134,19 @@ impl ControlEffectObservation {
                         && application.canonical_bytes().is_ok()
                 }) && self.failure_evidence_digest.is_none()
                     && self.error_code.is_none()
+                    && self.retry_not_before_ms.is_none()
+            }
+            ControlEffectOutcome::Deferred => {
+                self.application.is_none()
+                    && self
+                        .failure_evidence_digest
+                        .as_deref()
+                        .is_some_and(valid_sha256)
+                    && self.error_code.as_deref().is_some_and(valid_error_code)
+                    && self.retry_not_before_ms.is_some_and(|retry| {
+                        retry > self.observed_at_ms
+                            && retry - self.observed_at_ms <= MAX_EFFECT_DEFERRAL_MS
+                    })
             }
             ControlEffectOutcome::Rejected | ControlEffectOutcome::Unknown => {
                 self.application.is_none()
@@ -135,6 +155,7 @@ impl ControlEffectObservation {
                         .as_deref()
                         .is_some_and(valid_sha256)
                     && self.error_code.as_deref().is_some_and(valid_error_code)
+                    && self.retry_not_before_ms.is_none()
             }
         };
         if !valid_machine_id(&self.operation_id)
@@ -166,7 +187,9 @@ impl ControlEffectObservation {
                     application.descriptor_digest()?,
                 ))
             }
-            ControlEffectOutcome::Rejected | ControlEffectOutcome::Unknown => Ok((
+            ControlEffectOutcome::Deferred
+            | ControlEffectOutcome::Rejected
+            | ControlEffectOutcome::Unknown => Ok((
                 None,
                 self.failure_evidence_digest.clone().ok_or_else(|| {
                     input_error("A failed Control Store effect omitted diagnostic evidence.")

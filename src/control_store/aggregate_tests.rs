@@ -23,7 +23,7 @@ use super::model::{
     ControlGeneration, ControlGrantSelection, ControlOperationStatus, ControlPackageLifecycle,
     ControlProjectionHistory, ControlProviderSelection, ControlRuntimeBindingObservation,
     ControlSurfaceObservationState, ControlTransition, ProjectedControlGeneration,
-    ReviewedControlOperation,
+    ReviewedControlOperation, MAX_EFFECT_DEFERRAL_MS,
 };
 use super::*;
 use crate::plugin_lifecycle::PluginLifecycleAction;
@@ -294,6 +294,128 @@ async fn outbox_lease_unknown_reconciliation_and_terminal_replay_are_exact() {
             .capability_status
             == ControlCapabilityStatus::Published
     );
+}
+
+#[tokio::test]
+async fn safe_no_effect_deferral_retries_the_same_key_without_reconciliation() {
+    let (temporary, store) = initialized_store().await;
+    let reviewed = operation("operation:effects:deferred");
+    store.register_operation(reviewed.clone()).await.unwrap();
+    let candidate = transition(control_installation(), &reviewed);
+    store.commit_transition(candidate.clone()).await.unwrap();
+
+    let first = store
+        .claim_next_effect(claim(
+            reviewed.operation_id(),
+            "claim:deferred:first",
+            30,
+            60,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let deferred = ControlEffectObservation {
+        operation_id: reviewed.operation_id().to_string(),
+        idempotency_key: first.intent.idempotency_key.clone(),
+        claim_token: first.claim_token.clone(),
+        outcome: ControlEffectOutcome::Deferred,
+        application: None,
+        failure_evidence_digest: Some(digest('e')),
+        error_code: Some("provider.temporarily_unavailable".to_string()),
+        observed_at_ms: 35,
+        retry_not_before_ms: Some(50),
+    };
+    let mut invalid_deferral = deferred.clone();
+    invalid_deferral.retry_not_before_ms = Some(invalid_deferral.observed_at_ms);
+    assert_eq!(
+        store
+            .record_effect_observation(invalid_deferral)
+            .await
+            .unwrap_err()
+            .code,
+        "use.control_store.input_invalid"
+    );
+    let mut unbounded_deferral = deferred.clone();
+    unbounded_deferral.retry_not_before_ms =
+        Some(unbounded_deferral.observed_at_ms + MAX_EFFECT_DEFERRAL_MS + 1);
+    assert_eq!(
+        store
+            .record_effect_observation(unbounded_deferral)
+            .await
+            .unwrap_err()
+            .code,
+        "use.control_store.input_invalid"
+    );
+    assert!(store
+        .record_effect_observation(deferred.clone())
+        .await
+        .unwrap());
+    assert!(!store.record_effect_observation(deferred).await.unwrap());
+
+    let effect = &store.effects(reviewed.operation_id()).await.unwrap()[0];
+    assert_eq!(effect.status, ControlEffectStatus::Deferred);
+    assert_eq!(effect.attempt, 1);
+    assert_eq!(effect.retry_not_before_ms, Some(50));
+    assert_eq!(
+        store
+            .operation(reviewed.operation_id())
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        ControlOperationStatus::EffectsPending
+    );
+    let export = store.export().await.unwrap();
+    store.verify_export(export.clone()).await.unwrap();
+    let mut tampered: super::export::ControlStoreExport = serde_json::from_slice(&export).unwrap();
+    tampered.authority.effects[0].retry_not_before_ms = Some(35 + MAX_EFFECT_DEFERRAL_MS + 1);
+    assert_eq!(
+        store
+            .verify_export(canonical_json(&tampered))
+            .await
+            .unwrap_err()
+            .code,
+        "use.control_store.export_invalid"
+    );
+    let restored = ControlStore::new(
+        temporary.path().join("restored-state"),
+        control_installation(),
+    )
+    .unwrap();
+    restored.restore(export).await.unwrap();
+    let restored_effect = &restored.effects(reviewed.operation_id()).await.unwrap()[0];
+    assert_eq!(restored_effect.status, ControlEffectStatus::Deferred);
+    assert_eq!(restored_effect.retry_not_before_ms, Some(50));
+
+    assert!(restored
+        .claim_next_effect(claim(
+            reviewed.operation_id(),
+            "claim:deferred:early",
+            49,
+            70,
+            true,
+        ))
+        .await
+        .unwrap()
+        .is_none());
+
+    let retried = restored
+        .claim_next_effect(claim(
+            reviewed.operation_id(),
+            "claim:deferred:retry",
+            50,
+            80,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retried.intent.idempotency_key, first.intent.idempotency_key);
+    assert_eq!(retried.attempt, 2);
+    let claimed = &restored.effects(reviewed.operation_id()).await.unwrap()[0];
+    assert_eq!(claimed.status, ControlEffectStatus::Claimed);
+    assert_eq!(claimed.retry_not_before_ms, None);
 }
 
 #[tokio::test]

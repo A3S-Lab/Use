@@ -65,9 +65,12 @@ offline verifier, and restore contract where its backup policy requires one.
 The inactive one-effect dispatcher now qualifies the transaction-to-provider
 boundary. It commits a claim, releases the SQLite transaction and bounded
 executor, routes the exact identity through one of seven typed owner ports, and
-records applied, rejected, or unknown evidence in a later transaction. A hard
-provider timeout must leave a fixed observation budget inside the claim lease
-and is recorded as unknown. Process exit, cancellation, expired claim, and
+records applied, deferred, rejected, or unknown evidence in a later
+transaction. Deferred is allowed only when the owner proves that no effect was
+accepted; its bounded durable not-before time blocks early claims and then
+permits automatic retry of the same key. A hard provider timeout must leave a
+fixed observation budget inside the claim lease and is recorded as unknown.
+Process exit, cancellation, expired claim, and
 ambiguous acceptance can resume only by explicitly reusing the committed
 idempotency key. Production owner adapters and dispatcher composition remain
 part of the indivisible cutover; they may derive full inputs only from committed
@@ -85,8 +88,9 @@ absence is recorded as zero files without creating live state. The adapter now
 also verifies the exact bound Control export and joins each retained lifecycle
 incarnation to its prepare intent, committed OKF bundle, applied observation
 and projection evidence, and—when removed or pruned—the matching remove
-effect. Claimed and unknown effects remain explicit ambiguity, not payload
-authority. The same verified snapshot can now stage an exact state-root-local
+effect. Deferred effects remain safe-no-effect scheduling evidence; claimed and
+unknown effects remain explicit ambiguity. None is payload authority. The same
+verified snapshot can now stage an exact state-root-local
 database candidate without changing the live payload and activate it only into
 a clean target under the exact exclusive maintenance fence. Candidate and
 inventory drift, linked paths, unowned live-layout entries, foreign guards,
@@ -200,8 +204,10 @@ remain required before this gate can close.
   and device effects execute only after commit and never while a database
   transaction or store-executor permit is held.
 - Applied outcomes retain canonical owner-specific evidence bound to the exact
-  idempotency identity and intent. Rejected and unknown outcomes cannot carry
-  applied state; ambiguity cannot mint a replacement effect.
+  idempotency identity and intent. Deferred, rejected, and unknown outcomes
+  cannot carry applied state; ambiguity cannot mint a replacement effect.
+  Deferred requires proof that no effect was accepted and can retry only the
+  same key after its bounded durable not-before time.
 - Recording the exact applied capability-cutover observation retires the prior
   publication, publishes the candidate, and advances the capability cursor in
   one transaction. Later drain or teardown failure cannot roll that cursor

@@ -462,7 +462,8 @@ Implementation evidence (2026-08-30; exit gate passed):
   constraints.
 - [ ] Use an outbox/checkpoint boundary for provider effects. Never hold a
   database transaction across Runtime, Gateway, Flow, filesystem, network, or
-  device I/O; reconcile idempotent, rejected, and unknown outcomes explicitly.
+  device I/O; retry owner-proven safe-no-effect deferrals automatically with
+  the same key, and reconcile rejected or unknown outcomes explicitly.
 - [ ] Derive backup/restore inventory from the Control Store schema and
   registered external payload owners instead of maintaining a second manual
   allowlist that can drift from the state model.
@@ -547,9 +548,12 @@ owner-specific application descriptor, not a caller-selected success digest.
 It binds the exact effect identity to Capability Index or invocation-lease
 receipts, the reviewed Runtime selection and portable Task/opaque `gateway:`
 Service readiness evidence, or Flow artifact, Knowledge projection, and
-Skill/UI content digests. Rejected and unknown outcomes retain diagnostic
-evidence only. An applied capability-cutover observation atomically retires the
-prior publication, publishes the candidate, and advances the capability cursor
+Skill/UI content digests. Deferred, rejected, and unknown outcomes retain
+diagnostic evidence only. Deferred is allowed only when the owner proves that
+it accepted no effect; a bounded durable not-before time then permits automatic
+same-key retry without reconciliation. An applied capability-cutover
+observation atomically retires the prior publication, publishes the candidate,
+and advances the capability cursor
 before drain or teardown. A required failure after that boundary remains
 effects-pending for explicit same-key reconciliation and cannot roll back the
 published generation; terminal completion must follow every observation.
@@ -566,8 +570,10 @@ The inactive post-commit dispatcher now claims one durable effect at a time and
 leaves both the SQLite transaction and bounded executor before owner I/O. Seven
 separate typed ports cover Capability Index, invocation leases, Runtime, Flow,
 Knowledge, Skill, and UI; each can return only owner-shaped application evidence
-or an explicit rejected/unknown failure. A hard provider timeout must leave a
-fixed observation budget inside the claim lease;
+or an explicit deferred/rejected/unknown failure. A deferred observation binds
+a maximum-five-minute not-before time, blocks early claims, survives export and
+clean restore, and automatically retries only the original key when due. A hard
+provider timeout must leave a fixed observation budget inside the claim lease;
 timeout is recorded as unknown rather than being misclassified as rejection.
 Cancellation, process exit after an accepted effect, an expired claim, and an
 unknown outcome all require explicit replay with the original committed
@@ -618,9 +624,10 @@ offline verification now also require the exact canonical Control export named
 by the binding. Every retained Knowledge lifecycle incarnation must map to its
 originating prepare intent and committed OKF bundle. Applied prepare evidence
 must match the retained observation and capability projection; removed or
-missing applied payload must have a same-incarnation remove effect. Claimed and
-unknown outcomes remain explicit reconciliation evidence and never select
-desired state. This code remains inactive and does not replace the legacy path
+missing applied payload must have a same-incarnation remove effect. Deferred
+outcomes prove no owner effect and remain scheduling evidence; claimed and
+unknown outcomes remain explicit reconciliation evidence. None selects desired
+state. This code remains inactive and does not replace the legacy path
 scanner. An offline-verified Knowledge owner snapshot can now stage its exact
 SQLite database into a caller-owned directory beneath the target state root,
 re-audit the staged database and canonical binding/selection inventory, and

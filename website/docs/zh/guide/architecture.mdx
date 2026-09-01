@@ -155,7 +155,7 @@ Embedding host 实现 `CognitivePackageLifecycleFactory`，提供精确的 Runti
 
 [ADR-003](https://github.com/A3S-Lab/Use/blob/main/docs/adr-003-control-store-transaction-boundary.md) 冻结了下一阶段的 Control Store 边界：每个安装只有一个可变权威，不允许 JSON/SQLite 双写，并通过 outbox 隔离无法加入本地事务的 provider 副作用。
 
-未启用的 schema-v9 内核现已从 reviewed Plan 与已提交 generation 推导完整 outbox
+未启用的 schema-v10 内核现已从 reviewed Plan 与已提交 generation 推导完整 outbox
 inventory：依赖 surface 先于 dependant 准备，只切换一次 capability，随后排空已接受调用，
 再通过类型化 owner 反向退休 surface。Tool 与 MCP effect 绑定精确的 reviewed Runtime
 selection；package state、Grant、lifecycle identity 与 provider selection 继续留在聚合事务内，
@@ -165,8 +165,9 @@ invocation lease、Runtime Task/不透明 Service readiness、Flow artifact、Kn
 publication；之后的必需 effect 失败会保留为使用相同 key 显式 reconciliation 的 pending 状态，
 而不会回滚已可见 generation。未启用的单 effect dispatcher 现在会先提交 claim，在 owner I/O 前释放
 SQLite 事务与有界 executor，再把精确 identity 路由到彼此独立的 Capability Index、invocation lease、
-Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后记录 applied、rejected 或 unknown observation。
-Provider timeout 必须在 claim lease 内保留固定的 observation 预算并作为 unknown evidence；取消、
+Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后记录 applied、deferred、rejected 或 unknown observation。
+Deferred 只用于 owner 已证明未接受任何 effect 的结果；有界、持久化的 not-before 时间会阻止提前 claim，
+并在到期后允许自动复用原 key。Provider timeout 必须在 claim lease 内保留固定的 observation 预算并作为 unknown evidence；取消、
 可能已产生 effect 后的进程退出、过期 claim 与含糊结果都必须显式重放已提交 key。生产 lifecycle
 仍不会构造它；真实 adapter 的完整 manifest、Grant、Runtime 与 capability 输入只能来自已提交
 Control authority 与 immutable artifact。
@@ -178,8 +179,9 @@ Knowledge owner 是首个已验收 adapter：它可以生成并离线复验有�
 binding/selection inventory；数据库缺失时则记录零文件 manifest，且不创建 live state。实时 snapshot
 创建与离线验证都会要求 binding 指定的精确 Control export。每个保留的 Knowledge incarnation 必须关联
 其原始 prepare intent 与已提交 OKF bundle；applied observation/projection evidence 必须一致，而已删除或
-缺失的 applied payload 必须存在对应 remove effect。Claimed 与 unknown outcome 只保留为 reconciliation
-evidence，不能选择 desired state。离线验证通过的 Knowledge snapshot 现在可以把精确数据库暂存到
+缺失的 applied payload 必须存在对应 remove effect。Deferred outcome 只保留为 safe-no-effect 调度证据；
+claimed 与 unknown outcome 只保留为 reconciliation evidence，三者都不能选择 desired state。
+离线验证通过的 Knowledge snapshot 现在可以把精确数据库暂存到
 clean target 的 state root 下，且不修改 live payload。激活必须持有该 target 的排他 maintenance fence，
 重新审计数据库与 inventory，拒绝非 owner、已有或含糊状态，并通过一次原子 rename 发布无路径结果；
 仅在保留同一个 staged attempt 与 fence 时，重试才是幂等的。planning-and-diagnostic observation owner

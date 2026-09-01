@@ -136,6 +136,7 @@ pub(super) async fn seed_control_knowledge_with_evidence(
             failure_evidence_digest: None,
             error_code: None,
             observed_at_ms: wall_clock_ms(),
+            retry_not_before_ms: None,
         })
         .await
         .unwrap();
@@ -208,6 +209,7 @@ pub(super) async fn remove_control_knowledge(
                 failure_evidence_digest: None,
                 error_code: None,
                 observed_at_ms,
+                retry_not_before_ms: None,
             }
         } else {
             fixture_observation(
@@ -315,6 +317,7 @@ async fn apply_operation_with_retained_knowledge(
                 failure_evidence_digest: None,
                 error_code: None,
                 observed_at_ms: effect_clock_ms + 1,
+                retry_not_before_ms: None,
             }
         } else {
             fixture_observation(

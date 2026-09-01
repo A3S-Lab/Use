@@ -411,6 +411,16 @@ pub(super) fn claim_next_effect(
         return Ok(None);
     };
     match effect.status {
+        ControlEffectStatus::Deferred
+            if effect
+                .retry_not_before_ms
+                .is_some_and(|not_before| claim.now_ms < not_before) =>
+        {
+            transaction.commit().map_err(|error| {
+                schema::sqlite_error("finish deferred Control Store claim", error)
+            })?;
+            return Ok(None);
+        }
         ControlEffectStatus::Claimed
             if effect
                 .lease_until_ms
@@ -432,6 +442,7 @@ pub(super) fn claim_next_effect(
             ));
         }
         ControlEffectStatus::Pending
+        | ControlEffectStatus::Deferred
         | ControlEffectStatus::Claimed
         | ControlEffectStatus::Unknown
         | ControlEffectStatus::Rejected => {}
@@ -453,7 +464,8 @@ pub(super) fn claim_next_effect(
              SET status = 'claimed', attempt = ?2, claim_owner = ?3,
                  claim_token = ?4, lease_until_ms = ?5,
                  application_json = NULL, evidence_digest = NULL,
-                 error_code = NULL, observed_at_ms = NULL
+                 error_code = NULL, observed_at_ms = NULL,
+                 retry_not_before_ms = NULL
              WHERE idempotency_key = ?1",
             params![
                 effect.intent.idempotency_key,
@@ -521,7 +533,10 @@ pub(super) fn record_effect_observation(
     let (application_json, evidence_digest) = observation.evidence_for(&current.intent)?;
     if matches!(
         current.status,
-        ControlEffectStatus::Applied | ControlEffectStatus::Rejected | ControlEffectStatus::Unknown
+        ControlEffectStatus::Deferred
+            | ControlEffectStatus::Applied
+            | ControlEffectStatus::Rejected
+            | ControlEffectStatus::Unknown
     ) {
         if current.status == observation.outcome.status()
             && current.claim_token.as_deref() == Some(&observation.claim_token)
@@ -529,6 +544,7 @@ pub(super) fn record_effect_observation(
             && current.evidence_digest.as_deref() == Some(&evidence_digest)
             && current.error_code == observation.error_code
             && current.observed_at_ms == Some(observation.observed_at_ms)
+            && current.retry_not_before_ms == observation.retry_not_before_ms
         {
             transaction.commit().map_err(|error| {
                 schema::sqlite_error("finish Control Store observation replay", error)
@@ -553,7 +569,7 @@ pub(super) fn record_effect_observation(
         .execute(
             "UPDATE effect_outbox
              SET status = ?2, application_json = ?3, evidence_digest = ?4,
-                 error_code = ?5, observed_at_ms = ?6
+                 error_code = ?5, observed_at_ms = ?6, retry_not_before_ms = ?7
              WHERE idempotency_key = ?1 AND status = 'claimed'",
             params![
                 observation.idempotency_key,
@@ -562,6 +578,7 @@ pub(super) fn record_effect_observation(
                 evidence_digest,
                 observation.error_code,
                 to_i64(observation.observed_at_ms)?,
+                observation.retry_not_before_ms.map(to_i64).transpose()?,
             ],
         )
         .map_err(|error| mutation_error("record Control Store outbox observation", error))?;

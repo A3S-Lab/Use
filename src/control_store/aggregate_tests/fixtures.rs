@@ -520,9 +520,15 @@ pub(in crate::control_store) fn observation(
             .then(|| application(intent, seed)),
         failure_evidence_digest: (!matches!(outcome, ControlEffectOutcome::Applied))
             .then(|| digest(seed)),
-        error_code: (!matches!(outcome, ControlEffectOutcome::Applied))
-            .then(|| "provider.rejected".to_string()),
+        error_code: match outcome {
+            ControlEffectOutcome::Applied => None,
+            ControlEffectOutcome::Deferred => Some("provider.temporarily_unavailable".to_string()),
+            ControlEffectOutcome::Rejected => Some("provider.rejected".to_string()),
+            ControlEffectOutcome::Unknown => Some("provider.acceptance_unknown".to_string()),
+        },
         observed_at_ms,
+        retry_not_before_ms: matches!(outcome, ControlEffectOutcome::Deferred)
+            .then(|| observed_at_ms + 1),
     }
 }
 

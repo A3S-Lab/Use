@@ -12,7 +12,7 @@ use super::model::{
     corruption_error, ClaimedControlEffect, ControlAppliedEffect, ControlAppliedEffectEvidence,
     ControlEffectAuthority, ControlEffectClaim, ControlEffectIntent, ControlEffectKind,
     ControlEffectObservation, ControlEffectOutcome, ControlEffectOwner, ControlEffectSubject,
-    ControlPackageEffectAuthority, ControlSurfaceObservationState,
+    ControlPackageEffectAuthority, ControlSurfaceObservationState, MAX_EFFECT_DEFERRAL_MS,
 };
 use super::ControlStore;
 
@@ -59,13 +59,15 @@ impl ControlEffectDispatcher {
         request: ControlEffectDispatchRequest,
     ) -> UseResult<ControlEffectDispatchResult> {
         if request.provider_timeout_ms == 0
+            || request.deferred_retry_delay_ms == 0
+            || request.deferred_retry_delay_ms > MAX_EFFECT_DEFERRAL_MS
             || request
                 .provider_timeout_ms
                 .checked_add(MIN_EFFECT_OBSERVATION_BUDGET_MS)
                 .is_none_or(|bounded| bounded > request.lease_duration_ms)
         {
             return Err(dispatch_error(
-                "The provider timeout must leave the minimum observation budget inside the claim lease.",
+                "The dispatch timing policy is invalid or cannot leave the minimum observation budget inside the claim lease.",
             ));
         }
         let now_ms = self.clock.now_ms()?;
@@ -101,6 +103,13 @@ impl ControlEffectDispatcher {
                 "The Control effect observation clock moved backwards after the claim.",
             ));
         }
+        let retry_not_before_ms = matches!(routed, RoutedControlEffectOutcome::Deferred(_))
+            .then(|| {
+                observed_at_ms
+                    .checked_add(request.deferred_retry_delay_ms)
+                    .ok_or_else(|| dispatch_error("The deferred retry timestamp overflowed."))
+            })
+            .transpose()?;
         let (outcome, application, failure_evidence_digest, error_code) =
             routed.into_observation_parts(&claimed.intent)?;
         let observation = ControlEffectObservation {
@@ -112,6 +121,7 @@ impl ControlEffectDispatcher {
             failure_evidence_digest,
             error_code,
             observed_at_ms,
+            retry_not_before_ms,
         };
         let observation_changed = self.store.record_effect_observation(observation).await?;
         Ok(ControlEffectDispatchResult::Observed {
@@ -119,6 +129,7 @@ impl ControlEffectDispatcher {
             sequence: claimed.intent.sequence,
             attempt: claimed.attempt,
             outcome,
+            retry_not_before_ms,
             observation_changed,
         })
     }
@@ -334,6 +345,7 @@ impl ControlEffectDispatcher {
 
 pub(in crate::control_store) enum RoutedControlEffectOutcome {
     Applied(ControlAppliedEffectEvidence),
+    Deferred(ControlEffectFailure),
     Rejected(ControlEffectFailure),
     Unknown(ControlEffectFailure),
 }
@@ -342,6 +354,7 @@ impl From<ControlEffectPortOutcome<ControlAppliedEffectEvidence>> for RoutedCont
     fn from(outcome: ControlEffectPortOutcome<ControlAppliedEffectEvidence>) -> Self {
         match outcome {
             ControlEffectPortOutcome::Applied(application) => Self::Applied(application),
+            ControlEffectPortOutcome::Deferred(failure) => Self::Deferred(failure),
             ControlEffectPortOutcome::Rejected(failure) => Self::Rejected(failure),
             ControlEffectPortOutcome::Unknown(failure) => Self::Unknown(failure),
         }
@@ -363,6 +376,12 @@ impl RoutedControlEffectOutcome {
                 Some(ControlAppliedEffect::new(intent, evidence)?),
                 None,
                 None,
+            )),
+            Self::Deferred(failure) => Ok((
+                ControlEffectOutcome::Deferred,
+                None,
+                Some(failure.evidence_digest),
+                Some(failure.error_code),
             )),
             Self::Rejected(failure) => Ok((
                 ControlEffectOutcome::Rejected,
