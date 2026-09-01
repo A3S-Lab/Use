@@ -24,6 +24,7 @@ mod restore;
 mod restore_activation;
 mod restore_activation_filesystem;
 mod restore_activation_storage;
+mod restore_execution;
 mod restore_filesystem;
 mod restore_reopen;
 

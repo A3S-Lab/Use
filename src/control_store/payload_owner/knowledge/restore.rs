@@ -26,6 +26,7 @@ const PARTIAL_FILE: &str = "knowledge.sqlite3.partial";
 const MAX_RESULT_BYTES: usize = 128 * 1024;
 
 mod filesystem;
+mod reopen;
 
 use filesystem::{
     activate_candidate, ensure_owned_directory, inspect_live_payload_layout, optional_regular_file,

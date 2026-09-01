@@ -271,6 +271,46 @@ impl StagedControlObservationPayloadRestore {
         self.candidate.as_deref()
     }
 
+    pub(in crate::control_store) async fn preflight_clean(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<()> {
+        self.snapshot
+            .validate(&self.registry, &self.snapshot.manifest.binding)?;
+        if !maintenance.is_exclusive_for(&self.state_root) {
+            return Err(restore_invalid(
+                "Control observation preflight requires the exact target's exclusive maintenance guard.",
+            ));
+        }
+        filesystem::validate_staging_entries(&self.staging_directory, &self.snapshot).await?;
+        let limits = observation_contract(&self.registry)?;
+        let live = inspect_live(&self.state_root, &self.snapshot, limits).await?;
+        require_clean_target(&live)?;
+        match (&self.snapshot.manifest.payload, &self.candidate) {
+            (ControlObservationPayloadState::Absent, None) => {
+                filesystem::require_empty_staging(&self.staging_directory).await
+            }
+            (ControlObservationPayloadState::Archive { .. }, Some(expected)) => {
+                let staged =
+                    filesystem::staged_archive_state(&self.staging_directory, &self.snapshot)
+                        .await?;
+                if !matches!(&staged, filesystem::StagedArchiveState::Ready(_))
+                    || staged.path() != expected
+                {
+                    return Err(restore_invalid(
+                        "Observation activation evidence exists before complete restore intent.",
+                    ));
+                }
+                archive::verify_archive(&self.snapshot, Some(staged.path()))
+                    .await
+                    .map_err(wrap_restore_error)
+            }
+            _ => Err(restore_invalid(
+                "The staged observation payload differs from its clean restore target.",
+            )),
+        }
+    }
+
     pub(in crate::control_store) async fn activate(
         &self,
         maintenance: &StateMaintenanceGuard,

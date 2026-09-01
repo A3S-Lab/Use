@@ -170,10 +170,12 @@ links, foreign history, and path rebinding fail closed. A second scan precedes
 no-clobber publication, and streaming offline verification binds exact terminal
 bytes and a path-free receipt to the Control export. Empty or active-only
 history creates no archive. Its self-hosted restore adapter preserves the active
-marker and current operation while replayably replacing only terminal history.
-Durable activation evidence binds exact before/source/target inventories;
-marker-only handoff, status progress, native retention, and every local partial
-are deterministic and tamper-evident. The private complete-set snapshot
+marker and any current operation while replayably replacing only terminal
+history. Durable activation evidence binds exact before/source/target
+inventories. A legacy whole-installation marker reserves one slot at the native
+64-record limit; the typed complete-set marker has no retained operation and
+preserves all 64 records. Marker-only handoff, status progress, and every local
+partial are deterministic and tamper-evident. The private complete-set snapshot
 coordinator now captures one canonical Control export and all four registered
 owner snapshots beneath one maintenance fence and timestamp. A path-free
 canonical manifest binds the exact registry, receipts, schemas, digests, and
@@ -188,23 +190,26 @@ builds Control and every owner-native candidate. Control is checkpointed to one
 SQLite file, export-round-tripped, and physically digest-bound; no live owner
 path is changed. Exact retry and interrupted Control staging recover, while
 target contamination, links, unknown entries, rebinding, and completed-candidate
-drift fail closed. Control activation now records durable top-level intent. The
-immutable attempt remains authoritative, `activation.json` is the sole mutable
-ordered journal, and the global `.maintenance.restore.json` marker binds the
-same immutable operation while blocking ordinary shared access. The protocol
-writes journal, marker, owner effect, and checkpoint in that order. Preflight
-runs before intent; semantic, physical, sidecar, and attempt evidence are
-rechecked after the marker before atomic no-clobber publication. Reopen
-reacquires the exact guard, rebinds the same verified snapshot, attempt, and
-policy, reconstructs present unactivated owner candidates, and converges safe
-temporary and post-publication/pre-checkpoint boundaries. Missing or ambiguous
-marker state after an effect, links, rebinding, and evidence drift fail closed.
-The canonical path-free Control checkpoint replays without a journal rewrite,
-and the global marker deliberately remains active. Cross-owner checkpoints and
-activation order, marker retirement, the complete subprocess crash matrix,
-production conversion and dispatch, backup/restore and reachability
-integration, and coordinated authority cutover remain open; no A2 roadmap item
-is complete yet.
+drift fail closed. Complete activation now preflights every owner before durable
+top-level intent. The immutable attempt remains authoritative,
+`activation.json` is the sole mutable ordered journal, and the typed global
+`.maintenance.restore.json` marker binds the same immutable operation while
+blocking ordinary shared access. Control Store, Host projection, Knowledge,
+observations, and Restore Coordinator execute in fixed order; every step follows
+journal, marker, owner effect, checkpoint. Each checkpoint binds its canonical
+path-free result by byte count and a domain-separated digest, while the
+coordinator owner additionally verifies the exact marker bytes, length, and
+digest before mutation. Reopen reacquires the exact guard, rebinds the same
+verified snapshot, attempt, registry, and policy, and reconstructs or verifies
+every candidate/live boundary. Journal and marker partials, all five
+post-effect/pre-checkpoint boundaries, the fifth checkpoint before retirement,
+and exit after deletion converge. Marker absence is accepted only beside the
+complete journal; out-of-order roots, ambiguous markers, links, rebinding, and
+evidence drift fail closed. Completed replay is read-only. A 13-boundary real
+child-process matrix qualifies the top-level protocol. Production conversion
+and dispatch, backup/restore and reachability integration, retained-attempt
+lifecycle, and coordinated authority cutover remain open; no A2 roadmap item is
+complete yet.
 
 ## Implemented baseline
 

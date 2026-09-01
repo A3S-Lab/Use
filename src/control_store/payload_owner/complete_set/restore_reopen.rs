@@ -1,4 +1,4 @@
-//! Reopens the durable Control checkpoint phase of a complete restore.
+//! Reopens any durable checkpoint prefix of a complete restore.
 
 use std::path::PathBuf;
 
@@ -19,7 +19,7 @@ use super::restore_filesystem::{
 use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
 
 impl VerifiedControlInstallationSnapshot {
-    pub(in crate::control_store) async fn reopen_control_activation(
+    pub(in crate::control_store) async fn reopen_activation(
         &self,
         target_state_root: impl Into<PathBuf>,
         knowledge_policy: OkfKnowledgeStoragePolicy,
@@ -85,7 +85,7 @@ impl VerifiedControlInstallationSnapshot {
             })?;
         let knowledge = self
             .knowledge
-            .stage_clean_restore_under_exclusive(
+            .reopen_staged_restore(
                 state_root.clone(),
                 restore_filesystem::component_directory(&staging_directory, KNOWLEDGE_DIRECTORY),
                 knowledge_policy,

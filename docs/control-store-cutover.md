@@ -130,10 +130,12 @@ guard and an active restore marker, binds its stable identity plus exact before
 and target terminal inventories, retires replaced terminal directories into
 staging, and publishes candidate records without replacing live paths. The
 active marker/current operation is preserved, including marker-only handoff and
-operation-status progress across replay. At native capacity, the same
-completion-time/start-time/plan-digest ordering as journal retention removes
-exactly the source-native oldest record to reserve the active operation's slot.
-Source and active identities may never collide. Durable activation, retired, candidate,
+operation-status progress across replay. At native capacity, a legacy
+whole-installation marker uses the same completion-time/start-time/plan-digest
+ordering as journal retention and removes exactly the source-native oldest
+record to reserve the active operation's slot. The typed complete-set marker
+has no retained operation and preserves all 64 source records. Source and active
+identities may never collide. Durable activation, retired, candidate,
 and deterministic publication-partial evidence make each local crash boundary
 replayable and tamper-evident. The private complete-set snapshot coordinator
 now captures the canonical Control export and every registered owner beneath
@@ -150,26 +152,27 @@ candidates are created beneath `.control-installation-restore`. The Control
 candidate is single-file checkpointed, export-round-tripped, and physically
 digest-bound. No live authority path is changed, and exact retry or interrupted
 Control construction is deterministic; contaminated targets, links, unknown
-entries, rebinding, and candidate drift fail closed. Control activation now
-durably records top-level intent before live publication. The immutable attempt
-descriptor stays authoritative; `activation.json` is the sole mutable ordered
-journal, and the global `.maintenance.restore.json` marker binds the same
-immutable operation and blocks ordinary shared access. The write order is
-journal, marker, owner effect, checkpoint. Preflight rejects invalid Control
-state before intent; owner-native semantic, physical, sidecar, and attempt
-checks run again after the marker before the no-clobber atomic move. The first
-checkpoint binds the canonical path-free result by byte count and
-domain-separated digest. Reopen reacquires the exact exclusive fence, rebinds
-the same snapshot, attempt, and policy, and reconstructs every present
-unactivated candidate. Journal-only, deterministic temporary, and
-post-publication/pre-checkpoint boundaries converge; missing or ambiguous
-marker state after an effect, links, rebinding, and evidence drift fail closed.
-Exact completed replay is read-only. The global marker remains active, so this
-qualifies complete-set backup assembly, restore staging, durable top-level
-intent, and one owner checkpoint only. Cross-owner activation order and
-checkpoints, marker retirement, the subprocess recovery matrix, production
-backup/restore wiring, and indivisible authority cutover remain required before
-this gate can close.
+entries, rebinding, and candidate drift fail closed. Complete activation now
+preflights every owner before durably recording top-level intent. The immutable
+attempt descriptor stays authoritative; `activation.json` is the sole mutable
+ordered journal, and the typed global `.maintenance.restore.json` marker binds
+the same immutable operation and blocks ordinary shared access. Control Store,
+Host projection, Knowledge, observations, and Restore Coordinator execute in
+that fixed order; each step follows journal, marker, owner effect, checkpoint.
+Every checkpoint binds its canonical path-free result by byte count and a
+domain-separated digest. The Restore Coordinator verifies the exact complete
+marker bytes, length, and digest before history mutation. Reopen reacquires the
+exact exclusive fence, rebinds the same snapshot, attempt, registry, and policy,
+and reconstructs or verifies every candidate/live boundary. Journal and marker
+partials, each post-effect/pre-checkpoint boundary, the fifth checkpoint before
+retirement, and exit after marker deletion converge. Marker absence is accepted
+only with all five checkpoints; out-of-order live roots, ambiguous markers,
+links, rebinding, and evidence drift fail closed. Exact completed replay is
+read-only. A real-child-process matrix covers 13 top-level durable exits. This
+qualifies complete-set assembly, staging, ordered activation, checkpointing,
+marker retirement, and subprocess recovery. Production backup/restore wiring,
+retained-attempt lifecycle, and indivisible authority cutover remain required
+before this gate can close.
 
 ## Non-negotiable cutover invariants
 

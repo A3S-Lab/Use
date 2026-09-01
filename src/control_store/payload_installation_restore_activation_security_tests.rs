@@ -3,7 +3,9 @@ use std::io::Write;
 use a3s_use_extension::ACTIVE_STATE_RESTORE_MARKER;
 use tempfile::TempDir;
 
-use super::payload_installation_restore_staging_tests::{absent_snapshot, candidate_bytes};
+use super::payload_installation_restore_staging_tests::{
+    absent_snapshot, candidate_bytes, populated_snapshot,
+};
 use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
 
 const ERROR_CODE: &str = "use.control_store.complete_restore_activation_invalid";
@@ -79,7 +81,7 @@ async fn reopen_rejects_a_missing_marker_after_control_publication() {
     drop(staged);
 
     let error = verified
-        .reopen_control_activation(state_root, OkfKnowledgeStoragePolicy::default())
+        .reopen_activation(state_root, OkfKnowledgeStoragePolicy::default())
         .await
         .unwrap_err();
     assert_eq!(error.code, ERROR_CODE);
@@ -99,7 +101,7 @@ async fn reopen_rejects_a_marker_without_its_journal() {
     drop(staged);
 
     let error = verified
-        .reopen_control_activation(state_root, OkfKnowledgeStoragePolicy::default())
+        .reopen_activation(state_root, OkfKnowledgeStoragePolicy::default())
         .await
         .unwrap_err();
     assert_eq!(error.code, ERROR_CODE);
@@ -146,7 +148,7 @@ async fn reopen_rejects_ambiguous_final_and_partial_markers() {
     drop(staged);
 
     let error = verified
-        .reopen_control_activation(state_root, OkfKnowledgeStoragePolicy::default())
+        .reopen_activation(state_root, OkfKnowledgeStoragePolicy::default())
         .await
         .unwrap_err();
     assert_eq!(error.code, ERROR_CODE);
@@ -166,7 +168,7 @@ async fn reopen_rejects_rebinding_to_another_verified_snapshot() {
     drop(staged);
 
     let error = replacement
-        .reopen_control_activation(state_root, OkfKnowledgeStoragePolicy::default())
+        .reopen_activation(state_root, OkfKnowledgeStoragePolicy::default())
         .await
         .unwrap_err();
     assert_eq!(error.code, ERROR_CODE);
@@ -186,7 +188,57 @@ async fn reopen_rejects_a_missing_marker_after_control_checkpoint() {
     drop(staged);
 
     let error = verified
-        .reopen_control_activation(state_root, OkfKnowledgeStoragePolicy::default())
+        .reopen_activation(state_root, OkfKnowledgeStoragePolicy::default())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ERROR_CODE);
+}
+
+#[tokio::test]
+async fn activation_revalidates_every_owner_before_control_intent() {
+    let verified = populated_snapshot(15_150).await;
+    let target = TempDir::new().unwrap();
+    let state_root = target.path().join("state");
+    let staged = verified
+        .stage_clean_restore(state_root.clone(), OkfKnowledgeStoragePolicy::default())
+        .await
+        .unwrap();
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(staged.knowledge_candidate_path().unwrap())
+        .unwrap()
+        .write_all(b"tamper")
+        .unwrap();
+
+    assert_eq!(
+        staged.activate_control().await.unwrap_err().code,
+        ERROR_CODE
+    );
+    assert!(staged.control_candidate_path().is_file());
+    assert!(!staged.activation_journal_path_for_test().exists());
+    assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
+    assert!(!state_root.join("control.sqlite3").exists());
+}
+
+#[tokio::test]
+async fn reopen_rejects_a_missing_marker_after_a_later_owner_effect() {
+    let verified = populated_snapshot(15_175).await;
+    let target = TempDir::new().unwrap();
+    let state_root = target.path().join("state");
+    let staged = verified
+        .stage_clean_restore(state_root.clone(), OkfKnowledgeStoragePolicy::default())
+        .await
+        .unwrap();
+    staged.activate_next_for_test().await.unwrap();
+    staged
+        .activate_next_effect_without_checkpoint_for_test()
+        .await
+        .unwrap();
+    std::fs::remove_file(state_root.join(ACTIVE_STATE_RESTORE_MARKER)).unwrap();
+    drop(staged);
+
+    let error = verified
+        .reopen_activation(state_root, OkfKnowledgeStoragePolicy::default())
         .await
         .unwrap_err();
     assert_eq!(error.code, ERROR_CODE);
@@ -211,7 +263,7 @@ async fn reopen_rejects_a_linked_active_marker() {
     drop(staged);
 
     let error = verified
-        .reopen_control_activation(state_root, OkfKnowledgeStoragePolicy::default())
+        .reopen_activation(state_root, OkfKnowledgeStoragePolicy::default())
         .await
         .unwrap_err();
     assert_eq!(error.code, ERROR_CODE);
@@ -237,7 +289,7 @@ async fn reopen_rejects_a_linked_activation_journal() {
     drop(staged);
 
     let error = verified
-        .reopen_control_activation(state_root, OkfKnowledgeStoragePolicy::default())
+        .reopen_activation(state_root, OkfKnowledgeStoragePolicy::default())
         .await
         .unwrap_err();
     assert_eq!(error.code, ERROR_CODE);

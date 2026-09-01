@@ -276,6 +276,51 @@ async fn full_source_history_prunes_its_native_oldest_for_the_active_restore() {
     .exists());
 }
 
+#[tokio::test]
+async fn complete_restore_marker_does_not_reserve_a_terminal_history_slot() {
+    let source = verified_restore_fixture(64, 41_000).await;
+    let target = TempDir::new().unwrap();
+    let installation = control_installation();
+    let target_paths = paths(&target, installation);
+    let state_root = target_paths.installation_state_root();
+    std::fs::create_dir_all(&state_root).unwrap();
+    let staged = source
+        .verified
+        .stage_restore(&state_root, state_root.join("complete-capacity-staging"))
+        .await
+        .unwrap();
+    let maintenance = StateMaintenanceLock::new(&state_root)
+        .acquire_exclusive()
+        .await
+        .unwrap();
+    let plan_digest = format!("sha256:{}", "a".repeat(64));
+    let marker = crate::state_restore::ControlInstallationRestoreActiveMarker::new(
+        &plan_digest,
+        &format!("sha256:{}", "b".repeat(64)),
+    )
+    .unwrap()
+    .canonical_bytes()
+    .unwrap();
+    std::fs::write(state_root.join(ACTIVE_STATE_RESTORE_MARKER), &marker).unwrap();
+
+    let result = staged
+        .activate_for_complete_restore(&maintenance, &plan_digest, &marker)
+        .await
+        .unwrap();
+    assert_eq!(result.pruned_source_plan_digest, None);
+    assert!(matches!(
+        result.payload,
+        ControlRestoreCoordinatorRestoreState::Archive {
+            source_terminal_records: 64,
+            restored_terminal_records: 64,
+            ..
+        }
+    ));
+    for operation in &source.operations {
+        assert!(operation_path(&state_root, &operation.plan_digest).is_file());
+    }
+}
+
 pub(in crate::control_store) fn write_active(
     state_root: &std::path::Path,
     fixture: &StateRestoreHistoryFixture,

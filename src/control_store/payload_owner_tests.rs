@@ -63,6 +63,40 @@ fn registry_requires_the_exact_typed_external_owner_set() {
 }
 
 #[test]
+fn live_layout_entries_resolve_to_one_registered_payload_owner() {
+    assert_eq!(
+        ControlPayloadOwnerId::owner_for_state_root("plugin-host-manager"),
+        Some(ControlPayloadOwnerId::HostProtocolProjection)
+    );
+    assert_eq!(
+        ControlPayloadOwnerId::owner_for_state_root("knowledge"),
+        Some(ControlPayloadOwnerId::KnowledgePayload)
+    );
+    for name in [
+        "package-diagnostic-history",
+        "package-downloads",
+        "package-resolutions",
+    ] {
+        assert_eq!(
+            ControlPayloadOwnerId::owner_for_operation_root(name),
+            Some(ControlPayloadOwnerId::PlanningAndDiagnosticObservations)
+        );
+    }
+    assert_eq!(
+        ControlPayloadOwnerId::owner_for_operation_root("state-restores"),
+        Some(ControlPayloadOwnerId::RestoreCoordinator)
+    );
+    assert_eq!(
+        ControlPayloadOwnerId::owner_for_state_root("artifact-store"),
+        None
+    );
+    assert_eq!(
+        ControlPayloadOwnerId::owner_for_operation_root("package-graphs"),
+        None
+    );
+}
+
+#[test]
 fn snapshot_set_is_generation_bound_path_free_and_deterministic() {
     let registry = registry();
     let installation = installation();

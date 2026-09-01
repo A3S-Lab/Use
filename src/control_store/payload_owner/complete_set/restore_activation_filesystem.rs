@@ -7,15 +7,20 @@ use a3s_use_extension::ACTIVE_STATE_RESTORE_MARKER;
 use tokio::fs;
 
 use super::restore::{restore_activation_invalid, restore_activation_io};
-use super::restore_activation::{
-    ControlInstallationRestoreActivation, ControlInstallationRestoreActiveMarker,
-};
+use super::restore_activation::{maybe_test_crash, ControlInstallationRestoreActivation};
 use super::restore_activation_storage::{
     optional_regular_file, optional_regular_file_length, publish_noclobber, read_bounded_file,
-    remove_obsolete_temporary, sync_directory, validate_directory, write_synced_new,
+    remove_obsolete_temporary, sync_directory, write_synced_new,
 };
 use super::restore_filesystem;
 use crate::control_store::filesystem::CONTROL_STORE_DATABASE_FILE;
+use crate::state_restore::ControlInstallationRestoreActiveMarker;
+
+mod inventory;
+
+use inventory::{
+    inspect_root, require_control_boundary, validate_checkpoint_root, ActivationRootInventory,
+};
 
 pub(super) const ACTIVATION_FILE: &str = "activation.json";
 pub(super) const ACTIVATION_TEMPORARY_FILE: &str = "activation.json.tmp";
@@ -23,15 +28,16 @@ const MARKER_PARTIAL_FILE: &str = ".maintenance.restore.json.partial";
 pub(super) const MAX_ACTIVATION_BYTES: u64 = 128 * 1024;
 pub(super) const MAX_MARKER_BYTES: u64 = 4 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ActivationRootInventory {
-    marker: bool,
-    marker_partial: bool,
-    live_control: bool,
-}
-
 pub(super) fn journal_path(attempt: &Path) -> PathBuf {
     attempt.join(ACTIVATION_FILE)
+}
+
+pub(super) async fn journal_exists(attempt: &Path) -> UseResult<bool> {
+    optional_regular_file(&journal_path(attempt)).await
+}
+
+pub(super) async fn marker_exists(state_root: &Path) -> UseResult<bool> {
+    optional_regular_file(&state_root.join(ACTIVE_STATE_RESTORE_MARKER)).await
 }
 
 pub(super) async fn load_or_begin(
@@ -60,6 +66,7 @@ pub(super) async fn load_or_begin(
             if inventory.marker
                 || inventory.marker_partial
                 || inventory.live_control
+                || inventory.has_non_control_payload()
                 || !candidate_exists
             {
                 return Err(restore_activation_invalid(
@@ -68,10 +75,11 @@ pub(super) async fn load_or_begin(
             }
             let activation = ControlInstallationRestoreActivation::new(attempt_digest)?;
             publish_new_journal(attempt, &activation).await?;
+            maybe_test_crash("journal-published");
             activation
         }
     };
-    let marker = ControlInstallationRestoreActiveMarker::new(&activation)?;
+    let marker = activation.active_marker()?;
     reconcile_marker(
         state_root,
         &activation,
@@ -80,6 +88,7 @@ pub(super) async fn load_or_begin(
         inventory,
     )
     .await?;
+    maybe_test_crash("marker-published");
     let durable = load_active(state_root, attempt, attempt_digest).await?;
     if durable.operation_digest() != activation.operation_digest() {
         return Err(restore_activation_invalid(
@@ -100,9 +109,9 @@ pub(super) async fn load_active(
             .join(CONTROL_STORE_DATABASE_FILE);
     let candidate_exists = optional_regular_file(&candidate).await?;
     require_control_boundary(candidate_exists, inventory.live_control)?;
-    if !inventory.marker || inventory.marker_partial {
+    if inventory.marker_partial {
         return Err(restore_activation_invalid(
-            "The complete restore activation has no exact durable active marker.",
+            "The complete restore activation has an ambiguous partial active marker.",
         ));
     }
     recover_journal_temporary(attempt, attempt_digest).await?;
@@ -113,9 +122,15 @@ pub(super) async fn load_active(
                 "The active complete restore marker has no durable activation journal.",
             )
         })?;
-    let expected = ControlInstallationRestoreActiveMarker::new(&activation)?;
-    read_exact_marker(state_root, &activation, &expected).await?;
-    validate_checkpoint_root(&activation, inventory.live_control).await?;
+    if inventory.marker {
+        let expected = activation.active_marker()?;
+        read_exact_marker(state_root, &activation, &expected).await?;
+    } else if !activation.is_complete() {
+        return Err(restore_activation_invalid(
+            "The incomplete restore activation has no exact durable active marker.",
+        ));
+    }
+    validate_checkpoint_root(&activation, &inventory)?;
     Ok(activation)
 }
 
@@ -176,7 +191,11 @@ async fn reconcile_marker(
     }
     if inventory.marker {
         read_exact_marker(state_root, activation, expected).await?;
-        validate_checkpoint_root(activation, inventory.live_control).await?;
+        validate_checkpoint_root(activation, &inventory)?;
+        return Ok(());
+    }
+    if activation.is_complete() {
+        validate_checkpoint_root(activation, &inventory)?;
         return Ok(());
     }
     if activation.checkpoint_count() != 0 || inventory.live_control || !candidate_exists {
@@ -187,7 +206,7 @@ async fn reconcile_marker(
 
     let marker = state_root.join(ACTIVE_STATE_RESTORE_MARKER);
     let partial = state_root.join(MARKER_PARTIAL_FILE);
-    let expected_bytes = expected.canonical_bytes()?;
+    let expected_bytes = marker_bytes(expected)?;
     if inventory.marker_partial {
         if read_bounded_file(&partial, MAX_MARKER_BYTES, "partial active restore marker").await?
             != expected_bytes
@@ -285,8 +304,15 @@ async fn read_exact_marker(
     .await?;
     let marker: ControlInstallationRestoreActiveMarker = serde_json::from_slice(&bytes)
         .map_err(|_| restore_activation_invalid("The active restore marker is invalid JSON."))?;
-    let expected_bytes = expected.canonical_bytes()?;
-    marker.validate(activation)?;
+    let expected_bytes = marker_bytes(expected)?;
+    marker
+        .validate_exact(activation.attempt_digest(), activation.operation_digest())
+        .map_err(|error| {
+            restore_activation_invalid(format!(
+                "The active complete restore marker is invalid or was rebound: {}",
+                error.message
+            ))
+        })?;
     if bytes != expected_bytes {
         return Err(restore_activation_invalid(
             "The active complete restore marker was changed or rebound.",
@@ -295,76 +321,54 @@ async fn read_exact_marker(
     Ok(())
 }
 
-async fn inspect_root(state_root: &Path, attempt: &Path) -> UseResult<ActivationRootInventory> {
-    validate_directory(state_root, "target state root").await?;
-    if attempt != state_root.join(restore_filesystem::ATTEMPT_DIRECTORY) {
+pub(super) async fn retire_marker(
+    state_root: &Path,
+    attempt: &Path,
+    attempt_digest: &str,
+) -> UseResult<ControlInstallationRestoreActivation> {
+    let activation = load_active(state_root, attempt, attempt_digest).await?;
+    if !activation.is_complete() {
         return Err(restore_activation_invalid(
-            "The complete restore activation attempt is outside its fixed state-root location.",
+            "The active complete restore marker cannot retire before every owner checkpoint.",
         ));
     }
-    let mut inventory = ActivationRootInventory {
-        marker: false,
-        marker_partial: false,
-        live_control: false,
-    };
-    let mut entries = fs::read_dir(state_root)
-        .await
-        .map_err(|error| restore_activation_io("read activation state root", error))?;
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|error| restore_activation_io("read activation state entry", error))?
-    {
-        let name = entry.file_name().into_string().map_err(|_| {
-            restore_activation_invalid("The activation state root contains a non-UTF-8 entry.")
-        })?;
-        let metadata = fs::symlink_metadata(entry.path())
+    let inventory = inspect_root(state_root, attempt).await?;
+    if inventory.marker_partial {
+        return Err(restore_activation_invalid(
+            "The completed restore has an ambiguous partial active marker.",
+        ));
+    }
+    if inventory.marker {
+        let expected = activation.active_marker()?;
+        read_exact_marker(state_root, &activation, &expected).await?;
+        fs::remove_file(state_root.join(ACTIVE_STATE_RESTORE_MARKER))
             .await
-            .map_err(|error| restore_activation_io("inspect activation state entry", error))?;
-        let owned_file =
-            !a3s_use_core::metadata_is_link_or_reparse_point(&metadata) && metadata.is_file();
-        let valid = if crate::installation_state_layout::excluded_root_lock(&name) {
-            owned_file
-        } else if name == restore_filesystem::ATTEMPT_DIRECTORY {
-            !a3s_use_core::metadata_is_link_or_reparse_point(&metadata) && metadata.is_dir()
-        } else if name == ACTIVE_STATE_RESTORE_MARKER {
-            inventory.marker = true;
-            owned_file
-        } else if name == MARKER_PARTIAL_FILE {
-            inventory.marker_partial = true;
-            owned_file
-        } else if name == CONTROL_STORE_DATABASE_FILE {
-            inventory.live_control = true;
-            owned_file
-        } else {
-            false
-        };
-        if !valid {
-            return Err(restore_activation_invalid(
-                "The complete restore activation state root contains an unowned or linked entry.",
-            ));
-        }
+            .map_err(|error| {
+                restore_activation_io("retire active complete restore marker", error)
+            })?;
+        sync_directory(state_root).await?;
+        maybe_test_crash("marker-retired");
     }
-    Ok(inventory)
-}
-
-async fn validate_checkpoint_root(
-    activation: &ControlInstallationRestoreActivation,
-    live_control: bool,
-) -> UseResult<()> {
-    if activation.checkpoint_count() > 0 && !live_control {
+    let retired = inspect_root(state_root, attempt).await?;
+    if retired.marker || retired.marker_partial {
         return Err(restore_activation_invalid(
-            "The activation journal records Control completion without a live database.",
+            "The completed restore marker did not retire exactly.",
         ));
     }
-    Ok(())
+    load_active(state_root, attempt, attempt_digest).await
 }
 
-fn require_control_boundary(candidate_exists: bool, live_exists: bool) -> UseResult<()> {
-    if candidate_exists == live_exists {
+fn marker_bytes(marker: &ControlInstallationRestoreActiveMarker) -> UseResult<Vec<u8>> {
+    let bytes = marker.canonical_bytes().map_err(|error| {
+        restore_activation_invalid(format!(
+            "Failed to encode the active complete restore marker: {}",
+            error.message
+        ))
+    })?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_MARKER_BYTES {
         return Err(restore_activation_invalid(
-            "The complete restore Control boundary is ambiguous or missing.",
+            "The active complete restore marker exceeds its byte bound.",
         ));
     }
-    Ok(())
+    Ok(bytes)
 }

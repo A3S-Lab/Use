@@ -21,12 +21,14 @@ use crate::state_backup::{
     MAX_STATE_BACKUP_BYTES, MAX_STATE_BACKUP_FILES,
 };
 
+mod active_marker;
 mod authority;
 mod filesystem;
 mod journal;
 #[cfg(test)]
 pub(crate) mod test_support;
 
+pub(crate) use active_marker::ControlInstallationRestoreActiveMarker;
 use authority::{authority_entries, validate_live_authority};
 pub(crate) use journal::{
     inspect_terminal_state_restore_history_record, read_state_restore_history_snapshot_entry,

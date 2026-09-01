@@ -17,6 +17,13 @@ const ACTIVATION_FILE: &str = "control-restore-coordinator.activating.json";
 const ACTIVATION_PARTIAL_FILE: &str = "control-restore-coordinator.activating.json.partial";
 const OPERATION_FILE: &str = "operation.json";
 const OPERATION_PARTIAL_FILE: &str = "operation.json.partial";
+pub(super) const MAX_ACTIVE_MARKER_BYTES: u64 = 4 * 1024;
+
+pub(super) struct ExpectedActiveRestore<'a> {
+    pub(super) plan_digest: &'a str,
+    pub(super) marker_length: u64,
+    pub(super) marker_sha256: &'a str,
+}
 
 mod candidate;
 mod reconcile;
@@ -255,7 +262,41 @@ pub(super) async fn activate(
     snapshot: &ControlRestoreCoordinatorSnapshot,
 ) -> UseResult<RestoreCoordinatorActivation> {
     validate_owned_directory_chain(state_root, staging_directory).await?;
-    reconcile::activate(state_root, staging_directory, snapshot).await
+    reconcile::activate(state_root, staging_directory, snapshot, None).await
+}
+
+pub(super) async fn activate_bound(
+    state_root: &Path,
+    staging_directory: &Path,
+    snapshot: &ControlRestoreCoordinatorSnapshot,
+    expected: ExpectedActiveRestore<'_>,
+) -> UseResult<RestoreCoordinatorActivation> {
+    validate_owned_directory_chain(state_root, staging_directory).await?;
+    reconcile::activate(state_root, staging_directory, snapshot, Some(expected)).await
+}
+
+pub(super) async fn preflight_clean(
+    state_root: &Path,
+    staging_directory: &Path,
+    snapshot: &ControlRestoreCoordinatorSnapshot,
+) -> UseResult<()> {
+    validate_owned_directory_chain(state_root, staging_directory).await?;
+    validate_staging_entries(staging_directory, snapshot).await?;
+    match snapshot.manifest.payload {
+        ControlRestoreCoordinatorState::Absent => {
+            require_candidate_absent(staging_directory).await?;
+        }
+        ControlRestoreCoordinatorState::Archive { .. } => {
+            inspect_candidate(staging_directory, snapshot).await?;
+        }
+    }
+    let live = reconcile::scan_live(state_root, snapshot).await?;
+    if live.active.is_some() || !live.terminal.is_empty() || live.excluded_active_files != 0 {
+        return Err(restore_invalid(
+            "The clean Restore Coordinator target contains restore history or active evidence.",
+        ));
+    }
+    Ok(())
 }
 
 pub(super) async fn optional_owned_directory(path: &Path) -> UseResult<bool> {

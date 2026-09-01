@@ -104,6 +104,55 @@ async fn activation_rejects_active_identity_collision_and_candidate_tampering() 
 }
 
 #[tokio::test]
+async fn complete_restore_activation_binds_the_expected_marker_before_history_mutation() {
+    let source = verified_restore_fixture(1, 53_500).await;
+    let target = TempDir::new().unwrap();
+    let installation = control_installation();
+    let target_paths = paths(&target, installation);
+    let state_root = target_paths.installation_state_root();
+    std::fs::create_dir_all(&state_root).unwrap();
+    let staged = source
+        .verified
+        .stage_restore(&state_root, state_root.join("bound-coordinator-staging"))
+        .await
+        .unwrap();
+    let maintenance = StateMaintenanceLock::new(&state_root)
+        .acquire_exclusive()
+        .await
+        .unwrap();
+    let expected = crate::state_restore::ControlInstallationRestoreActiveMarker::new(
+        &format!("sha256:{}", "1".repeat(64)),
+        &format!("sha256:{}", "2".repeat(64)),
+    )
+    .unwrap()
+    .canonical_bytes()
+    .unwrap();
+    let foreign = crate::state_restore::ControlInstallationRestoreActiveMarker::new(
+        &format!("sha256:{}", "3".repeat(64)),
+        &format!("sha256:{}", "4".repeat(64)),
+    )
+    .unwrap()
+    .canonical_bytes()
+    .unwrap();
+    std::fs::write(state_root.join(ACTIVE_STATE_RESTORE_MARKER), foreign).unwrap();
+
+    assert_eq!(
+        staged
+            .activate_for_complete_restore(
+                &maintenance,
+                &format!("sha256:{}", "1".repeat(64)),
+                &expected,
+            )
+            .await
+            .unwrap_err()
+            .code,
+        "use.control_store.restore_coordinator_restore_invalid"
+    );
+    assert!(!operation_path(&state_root, &source.operations[0].plan_digest).exists());
+    assert!(!state_root.join("operations/state-restores").exists());
+}
+
+#[tokio::test]
 async fn activation_rejects_unknown_staging_and_rebound_marker_evidence() {
     let source = verified_restore_fixture(1, 54_000).await;
     let target = TempDir::new().unwrap();

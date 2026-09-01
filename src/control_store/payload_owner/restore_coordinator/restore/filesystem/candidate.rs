@@ -38,6 +38,7 @@ impl CanonicalRestoreHistory {
     pub(super) fn target(
         &self,
         active_plan_digest: &str,
+        reserve_active_slot: bool,
     ) -> UseResult<(Vec<ControlRestoreCoordinatorEntry>, Option<String>)> {
         if self
             .records
@@ -53,25 +54,26 @@ impl CanonicalRestoreHistory {
             .iter()
             .map(|record| record.evidence.clone())
             .collect::<Vec<_>>();
-        let pruned =
-            if self.records.len() == STATE_RESTORE_HISTORY_SNAPSHOT_MAX_OPERATION_FILES as usize {
-                let oldest = self
-                    .records
-                    .iter()
-                    .min_by(|left, right| left.retention.cmp(&right.retention))
-                    .ok_or_else(|| {
-                        restore_invalid("No terminal Restore Coordinator record can be pruned.")
-                    })?;
-                let index = target
-                    .binary_search_by(|entry| entry.plan_digest.cmp(&oldest.evidence.plan_digest))
-                    .map_err(|_| {
-                        restore_invalid("The native oldest restore record is not in its inventory.")
-                    })?;
-                target.remove(index);
-                Some(oldest.evidence.plan_digest.clone())
-            } else {
-                None
-            };
+        let pruned = if reserve_active_slot
+            && self.records.len() == STATE_RESTORE_HISTORY_SNAPSHOT_MAX_OPERATION_FILES as usize
+        {
+            let oldest = self
+                .records
+                .iter()
+                .min_by(|left, right| left.retention.cmp(&right.retention))
+                .ok_or_else(|| {
+                    restore_invalid("No terminal Restore Coordinator record can be pruned.")
+                })?;
+            let index = target
+                .binary_search_by(|entry| entry.plan_digest.cmp(&oldest.evidence.plan_digest))
+                .map_err(|_| {
+                    restore_invalid("The native oldest restore record is not in its inventory.")
+                })?;
+            target.remove(index);
+            Some(oldest.evidence.plan_digest.clone())
+        } else {
+            None
+        };
         Ok((target, pruned))
     }
 
