@@ -7,7 +7,7 @@ use a3s_use_core::{UseError, UseResult};
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::registry::{ExtensionReceipt, MAX_EXTENSION_RECEIPT_BYTES};
 use super::state_maintenance::{StateMaintenanceGuard, StateMaintenanceLock};
@@ -20,6 +20,7 @@ pub(crate) use copy::copy_package;
 pub(crate) use copy::copy_package_exact;
 
 pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
+pub(crate) const MAX_EXTENSION_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
 pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
 pub(crate) const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
 pub(super) const MAX_ACTIVITY_HTML_BYTES: u64 = 2 * 1024 * 1024;
@@ -30,9 +31,44 @@ const REGISTRY_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 
 pub(crate) async fn read_manifest(package_root: &Path) -> UseResult<(ExtensionManifest, Vec<u8>)> {
     let path = package_root.join(MANIFEST_NAME);
-    let bytes = fs::read(&path)
+    let metadata = fs::symlink_metadata(&path)
+        .await
+        .map_err(|error| io_error("inspect extension manifest", &path, error))?;
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
+        return Err(UseError::new(
+            "use.extension.manifest_invalid",
+            "The extension manifest must be an owned regular package file.",
+        ));
+    }
+    if metadata.len() == 0 || metadata.len() > MAX_EXTENSION_MANIFEST_BYTES {
+        return Err(UseError::new(
+            "use.extension.manifest_too_large",
+            format!(
+                "The extension manifest must contain between 1 byte and {MAX_EXTENSION_MANIFEST_BYTES} bytes."
+            ),
+        ));
+    }
+    let file = fs::File::open(&path)
+        .await
+        .map_err(|error| io_error("open extension manifest", &path, error))?;
+    let mut bytes = Vec::with_capacity(usize::try_from(metadata.len()).unwrap_or_default());
+    file.take(MAX_EXTENSION_MANIFEST_BYTES + 1)
+        .read_to_end(&mut bytes)
         .await
         .map_err(|error| io_error("read extension manifest", &path, error))?;
+    let observed = fs::symlink_metadata(&path)
+        .await
+        .map_err(|error| io_error("reinspect extension manifest", &path, error))?;
+    if bytes.len() as u64 != metadata.len()
+        || observed.len() != metadata.len()
+        || a3s_use_core::metadata_is_link_or_reparse_point(&observed)
+        || !observed.is_file()
+    {
+        return Err(UseError::new(
+            "use.extension.package_changed",
+            "The extension manifest changed while it was read.",
+        ));
+    }
     let input = std::str::from_utf8(&bytes).map_err(|error| {
         UseError::new(
             "use.extension.manifest_invalid",

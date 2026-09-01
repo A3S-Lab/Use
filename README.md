@@ -476,6 +476,18 @@ publication is frozen for the complete operation and observable layout or
 measurement drift fails closed. Digest mismatches remain evidence; the audit
 never removes, overwrites, quarantines, or rehydrates content.
 
+Effect owners now have a path-free verified read boundary instead of treating
+`expanded_package_path` as authority. `ArtifactStore::acquire_verified_package`
+accepts one complete verified catalog record, takes the global reachability and
+per-artifact mutation locks in shared mode, rejects interrupted collection and
+logical quarantine, and revalidates the full package fingerprint, manifest
+digest, exact byte/file counts, manifest-to-catalog surface graph, and every
+declared surface file. The non-cloneable lease exposes only catalog identity and
+the parsed manifest; its `Debug` form contains no local path. Manifest reads are
+bounded before ACL parsing, missing locks are never created by a read, and
+`verify_unchanged` repeats the complete verification to detect uncoordinated
+local tampering before an adapter records success.
+
 Logical corruption quarantine is a separate exact-plan operation.
 `ArtifactStore::plan_quarantine` accepts only one complete mismatch from a fresh
 audit under the same exact collection guard and returns canonical, path-free
@@ -1356,9 +1368,10 @@ package nodes precede their immediate-foreign-key dependency edges within the
 same transaction. The dispatcher is not constructed by production lifecycle
 code and does not create a second authority beside the current JSON stores.
 Production lifecycle conversion still must feed authorization-v2 Grant evidence
-and compose real owner adapters that verify the exact immutable artifact and
-derive manifests and surface inputs only from it plus this committed context,
-without conflating applied evidence with reviewed selection. The kernel now
+and compose real owner adapters. Those adapters must acquire the new verified
+artifact lease and derive surface inputs only through it plus this committed
+context, without conflating applied evidence with reviewed selection or using a
+resolved content path as authority. The kernel now
 also qualifies the path-free
 external-payload registration and
 snapshot-evidence boundary. Its five frozen owner identities and fixed backup
