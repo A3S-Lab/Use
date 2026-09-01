@@ -15,6 +15,7 @@ use super::super::observations::StagedControlObservationPayloadRestore;
 use super::super::restore_coordinator::StagedControlRestoreCoordinatorRestore;
 use super::super::ControlPayloadSnapshotBinding;
 use super::control_restore::{self, StagedControlStoreRestore};
+use super::control_restore_result::ControlStoreRestoreResult;
 use super::coordinator::VerifiedControlInstallationSnapshot;
 use super::restore_filesystem::{
     self, CONTROL_DIRECTORY, HOST_PROJECTION_DIRECTORY, KNOWLEDGE_DIRECTORY,
@@ -190,6 +191,7 @@ impl ControlInstallationRestoreAttempt {
 #[derive(Debug)]
 pub(in crate::control_store) struct StagedControlInstallationRestore {
     staging_directory: PathBuf,
+    attempt_bytes: Vec<u8>,
     attempt_digest: String,
     control: StagedControlStoreRestore,
     host_projection: StagedControlHostProjectionRestore,
@@ -295,6 +297,7 @@ impl VerifiedControlInstallationSnapshot {
         .map_err(wrap_stage_error)?;
         Ok(StagedControlInstallationRestore {
             staging_directory,
+            attempt_bytes,
             attempt_digest: attempt.descriptor_digest,
             control,
             host_projection,
@@ -307,6 +310,20 @@ impl VerifiedControlInstallationSnapshot {
 }
 
 impl StagedControlInstallationRestore {
+    pub(in crate::control_store) async fn activate_control(
+        &self,
+    ) -> UseResult<ControlStoreRestoreResult> {
+        restore_filesystem::validate_attempt(&self.staging_directory, &self.attempt_bytes)
+            .await
+            .map_err(wrap_stage_error)?;
+        self.control.activate(&self.maintenance).await
+    }
+
+    #[cfg(test)]
+    pub(in crate::control_store) fn control_restore_for_test(&self) -> &StagedControlStoreRestore {
+        &self.control
+    }
+
     #[cfg(test)]
     pub(in crate::control_store) fn holds_exclusive_fence(&self, state_root: &Path) -> bool {
         self.maintenance.is_exclusive_for(state_root)

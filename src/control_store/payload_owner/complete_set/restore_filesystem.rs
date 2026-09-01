@@ -52,6 +52,10 @@ pub(super) async fn validate_complete_attempt(
     expected_evidence: &[u8],
 ) -> UseResult<()> {
     validate_state_root_inventory(state_root).await?;
+    validate_attempt(attempt, expected_evidence).await
+}
+
+pub(super) async fn validate_attempt(attempt: &Path, expected_evidence: &[u8]) -> UseResult<()> {
     validate_attempt_entries(attempt).await?;
     let evidence = attempt.join(ATTEMPT_FILE);
     let Some(evidence_length) = optional_regular_file_length(&evidence).await? else {

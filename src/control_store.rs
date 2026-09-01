@@ -366,6 +366,10 @@ mod aggregate_tests;
 #[cfg(test)]
 mod cutover_manifest_tests;
 #[cfg(test)]
+mod payload_control_restore_activation_security_tests;
+#[cfg(test)]
+mod payload_control_restore_activation_tests;
+#[cfg(test)]
 mod payload_host_projection_restore_security_tests;
 #[cfg(test)]
 mod payload_host_projection_restore_tests;

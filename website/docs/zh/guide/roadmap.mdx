@@ -144,8 +144,11 @@ registry、receipt、schema、digest 与字节账目。单一固定顺序 archiv
 policy 与五个 component；随后保留一个排他 fence，构建 Control 和全部 owner-native candidate。Control 会
 checkpoint 为单一 SQLite 文件，按 export 往返复验并绑定物理摘要，且不会修改任何 live owner 路径。精确
 重试与中断的 Control 暂存可以恢复；target 污染、link、未知 entry、重绑定与完成 candidate 漂移都会 fail
-closed。Complete-set activation、持久化跨 owner journal、完整 subprocess 崩溃矩阵、生产 lifecycle 转换与
-dispatch、backup/restore 与 reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+closed。Control 现在还拥有自己的 clean-target publication primitive：在同一个 attempt 与 guard 仍被保留时，
+它会在 no-clobber 原子发布前重检 canonical export、物理字节、sidecar absence 与 attempt 证据，并让精确的
+post-publication replay 返回同一个无路径结果。这还不是持久化跨进程边界。Complete-set activation、跨 owner
+journal、完整 subprocess 崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与 reachability 集成和
+协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

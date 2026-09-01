@@ -685,11 +685,19 @@ and bound by durable physical digest evidence. No live Control, Host,
 Knowledge, observation, or restore-history path is changed. Exact retries and
 interrupted Control staging recover deterministically; target contamination,
 links, unknown entries, snapshot or policy rebinding, and completed-candidate
-drift fail closed. This closes qualification of complete-set restore staging,
-not activation. A durable cross-owner activation journal and order, the full
-subprocess-exit matrix, production Grant conversion and effect dispatch,
-production backup/restore wiring, indivisible consumer cutover, and deletion
-of legacy mutable stores remain open; no A2 checkbox is complete yet.
+drift fail closed. The Control component now also has its owner-native
+clean-target publication primitive. Under the still-retained exact guard and
+attempt, it rechecks canonical export semantics, physical candidate evidence,
+sidecar absence, and the top-level attempt descriptor before a no-clobber
+atomic move to live `control.sqlite3`. Candidate-before-publication and exact
+live-after-publication states replay to the same path-free result; both-present,
+both-missing, linked, or drifted state fails closed. This closes qualification
+of complete-set restore staging and one component's retained-process
+publication boundary, not coordinated activation or process-exit recovery. A
+durable cross-owner activation journal and order, the full subprocess-exit
+matrix, production Grant conversion and effect dispatch, production
+backup/restore wiring, indivisible consumer cutover, and deletion of legacy
+mutable stores remain open; no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions
