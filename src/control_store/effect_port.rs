@@ -1,11 +1,17 @@
-use a3s_use_core::{InstallationId, PluginOperationAction, PluginSurfaceRef, UseResult};
+use a3s_use_core::{
+    InstallationId, InstallationKind, PluginOperationAction, PluginSurfaceKind, PluginSurfaceRef,
+    UseResult,
+};
 use async_trait::async_trait;
+use semver::{Version, VersionReq};
 
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
 use super::model::{
-    input_error, valid_error_code, valid_sha256, ControlCapabilityEffectAuthority,
-    ControlPackageEffectAuthority, ControlRuntimeBindingObservation, ControlRuntimeEffectAuthority,
+    input_error, valid_error_code, valid_machine_id, valid_sha256,
+    ControlCapabilityEffectAuthority, ControlEffectIntent, ControlEffectKind, ControlEffectOwner,
+    ControlEffectSubject, ControlPackageEffectAuthority, ControlRuntimeBindingObservation,
+    ControlRuntimeEffectAuthority,
 };
 
 /// Classification returned by an external effect owner.
@@ -136,6 +142,107 @@ pub(in crate::control_store) struct ControlSurfaceEffectRequest {
     pub(in crate::control_store) lifecycle_action: PluginLifecycleAction,
     pub(in crate::control_store) surface: PluginSurfaceRef,
     pub(in crate::control_store) action: ControlSurfaceEffectAction,
+}
+
+impl ControlSurfaceEffectRequest {
+    /// Revalidate the portable request at an external owner boundary.
+    ///
+    /// The dispatcher derives this value from a committed effect and its
+    /// owner-shaped authority. Keeping the binding rules on the shared request
+    /// prevents Runtime, Flow, Knowledge, Skill, and UI adapters from growing
+    /// subtly different copies of the same authority checks.
+    pub(in crate::control_store) fn validate_for_owner(
+        &self,
+        expected_kind: PluginSurfaceKind,
+        expected_owner: ControlEffectOwner,
+    ) -> UseResult<()> {
+        let authority = &self.authority;
+        let catalog = &authority.package.package.catalog;
+        let catalog_record = &catalog.record;
+        let catalog_package = &catalog.record.package;
+        let selected = catalog
+            .selected_state(&authority.package.selected_surfaces)
+            .map_err(|_| surface_authority_error())?;
+        let grant_required = authority.package.enabled && !selected.permissions.surfaces.is_empty();
+        let grant_matches = match authority.grant.as_ref() {
+            None => !grant_required,
+            Some(selection) => {
+                grant_required
+                    && self.identity.installation.kind == InstallationKind::Workspace
+                    && selection.grant.scope_id == self.identity.installation.id
+                    && selection.receipt_revision > 0
+                    && selection.receipt_revision
+                        <= authority.installation_generation.saturating_add(1)
+                    && selection.package_id() == self.package_id
+                    && selection.grant.package_digest == self.package_digest
+                    && selection.grant.descriptor_digest().is_ok_and(|digest| {
+                        digest == selection.grant_digest
+                            && selection
+                                .grant
+                                .validate_active_against(
+                                    &catalog.record.permission_ceiling,
+                                    authority.committed_at_ms,
+                                )
+                                .is_ok()
+                    })
+            }
+        };
+        let effect_kind = match self.action {
+            ControlSurfaceEffectAction::Prepare => ControlEffectKind::SurfacePrepare,
+            ControlSurfaceEffectAction::Stop => ControlEffectKind::SurfaceStop,
+            ControlSurfaceEffectAction::Remove => ControlEffectKind::SurfaceRemove,
+        };
+        let subject = ControlEffectSubject::Surface {
+            package_id: self.package_id.clone(),
+            lifecycle_generation: self.lifecycle_generation,
+            package_digest: self.package_digest.clone(),
+            manifest_digest: self.manifest_digest.clone(),
+            action: self.lifecycle_action,
+            surface: self.surface.clone(),
+        };
+        let idempotency_matches = ControlEffectIntent::new(
+            self.identity.sequence,
+            self.identity.installation.clone(),
+            self.identity.plan_digest.clone(),
+            self.identity.operation_action,
+            self.identity.installation_generation,
+            subject,
+            expected_owner,
+            effect_kind,
+            self.identity.required,
+        )
+        .is_ok_and(|intent| intent.idempotency_key == self.identity.idempotency_key);
+        let host_matches =
+            VersionReq::parse(&catalog_record.requires_use).is_ok_and(|requirement| {
+                Version::parse(&authority.host.use_version)
+                    .is_ok_and(|version| requirement.matches(&version))
+            }) && (catalog_record.target == "any"
+                || catalog_record.target == authority.host.target);
+        if !valid_machine_id(&self.identity.operation_id)
+            || !valid_machine_id(&authority.generation_operation_id)
+            || self.identity.attempt == 0
+            || self.identity.deadline_at_ms == 0
+            || self.identity.installation_generation != authority.installation_generation
+            || authority.installation_generation == 0
+            || !valid_sha256(&authority.snapshot_digest)
+            || authority.committed_at_ms == 0
+            || authority.host.validate().is_err()
+            || !host_matches
+            || authority.package.validate().is_err()
+            || (!authority.package.enabled && self.action == ControlSurfaceEffectAction::Prepare)
+            || authority.package.package_id() != self.package_id
+            || authority.lifecycle_generation != self.lifecycle_generation
+            || catalog_package.sha256.as_deref() != Some(self.package_digest.as_str())
+            || catalog_package.manifest_sha256.as_deref() != Some(self.manifest_digest.as_str())
+            || self.surface.kind != expected_kind
+            || !authority.package.selected_surfaces.contains(&self.surface)
+            || !grant_matches
+            || !idempotency_matches
+        {
+            return Err(surface_authority_error());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,4 +408,11 @@ pub(in crate::control_store) trait ControlUiEffectPort:
         &self,
         request: &ControlSurfaceEffectRequest,
     ) -> ControlEffectPortOutcome<ControlSurfaceApplication>;
+}
+
+fn surface_authority_error() -> a3s_use_core::UseError {
+    a3s_use_core::UseError::new(
+        "use.control_store.surface_authority_invalid",
+        "Surface execution requires one exact committed package authority.",
+    )
 }

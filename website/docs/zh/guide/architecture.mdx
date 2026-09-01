@@ -169,8 +169,14 @@ Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后记录 applied、
 Deferred 只用于 owner 已证明未接受任何 effect 的结果；有界、持久化的 not-before 时间会阻止提前 claim，
 并在到期后允许自动复用原 key。Provider timeout 必须在 claim lease 内保留固定的 observation 预算并作为 unknown evidence；取消、
 可能已产生 effect 后的进程退出、过期 claim 与含糊结果都必须显式重放已提交 key。生产 lifecycle
-仍不会构造它；真实 adapter 的完整 manifest、Grant、Runtime 与 capability 输入只能来自已提交
-Control authority 与 immutable artifact。
+仍不会构造它。首个真实的 post-commit adapter 现已覆盖 immutable Skill/UI preparation：它会从
+owner-shaped committed request 重新派生 typed owner 与原始 idempotency key，通过 verified Artifact
+Store lease 获取精确 package，在不暴露 package root 的情况下读取一个 named surface，并在读取后
+重新验证完整 package。它生成的无路径 receipt 不受重试 attempt/deadline 影响；contention 会成为可自动
+复用同一 key 的安全 deferred，篡改、缺失或 authority 替换会成为已证明无副作用的 rejected，这个
+只读 adapter 不会产生 unknown acceptance。Static stop/remove 仅生成与路径无关的 projection receipt。
+其余 owner adapter 与 dispatcher composition 仍必须只从已提交 Control authority 与 immutable artifact
+推导完整 manifest、Grant、Runtime 和 capability 输入。
 私有的无路径 registry 还冻结了五个外部 payload owner ID 与精确
 ACL backup policy：全局 Artifact Store 被明确排除，另外四个 owner 必须生成完整、绑定 generation、
 且具有 schema、digest 与计数上限的规范 receipt 集。私有 snapshot session 现在会在同一个排他

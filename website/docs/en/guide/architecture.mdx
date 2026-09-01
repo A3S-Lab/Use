@@ -190,9 +190,18 @@ bounded durable not-before time blocks early claims and then permits automatic
 same-key retry. Provider timeout leaves a fixed observation budget inside the
 claim lease and becomes unknown evidence; cancellation, process exit after a
 possible effect, expired claims, and ambiguity require explicit replay of the
-committed key. Production lifecycle still does not construct it. Real adapters
-must derive their complete manifest, Grant, Runtime, and capability inputs only
-from committed Control authority and immutable artifacts.
+committed key. Production lifecycle still does not construct it. The first
+concrete post-commit adapter now covers immutable Skill and UI preparation. It
+re-derives the typed owner and committed idempotency key, acquires the exact
+package through the verified Artifact Store lease, reads one named surface
+without exposing its package root, re-verifies the full package, and returns a
+stable path-free receipt independent of retry claim metadata. Contention safely
+defers the same key; tampering, absence, or authority substitution is a
+proved-no-effect rejection; this read-only adapter cannot report unknown
+acceptance. Static stop/remove are path-independent projection receipts.
+Remaining adapters and dispatcher composition must derive all manifest, Grant,
+Runtime, and capability inputs only from committed Control authority and
+immutable artifacts.
 A private path-free registry also freezes the five external payload-owner IDs
 and exact ACL backup policies. Artifact Store exclusion is explicit; the four
 snapshotted owners must produce one complete, generation-bound canonical

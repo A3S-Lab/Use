@@ -151,10 +151,18 @@ re-entry during owner I/O, a hung owner, and the unobserved-effect crash
 boundary.
 
 Production lifecycle code does not construct it, so it neither mirrors nor
-replaces the current JSON authority. Lifecycle
-conversion still must feed the reviewed Grant evidence and compose real owner
-adapters whose full manifest, Grant, Runtime, and capability inputs come only
-from committed Control authority and immutable artifacts.
+replaces the current JSON authority. The first concrete post-commit adapter now
+qualifies immutable Skill/UI preparation. It re-derives the typed owner and
+committed idempotency key, acquires one exact package through the verified
+Artifact Store lease, reads one named surface without exposing the package
+root, re-verifies the complete package, and returns a stable path-free receipt
+that excludes retry claim metadata. Contention safely defers the same key;
+tamper, absence, or authority substitution rejects with proof of no effect;
+the read-only adapter has no unknown-acceptance state. Static stop/remove are
+path-independent projection receipts. Lifecycle conversion still must feed the
+reviewed Grant evidence, qualify the remaining owner adapters, and compose the
+dispatcher; all Runtime and capability inputs must come only from committed
+Control authority and immutable artifacts.
 The inactive kernel now has a path-free external-payload registry/evidence
 contract: five fixed owner identities and ACL backup policies, explicit global
 Artifact Store exclusion, and one exact canonical receipt set for the four

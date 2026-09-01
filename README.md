@@ -1371,11 +1371,19 @@ before owner I/O. The multi-root test also fixed generation insertion so all
 package nodes precede their immediate-foreign-key dependency edges within the
 same transaction. The dispatcher is not constructed by production lifecycle
 code and does not create a second authority beside the current JSON stores.
-Production lifecycle conversion still must feed authorization-v2 Grant evidence
-and compose real owner adapters. Those adapters must acquire the new verified
-artifact lease and derive surface inputs only through it plus this committed
-context, without conflating applied evidence with reviewed selection or using a
-resolved content path as authority. The kernel now
+The first concrete post-commit owner adapter now qualifies immutable Skill and
+UI preparation against that boundary. It re-derives the typed owner and
+idempotency key from the portable request, acquires the exact package only
+through the verified artifact lease, reads one named surface without exposing
+the package root, and re-verifies the complete package before returning a
+stable path-free receipt. Claim attempts and deadlines do not change that
+receipt. Artifact contention is a durable same-key deferral; tampering,
+missing content, or authority substitution is a proved-no-effect rejection;
+the read-only adapter never reports ambiguous acceptance. Static stop and
+remove are path-independent projection receipts and therefore remain replayable
+after artifact collection. Production lifecycle conversion still must feed
+authorization-v2 Grant evidence, qualify the remaining owner adapters, and
+compose the dispatcher. The kernel now
 also qualifies the path-free
 external-payload registration and
 snapshot-evidence boundary. Its five frozen owner identities and fixed backup
@@ -1529,8 +1537,9 @@ it can only resume bounded retirement of the five link-free staging trees. The
 surviving canonical `attempt.json` and complete `activation.json` form the exact
 installation-bound terminal receipt. Legacy backup and artifact reachability
 exclude only that two-file receipt; incomplete, extended, linked, or tampered
-evidence fails closed. Production Grant conversion, committed-authority owner
-adapters and dispatcher composition, backup/restore command wiring, indivisible
+evidence fails closed. Production Grant conversion, remaining
+committed-authority owner adapters and dispatcher composition, backup/restore
+command wiring, indivisible
 consumer cutover, and deletion of legacy mutable stores remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter

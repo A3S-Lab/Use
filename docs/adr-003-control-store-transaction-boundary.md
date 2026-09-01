@@ -238,7 +238,7 @@ to a committed transaction plus explicit external-effect observations.
 ### Current qualification status
 
 The checked-in inactive kernel implements most of the local Control Store work
-in step 2, not the authority cutover. Schema v9 binds one exact installation
+in step 2, not the authority cutover. Schema v10 binds one exact installation
 and stores the complete generation history, canonical reviewed Plan envelopes,
 versioned authorization evidence, exact installation snapshots and relational
 graph projections, canonical full Workspace Grants, provider bindings,
@@ -303,10 +303,19 @@ rejection. Cancellation, process exit
 between effect and observation, expired claim, and unknown acceptance converge
 only through explicit replay of the original idempotency key. Qualification
 tests also let a provider re-enter the Store during its call, proving no
-executor permit spans the I/O. These ports are not production adapters yet:
-their eventual inputs must be reconstructed from the exact committed
-generation, reviewed evidence, and immutable artifact, never from legacy
-mutable files.
+executor permit spans the I/O. The immutable Skill/UI port is now the first
+concrete post-commit adapter. It reconstructs and revalidates its typed owner
+and original idempotency key from the owner-shaped committed request, acquires
+package evidence only through the verified Artifact Store lease, reads one
+exact named surface without exposing a package root, and re-verifies the full
+package after that bounded read. Its path-free receipt is stable across claim
+attempts and deadlines. Artifact contention is deferred only with proof that no
+effect was accepted; package drift or authority substitution is rejected; the
+read-only operation cannot produce unknown acceptance. Stop and remove are
+path-independent projection receipts. The remaining ports are not production
+adapters yet, and production composition must reconstruct their inputs from
+exact committed generations, reviewed evidence, and immutable artifacts, never
+from legacy mutable files.
 
 The kernel uses WAL with full synchronous durability and foreign-key
 enforcement, rejects unknown schema or filesystem state, and serializes
