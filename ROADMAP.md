@@ -585,10 +585,17 @@ observation, teardown masquerading as preparation, or generation drift fails
 closed before provider I/O. The multi-root qualification exposed and fixed an
 immediate-foreign-key ordering defect: generation commit now writes the complete
 package node set before dependency edges and surfaces in the same transaction.
-This is still ADR-003 step-3 infrastructure only. Production adapters must next
-open and verify the exact immutable package artifact, derive the manifest and
-surface inputs from it plus this committed context, and persist only typed
-observations; no adapter may read legacy authority.
+The Artifact Store now supplies the corresponding non-cloneable verified read
+lease. Acquisition holds both coordinated read locks and binds one complete
+verified catalog record to the full package fingerprint, manifest digest,
+exact byte/file counts, manifest surface graph, surface-file validation,
+quarantine state, and incomplete-GC fence. The handle exposes no package root,
+bounded manifest reads precede ACL parsing, missing locks are not created by a
+read, and repeat verification detects uncoordinated tampering. This is still
+ADR-003 step-3 infrastructure only. Production adapters must next derive their
+surface inputs through this lease plus committed Control context and persist
+only typed observations; no adapter may read legacy authority or treat a path
+as authority.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do

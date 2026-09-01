@@ -12,6 +12,7 @@ mod audit;
 mod blob;
 mod garbage_collection;
 mod inventory;
+mod package_read;
 mod quarantine;
 mod quota;
 mod reachability;
@@ -34,6 +35,7 @@ pub use inventory::{
     ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState, ArtifactStoreInventory,
     ARTIFACT_STORE_INVENTORY_SCHEMA, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
 };
+pub use package_read::VerifiedArtifactPackage;
 pub use quarantine::{
     ArtifactQuarantinePlan, ArtifactQuarantineRecord, ArtifactQuarantineResult,
     ARTIFACT_QUARANTINE_PLAN_SCHEMA, ARTIFACT_QUARANTINE_RECORD_SCHEMA,
@@ -64,6 +66,8 @@ mod audit_tests;
 mod garbage_collection_recovery_tests;
 #[cfg(test)]
 mod garbage_collection_tests;
+#[cfg(test)]
+mod package_read_tests;
 #[cfg(test)]
 mod quarantine_tests;
 #[cfg(test)]
@@ -242,11 +246,23 @@ impl Drop for ArtifactMutationLock {
 }
 
 fn open_lock_file(path: &Path, label: &str) -> UseResult<File> {
+    open_lock_file_with_create(path, label, true)
+}
+
+pub(super) fn open_existing_lock_file(path: &Path, label: &str) -> UseResult<File> {
+    open_lock_file_with_create(path, label, false)
+}
+
+fn open_lock_file_with_create(path: &Path, label: &str, create: bool) -> UseResult<File> {
     if let Ok(metadata) = std::fs::symlink_metadata(path) {
         validate_lock_metadata(path, &metadata, label)?;
     }
     let mut options = OpenOptions::new();
-    options.create(true).truncate(false).read(true).write(true);
+    options
+        .create(create)
+        .truncate(false)
+        .read(true)
+        .write(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;

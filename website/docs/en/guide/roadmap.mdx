@@ -131,10 +131,14 @@ latest terminal preparation for every enabled selected surface, including
 retained multi-root history and optional degradation. Missing Grant coverage,
 nonterminal or teardown state, and generation drift fail closed before owner
 I/O. Multi-package generation commit now inserts the complete node set before
-immediate-foreign-key dependency edges in the same transaction. Production
-lifecycle code does not construct this dispatcher, and real adapters must still
-verify exact immutable artifacts and derive manifests and surface inputs only
-from those bytes plus committed Control context.
+immediate-foreign-key dependency edges in the same transaction. The Artifact
+Store now supplies a non-cloneable verified package lease that holds the global
+reachability and per-artifact mutation locks, rejects quarantine or incomplete
+GC, binds the complete package fingerprint, bounded manifest, exact
+measurements, catalog surface graph, and declared files, and exposes no package
+root. Production lifecycle code does not construct this dispatcher, and real
+adapters must next derive surface inputs through that lease plus committed
+Control context.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact

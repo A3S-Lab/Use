@@ -261,9 +261,14 @@ retained observations across multi-root generations and optional degradation.
 Missing Grant coverage, nonterminal or teardown observations, and generation
 drift fail closed before provider I/O. Multi-package generation insertion now
 writes all selected package nodes before immediate-foreign-key dependency edges
-in the same transaction. Immutable-artifact verification, real adapter
-implementations, dispatcher composition, and production conversion into the
-reviewed inputs used by the inactive kernel remain gate 3 work.
+in the same transaction. The Artifact Store now provides a non-cloneable
+verified package lease for those contexts: it holds the global reachability and
+per-artifact mutation locks in shared mode; rejects quarantine and incomplete
+GC; binds the full package fingerprint, bounded manifest, exact measurements,
+catalog surface graph, and surface files; exposes no package root; and can
+repeat verification before success is observed. Real adapter implementations,
+dispatcher composition, and production conversion into the reviewed inputs
+used by the inactive kernel remain gate 3 work.
 
 Production activation is blocked until all gates below are true:
 
