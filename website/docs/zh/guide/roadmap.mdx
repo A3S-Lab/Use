@@ -124,8 +124,13 @@ mutation 共享锁，拒绝 quarantine 或未完成 GC，绑定完整 package fi
 lease 读取精确的 named surface，并在读取后复验完整 package；无路径 receipt 不受重试 claim metadata
 影响。Artifact Store contention 会成为可自动复用同一 key 的安全 deferred，篡改、缺失或 authority
 替换会成为已证明无副作用的 rejected，这个只读 adapter 不会产生 unknown acceptance；static
-stop/remove 也不依赖 artifact 路径。生产 lifecycle 仍不会构造 dispatcher，其余 owner adapter 与整体
-composition 必须遵守同一个 committed Control boundary。私有的无路径 payload 契约现已冻结五个外部 owner ID
+stop/remove 也不依赖 artifact 路径。生产 lifecycle 仍不会构造 dispatcher。OKF Knowledge adapter 现已加入
+同一个 committed Control boundary：首次
+prepare 使用经过验证的无路径字节，先保存 staged receipt 再 promote，在 applied 前保存 promoted evidence，
+并可仅凭保留 receipt 重放；任何可能已被接受的外部 effect 或后续 receipt 写入歧义都保持 unknown。真实
+SQLite 组合测试覆盖已提交 claim 到持久化 Control observation。Artifact-only admission 具备幂等性、会重验
+prepared source、不创建 lifecycle receipt，并让 reference admission 跨越独立 Control commit。仍待实现的是
+Runtime、Flow、Capability Index、invocation lease adapter 与生产 composition。私有的无路径 payload 契约现已冻结五个外部 owner ID
 及其 ACL backup policy；
 全局 Artifact Store 被明确排除，另外四个 owner 必须形成一组完整、规范、绑定精确 installation、
 Control generation、registry/owner schema、digest 与有界计数的 receipt。私有 session 现在会在一个
@@ -184,7 +189,7 @@ marker 缺失；乱序 live root、含糊 marker、link、重绑定和 evidence 
 不再执行 owner effect，只能恢复五个无 link 暂存树的有界固定顺序退休。18 个真实子进程退出边界覆盖顶层
 协议和每个退休边界。规范的 `attempt.json` 与完整 `activation.json` 构成精确绑定 installation 的终态
 收据。旧 backup 和 artifact reachability 只排除该收据；不完整、扩展、含 link 或被篡改的 evidence 都会
-fail closed。生产 Grant 转换、其余基于已提交权威的 owner adapter 与 dispatcher 组合、backup/restore 接线和
+fail closed。生产 Grant 转换、Runtime、Flow、Capability Index、invocation lease adapter 与 dispatcher 组合、backup/restore 接线和
 协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线

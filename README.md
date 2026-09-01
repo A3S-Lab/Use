@@ -1388,9 +1388,24 @@ receipt. Artifact contention is a durable same-key deferral; tampering,
 missing content, or authority substitution is a proved-no-effect rejection;
 the read-only adapter never reports ambiguous acceptance. Static stop and
 remove are path-independent projection receipts and therefore remain replayable
-after artifact collection. Production lifecycle conversion still must feed
-authorization-v2 Grant evidence, qualify the remaining owner adapters, and
-compose the dispatcher. The kernel now
+after artifact collection. A second concrete adapter now qualifies OKF
+Knowledge against the same committed boundary. First preparation consumes a
+path-free, fully verified OKF byte payload; stages receipt-owned SQLite/FTS5
+state; persists staged evidence before promotion; persists promoted evidence
+before reporting applied; and returns the exact observation and capability
+projection digests. A retained promoted receipt replays without reopening the
+Artifact Store. Pre-effect contention safely defers, authority or byte drift
+rejects, and any ambiguous stage, promote, remove, or receipt-persistence
+boundary remains unknown for explicit same-key reconciliation. Stop is a
+path-independent checkpoint and remove uses only the retained projection
+receipt. The composition test now proves a committed Control claim through the
+real Knowledge adapter and back into a durable Control application
+observation. Artifact admission is separately idempotent and revalidates the
+prepared source while creating no installation lifecycle receipt; callers must
+retain its global reference-admission guard through the separate authority
+commit. Production lifecycle conversion still must feed authorization-v2
+Grant evidence, qualify the Runtime, Flow, Capability Index, and
+invocation-lease adapters, and compose the dispatcher. The kernel now
 also qualifies the path-free
 external-payload registration and
 snapshot-evidence boundary. Its five frozen owner identities and fixed backup
@@ -1544,8 +1559,8 @@ it can only resume bounded retirement of the five link-free staging trees. The
 surviving canonical `attempt.json` and complete `activation.json` form the exact
 installation-bound terminal receipt. Legacy backup and artifact reachability
 exclude only that two-file receipt; incomplete, extended, linked, or tampered
-evidence fails closed. Production Grant conversion, remaining
-committed-authority owner adapters and dispatcher composition, backup/restore
+evidence fails closed. Production Grant conversion, remaining Runtime, Flow,
+Capability Index, and invocation-lease adapters and dispatcher composition, backup/restore
 command wiring, indivisible
 consumer cutover, and deletion of legacy mutable stores remain open.
 The research-preview

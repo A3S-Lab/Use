@@ -615,9 +615,23 @@ metadata. Artifact lock or I/O contention becomes a safe durable deferral;
 tampering, missing content, and authority substitution become terminal
 proved-no-effect rejection; this read-only adapter has no unknown-acceptance
 state. Static stop/remove receipts require no artifact path or bytes. This
-remains inactive ADR-003 step-3 qualification: remaining owners and production
-dispatcher composition must follow the same boundary, and no adapter may read
-legacy authority or treat a path as authority.
+is now joined by a real OKF Knowledge adapter. It revalidates the exact
+committed Knowledge owner and idempotency key, reads first-use OKF content as a
+path-free verified byte payload, stores staged receipt evidence before
+promotion, stores promoted evidence before returning applied, and can replay a
+retained promoted generation without Artifact access. Stage, promotion,
+removal, or post-effect receipt ambiguity is durable unknown evidence;
+pre-effect contention is a safe deferral; authority or immutable-byte drift is
+rejected. Stop is path-independent and remove is driven only by the retained
+receipt. A real SQLite composition test exercises committed claim, detached
+dispatcher coordinator, Knowledge materialization, and durable Control
+observation together. Artifact-only admission is now distinct from legacy
+lifecycle publication: it is idempotent, revalidates prepared bytes, creates no
+installation receipt, and requires its reference-admission guard to span the
+separate authority commit. This remains inactive ADR-003 step-3 qualification:
+Runtime, Flow, Capability Index, invocation-lease, and production dispatcher
+composition must follow the same boundary, and no adapter may read legacy
+authority or treat a path as authority.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
@@ -770,7 +784,8 @@ retirement boundary. The surviving canonical `attempt.json` and complete
 `activation.json` are the exact installation-bound terminal receipt. Legacy
 backup and artifact reachability exclude only that receipt; incomplete,
 extended, linked, or tampered evidence fails closed. Production Grant conversion,
-remaining committed-authority owner adapters and dispatcher composition, production
+remaining Runtime, Flow, Capability Index, and invocation-lease adapters and
+dispatcher composition, production
 backup/restore wiring, indivisible consumer cutover, and deletion of legacy
 mutable stores remain open; no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every

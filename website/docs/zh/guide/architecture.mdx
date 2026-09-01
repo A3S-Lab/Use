@@ -177,8 +177,15 @@ Store lease 获取精确 package，在不暴露 package root 的情况下读取�
 重新验证完整 package。它生成的无路径 receipt 不受重试 attempt/deadline 影响；contention 会成为可自动
 复用同一 key 的安全 deferred，篡改、缺失或 authority 替换会成为已证明无副作用的 rejected，这个
 只读 adapter 不会产生 unknown acceptance。Static stop/remove 仅生成与路径无关的 projection receipt。
-其余 owner adapter 与 dispatcher composition 仍必须只从已提交 Control authority 与 immutable artifact
-推导完整 manifest、Grant、Runtime 和 capability 输入。
+第二个真实 adapter 现已覆盖 OKF Knowledge。首次 prepare 只读取经过完整验证的无路径 Artifact 字节，
+先持久化 staged receipt 再 promote，并在报告 applied 前持久化 promoted evidence；已有 promoted receipt
+无需再次访问 Artifact。外部 effect 前的 contention 可安全 deferred；authority 或字节漂移会 rejected；
+stage、promote、remove 或 effect 后 receipt 写入的歧义都保持 unknown，并要求显式复用同一 key 进行
+reconciliation。Stop 不修改 Knowledge payload，remove 只使用保留 receipt。真实 SQLite 组合测试已覆盖
+已提交 claim、dispatcher、Knowledge materialization 与持久化 Control observation。独立 Artifact admission
+具备幂等性，不创建 lifecycle authority，并让 reference guard 跨越单独的 Control commit。Runtime、Flow、
+Capability Index、invocation lease adapter 与生产 composition 仍必须只从已提交 Control authority 与
+immutable artifact 推导输入。
 私有的无路径 registry 还冻结了五个外部 payload owner ID 与精确
 ACL backup policy：全局 Artifact Store 被明确排除，另外四个 owner 必须生成完整、绑定 generation、
 且具有 schema、digest 与计数上限的规范 receipt 集。私有 snapshot session 现在会在同一个排他

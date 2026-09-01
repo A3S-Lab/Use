@@ -165,10 +165,23 @@ root, re-verifies the complete package, and returns a stable path-free receipt
 that excludes retry claim metadata. Contention safely defers the same key;
 tamper, absence, or authority substitution rejects with proof of no effect;
 the read-only adapter has no unknown-acceptance state. Static stop/remove are
-path-independent projection receipts. Lifecycle conversion still must feed the
-reviewed Grant evidence, qualify the remaining owner adapters, and compose the
-dispatcher; all Runtime and capability inputs must come only from committed
-Control authority and immutable artifacts.
+path-independent projection receipts. The OKF Knowledge adapter is the second
+concrete post-commit owner. It consumes first-use content only as a path-free
+verified Artifact payload, persists the receipt-owned staged state before
+promotion, persists promoted state before reporting applied, and replays a
+retained promoted projection without Artifact access. Pre-effect contention is
+deferred; invalid authority or immutable bytes are rejected; every ambiguous
+stage, promotion, removal, or receipt write is unknown and requires explicit
+same-key reconciliation. Stop creates no Knowledge mutation and remove uses the
+retained receipt. A committed-claim integration test composes the dispatcher,
+real SQLite/FTS5 adapter, retained binding, and durable Control observation.
+The Artifact Store now also admits a prepared package independently of legacy
+lifecycle publication: admission is idempotent, revalidates the source, creates
+no installation receipt, and its global reference guard must span the separate
+Control reference commit. Lifecycle conversion still must feed reviewed Grant
+evidence and qualify Runtime, Flow, Capability Index, and invocation-lease
+owners; all inputs must come only from committed Control authority and
+immutable artifacts.
 The inactive kernel now has a path-free external-payload registry/evidence
 contract: five fixed owner identities and ACL backup policies, explicit global
 Artifact Store exclusion, and one exact canonical receipt set for the four

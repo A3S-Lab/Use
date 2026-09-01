@@ -318,10 +318,22 @@ package after that bounded read. Its path-free receipt is stable across claim
 attempts and deadlines. Artifact contention is deferred only with proof that no
 effect was accepted; package drift or authority substitution is rejected; the
 read-only operation cannot produce unknown acceptance. Stop and remove are
-path-independent projection receipts. The remaining ports are not production
-adapters yet, and production composition must reconstruct their inputs from
-exact committed generations, reviewed evidence, and immutable artifacts, never
-from legacy mutable files.
+path-independent projection receipts. The OKF Knowledge port is now the second
+concrete post-commit adapter. It accepts only the exact committed owner-shaped
+request, obtains first-use OKF files as a verified path-free payload, persists
+staged receipt evidence before promotion and promoted evidence before applied
+observation, and replays an existing promoted projection without Artifact
+access. Safe pre-effect contention is deferred, invalid authority or content is
+rejected, and every potentially accepted stage, promotion, removal, or later
+receipt-write failure is unknown. A real SQLite composition fixture now proves
+claim, owner effect, and Control observation under the dispatcher fence.
+Immutable package admission has also been separated from lifecycle authority:
+it revalidates and idempotently materializes prepared bytes without creating an
+installation receipt, while the caller retains global reference admission
+through the distinct Control commit. Runtime, Flow, Capability Index, and
+invocation-lease ports are not production adapters yet, and production
+composition must reconstruct their inputs from exact committed generations,
+reviewed evidence, and immutable artifacts, never from legacy mutable files.
 
 The kernel uses WAL with full synchronous durability and foreign-key
 enforcement, rejects unknown schema or filesystem state, and serializes
