@@ -140,9 +140,15 @@ Store now supplies a non-cloneable verified package lease that holds the global
 reachability and per-artifact mutation locks, rejects quarantine or incomplete
 GC, binds the complete package fingerprint, bounded manifest, exact
 measurements, catalog surface graph, and declared files, and exposes no package
-root. Production lifecycle code does not construct this dispatcher, and real
-adapters must next derive surface inputs through that lease plus committed
-Control context.
+root. The first concrete post-commit adapter now uses that lease for immutable
+Skill and UI preparation. It re-derives the typed owner and committed
+idempotency key, reads only the named surface, re-verifies the complete package,
+and emits a stable path-free receipt that excludes retry claim metadata.
+Contention is a safe same-key deferral; tampering, absence, or authority
+substitution is a proved-no-effect rejection; this read-only adapter cannot
+produce unknown acceptance. Static stop/remove remain path-independent.
+Production lifecycle still does not construct the dispatcher; remaining owner
+adapters and composition must use the same committed Control boundary.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact
@@ -240,7 +246,7 @@ including every retirement boundary. The canonical `attempt.json` and complete
 `activation.json` then form the exact installation-bound terminal receipt.
 Legacy backup and artifact reachability exclude only that receipt; incomplete,
 extended, linked, or tampered evidence fails closed. Production Grant
-conversion, committed-authority owner adapters and dispatcher composition,
+conversion, remaining committed-authority owner adapters and dispatcher composition,
 backup/restore wiring, and coordinated authority cutover remain open; no A2
 roadmap item is complete yet.
 

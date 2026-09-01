@@ -12,6 +12,7 @@ use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
 
 mod aggregate;
 mod dispatcher;
+mod effect_owner;
 mod effect_port;
 mod executor;
 mod export;
@@ -425,5 +426,7 @@ mod payload_restore_coordinator_security_tests;
 mod payload_restore_coordinator_tests;
 #[cfg(test)]
 mod payload_snapshot_session_tests;
+#[cfg(test)]
+mod static_surface_effect_tests;
 #[cfg(test)]
 mod tests;

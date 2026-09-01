@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use a3s_use_core::{PluginCatalogRecord, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord};
+use a3s_use_core::{
+    CatalogSurface, PluginCatalogRecord, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+};
 use fs2::FileExt;
 
 use super::*;
@@ -48,6 +50,39 @@ async fn verified_package_lease_binds_catalog_identity_and_blocks_mutation() {
     mutation.try_lock_exclusive().unwrap();
     FileExt::unlock(&mutation).unwrap();
     drop(store.acquire_collection().await.unwrap());
+}
+
+#[tokio::test]
+async fn verified_package_lease_inspects_one_named_skill_without_exposing_its_path() {
+    let fixture = package_fixture();
+    let (_temporary, store, catalog, _) = stage_fixture(&fixture).await;
+    let package = store.acquire_verified_package(&catalog).await.unwrap();
+
+    let evidence = package.inspect_skill_surface("research").await.unwrap();
+
+    assert_eq!(evidence.file_count(), 1);
+    assert!(evidence.expanded_bytes() > 0);
+    assert!(evidence.digest().starts_with("sha256:"));
+    assert_eq!(evidence.digest().len(), 71);
+
+    let error = package.inspect_skill_surface("missing").await.unwrap_err();
+    assert_eq!(error.code, "use.artifact_store.surface_missing");
+}
+
+#[tokio::test]
+async fn verified_package_lease_inspects_one_named_ui_snapshot() {
+    let fixture = static_package_fixture();
+    let catalog = catalog_for_static_fixture(&fixture).await;
+    let (_temporary, store, _, _) = stage_fixture_with_catalog(&fixture, catalog.clone()).await;
+    let package = store.acquire_verified_package(&catalog).await.unwrap();
+
+    let skill = package.inspect_skill_surface("guide").await.unwrap();
+    let ui = package.inspect_ui_surface("panel").await.unwrap();
+
+    assert_eq!(skill.file_count(), 1);
+    assert_eq!(ui.file_count(), 3);
+    assert!(ui.expanded_bytes() > 0);
+    assert_ne!(skill.digest(), ui.digest());
 }
 
 #[tokio::test]
@@ -170,9 +205,21 @@ async fn stage_fixture(
     VerifiedPluginCatalogRecord,
     PathBuf,
 ) {
+    let catalog = catalog_for_fixture(fixture).await;
+    stage_fixture_with_catalog(fixture, catalog).await
+}
+
+async fn stage_fixture_with_catalog(
+    fixture: &Path,
+    catalog: VerifiedPluginCatalogRecord,
+) -> (
+    tempfile::TempDir,
+    ArtifactStore,
+    VerifiedPluginCatalogRecord,
+    PathBuf,
+) {
     let temporary = tempfile::tempdir().unwrap();
     let store = ArtifactStore::from_data_root(&temporary.path().join("data"));
-    let catalog = catalog_for_fixture(fixture).await;
     let digest = catalog.record.package.sha256.as_deref().unwrap();
     let package_root = store.expanded_package_path(digest).unwrap();
     let admission = store.acquire_reference_admission().await.unwrap();
@@ -201,6 +248,43 @@ async fn catalog_for_fixture(root: &Path) -> VerifiedPluginCatalogRecord {
     verified_catalog(record)
 }
 
+async fn catalog_for_static_fixture(root: &Path) -> VerifiedPluginCatalogRecord {
+    let (manifest, manifest_bytes) = crate::package::read_manifest(root).await.unwrap();
+    let fingerprint = crate::digest::package_fingerprint(root).await.unwrap();
+    let mut record = PluginCatalogRecord::from_json(include_bytes!(
+        "../../../core/fixtures/plugins/catalog-record-okf-v3.json"
+    ))
+    .unwrap();
+    record.package_id = manifest.package_id.clone();
+    record.display_name = "Static Surface Fixture".to_string();
+    record.description = "Path-free static surface lease fixture.".to_string();
+    record.version = manifest.version.clone();
+    record.dependencies = manifest.dependencies.clone();
+    record.surfaces = manifest
+        .plugin_surfaces()
+        .unwrap()
+        .into_iter()
+        .map(|surface| CatalogSurface {
+            kind: surface.surface.kind,
+            id: surface.surface.id,
+            optional: surface.optional,
+            workload: None,
+            mcp_transport: None,
+            mcp_tool_count: None,
+            okf_bundle: None,
+            requires: surface.dependencies,
+        })
+        .collect();
+    record.archive.target_name =
+        "extensions/acme/static/1.0.0/stable/linux-x86_64/acme-static-1.0.0-linux-x86_64.tar.gz"
+            .to_string();
+    record.package.expanded_bytes = fingerprint.byte_count;
+    record.package.file_count = fingerprint.file_count;
+    record.package.sha256 = Some(format!("sha256:{}", fingerprint.sha256));
+    record.package.manifest_sha256 = Some(format!("sha256:{}", sha256(&manifest_bytes)));
+    verified_catalog(record)
+}
+
 fn verified_catalog(record: PluginCatalogRecord) -> VerifiedPluginCatalogRecord {
     record.validate().unwrap();
     let provenance = VerifiedCatalogProvenance {
@@ -218,4 +302,8 @@ fn verified_catalog(record: PluginCatalogRecord) -> VerifiedPluginCatalogRecord 
 
 fn package_fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/plugin-v3-okf/package")
+}
+
+fn static_package_fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/plugin-v3-static/package")
 }

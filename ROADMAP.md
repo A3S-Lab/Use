@@ -493,7 +493,7 @@ inventory prerequisite only. It neither activates the database nor completes
 an A2 checkbox.
 
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
-for a clean installation. Schema v9 binds one exact `InstallationId` and stores
+for a clean installation. Schema v10 binds one exact `InstallationId` and stores
 contiguous installation generations, canonical complete reviewed Plan
 envelopes, versioned authorization evidence, exact snapshots, full Workspace
 Grants, provider bindings, capability candidates, lifecycle checkpoints, and an
@@ -597,11 +597,19 @@ verified catalog record to the full package fingerprint, manifest digest,
 exact byte/file counts, manifest surface graph, surface-file validation,
 quarantine state, and incomplete-GC fence. The handle exposes no package root,
 bounded manifest reads precede ACL parsing, missing locks are not created by a
-read, and repeat verification detects uncoordinated tampering. This is still
-ADR-003 step-3 infrastructure only. Production adapters must next derive their
-surface inputs through this lease plus committed Control context and persist
-only typed observations; no adapter may read legacy authority or treat a path
-as authority.
+read, and repeat verification detects uncoordinated tampering. The first real
+post-commit adapter uses that lease for immutable Skill and UI surfaces. It
+re-derives the typed owner and original idempotency key from committed portable
+fields, validates the exact package/lifecycle/host/snapshot/Grant authority,
+reads only the named surface, re-verifies the full package after the bounded
+read, and emits a stable path-free content receipt independent of retry claim
+metadata. Artifact lock or I/O contention becomes a safe durable deferral;
+tampering, missing content, and authority substitution become terminal
+proved-no-effect rejection; this read-only adapter has no unknown-acceptance
+state. Static stop/remove receipts require no artifact path or bytes. This
+remains inactive ADR-003 step-3 qualification: remaining owners and production
+dispatcher composition must follow the same boundary, and no adapter may read
+legacy authority or treat a path as authority.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
@@ -754,7 +762,7 @@ retirement boundary. The surviving canonical `attempt.json` and complete
 `activation.json` are the exact installation-bound terminal receipt. Legacy
 backup and artifact reachability exclude only that receipt; incomplete,
 extended, linked, or tampered evidence fails closed. Production Grant conversion,
-committed-authority owner adapters and dispatcher composition, production
+remaining committed-authority owner adapters and dispatcher composition, production
 backup/restore wiring, indivisible consumer cutover, and deletion of legacy
 mutable stores remain open; no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every

@@ -72,9 +72,10 @@ permits automatic retry of the same key. A hard provider timeout must leave a
 fixed observation budget inside the claim lease and is recorded as unknown.
 Process exit, cancellation, expired claim, and
 ambiguous acceptance can resume only by explicitly reusing the committed
-idempotency key. Production owner adapters and dispatcher composition remain
-part of the indivisible cutover; they may derive full inputs only from committed
-Control authority and immutable artifacts, never from the legacy stores.
+idempotency key. Remaining production owner adapters and dispatcher
+composition remain part of the indivisible cutover; they may derive full inputs
+only from committed Control authority and immutable artifacts, never from the
+legacy stores.
 
 The inactive kernel now freezes these five identities and their exact backup
 policies in a path-free typed registry contract. Artifact Store exclusion is
@@ -252,7 +253,7 @@ selection, the candidate capability descriptor, and the complete ordered
 effect-intent inventory for all five lifecycle actions. Provider selection is
 derived only for Tool and MCP surfaces; it is not an applied binding
 observation. Package, Grant, lifecycle, and selection facts stay inside the
-transaction instead of becoming pseudo effects. Schema v9 also persists and
+transaction instead of becoming pseudo effects. Schema v10 also persists and
 offline-verifies typed Capability Index, invocation-lease, Runtime
 Task/opaque-Service readiness, Flow artifact, Knowledge projection, and
 Skill/UI content application evidence. The cutover observation advances
@@ -272,9 +273,17 @@ verified package lease for those contexts: it holds the global reachability and
 per-artifact mutation locks in shared mode; rejects quarantine and incomplete
 GC; binds the full package fingerprint, bounded manifest, exact measurements,
 catalog surface graph, and surface files; exposes no package root; and can
-repeat verification before success is observed. Real adapter implementations,
-dispatcher composition, and production conversion into the reviewed inputs
-used by the inactive kernel remain gate 3 work.
+repeat verification before success is observed. The first concrete
+post-commit adapter now qualifies immutable Skill and UI owners. It re-derives
+the typed owner and committed idempotency key, reads only the exact named
+surface through that lease, re-verifies the complete package after the read,
+and returns a stable path-free receipt independent of claim attempt/deadline.
+Contention is a safe same-key deferral; tampering, absence, and authority
+substitution are proved-no-effect rejection; this read-only adapter never
+claims unknown acceptance. Stop/remove remain path-independent projection
+receipts. Remaining adapter implementations, dispatcher composition, and
+production conversion into the reviewed inputs used by the inactive kernel
+remain gate 3 work.
 
 Production activation is blocked until all gates below are true:
 

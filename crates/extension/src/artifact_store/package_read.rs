@@ -12,6 +12,9 @@ use super::{
 use crate::digest::package_fingerprint;
 use crate::package::{lock_is_contended, read_manifest, sha256, validate_surface_files};
 use crate::registry::validate_catalog_manifest_binding;
+use crate::surface_files::{
+    inspect_skill_surface_file, inspect_ui_surface_files, PluginSurfaceFileEvidence,
+};
 use crate::ExtensionManifest;
 
 const READ_LOCK_WAIT: Duration = Duration::from_secs(2);
@@ -79,6 +82,47 @@ impl VerifiedArtifactPackage {
 
     pub fn manifest(&self) -> &ExtensionManifest {
         &self.manifest
+    }
+
+    /// Inspect one exact immutable Skill contribution while the verified
+    /// package lease remains held.
+    ///
+    /// The package root never crosses this boundary. The complete package is
+    /// reverified after the bounded surface read, so the returned digest is
+    /// not based on a stale acquisition-time check.
+    pub async fn inspect_skill_surface(
+        &self,
+        surface_id: &str,
+    ) -> UseResult<PluginSurfaceFileEvidence> {
+        let surface = self
+            .manifest
+            .skills
+            .iter()
+            .find(|surface| surface.id == surface_id)
+            .ok_or_else(surface_missing)?;
+        let evidence = inspect_skill_surface_file(surface, &self.root).await?;
+        self.verify_unchanged().await?;
+        Ok(evidence)
+    }
+
+    /// Inspect one exact immutable UI contribution while the verified
+    /// package lease remains held.
+    ///
+    /// The returned evidence binds the entry point and every declared style
+    /// and script. No local path is exposed to the caller.
+    pub async fn inspect_ui_surface(
+        &self,
+        surface_id: &str,
+    ) -> UseResult<PluginSurfaceFileEvidence> {
+        let surface = self
+            .manifest
+            .ui
+            .iter()
+            .find(|surface| surface.id == surface_id)
+            .ok_or_else(surface_missing)?;
+        let evidence = inspect_ui_surface_files(surface, &self.root).await?;
+        self.verify_unchanged().await?;
+        Ok(evidence)
     }
 
     /// Recompute the complete package identity while both coordinated read
@@ -266,6 +310,13 @@ fn package_sha256(catalog: &PluginCatalogRecord) -> UseResult<&str> {
 
 fn package_mismatch(message: impl Into<String>) -> UseError {
     artifact_store_error("use.artifact_store.package_mismatch", message)
+}
+
+fn surface_missing() -> UseError {
+    artifact_store_error(
+        "use.artifact_store.surface_missing",
+        "The requested static surface is absent from the verified package manifest.",
+    )
 }
 
 const _: fn() = || {
