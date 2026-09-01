@@ -101,7 +101,8 @@ unknown outcome 不能携带 applied state。Deferred 只表示 owner 已证明�
 generation；operation completion 也不能早于 provider observation。该内核还验证了 snapshot、
 完整 Grant、reviewed provider selection、capability history、跨重启的 unknown/expired claim
 显式 reconciliation、可离线验证的确定性导出，以及 clean staged restore。未启用的单 effect
-dispatcher 现在会先提交 claim，在 owner I/O 前释放事务与有界 executor，再把精确 identity 路由到
+dispatcher 现在会在 `claim → owner I/O → observation` 全过程持有 installation 级共享 maintenance fence，
+然后提交 claim，在 owner I/O 前释放事务与有界 executor，再把精确 identity 路由到
 彼此独立的 Capability Index、invocation lease、Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后
 记录 owner-shaped observation。经 owner 证明的 safe-no-effect deferral 会在持久化 not-before 时间之前
 阻止 claim，到期后无需 reconciliation，只自动重试原 key。Provider timeout 必须在 claim lease 内保留固定的 observation 预算，
@@ -112,6 +113,7 @@ effect 后 observation 前退出。同一个 claim 事务现在还会推导 owne
 provider selection；Capability Index 接收 candidate generation，以及每个已启用 selected surface 的最新终态
 prepare，包括跨 multi-root generation 保留的历史 observation 与显式 optional degradation。Grant coverage
 缺失、最新状态仍非终态、teardown 冒充 prepare 或 generation 漂移，都会在 owner I/O 前 fail closed。
+并发的 whole-installation restore 在 observation 持久化之前无法取得排他 maintenance fence。
 多 package generation 提交也已改为先写入完整 node set，再在同一事务写入带立即外键的 dependency edge。
 Artifact Store 现在提供不可克隆的 verified package lease：它同时持有全局 reachability 与单 artifact
 mutation 共享锁，拒绝 quarantine 或未完成 GC，绑定完整 package fingerprint、受限 manifest、精确文件/字节

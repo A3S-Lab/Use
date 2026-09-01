@@ -1349,8 +1349,10 @@ predate any provider observation. The kernel also qualifies typed generation
 transitions, full Grant and reviewed provider selection evidence, idempotent
 outbox reconciliation, bounded execution, corruption checks, and deterministic
 offline-verifiable export plus staged restore. Its inactive dispatcher now
-claims at most one committed effect, releases the claim transaction and bounded
-executor before entering an owner, routes Capability Index, invocation-lease,
+holds one installation-wide shared maintenance fence from claim through the
+later observation, claims at most one committed effect, releases the claim
+transaction and bounded executor before entering an owner, routes Capability
+Index, invocation-lease,
 Runtime, Flow, Knowledge, Skill, and UI work through separate typed ports, then
 records owner-specific applied, deferred, rejected, or unknown evidence in a
 later transaction. A deferred effect cannot be reclaimed before its durable
@@ -1360,7 +1362,9 @@ is durable unknown evidence, and cancellation or process exit requires explicit
 same-key reconciliation. Tests prove
 commit-before-effect, Store re-entry during provider I/O, exact-key recovery
 after an unobserved process exit, hung-provider bounding, and all seven owner
-routes. The claim transaction now also derives an owner-shaped committed
+routes. A concurrent whole-installation restore cannot acquire its exclusive
+maintenance fence until the provider observation is durable. The claim
+transaction now also derives an owner-shaped committed
 context: package ports receive only the exact package selection, lifecycle,
 host, snapshot identity, and Grant; Runtime also receives its full reviewed
 provider selection; Capability Index receives the candidate generation plus the

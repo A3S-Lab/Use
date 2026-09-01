@@ -117,7 +117,8 @@ same-key reconciliation instead of rolling back visible state, and completion
 cannot predate provider observations. The kernel also qualifies snapshots,
 full Grants, reviewed provider selections, capability history, explicit
 unknown/expired-claim reconciliation, deterministic offline-verifiable export,
-and clean staged restore. Its inactive one-effect dispatcher commits a claim,
+and clean staged restore. Its inactive one-effect dispatcher retains one
+installation-wide shared maintenance fence from claim through durable observation, commits a claim,
 releases the transaction and bounded executor before owner I/O, routes the exact
 identity through separate Capability Index, invocation-lease, Runtime, Flow,
 Knowledge, Skill, or UI ports, and records a later owner-shaped observation.
@@ -127,7 +128,8 @@ Provider timeout must leave a fixed observation budget inside the claim lease
 and becomes unknown evidence; process exit, cancellation, expired claims, and
 ambiguity require explicit same-key reconciliation. Tests cover Store re-entry
 during provider I/O, all seven routes, hung-provider bounding, and exit after an
-unobserved effect. The same claim transaction now derives owner-shaped committed
+unobserved effect. A concurrent whole-installation restore cannot acquire its
+exclusive fence before the observation is durable. The same claim transaction now derives owner-shaped committed
 context. Package ports receive only the exact selection, lifecycle, host,
 snapshot identity, and Grant; Runtime also receives the complete reviewed
 provider selection. Capability Index receives the candidate generation and the

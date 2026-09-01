@@ -138,7 +138,9 @@ stays pending for explicit same-key reconciliation rather than rolling back a
 visible generation, and completion cannot predate its observations.
 
 The inactive dispatcher now realizes the post-commit half of that protocol. It
-claims one durable effect, releases the database transaction and bounded worker,
+retains one installation-wide shared maintenance fence from claim through the
+later observation, claims one durable effect, releases the database transaction
+and bounded worker,
 routes the exact identity through one of seven typed owner ports, and records a
 later applied, deferred, rejected, or unknown observation. A deferred effect
 blocks claims until its persisted not-before time, then becomes eligible for
@@ -148,7 +150,8 @@ unknown, leaving time for the observation transaction. Cancellation, process
 exit after a possible effect, and expired or unknown claims require explicit
 replay with that key. Qualification tests cover all routes, Store
 re-entry during owner I/O, a hung owner, and the unobserved-effect crash
-boundary.
+boundary. A concurrent whole-installation restore cannot acquire its exclusive
+maintenance fence until the provider observation is durable.
 
 Production lifecycle code does not construct it, so it neither mirrors nor
 replaces the current JSON authority. The first concrete post-commit adapter now

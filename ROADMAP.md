@@ -566,8 +566,10 @@ staged restore with exact authority round-trip. WAL/full durability, foreign
 keys, exact-schema/integrity checks, linked-path rejection, and the 16-entry
 bounded worker remain qualified.
 
-The inactive post-commit dispatcher now claims one durable effect at a time and
-leaves both the SQLite transaction and bounded executor before owner I/O. Seven
+The inactive post-commit dispatcher now retains one installation-wide shared
+maintenance fence from claim through durable observation, claims one effect at
+a time, and leaves both the SQLite transaction and bounded executor before
+owner I/O. Seven
 separate typed ports cover Capability Index, invocation leases, Runtime, Flow,
 Knowledge, Skill, and UI; each can return only owner-shaped application evidence
 or an explicit deferred/rejected/unknown failure. A deferred observation binds
@@ -579,7 +581,9 @@ Cancellation, process exit after an accepted effect, an expired claim, and an
 unknown outcome all require explicit replay with the original committed
 idempotency key. Qualification tests prove commit-before-effect, Store re-entry
 during provider I/O, all owner routes, action/evidence compatibility, timeout
-bounding, and exact-key recovery. Every successful claim now also projects its
+bounding, exact-key recovery, and that a concurrent restore cannot acquire its
+exclusive fence between claim and observation. Every successful claim now also
+projects its
 owner-shaped authority inside the claim transaction. Package owners receive
 only the exact committed package selection, lifecycle incarnation, host,
 snapshot identity, and Grant; Runtime additionally receives the complete

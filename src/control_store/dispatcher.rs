@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use a3s_use_core::{UseError, UseResult};
+use a3s_use_extension::StateMaintenanceLock;
 use sha2::{Digest, Sha256};
 
 use super::effect_port::{
@@ -70,6 +71,16 @@ impl ControlEffectDispatcher {
                 "The dispatch timing policy is invalid or cannot leave the minimum observation budget inside the claim lease.",
             ));
         }
+        // Restore replaces the Control database and its registered owner
+        // payloads as one complete set. Keep that exclusive maintenance
+        // boundary out until this dispatch has both durably claimed and
+        // durably observed its external effect. This guard owns no SQLite
+        // transaction or executor permit, so owner I/O remains outside the
+        // transactional boundary while it cannot report into another restored
+        // Control history.
+        let _maintenance = StateMaintenanceLock::new(&self.store.state_root)
+            .acquire_shared()
+            .await?;
         let now_ms = self.clock.now_ms()?;
         let lease_until_ms = now_ms
             .checked_add(request.lease_duration_ms)

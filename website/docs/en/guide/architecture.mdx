@@ -181,8 +181,9 @@ lease, Runtime Task/opaque-Service readiness, Flow artifact, Knowledge
 projection, or Skill/UI content evidence. The applied cutover observation
 atomically advances publication before drain; a later required failure remains
 pending for same-key reconciliation instead of rolling back visible state.
-The inactive one-effect dispatcher now commits a claim, releases the SQLite
-transaction and bounded executor before owner I/O, routes the exact identity
+The inactive one-effect dispatcher now retains one installation-wide shared
+maintenance fence from claim through durable observation, commits a claim,
+releases the SQLite transaction and bounded executor before owner I/O, routes the exact identity
 through separate Capability Index, invocation-lease, Runtime, Flow, Knowledge,
 Skill, or UI ports, and records a later applied, deferred, rejected, or unknown
 observation. Deferred is reserved for owner-proven safe-no-effect outcomes; its
