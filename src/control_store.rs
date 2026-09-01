@@ -377,6 +377,8 @@ mod cutover_manifest_tests;
 #[cfg(test)]
 mod dispatcher_tests;
 #[cfg(test)]
+mod knowledge_effect_tests;
+#[cfg(test)]
 mod payload_control_restore_activation_security_tests;
 #[cfg(test)]
 mod payload_control_restore_activation_tests;

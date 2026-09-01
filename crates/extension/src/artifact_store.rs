@@ -35,7 +35,7 @@ pub use inventory::{
     ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState, ArtifactStoreInventory,
     ARTIFACT_STORE_INVENTORY_SCHEMA, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
 };
-pub use package_read::VerifiedArtifactPackage;
+pub use package_read::{VerifiedArtifactPackage, VerifiedOkfSurfacePayload};
 pub use quarantine::{
     ArtifactQuarantinePlan, ArtifactQuarantineRecord, ArtifactQuarantineResult,
     ARTIFACT_QUARANTINE_PLAN_SCHEMA, ARTIFACT_QUARANTINE_RECORD_SCHEMA,

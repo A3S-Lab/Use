@@ -86,6 +86,35 @@ async fn verified_package_lease_inspects_one_named_ui_snapshot() {
 }
 
 #[tokio::test]
+async fn verified_package_lease_reads_one_named_okf_snapshot_without_exposing_its_path() {
+    let fixture = package_fixture();
+    let (_temporary, store, catalog, _) = stage_fixture(&fixture).await;
+    let package = store.acquire_verified_package(&catalog).await.unwrap();
+
+    let payload = package.read_okf_surface("domain-knowledge").await.unwrap();
+
+    assert_eq!(payload.surface_id(), "domain-knowledge");
+    assert_eq!(
+        payload.bundle(),
+        package
+            .manifest()
+            .okf
+            .iter()
+            .find(|surface| surface.id == "domain-knowledge")
+            .map(|surface| &surface.bundle)
+            .unwrap()
+    );
+    assert_eq!(payload.files().len() as u64, payload.bundle().file_count);
+    assert!(payload.files().iter().all(|file| {
+        let path = Path::new(&file.path);
+        !path.is_absolute() && !file.path.contains("..")
+    }));
+
+    let error = package.read_okf_surface("missing").await.unwrap_err();
+    assert_eq!(error.code, "use.artifact_store.surface_missing");
+}
+
+#[tokio::test]
 async fn verified_package_lease_fails_closed_for_content_tampering() {
     let fixture = package_fixture();
     let (_temporary, store, catalog, package_root) = stage_fixture(&fixture).await;
