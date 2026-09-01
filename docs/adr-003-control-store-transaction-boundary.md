@@ -286,6 +286,23 @@ require an explicit reconciliation request and retain the same effect
 idempotency key, including after process restart. Completion and offline
 verification enforce commit-before-observation-before-terminal time ordering.
 
+The inactive kernel now includes a one-effect dispatcher that exercises this
+boundary without activating it. Claim is one short Control transaction. The
+dispatcher then releases both that transaction and the bounded executor before
+routing the exact committed identity through a separate typed Capability Index,
+invocation-lease, Runtime, Flow, Knowledge, Skill, or UI port. A second short
+transaction records owner-shaped applied evidence or explicit rejected/unknown
+failure evidence. Provider timeout is enforced by the dispatcher, must leave a
+fixed observation budget inside the claim lease, and becomes an unknown
+observation; it is never inferred to be a rejection. Cancellation, process exit
+between effect and observation, expired claim, and unknown acceptance converge
+only through explicit replay of the original idempotency key. Qualification
+tests also let a provider re-enter the Store during its call, proving no
+executor permit spans the I/O. These ports are not production adapters yet:
+their eventual inputs must be reconstructed from the exact committed
+generation, reviewed evidence, and immutable artifact, never from legacy
+mutable files.
+
 The kernel uses WAL with full synchronous durability and foreign-key
 enforcement, rejects unknown schema or filesystem state, and serializes
 blocking work through one 16-entry bounded worker. Its size-bounded canonical

@@ -99,8 +99,15 @@ outcome 不能携带 applied state。记录 cutover application 的事务会在 
 之后的必需 effect 失败保持 effects-pending，并以同一 key 显式 reconciliation，而不会回滚已可见
 generation；operation completion 也不能早于 provider observation。该内核还验证了 snapshot、
 完整 Grant、reviewed provider selection、capability history、跨重启的 unknown/expired claim
-显式 reconciliation、可离线验证的确定性导出，以及 clean staged restore。生产 lifecycle 代码
-仍不会构造它。私有的无路径 payload 契约现已冻结五个外部 owner ID 及其 ACL backup policy；
+显式 reconciliation、可离线验证的确定性导出，以及 clean staged restore。未启用的单 effect
+dispatcher 现在会先提交 claim，在 owner I/O 前释放事务与有界 executor，再把精确 identity 路由到
+彼此独立的 Capability Index、invocation lease、Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后
+记录 owner-shaped observation。Provider timeout 必须在 claim lease 内保留固定的 observation 预算，
+并记录为 unknown evidence；进程退出、取消、过期 claim 与含糊结果都必须显式复用同一 key 完成
+reconciliation。测试已覆盖 provider I/O 期间重入 Store、七类路由、挂起 provider 的有界终止，以及
+effect 后 observation 前退出。生产 lifecycle 代码仍不会构造它；真实 adapter 的完整输入必须只来自
+已提交 Control authority 与 immutable artifact。私有的无路径 payload 契约现已冻结五个外部 owner ID
+及其 ACL backup policy；
 全局 Artifact Store 被明确排除，另外四个 owner 必须形成一组完整、规范、绑定精确 installation、
 Control generation、registry/owner schema、digest 与有界计数的 receipt。私有 session 现在会在一个
 排他 maintenance fence 下冻结精确的规范 Control export digest，并在 owner I/O 前释放 SQLite 事务。
@@ -157,8 +164,8 @@ marker 缺失；乱序 live root、含糊 marker、link、重绑定和 evidence 
 不再执行 owner effect，只能恢复五个无 link 暂存树的有界固定顺序退休。18 个真实子进程退出边界覆盖顶层
 协议和每个退休边界。规范的 `attempt.json` 与完整 `activation.json` 构成精确绑定 installation 的终态
 收据。旧 backup 和 artifact reachability 只排除该收据；不完整、扩展、含 link 或被篡改的 evidence 都会
-fail closed。生产 lifecycle 转换与 dispatch、backup/restore 接线和协调一致的权威切换仍未完成，因此尚未
-完成任何 A2 roadmap 项。
+fail closed。生产 Grant 转换、基于已提交权威的 owner adapter 与 dispatcher 组合、backup/restore 接线和
+协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

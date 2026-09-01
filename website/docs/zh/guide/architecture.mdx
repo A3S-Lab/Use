@@ -163,7 +163,14 @@ selection；package state、Grant、lifecycle identity 与 provider selection �
 invocation lease、Runtime Task/不透明 Service readiness、Flow artifact、Knowledge projection
 或 Skill/UI content evidence。记录 applied cutover observation 的事务会在 drain 之前原子推进
 publication；之后的必需 effect 失败会保留为使用相同 key 显式 reconciliation 的 pending 状态，
-而不会回滚已可见 generation。私有的无路径 registry 还冻结了五个外部 payload owner ID 与精确
+而不会回滚已可见 generation。未启用的单 effect dispatcher 现在会先提交 claim，在 owner I/O 前释放
+SQLite 事务与有界 executor，再把精确 identity 路由到彼此独立的 Capability Index、invocation lease、
+Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后记录 applied、rejected 或 unknown observation。
+Provider timeout 必须在 claim lease 内保留固定的 observation 预算并作为 unknown evidence；取消、
+可能已产生 effect 后的进程退出、过期 claim 与含糊结果都必须显式重放已提交 key。生产 lifecycle
+仍不会构造它；真实 adapter 的完整 manifest、Grant、Runtime 与 capability 输入只能来自已提交
+Control authority 与 immutable artifact。
+私有的无路径 registry 还冻结了五个外部 payload owner ID 与精确
 ACL backup policy：全局 Artifact Store 被明确排除，另外四个 owner 必须生成完整、绑定 generation、
 且具有 schema、digest 与计数上限的规范 receipt 集。私有 snapshot session 现在会在同一个排他
 maintenance fence 下冻结规范 Control export 及其 digest，同时不会让数据库事务跨越 owner I/O。

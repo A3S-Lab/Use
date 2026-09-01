@@ -62,6 +62,17 @@ because none may authorize a package mutation. Before activation, each owner
 must provide a bounded typed inventory, deterministic digest, snapshot method,
 offline verifier, and restore contract where its backup policy requires one.
 
+The inactive one-effect dispatcher now qualifies the transaction-to-provider
+boundary. It commits a claim, releases the SQLite transaction and bounded
+executor, routes the exact identity through one of seven typed owner ports, and
+records applied, rejected, or unknown evidence in a later transaction. A hard
+provider timeout must leave a fixed observation budget inside the claim lease
+and is recorded as unknown. Process exit, cancellation, expired claim, and
+ambiguous acceptance can resume only by explicitly reusing the committed
+idempotency key. Production owner adapters and dispatcher composition remain
+part of the indivisible cutover; they may derive full inputs only from committed
+Control authority and immutable artifacts, never from the legacy stores.
+
 The inactive kernel now freezes these five identities and their exact backup
 policies in a path-free typed registry contract. Artifact Store exclusion is
 explicit; receipts for the other four owners must be complete, canonically

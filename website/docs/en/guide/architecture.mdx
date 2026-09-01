@@ -181,6 +181,16 @@ lease, Runtime Task/opaque-Service readiness, Flow artifact, Knowledge
 projection, or Skill/UI content evidence. The applied cutover observation
 atomically advances publication before drain; a later required failure remains
 pending for same-key reconciliation instead of rolling back visible state.
+The inactive one-effect dispatcher now commits a claim, releases the SQLite
+transaction and bounded executor before owner I/O, routes the exact identity
+through separate Capability Index, invocation-lease, Runtime, Flow, Knowledge,
+Skill, or UI ports, and records a later applied, rejected, or unknown
+observation. Provider timeout leaves a fixed observation budget inside the
+claim lease and becomes unknown evidence; cancellation, process exit after a
+possible effect, expired claims, and ambiguity require explicit replay of the
+committed key. Production lifecycle still does not construct it. Real adapters
+must derive their complete manifest, Grant, Runtime, and capability inputs only
+from committed Control authority and immutable artifacts.
 A private path-free registry also freezes the five external payload-owner IDs
 and exact ACL backup policies. Artifact Store exclusion is explicit; the four
 snapshotted owners must produce one complete, generation-bound canonical

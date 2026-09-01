@@ -562,6 +562,22 @@ staged restore with exact authority round-trip. WAL/full durability, foreign
 keys, exact-schema/integrity checks, linked-path rejection, and the 16-entry
 bounded worker remain qualified.
 
+The inactive post-commit dispatcher now claims one durable effect at a time and
+leaves both the SQLite transaction and bounded executor before owner I/O. Seven
+separate typed ports cover Capability Index, invocation leases, Runtime, Flow,
+Knowledge, Skill, and UI; each can return only owner-shaped application evidence
+or an explicit rejected/unknown failure. A hard provider timeout must leave a
+fixed observation budget inside the claim lease;
+timeout is recorded as unknown rather than being misclassified as rejection.
+Cancellation, process exit after an accepted effect, an expired claim, and an
+unknown outcome all require explicit replay with the original committed
+idempotency key. Qualification tests prove commit-before-effect, Store re-entry
+during provider I/O, all owner routes, action/evidence compatibility, timeout
+bounding, and exact-key recovery. This is ADR-003 step-3 infrastructure only:
+production adapters still must derive complete manifest, Grant, Runtime, and
+capability-publication inputs from the immutable artifact plus the exact
+committed Control generation, never from legacy authority.
+
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
 not accept it. A private path-free registry contract now freezes all five
@@ -711,10 +727,10 @@ real-child-process matrix qualifies 18 top-level durable exits, including each
 retirement boundary. The surviving canonical `attempt.json` and complete
 `activation.json` are the exact installation-bound terminal receipt. Legacy
 backup and artifact reachability exclude only that receipt; incomplete,
-extended, linked, or tampered evidence fails closed. Production Grant conversion
-and effect dispatch, production backup/restore wiring, indivisible consumer
-cutover, and deletion of legacy mutable stores remain open; no A2 checkbox is
-complete yet.
+extended, linked, or tampered evidence fails closed. Production Grant conversion,
+committed-authority owner adapters and dispatcher composition, production
+backup/restore wiring, indivisible consumer cutover, and deletion of legacy
+mutable stores remain open; no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions

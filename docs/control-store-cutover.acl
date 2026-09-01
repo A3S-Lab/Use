@@ -293,6 +293,9 @@ control_store_cutover {
       "src/cognitive_package/mod.rs",
       "src/cognitive_package/uninstall.rs",
       "src/cognitive_package/upgrade.rs",
+      "src/control_store/dispatcher.rs",
+      "src/control_store/dispatcher/contract.rs",
+      "src/control_store/effect_port.rs",
       "src/plugin_lifecycle/coordinator.rs",
     ]
     required_change = "Replace file-store mutation and recovery with typed Control Store commands and outbox dispatch."

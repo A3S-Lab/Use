@@ -48,7 +48,7 @@ pub(in crate::control_store) enum ControlRuntimeBindingObservation {
 }
 
 impl ControlRuntimeBindingObservation {
-    fn validate(&self) -> bool {
+    pub(in crate::control_store) fn validate(&self) -> bool {
         match self {
             Self::Task => true,
             Self::Service {
