@@ -656,11 +656,13 @@ active whole-installation restore marker; it binds that stable marker identity
 plus exact before/source/target inventories before changing live state. It
 atomically retires only terminal directories, publishes the target without
 replacement, and leaves the current active operation untouched even as its
-status advances between replays. A marker-only handoff is valid. If the source
-already contains 64 terminal records, the adapter applies the journal's native
-`(completed_at_ms, started_at_ms, plan_digest)` ordering and omits exactly the
-oldest source record to reserve the active restore's slot; any source collision with
-the active plan fails closed before pruning. Candidate, activation, retired,
+status advances between replays. A marker-only handoff is valid. If a legacy
+whole-installation marker accompanies a 64-record source, the adapter applies
+the journal's native `(completed_at_ms, started_at_ms, plan_digest)` ordering
+and omits exactly the oldest source record to reserve the active operation's
+slot. The typed complete-set marker has no retained operation and preserves all
+64 records. Any source collision with a retained active plan fails closed before
+pruning. Candidate, activation, retired,
 and deterministic publication-partial evidence make every local boundary
 replayable and tamper-evident, and the result remains path-free and
 snapshot-bound. This adapter is still qualification-only. The private
@@ -685,30 +687,29 @@ and bound by durable physical digest evidence. No live Control, Host,
 Knowledge, observation, or restore-history path is changed. Exact retries and
 interrupted Control staging recover deterministically; target contamination,
 links, unknown entries, snapshot or policy rebinding, and completed-candidate
-drift fail closed. The complete-set coordinator now durably begins its
-owner-native Control activation before changing live state. The immutable
-attempt descriptor remains the restore identity. A canonical `activation.json`
-journal binds that attempt to an immutable operation; the global
-`.maintenance.restore.json` marker binds the same identity and blocks ordinary
-shared access. The fixed write order is journal, marker, owner effect,
-checkpoint. Control preflight runs before durable intent, and its owner-native
-semantic and physical checks run again after the marker before the no-clobber
-atomic move to live `control.sqlite3`. The first ordered checkpoint retains
-only the canonical path-free result length and a domain-separated digest.
-Reopening reacquires the exact exclusive guard, rebinds the same verified
-snapshot, attempt, and Knowledge policy, reconstructs every present unactivated
-owner candidate, and either publishes Control or verifies its exact live
-result. Journal-only and marker/journal temporary boundaries recover before any
-effect; post-publication/pre-checkpoint replay converges, while missing or
-ambiguous markers after effects, snapshot rebinding, links, and evidence drift
-fail closed. The marker deliberately remains active after the Control
-checkpoint, and exact checkpoint replay is read-only. This closes durable
-top-level intent, one owner checkpoint, and guard-release/reopen qualification,
-not complete-set activation. Cross-owner checkpoints and activation order,
-marker retirement, the full subprocess-exit matrix, production Grant
-conversion and effect dispatch, production backup/restore wiring, indivisible
-consumer cutover, and deletion of legacy mutable stores remain open; no A2
-checkbox is complete yet.
+drift fail closed. The complete-set coordinator now qualifies full ordered
+activation. Before durable intent, it revalidates every owner candidate and its
+clean live boundary. The immutable attempt descriptor remains the restore
+identity. A canonical `activation.json` journal binds that attempt to an
+immutable operation; the typed global `.maintenance.restore.json` marker binds
+the same identity and blocks ordinary shared access. The fixed owner order is
+Control Store, Host projection, Knowledge, observations, then Restore
+Coordinator; every step follows journal, marker, owner effect, checkpoint.
+Each ordered checkpoint retains only the canonical path-free result length and
+a domain-separated digest. The Restore Coordinator additionally binds the exact
+complete marker bytes, length, and digest before history mutation. Reopening
+reacquires the exact exclusive guard, rebinds the same verified snapshot,
+attempt, owner registry, and Knowledge policy, and reconstructs or verifies
+every owner at its precise candidate/live boundary. Journal and marker partials,
+all five post-effect/pre-checkpoint boundaries, the final checkpoint before
+retirement, and exit immediately after marker deletion converge. A missing
+marker is valid only beside the complete five-checkpoint journal; out-of-order
+live roots, ambiguous markers, snapshot rebinding, links, and evidence drift
+fail closed. Exact completed replay is read-only. A real-child-process matrix
+qualifies 13 top-level durable exits. Production Grant conversion and effect
+dispatch, production backup/restore wiring, retained-attempt cleanup or terminal
+receipt, indivisible consumer cutover, and deletion of legacy mutable stores
+remain open; no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions

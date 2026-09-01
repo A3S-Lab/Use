@@ -242,11 +242,13 @@ links, foreign history, and path rebinding fail closed. A second scan precedes
 no-clobber publication; a streaming offline verifier binds exact terminal bytes
 and the path-free receipt to the Control export. Empty or active-only history
 creates no archive. Its self-hosted restore adapter requires the exact exclusive
-fence and active marker, preserves that marker and current operation, replaces
-only terminal history, and binds exact before/source/target inventories in
-durable activation evidence. Replay tolerates current-operation status progress
-but rejects marker, candidate, retired-record, or publication-partial drift.
-Marker-only handoff and native 64-record retention remain deterministic.
+fence and active marker, preserves that marker and any current operation,
+replaces only terminal history, and binds exact before/source/target inventories
+in durable activation evidence. Replay tolerates retained-operation status
+progress but rejects marker, candidate, retired-record, or publication-partial
+drift. A legacy whole-installation marker reserves one future terminal slot at
+the native 64-record limit; the typed complete-set marker has no retained
+operation and preserves all 64 source records.
 
 The private complete-set snapshot coordinator now captures the canonical
 Control export and all four registered owner snapshots under one maintenance
@@ -264,23 +266,25 @@ set. Control is single-file checkpointed, export-round-tripped, and physically
 digest-bound; external candidates reuse owner-native validation under the same
 guard. No live authority path changes. Exact retry and interrupted Control
 construction recover, while contaminated targets, links, unknown entries,
-rebinding, and candidate drift fail closed. Control activation now durably
-records top-level intent before live publication. The immutable attempt remains
-the restore identity; `activation.json` is the sole mutable ordered journal,
-and the global `.maintenance.restore.json` marker binds the same operation and
-blocks ordinary shared access. The fixed order is journal, marker, owner effect,
-then checkpoint. Preflight rejects invalid state before intent, while semantic,
-physical, sidecar, and attempt checks run again after the marker before atomic
-no-clobber publication. Reopen reacquires the exact fence, rebinds the same
-verified snapshot, attempt, and policy, reconstructs present unactivated owner
-candidates, and converges journal/marker temporary and
-post-publication/pre-checkpoint boundaries. Missing or ambiguous markers after
-an effect, links, rebinding, and evidence drift fail closed. The Control
-checkpoint binds the canonical path-free result, completed replay does not
-rewrite it, and the global marker remains active. Cross-owner checkpoints and
-activation order, marker retirement, full subprocess-exit qualification,
-production backup/restore wiring, and coordinated authority cutover remain
-disabled until every consumer can switch together.
+rebinding, and candidate drift fail closed. Complete activation now preflights
+every owner before recording durable top-level intent. The immutable attempt
+remains the restore identity; `activation.json` is the sole mutable ordered
+journal, and the typed global `.maintenance.restore.json` marker binds the same
+operation and blocks ordinary shared access. Control Store, Host projection,
+Knowledge, observations, and Restore Coordinator execute in fixed order; each
+step follows journal, marker, owner effect, checkpoint. Every checkpoint binds
+its canonical path-free result by byte count and a domain-separated digest. The
+coordinator owner also verifies the exact marker bytes, length, and digest before
+history mutation. Reopen reacquires the exact fence, rebinds the same verified
+snapshot, attempt, registry, and policy, and reconstructs or verifies every
+candidate/live boundary. Journal and marker partials, all five
+post-effect/pre-checkpoint boundaries, the final checkpoint before retirement,
+and exit after deletion converge. Marker absence is accepted only beside the
+complete five-checkpoint journal; out-of-order roots, ambiguous markers, links,
+rebinding, and evidence drift fail closed. Completed replay is read-only, and a
+13-boundary real-child-process matrix qualifies the top-level protocol.
+Production backup/restore wiring, retained-attempt lifecycle, and coordinated
+authority cutover remain disabled until every consumer can switch together.
 
 ## Runtime visibility
 

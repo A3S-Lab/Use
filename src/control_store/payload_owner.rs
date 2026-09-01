@@ -15,10 +15,12 @@
 //! offline-verifies one no-clobber archive containing the Control export and
 //! every registered owner receipt plus each present payload. Coordinated
 //! clean-target staging now binds the same complete set beneath one retained
-//! exclusive fence without touching live authority. The Control component can
-//! additionally publish and replay its exact clean-target database while that
-//! same in-process fence remains retained. Coordinated activation and durable
-//! subprocess recovery must still be qualified before the authority cutover.
+//! exclusive fence without touching live authority. Qualification activation
+//! preflights every candidate, then publishes and checkpoints Control, Host,
+//! Knowledge, observations, and Restore Coordinator state in one fixed order.
+//! Its global marker is retired only after all five checkpoints are durable,
+//! and subprocess-exit tests cover every top-level effect boundary. Production
+//! backup/restore wiring and the indivisible authority cutover remain separate.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
@@ -90,6 +92,25 @@ pub(in crate::control_store) enum ControlPayloadOwnerId {
     RestoreCoordinator,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlPayloadLiveLocation {
+    StateRoot(&'static str),
+    OperationRoot(&'static str),
+}
+
+const ARTIFACT_STORE_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] = &[];
+const HOST_PROJECTION_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] =
+    &[ControlPayloadLiveLocation::StateRoot("plugin-host-manager")];
+const KNOWLEDGE_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] =
+    &[ControlPayloadLiveLocation::StateRoot("knowledge")];
+const OBSERVATION_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] = &[
+    ControlPayloadLiveLocation::OperationRoot("package-diagnostic-history"),
+    ControlPayloadLiveLocation::OperationRoot("package-downloads"),
+    ControlPayloadLiveLocation::OperationRoot("package-resolutions"),
+];
+const RESTORE_COORDINATOR_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] =
+    &[ControlPayloadLiveLocation::OperationRoot("state-restores")];
+
 impl ControlPayloadOwnerId {
     pub(in crate::control_store) const ALL: [Self; 5] = [
         Self::ArtifactStore,
@@ -132,6 +153,34 @@ impl ControlPayloadOwnerId {
             }
             Self::RestoreCoordinator => ControlPayloadBackupPolicy::ExcludeActiveRegisterTerminal,
         }
+    }
+
+    fn live_locations(self) -> &'static [ControlPayloadLiveLocation] {
+        match self {
+            Self::ArtifactStore => ARTIFACT_STORE_LIVE_LOCATIONS,
+            Self::HostProtocolProjection => HOST_PROJECTION_LIVE_LOCATIONS,
+            Self::KnowledgePayload => KNOWLEDGE_LIVE_LOCATIONS,
+            Self::PlanningAndDiagnosticObservations => OBSERVATION_LIVE_LOCATIONS,
+            Self::RestoreCoordinator => RESTORE_COORDINATOR_LIVE_LOCATIONS,
+        }
+    }
+
+    pub(in crate::control_store) fn owner_for_state_root(name: &str) -> Option<Self> {
+        Self::SNAPSHOTTED.into_iter().find(|owner| {
+            owner
+                .live_locations()
+                .iter()
+                .any(|location| matches!(location, ControlPayloadLiveLocation::StateRoot(value) if *value == name))
+        })
+    }
+
+    pub(in crate::control_store) fn owner_for_operation_root(name: &str) -> Option<Self> {
+        Self::SNAPSHOTTED.into_iter().find(|owner| {
+            owner
+                .live_locations()
+                .iter()
+                .any(|location| matches!(location, ControlPayloadLiveLocation::OperationRoot(value) if *value == name))
+        })
     }
 }
 

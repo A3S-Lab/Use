@@ -204,10 +204,12 @@ durably binds exact before and target inventories, retires only terminal
 directories, and publishes candidate records without replacement. Replay
 accepts operation-status progress only while the marker's stable identity
 remains exact. Marker-only handoff and absence are first-class states. At the
-64-operation native limit, the adapter uses the journal's
-completion-time/start-time/plan-digest ordering to omit the source-native oldest
-terminal record and reserve the active operation's slot. A source/active identity
-collision fails before that pruning decision. Candidate, retired, activation,
+64-operation native limit, a legacy whole-installation marker makes the adapter
+use the journal's completion-time/start-time/plan-digest ordering to omit the
+source-native oldest terminal record and reserve the active operation's slot.
+The typed complete-set marker has no retained operation and preserves all 64
+source records. A source/active identity collision fails before any pruning
+decision. Candidate, retired, activation,
 and deterministic publication-partial evidence are revalidated on every
 replay, and the result is path-free and snapshot-bound.
 The private complete-set snapshot coordinator now captures one canonical
@@ -230,25 +232,26 @@ round-tripped, and physically digest-bound; the four external candidates reuse
 their owner-native staging and validation under that same guard. No live owner
 path is changed. Exact replay, interrupted Control staging, explicit owner
 absence, and target isolation are qualified; links, unknown entries,
-rebinding, and completed-candidate drift fail closed. Control activation now
-begins with durable top-level intent. The immutable attempt descriptor remains
-the restore identity, one canonical `activation.json` is the mutable ordered
-journal, and the global `.maintenance.restore.json` marker binds the same
-immutable operation while blocking ordinary shared access. The coordinator
-writes journal, marker, owner effect, and checkpoint in that order. Control
-preflight precedes intent, and the semantic export, physical evidence,
-sidecar-free boundary, and attempt are revalidated after the marker before
-no-clobber publication. The first ordered checkpoint stores a digest and byte
-count for the canonical path-free result. Reopen reacquires the exact exclusive
-guard, rebinds the same snapshot, attempt, and policy, reconstructs present
-unactivated owner candidates, and converges both candidate and
-post-publication Control boundaries. Safe journal/marker temporary states
-recover; missing or ambiguous markers after an effect, links, rebinding, and
-evidence drift fail closed. The marker remains active after Control completion,
-and exact checkpoint replay performs no journal rewrite. Cross-owner activation
-ordering and checkpoints, marker retirement, full subprocess-exit
-qualification, production backup/restore wiring, and the coordinated
-reader/writer cutover remain A2 work. The
+rebinding, and completed-candidate drift fail closed. Complete activation now
+preflights every clean target, then records durable top-level intent. The
+immutable attempt descriptor remains the restore identity, one canonical
+`activation.json` is the mutable ordered journal, and the typed global
+`.maintenance.restore.json` marker binds the same immutable operation while
+blocking ordinary shared access. Control Store, Host projection, Knowledge,
+observations, and Restore Coordinator execute in fixed order; every owner uses
+journal, marker, effect, checkpoint. Each checkpoint binds the canonical
+path-free result by byte count and a domain-separated digest. The coordinator
+owner additionally verifies the exact complete marker bytes, length, and digest
+before replacing history. Reopen reacquires the exact exclusive guard, rebinds
+the same snapshot, attempt, registry, and policy, and reconstructs or verifies
+every candidate/live boundary. Safe journal and marker partial states, all five
+post-effect/pre-checkpoint boundaries, the fifth checkpoint before marker
+retirement, and exit after deletion converge. Marker absence is accepted only
+with a complete journal; out-of-order live roots, ambiguous markers, links,
+rebinding, and evidence drift fail closed. Completed replay is read-only, and a
+13-boundary real-child-process matrix qualifies the top-level protocol.
+Production backup/restore wiring, retained-attempt lifecycle, and the
+coordinated reader/writer cutover remain A2 work. The
 machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual

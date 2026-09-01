@@ -292,6 +292,59 @@ impl StagedControlHostProjectionRestore {
         self.candidate.as_deref()
     }
 
+    pub(in crate::control_store) async fn preflight_clean(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<()> {
+        self.snapshot
+            .validate(&self.registry, &self.snapshot.manifest.binding)?;
+        if !maintenance.is_exclusive_for(&self.state_root) {
+            return Err(restore_invalid(
+                "Control Host projection preflight requires the exact target's exclusive maintenance guard.",
+            ));
+        }
+        filesystem::validate_staging_entries(&self.staging_directory).await?;
+        if !matches!(
+            filesystem::inspect_live_root(&self.state_root).await?,
+            filesystem::LiveHostRoot::Absent
+        ) {
+            return Err(restore_target_not_empty());
+        }
+        match (&self.snapshot.manifest.payload, &self.canonical) {
+            (ControlHostProjectionState::Absent, None) => {
+                filesystem::require_absent_staging(&self.staging_directory).await
+            }
+            (ControlHostProjectionState::Archive { .. }, Some(canonical)) => {
+                let staged_archive =
+                    filesystem::staged_archive(&self.staging_directory, &self.snapshot).await?;
+                super::archive::verify_archive(&self.snapshot, Some(&staged_archive))
+                    .await
+                    .map_err(wrap_restore_error)?;
+                if filesystem::recover_activation_marker(
+                    &self.staging_directory,
+                    &self.activation_bytes,
+                )
+                .await?
+                {
+                    return Err(restore_invalid(
+                        "Host projection activation evidence exists before complete restore intent.",
+                    ));
+                }
+                filesystem::validate_candidate(
+                    &self.staging_directory,
+                    &self.snapshot,
+                    &self.records,
+                    canonical,
+                    host_projection_contract(&self.registry)?,
+                )
+                .await
+            }
+            _ => Err(restore_invalid(
+                "The staged Host projection differs from its snapshot payload state.",
+            )),
+        }
+    }
+
     pub(in crate::control_store) async fn activate(
         &self,
         maintenance: &StateMaintenanceGuard,

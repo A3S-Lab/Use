@@ -232,6 +232,17 @@ pub(super) async fn inspect_live_root(state_root: &Path) -> UseResult<LiveHostRo
     }
 }
 
+pub(super) async fn validate_candidate(
+    staging_directory: &Path,
+    snapshot: &ControlHostProjectionSnapshot,
+    records: &[crate::cognitive_package::HostProjectionSnapshotRecord],
+    canonical: &CanonicalHostProjection,
+    limits: ControlPayloadOwnerLimits,
+) -> UseResult<()> {
+    candidate::validate_projection_root(staging_directory, snapshot, records, canonical, limits)
+        .await
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn activate_candidate(
     state_root: &Path,

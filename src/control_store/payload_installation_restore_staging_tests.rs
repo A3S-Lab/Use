@@ -132,6 +132,18 @@ fn complete_restore_staging_contract_is_send_and_sync() {
 pub(in crate::control_store) async fn absent_snapshot(
     created_at_ms: u64,
 ) -> VerifiedControlInstallationSnapshot {
+    let archive_root = TempDir::new().unwrap();
+    absent_snapshot_at(
+        archive_root.path().join("absent.complete-snapshot"),
+        created_at_ms,
+    )
+    .await
+}
+
+pub(in crate::control_store) async fn absent_snapshot_at(
+    archive: PathBuf,
+    created_at_ms: u64,
+) -> VerifiedControlInstallationSnapshot {
     let temporary = TempDir::new().unwrap();
     let paths = paths(&temporary);
     let store = ControlStore::from_extension_paths(&paths).unwrap();
@@ -141,7 +153,6 @@ pub(in crate::control_store) async fn absent_snapshot(
         .begin_payload_snapshot(registry.clone())
         .await
         .unwrap();
-    let archive = temporary.path().join("absent.complete-snapshot");
     session
         .snapshot_complete_set(
             archive.clone(),
@@ -158,6 +169,18 @@ pub(in crate::control_store) async fn absent_snapshot(
 }
 
 pub(in crate::control_store) async fn populated_snapshot(
+    created_at_ms: u64,
+) -> VerifiedControlInstallationSnapshot {
+    let archive_root = TempDir::new().unwrap();
+    populated_snapshot_at(
+        archive_root.path().join("populated.complete-snapshot"),
+        created_at_ms,
+    )
+    .await
+}
+
+pub(in crate::control_store) async fn populated_snapshot_at(
+    archive: PathBuf,
     created_at_ms: u64,
 ) -> VerifiedControlInstallationSnapshot {
     let temporary = TempDir::new().unwrap();
@@ -180,7 +203,6 @@ pub(in crate::control_store) async fn populated_snapshot(
         .begin_payload_snapshot(registry.clone())
         .await
         .unwrap();
-    let archive = temporary.path().join("populated.complete-snapshot");
     session
         .snapshot_complete_set(
             archive.clone(),

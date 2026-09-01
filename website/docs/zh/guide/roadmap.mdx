@@ -133,9 +133,10 @@ operation。Active marker 与 operation 被排除，但两者的有界 digest in
 marker-only handoff。孤儿 nonterminal operation、pruning 或 temporary 残留、未知 entry、link、外来 history
 与 path rebinding 都会 fail closed。No-clobber 发布前会执行第二次扫描，流式离线验证把精确终态字节与无路径
 receipt 绑定到 Control export；空历史或仅 active 的历史不会创建 archive。其 self-hosted restore adapter
-会保留 active marker 与当前 operation，同时以可重放方式只替换终态历史。持久化 activation evidence 绑定
-精确 before/source/target inventory；marker-only handoff、状态前进、原生 retention 和每个本地 partial 都
-保持确定且可检测篡改。私有 complete-set snapshot coordinator 现在会在同一个 maintenance fence 与
+会保留 active marker 与可能存在的当前 operation，同时以可重放方式只替换终态历史。持久化 activation
+evidence 绑定精确 before/source/target inventory。达到原生 64-record 上限时，legacy whole-installation marker
+会预留一个槽位；typed complete-set marker 没有对应 operation，因此保留全部 64 条记录。Marker-only handoff、
+状态前进与每个本地 partial 都保持确定且可检测篡改。私有 complete-set snapshot coordinator 现在会在同一个 maintenance fence 与
 timestamp 下捕获一份规范 Control export 和全部四个已注册 owner snapshot。无路径规范 manifest 绑定精确
 registry、receipt、schema、digest 与字节账目。单一固定顺序 archive 会流式写到所有 Use data/state root
 之外，经所有 owner-native offline verifier 完整审计后才以 no-clobber 方式发布。Absent owner 不增加 payload，
@@ -144,15 +145,17 @@ registry、receipt、schema、digest 与字节账目。单一固定顺序 archiv
 policy 与五个 component；随后保留一个排他 fence，构建 Control 和全部 owner-native candidate。Control 会
 checkpoint 为单一 SQLite 文件，按 export 往返复验并绑定物理摘要，且不会修改任何 live owner 路径。精确
 重试与中断的 Control 暂存可以恢复；target 污染、link、未知 entry、重绑定与完成 candidate 漂移都会 fail
-closed。Control activation 现在会持久化顶层 intent。不可变 attempt 仍是权威；`activation.json` 是唯一可变的
-有序 journal，全局 `.maintenance.restore.json` marker 绑定同一个不可变 operation，并阻止普通共享访问。
-协议固定按 journal、marker、owner effect、checkpoint 的顺序写入。Preflight 在 intent 前执行；marker 写入后、
-原子 no-clobber 发布前，会再次校验 semantic、物理、sidecar 与 attempt 证据。Reopen 会重新取得精确 guard，
-绑定相同 verified snapshot、attempt 与 policy，重建仍存在且尚未激活的 owner candidate，并收敛安全的
-temporary 与 post-publication/pre-checkpoint 边界。Effect 后 marker 缺失或含糊、link、重绑定和 evidence 漂移
-都会 fail closed。规范的无路径 Control checkpoint 在完成态 replay 时不会重写 journal，全局 marker 则刻意
-保持 active。跨 owner checkpoint 与激活顺序、marker 退休、完整 subprocess 崩溃矩阵、生产 lifecycle 转换与
-dispatch、backup/restore 与 reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+closed。完整激活会在持久化顶层 intent 前预检全部 owner。不可变 attempt 仍是权威；`activation.json` 是唯一
+可变的有序 journal，typed 全局 `.maintenance.restore.json` marker 绑定同一个不可变 operation，并阻止普通
+共享访问。Control Store、Host projection、Knowledge、observations、Restore Coordinator 按固定顺序执行；
+每一步都遵循 journal、marker、owner effect、checkpoint。每个 checkpoint 通过字节数与 domain-separated
+digest 绑定规范的无路径结果；Coordinator owner 还会在修改历史前校验精确 marker 字节、长度与摘要。Reopen
+会重新取得精确 guard，绑定相同 verified snapshot、attempt、registry 与 policy，并重建或验证每个
+candidate/live 边界。Journal/marker partial、五个 effect 后 checkpoint 前边界、marker 退休前的第五个
+checkpoint，以及删除后的进程退出都能收敛。只有完整 journal 才允许 marker 缺失；乱序 live root、含糊
+marker、link、重绑定和 evidence 漂移都会 fail closed。完成态 replay 只读。13 个真实子进程退出边界覆盖
+顶层协议。生产 lifecycle 转换与 dispatch、backup/restore 与 reachability 集成、保留 attempt 生命周期和
+协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

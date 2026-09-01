@@ -1,13 +1,17 @@
 //! Qualification-only restoration for the coordinator's own journal.
 //!
-//! The active whole-installation restore is preserved in place. Only terminal
-//! history is reconciled through durable, replayable staging evidence; this
-//! module is not wired into production backup or restore orchestration.
+//! The active restore marker is preserved while terminal history is reconciled
+//! through durable, replayable staging evidence. Standalone qualification binds
+//! the legacy whole-installation marker; complete-set activation instead binds
+//! the exact typed complete marker, which has no retained operation or future
+//! history slot. This module is not wired into production backup or restore
+//! orchestration.
 
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
+use sha2::{Digest, Sha256};
 
 use super::{
     ControlPayloadOwnerRegistry, ControlRestoreCoordinatorSnapshot, ControlRestoreCoordinatorState,
@@ -149,6 +153,20 @@ impl StagedControlRestoreCoordinatorRestore {
         self.candidate.as_deref()
     }
 
+    pub(in crate::control_store) async fn preflight_clean(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<()> {
+        self.snapshot
+            .validate(&self.registry, &self.snapshot.manifest.binding)?;
+        if !maintenance.is_exclusive_for(&self.state_root) {
+            return Err(restore_invalid(
+                "Restore Coordinator preflight requires the exact target's exclusive maintenance guard.",
+            ));
+        }
+        filesystem::preflight_clean(&self.state_root, &self.staging_directory, &self.snapshot).await
+    }
+
     pub(in crate::control_store) async fn activate(
         &self,
         maintenance: &StateMaintenanceGuard,
@@ -162,6 +180,41 @@ impl StagedControlRestoreCoordinatorRestore {
         }
         let activation =
             filesystem::activate(&self.state_root, &self.staging_directory, &self.snapshot).await?;
+        ControlRestoreCoordinatorRestoreResult::new(&self.registry, &self.snapshot, &activation)
+    }
+
+    pub(in crate::control_store) async fn activate_for_complete_restore(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+        expected_plan_digest: &str,
+        expected_marker_bytes: &[u8],
+    ) -> UseResult<ControlRestoreCoordinatorRestoreResult> {
+        self.snapshot
+            .validate(&self.registry, &self.snapshot.manifest.binding)?;
+        if !maintenance.is_exclusive_for(&self.state_root) {
+            return Err(restore_invalid(
+                "Restore Coordinator activation requires the exact target's exclusive maintenance guard.",
+            ));
+        }
+        if expected_marker_bytes.is_empty()
+            || expected_marker_bytes.len() as u64 > filesystem::MAX_ACTIVE_MARKER_BYTES
+        {
+            return Err(restore_invalid(
+                "The complete restore marker evidence exceeds the Restore Coordinator bound.",
+            ));
+        }
+        let marker_sha256 = format!("sha256:{:x}", Sha256::digest(expected_marker_bytes));
+        let activation = filesystem::activate_bound(
+            &self.state_root,
+            &self.staging_directory,
+            &self.snapshot,
+            filesystem::ExpectedActiveRestore {
+                plan_digest: expected_plan_digest,
+                marker_length: expected_marker_bytes.len() as u64,
+                marker_sha256: &marker_sha256,
+            },
+        )
+        .await?;
         ControlRestoreCoordinatorRestoreResult::new(&self.registry, &self.snapshot, &activation)
     }
 }

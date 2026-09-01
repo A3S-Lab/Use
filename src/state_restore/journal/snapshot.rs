@@ -12,6 +12,7 @@ use super::{
     ActiveStateRestoreMarker, StateRestoreOperation, StateRestoreOperationStatus, MAX_MARKER_BYTES,
     MAX_OPERATION_BYTES, MAX_OPERATION_COUNT,
 };
+use crate::state_restore::ControlInstallationRestoreActiveMarker;
 
 const EXCLUDED_ACTIVE_DOMAIN: &[u8] = b"a3s.use.state-restore-history-excluded-active.v1\0";
 
@@ -40,6 +41,7 @@ pub(crate) struct StateRestoreHistorySnapshotActive {
     pub(crate) plan_digest: String,
     pub(crate) marker_length: u64,
     pub(crate) marker_sha256: String,
+    pub(crate) reserves_terminal_slot: bool,
     operation: Option<StateRestoreHistorySnapshotActiveOperation>,
 }
 
@@ -47,6 +49,46 @@ pub(crate) struct StateRestoreHistorySnapshotActive {
 struct StateRestoreHistorySnapshotActiveOperation {
     length: u64,
     sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SnapshotActiveMarker {
+    WholeInstallation(ActiveStateRestoreMarker),
+    ControlInstallation(ControlInstallationRestoreActiveMarker),
+}
+
+impl SnapshotActiveMarker {
+    fn plan_digest(&self) -> &str {
+        match self {
+            Self::WholeInstallation(marker) => &marker.plan_digest,
+            Self::ControlInstallation(marker) => marker.plan_digest(),
+        }
+    }
+
+    fn bind_retained_operation(&self, operation: &StateRestoreOperation) -> UseResult<()> {
+        match self {
+            Self::WholeInstallation(marker) if marker.binds_operation(operation)? => Ok(()),
+            Self::WholeInstallation(_) => Err(snapshot_invalid(
+                "The active restore marker does not bind its retained operation.",
+            )),
+            Self::ControlInstallation(_) => Err(snapshot_invalid(
+                "A retained restore operation collides with the active complete restore identity.",
+            )),
+        }
+    }
+
+    fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
+        match self {
+            Self::WholeInstallation(marker) => serde_json::to_vec(marker).map_err(|error| {
+                snapshot_invalid(format!("Failed to encode active marker: {error}"))
+            }),
+            Self::ControlInstallation(marker) => marker.canonical_bytes().map_err(wrap_invalid),
+        }
+    }
+
+    fn reserves_terminal_slot(&self) -> bool {
+        matches!(self, Self::WholeInstallation(_))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -81,9 +123,10 @@ pub(crate) async fn scan_state_restore_history_snapshot(
     let marker = read_active_marker(state_root).await?;
     let mut active = if let Some((marker, length, sha256)) = &marker {
         Some(StateRestoreHistorySnapshotActive {
-            plan_digest: marker.plan_digest.clone(),
+            plan_digest: marker.plan_digest().to_owned(),
             marker_length: *length,
             marker_sha256: sha256.clone(),
+            reserves_terminal_slot: marker.reserves_terminal_slot(),
             operation: None,
         })
     } else {
@@ -93,7 +136,7 @@ pub(crate) async fn scan_state_restore_history_snapshot(
     if let Some((marker, length, sha256)) = &marker {
         excluded.push(ExcludedActiveFile {
             kind: ExcludedActiveKind::Marker,
-            plan_digest: marker.plan_digest.clone(),
+            plan_digest: marker.plan_digest().to_owned(),
             length: *length,
             sha256: sha256.clone(),
         });
@@ -149,16 +192,9 @@ pub(crate) async fn scan_state_restore_history_snapshot(
         let sha256 = digest(&bytes);
         if let Some((active_marker, _, _)) = marker
             .as_ref()
-            .filter(|(marker, _, _)| marker.plan_digest == plan_digest)
+            .filter(|(marker, _, _)| marker.plan_digest() == plan_digest)
         {
-            if !active_marker
-                .binds_operation(&operation)
-                .map_err(wrap_invalid)?
-            {
-                return Err(snapshot_invalid(
-                    "The active restore marker does not bind its retained operation.",
-                ));
-            }
+            active_marker.bind_retained_operation(&operation)?;
             let operation_sha256 = sha256.clone();
             excluded.push(ExcludedActiveFile {
                 kind: ExcludedActiveKind::Operation,
@@ -280,7 +316,7 @@ fn finish_scan(
 
 async fn read_active_marker(
     state_root: &Path,
-) -> UseResult<Option<(ActiveStateRestoreMarker, u64, String)>> {
+) -> UseResult<Option<(SnapshotActiveMarker, u64, String)>> {
     let path = state_root.join(a3s_use_extension::ACTIVE_STATE_RESTORE_MARKER);
     let temporary = state_root.join(format!(
         "{}.tmp",
@@ -292,11 +328,19 @@ async fn read_active_marker(
     else {
         return Ok(None);
     };
-    let marker: ActiveStateRestoreMarker = serde_json::from_slice(&bytes)
-        .map_err(|_| snapshot_invalid("The active restore marker is invalid JSON."))?;
-    marker.validate().map_err(wrap_invalid)?;
-    let canonical = serde_json::to_vec(&marker)
-        .map_err(|error| snapshot_invalid(format!("Failed to encode active marker: {error}")))?;
+    let marker = match serde_json::from_slice::<ActiveStateRestoreMarker>(&bytes) {
+        Ok(marker) => {
+            marker.validate().map_err(wrap_invalid)?;
+            SnapshotActiveMarker::WholeInstallation(marker)
+        }
+        Err(_) => {
+            let marker: ControlInstallationRestoreActiveMarker = serde_json::from_slice(&bytes)
+                .map_err(|_| snapshot_invalid("The active restore marker is invalid JSON."))?;
+            marker.validate().map_err(wrap_invalid)?;
+            SnapshotActiveMarker::ControlInstallation(marker)
+        }
+    };
+    let canonical = marker.canonical_bytes()?;
     if canonical != bytes {
         return Err(snapshot_invalid(
             "The active restore marker is not canonically encoded.",

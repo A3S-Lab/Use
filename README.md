@@ -1438,9 +1438,11 @@ and exact before/target inventories. Existing terminal directories are moved
 to retained staging tombstones before candidate records are published without
 replacement. Replay tolerates the active operation advancing while rejecting
 marker drift, links, unknown state, candidate or tombstone tampering, and
-unexplained live changes. Marker-only handoff and absent history are supported;
-a 64-record source deterministically drops the same native oldest record the
-journal would prune so the active restore retains one slot. The canonical
+unexplained live changes. Marker-only handoff and absent history are supported.
+A legacy whole-installation marker reserves the active operation's future
+terminal slot, so a 64-record source deterministically drops the same native
+oldest record the journal would prune. The typed complete-set marker has no
+retained operation and therefore preserves all 64 source records. The canonical
 result is path-free and snapshot-bound. This remains inactive qualification
 code. The private complete-set snapshot coordinator now captures the canonical
 Control export and all four registered owner snapshots under one exact
@@ -1464,27 +1466,29 @@ by its owner-native adapter under the same guard. Present and absent owners,
 completed retries, and interrupted Control staging are deterministic, while a
 nonempty target, unknown or linked entries, snapshot/policy rebinding, and
 completed-candidate drift fail closed without touching live authority paths.
-The complete-set coordinator now durably begins its qualification-only Control
-activation before any live effect. The immutable attempt descriptor remains the
-restore identity; `activation.json` is the sole mutable journal, and the global
-`.maintenance.restore.json` marker binds that attempt to one immutable
-activation operation. Publication order is journal, global marker, owner
-effect, then checkpoint. Control preflight rejects invalid candidates before
-the marker is written, and owner-native revalidation after the marker closes
-the race before the no-clobber atomic `control.sqlite3` publication. The marker
-continues to block ordinary shared state access after the Control checkpoint;
-this partial phase never clears it. Reopening reacquires the exact exclusive
-guard, rebinds the same verified snapshot, attempt, and Knowledge policy,
-reconstructs every present unactivated owner candidate, and verifies or
-replays the canonical path-free Control result. Journal-only, marker-partial,
-and post-publication/pre-checkpoint boundaries converge deterministically.
-Missing marker state after an effect, ambiguous final/partial markers,
-snapshot rebinding, linked paths, or journal/marker/result drift fail closed.
-Exact checkpoint replay performs validation without rewriting the journal.
-This qualifies durable top-level intent, one owner checkpoint, and guard
-release/reopen recovery. Cross-owner checkpoints and activation order, marker
-retirement, the full subprocess-exit matrix, production backup/restore wiring,
-and the authority cutover remain open.
+The complete-set coordinator now qualifies the entire cross-owner activation
+protocol. Before durable intent, every present or absent owner candidate is
+revalidated against a clean target. The immutable attempt descriptor remains
+the restore identity; `activation.json` is the sole mutable journal, and the
+typed global `.maintenance.restore.json` marker binds that attempt to one
+immutable activation operation. The fixed owner order is Control Store, Host
+projection, Knowledge, observations, then Restore Coordinator. Each step uses
+the same journal-marker-effect-checkpoint discipline, and each checkpoint binds
+the canonical path-free owner result by length and a domain-separated digest.
+The Restore Coordinator receives the exact expected marker bytes, length, and
+digest before it changes history. Only the fifth durable checkpoint permits
+global marker retirement. Reopening reacquires the exact exclusive guard,
+rebinds the same verified snapshot, attempt, owner registry, and Knowledge
+policy, and reconstructs or verifies every owner at its exact candidate/live
+boundary. Journal and marker partials, every owner effect before checkpoint,
+the final checkpoint before marker deletion, and process exit immediately after
+marker deletion all converge deterministically. A 13-boundary subprocess matrix
+exercises those top-level exits. A missing marker is accepted only with the
+complete five-checkpoint journal; ambiguous markers, out-of-order live roots,
+snapshot rebinding, linked paths, or evidence drift fail closed. Completed
+replay is read-only. Production Grant conversion and effect dispatch,
+backup/restore command wiring, retained-attempt lifecycle, indivisible consumer
+cutover, and deletion of legacy mutable stores remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

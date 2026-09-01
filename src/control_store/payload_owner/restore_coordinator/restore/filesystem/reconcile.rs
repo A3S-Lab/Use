@@ -7,7 +7,7 @@ use super::candidate::CanonicalRestoreHistory;
 use super::records;
 use super::{
     ensure_owned_directory, optional_owned_directory, rename_owned, retired_path, sync_directory,
-    validate_staging_entries,
+    validate_staging_entries, ExpectedActiveRestore,
 };
 use crate::control_store::payload_owner::restore_coordinator::restore::evidence::{
     entries_from_scan, RestoreCoordinatorActivation,
@@ -31,6 +31,7 @@ pub(super) async fn activate(
     state_root: &Path,
     staging_directory: &Path,
     snapshot: &ControlRestoreCoordinatorSnapshot,
+    expected_active: Option<ExpectedActiveRestore<'_>>,
 ) -> UseResult<RestoreCoordinatorActivation> {
     validate_staging_entries(staging_directory, snapshot).await?;
     let canonical = match snapshot.manifest.payload {
@@ -44,7 +45,16 @@ pub(super) async fn activate(
     };
     let first = scan_live(state_root, snapshot).await?;
     let active = require_active(&first)?.clone();
-    let (target, pruned) = canonical.target(&active.plan_digest)?;
+    if expected_active.is_some_and(|expected| {
+        active.plan_digest != expected.plan_digest
+            || active.marker_length != expected.marker_length
+            || active.marker_sha256 != expected.marker_sha256
+    }) {
+        return Err(restore_invalid(
+            "The Restore Coordinator active identity differs from the complete restore marker.",
+        ));
+    }
+    let (target, pruned) = canonical.target(&active.plan_digest, active.reserves_terminal_slot)?;
     let (activation, created) = marker::load_or_create(
         staging_directory,
         snapshot,

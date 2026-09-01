@@ -1,9 +1,6 @@
 use std::io;
 use std::path::PathBuf;
 
-#[cfg(test)]
-use std::path::Path;
-
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
 use serde::{Deserialize, Serialize};
@@ -13,11 +10,9 @@ use super::super::host_projection::StagedControlHostProjectionRestore;
 use super::super::knowledge::StagedControlKnowledgePayloadRestore;
 use super::super::observations::StagedControlObservationPayloadRestore;
 use super::super::restore_coordinator::StagedControlRestoreCoordinatorRestore;
-use super::super::ControlPayloadSnapshotBinding;
+use super::super::{ControlPayloadOwnerId, ControlPayloadSnapshotBinding};
 use super::control_restore::{self, StagedControlStoreRestore};
-use super::control_restore_result::ControlStoreRestoreResult;
 use super::coordinator::VerifiedControlInstallationSnapshot;
-use super::restore_activation;
 use super::restore_filesystem::{
     self, CONTROL_DIRECTORY, HOST_PROJECTION_DIRECTORY, KNOWLEDGE_DIRECTORY,
     OBSERVATIONS_DIRECTORY, RESTORE_COORDINATOR_DIRECTORY,
@@ -56,6 +51,29 @@ impl RestoreComponent {
             Self::Observations => "observations",
             Self::RestoreCoordinator => "restore-coordinator",
         }
+    }
+
+    pub(super) const fn payload_owner(self) -> Option<ControlPayloadOwnerId> {
+        match self {
+            Self::ControlStore => None,
+            Self::HostProjection => Some(ControlPayloadOwnerId::HostProtocolProjection),
+            Self::Knowledge => Some(ControlPayloadOwnerId::KnowledgePayload),
+            Self::Observations => Some(ControlPayloadOwnerId::PlanningAndDiagnosticObservations),
+            Self::RestoreCoordinator => Some(ControlPayloadOwnerId::RestoreCoordinator),
+        }
+    }
+
+    pub(super) fn index(self) -> usize {
+        Self::ALL
+            .into_iter()
+            .position(|candidate| candidate == self)
+            .unwrap_or(Self::ALL.len())
+    }
+
+    pub(super) fn for_payload_owner(owner: ControlPayloadOwnerId) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|component| component.payload_owner() == Some(owner))
     }
 }
 
@@ -323,126 +341,6 @@ impl VerifiedControlInstallationSnapshot {
             restore_coordinator,
             maintenance,
         })
-    }
-}
-
-impl StagedControlInstallationRestore {
-    pub(in crate::control_store) async fn activate_control(
-        &self,
-    ) -> UseResult<ControlStoreRestoreResult> {
-        self.control
-            .preflight(&self.maintenance)
-            .await
-            .map_err(wrap_activation_error)?;
-        restore_activation::begin(
-            &self.state_root,
-            &self.staging_directory,
-            &self.attempt_bytes,
-            &self.attempt_digest,
-            self.control.candidate_path(),
-        )
-        .await
-        .map_err(wrap_activation_error)?;
-        let result = self
-            .control
-            .activate(&self.maintenance)
-            .await
-            .map_err(wrap_activation_error)?;
-        restore_activation::validate_result_registry(&self.control.registry, &result)
-            .map_err(wrap_activation_error)?;
-        restore_activation::checkpoint_control(
-            &self.state_root,
-            &self.staging_directory,
-            &self.attempt_digest,
-            &result,
-        )
-        .await
-        .map_err(wrap_activation_error)?;
-        Ok(result)
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) async fn begin_control_activation_for_test(
-        &self,
-    ) -> UseResult<()> {
-        self.control
-            .preflight(&self.maintenance)
-            .await
-            .map_err(wrap_activation_error)?;
-        restore_activation::begin(
-            &self.state_root,
-            &self.staging_directory,
-            &self.attempt_bytes,
-            &self.attempt_digest,
-            self.control.candidate_path(),
-        )
-        .await
-        .map(|_| ())
-        .map_err(wrap_activation_error)
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn activation_journal_path_for_test(&self) -> PathBuf {
-        restore_activation::journal_path(&self.staging_directory)
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) async fn activation_checkpoint_count_for_test(
-        &self,
-    ) -> UseResult<usize> {
-        restore_activation::load(
-            &self.state_root,
-            &self.staging_directory,
-            &self.attempt_digest,
-        )
-        .await
-        .map(|activation| activation.checkpoint_count())
-        .map_err(wrap_activation_error)
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn control_restore_for_test(&self) -> &StagedControlStoreRestore {
-        &self.control
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn holds_exclusive_fence(&self, state_root: &Path) -> bool {
-        self.maintenance.is_exclusive_for(state_root)
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn control_candidate_path(&self) -> &Path {
-        self.control.candidate_path()
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn host_projection_candidate_path(&self) -> Option<&Path> {
-        self.host_projection.candidate_path()
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn knowledge_candidate_path(&self) -> Option<&Path> {
-        self.knowledge.candidate_path()
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn observation_candidate_path(&self) -> Option<&Path> {
-        self.observations.candidate_path()
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn restore_coordinator_candidate_path(&self) -> Option<&Path> {
-        self.restore_coordinator.candidate_path()
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn attempt_digest(&self) -> &str {
-        &self.attempt_digest
-    }
-
-    #[cfg(test)]
-    pub(in crate::control_store) fn staging_directory(&self) -> &Path {
-        &self.staging_directory
     }
 }
 

@@ -171,10 +171,13 @@ fixed-order archive, then reuses the Knowledge offline verifier before
 no-clobber publication. The verified aggregate can now preflight the exact
 Knowledge storage policy before touching a restore target, bind that policy in
 one path-free complete-attempt descriptor, and stage this database beside the
-Control and other owner candidates under one retained exclusive fence. It does
-not change the live Knowledge root. Cross-owner activation order, durable crash
-recovery, rollback policy, and production visibility remain outside this owner
-primitive.
+Control and other owner candidates under one retained exclusive fence. The
+owner primitive itself does not change the live Knowledge root or choose global
+order. The complete-set coordinator now activates it after Host projection and
+before observations, binds its path-free result in the third checkpoint, and
+replays its post-rename boundary under the same fence. Rollback policy,
+production backup/restore wiring, and production visibility remain outside this
+owner primitive.
 
 ## Review and apply backup retention
 
