@@ -10,8 +10,9 @@ use super::effect_port::{
 };
 use super::model::{
     corruption_error, ClaimedControlEffect, ControlAppliedEffect, ControlAppliedEffectEvidence,
-    ControlEffectClaim, ControlEffectIntent, ControlEffectKind, ControlEffectObservation,
-    ControlEffectOutcome, ControlEffectOwner, ControlEffectSubject, ControlSurfaceObservationState,
+    ControlEffectAuthority, ControlEffectClaim, ControlEffectIntent, ControlEffectKind,
+    ControlEffectObservation, ControlEffectOutcome, ControlEffectOwner, ControlEffectSubject,
+    ControlPackageEffectAuthority, ControlSurfaceObservationState,
 };
 use super::ControlStore;
 
@@ -129,7 +130,12 @@ impl ControlEffectDispatcher {
     ) -> UseResult<RoutedControlEffectOutcome> {
         let identity = request_identity(operation_id, claimed);
         let intent = &claimed.intent;
-        match (&intent.owner, &intent.subject, intent.kind) {
+        match (
+            &intent.owner,
+            &intent.subject,
+            intent.kind,
+            &claimed.authority,
+        ) {
             (
                 ControlEffectOwner::CapabilityIndex,
                 ControlEffectSubject::Installation {
@@ -138,9 +144,11 @@ impl ControlEffectDispatcher {
                     descriptor_digest,
                 },
                 ControlEffectKind::CapabilityCutover,
+                ControlEffectAuthority::CapabilityIndex(authority),
             ) => {
                 let request = ControlCapabilityCutoverRequest {
                     identity,
+                    authority: authority.clone(),
                     expected_capability_generation: *expected_capability_generation,
                     capability_generation: *capability_generation,
                     descriptor_digest: descriptor_digest.clone(),
@@ -169,9 +177,11 @@ impl ControlEffectDispatcher {
                     action,
                 },
                 ControlEffectKind::CallsDrain,
+                ControlEffectAuthority::InvocationLeases(authority),
             ) => {
                 let request = ControlInvocationDrainRequest {
                     identity,
+                    authority: authority.clone(),
                     package_id: package_id.clone(),
                     lifecycle_generation: *lifecycle_generation,
                     package_digest: package_digest.clone(),
@@ -201,11 +211,13 @@ impl ControlEffectDispatcher {
                 ControlEffectKind::SurfacePrepare
                 | ControlEffectKind::SurfaceStop
                 | ControlEffectKind::SurfaceRemove,
+                ControlEffectAuthority::RuntimeProvider(authority),
             ) => {
-                let surface = surface_request(identity, intent)?;
+                let surface = surface_request(identity, intent, authority.package.clone())?;
                 let state = observation_state(surface.action);
                 let request = ControlRuntimeEffectRequest {
                     surface,
+                    authority: authority.clone(),
                     provider_id: provider_id.clone(),
                     selection_digest: selection_digest.clone(),
                 };
@@ -231,8 +243,9 @@ impl ControlEffectDispatcher {
                 ControlEffectKind::SurfacePrepare
                 | ControlEffectKind::SurfaceStop
                 | ControlEffectKind::SurfaceRemove,
+                ControlEffectAuthority::FlowHost(authority),
             ) => {
-                let request = surface_request(identity, intent)?;
+                let request = surface_request(identity, intent, authority.clone())?;
                 let state = observation_state(request.action);
                 Ok(self
                     .ports
@@ -252,8 +265,9 @@ impl ControlEffectDispatcher {
                 ControlEffectKind::SurfacePrepare
                 | ControlEffectKind::SurfaceStop
                 | ControlEffectKind::SurfaceRemove,
+                ControlEffectAuthority::KnowledgeHost(authority),
             ) => {
-                let request = surface_request(identity, intent)?;
+                let request = surface_request(identity, intent, authority.clone())?;
                 let state = observation_state(request.action);
                 Ok(self
                     .ports
@@ -273,8 +287,9 @@ impl ControlEffectDispatcher {
                 ControlEffectKind::SurfacePrepare
                 | ControlEffectKind::SurfaceStop
                 | ControlEffectKind::SurfaceRemove,
+                ControlEffectAuthority::SkillHost(authority),
             ) => {
-                let request = surface_request(identity, intent)?;
+                let request = surface_request(identity, intent, authority.clone())?;
                 let state = observation_state(request.action);
                 Ok(self
                     .ports
@@ -294,8 +309,9 @@ impl ControlEffectDispatcher {
                 ControlEffectKind::SurfacePrepare
                 | ControlEffectKind::SurfaceStop
                 | ControlEffectKind::SurfaceRemove,
+                ControlEffectAuthority::UiHost(authority),
             ) => {
-                let request = surface_request(identity, intent)?;
+                let request = surface_request(identity, intent, authority.clone())?;
                 let state = observation_state(request.action);
                 Ok(self
                     .ports
@@ -386,6 +402,7 @@ fn request_identity(
 fn surface_request(
     identity: ControlEffectRequestIdentity,
     intent: &ControlEffectIntent,
+    authority: ControlPackageEffectAuthority,
 ) -> UseResult<ControlSurfaceEffectRequest> {
     let ControlEffectSubject::Surface {
         package_id,
@@ -412,6 +429,7 @@ fn surface_request(
     };
     Ok(ControlSurfaceEffectRequest {
         identity,
+        authority,
         package_id: package_id.clone(),
         lifecycle_generation: *lifecycle_generation,
         package_digest: package_digest.clone(),

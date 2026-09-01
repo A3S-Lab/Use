@@ -3,7 +3,10 @@ use async_trait::async_trait;
 
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
-use super::model::{input_error, valid_error_code, valid_sha256, ControlRuntimeBindingObservation};
+use super::model::{
+    input_error, valid_error_code, valid_sha256, ControlCapabilityEffectAuthority,
+    ControlPackageEffectAuthority, ControlRuntimeBindingObservation, ControlRuntimeEffectAuthority,
+};
 
 /// Classification returned by an external effect owner.
 ///
@@ -88,6 +91,7 @@ pub(in crate::control_store) struct ControlEffectRequestIdentity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::control_store) struct ControlCapabilityCutoverRequest {
     pub(in crate::control_store) identity: ControlEffectRequestIdentity,
+    pub(in crate::control_store) authority: ControlCapabilityEffectAuthority,
     pub(in crate::control_store) expected_capability_generation: u64,
     pub(in crate::control_store) capability_generation: u64,
     pub(in crate::control_store) descriptor_digest: String,
@@ -96,6 +100,7 @@ pub(in crate::control_store) struct ControlCapabilityCutoverRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::control_store) struct ControlInvocationDrainRequest {
     pub(in crate::control_store) identity: ControlEffectRequestIdentity,
+    pub(in crate::control_store) authority: ControlPackageEffectAuthority,
     pub(in crate::control_store) package_id: String,
     pub(in crate::control_store) lifecycle_generation: u64,
     pub(in crate::control_store) package_digest: String,
@@ -113,6 +118,7 @@ pub(in crate::control_store) enum ControlSurfaceEffectAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::control_store) struct ControlSurfaceEffectRequest {
     pub(in crate::control_store) identity: ControlEffectRequestIdentity,
+    pub(in crate::control_store) authority: ControlPackageEffectAuthority,
     pub(in crate::control_store) package_id: String,
     pub(in crate::control_store) lifecycle_generation: u64,
     pub(in crate::control_store) package_digest: String,
@@ -125,6 +131,7 @@ pub(in crate::control_store) struct ControlSurfaceEffectRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::control_store) struct ControlRuntimeEffectRequest {
     pub(in crate::control_store) surface: ControlSurfaceEffectRequest,
+    pub(in crate::control_store) authority: ControlRuntimeEffectAuthority,
     pub(in crate::control_store) provider_id: String,
     pub(in crate::control_store) selection_digest: String,
 }

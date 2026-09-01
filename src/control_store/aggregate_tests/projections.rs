@@ -453,7 +453,7 @@ fn projection_merges_two_roots_without_reallocating_the_shared_dependency() {
     );
 }
 
-fn generation(
+pub(super) fn generation(
     operation: &ReviewedControlOperation,
     projected: &ProjectedControlGeneration,
 ) -> ControlGeneration {
@@ -471,7 +471,7 @@ fn generation(
     }
 }
 
-fn reviewed_install(
+pub(super) fn reviewed_install(
     operation_id: &str,
     lock: PluginPackageLock,
     prior: Option<&InstallationSnapshot>,
@@ -660,7 +660,7 @@ fn reviewed_uninstall(
     .unwrap()
 }
 
-fn verified_record(
+pub(super) fn verified_record(
     package_id: &str,
     dependencies: Vec<PluginPackageDependency>,
     seed: char,
@@ -695,7 +695,7 @@ fn verified_record(
     VerifiedPluginCatalogRecord::new(record, provenance).unwrap()
 }
 
-fn test_host() -> PluginPackageLockHost {
+pub(super) fn test_host() -> PluginPackageLockHost {
     PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap()
 }
 

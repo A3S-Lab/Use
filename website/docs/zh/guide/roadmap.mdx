@@ -105,8 +105,14 @@ dispatcher 现在会先提交 claim，在 owner I/O 前释放事务与有界 exe
 记录 owner-shaped observation。Provider timeout 必须在 claim lease 内保留固定的 observation 预算，
 并记录为 unknown evidence；进程退出、取消、过期 claim 与含糊结果都必须显式复用同一 key 完成
 reconciliation。测试已覆盖 provider I/O 期间重入 Store、七类路由、挂起 provider 的有界终止，以及
-effect 后 observation 前退出。生产 lifecycle 代码仍不会构造它；真实 adapter 的完整输入必须只来自
-已提交 Control authority 与 immutable artifact。私有的无路径 payload 契约现已冻结五个外部 owner ID
+effect 后 observation 前退出。同一个 claim 事务现在还会推导 owner-shaped committed context：package
+端口只接收精确的 selection、lifecycle、host、snapshot identity 与 Grant；Runtime 额外接收完整的 reviewed
+provider selection；Capability Index 接收 candidate generation，以及每个已启用 selected surface 的最新终态
+prepare，包括跨 multi-root generation 保留的历史 observation 与显式 optional degradation。Grant coverage
+缺失、最新状态仍非终态、teardown 冒充 prepare 或 generation 漂移，都会在 owner I/O 前 fail closed。
+多 package generation 提交也已改为先写入完整 node set，再在同一事务写入带立即外键的 dependency edge。
+生产 lifecycle 代码仍不会构造该 dispatcher；真实 adapter 仍须验证精确 immutable artifact，并且只能从
+这些字节与 committed Control context 推导 manifest 和 surface 输入。私有的无路径 payload 契约现已冻结五个外部 owner ID
 及其 ACL backup policy；
 全局 Artifact Store 被明确排除，另外四个 owner 必须形成一组完整、规范、绑定精确 installation、
 Control generation、registry/owner schema、digest 与有界计数的 receipt。私有 session 现在会在一个

@@ -97,6 +97,12 @@ pub(super) fn insert_generation(
                 ],
             )
             .map_err(|error| mutation_error("insert selected Control Store package", error))?;
+    }
+    // Dependency edges have immediate foreign keys to both selected package
+    // rows. Persist the complete node set first so correctness is independent
+    // of lexical package IDs or graph topology while remaining in one
+    // transaction.
+    for package in &transition.snapshot.packages {
         for dependency in &package.package.dependencies {
             transaction
                 .execute(
