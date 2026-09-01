@@ -288,9 +288,20 @@ and returns a stable path-free receipt independent of claim attempt/deadline.
 Contention is a safe same-key deferral; tampering, absence, and authority
 substitution are proved-no-effect rejection; this read-only adapter never
 claims unknown acceptance. Stop/remove remain path-independent projection
-receipts. Remaining adapter implementations, dispatcher composition, and
-production conversion into the reviewed inputs used by the inactive kernel
-remain gate 3 work.
+receipts. A second real adapter now owns OKF Knowledge effects. It receives one
+exact committed package incarnation, reads first-use OKF bytes through the
+path-free verified Artifact lease, persists staged and then promoted receipt
+evidence in crash-safe order, and can replay promoted evidence after the
+artifact is unavailable. Pre-effect contention is deferred, authority or byte
+substitution is rejected, and ambiguity after stage, promote, remove, or
+receipt persistence is unknown. The real composition fixture carries one
+committed claim through SQLite/FTS5 materialization and a durable Control
+application observation while the dispatcher maintenance fence remains held.
+Artifact-only package admission creates no lifecycle authority and its global
+reference-admission guard is retained through the separate Control reference
+commit. Runtime, Flow, Capability Index, invocation-lease adapters, production
+dispatcher composition, and conversion into the reviewed inputs used by the
+inactive kernel remain gate 3 work.
 
 Production activation is blocked until all gates below are true:
 

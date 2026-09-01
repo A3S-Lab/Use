@@ -3,6 +3,8 @@ use std::time::Duration;
 use super::*;
 use crate::package::write_receipt;
 
+#[path = "registry_tests/artifact_admission.rs"]
+mod artifact_admission;
 #[path = "registry_tests/cognitive_lifecycle.rs"]
 mod cognitive_lifecycle;
 #[path = "registry_tests/cutover.rs"]

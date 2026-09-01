@@ -3,7 +3,10 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use a3s_use_core::{PluginCatalogRecord, UseError, UseResult, VerifiedPluginCatalogRecord};
+use a3s_use_core::{
+    OkfBundleContract, OkfBundleFile, PluginCatalogRecord, UseError, UseResult,
+    VerifiedPluginCatalogRecord,
+};
 use fs2::FileExt;
 
 use super::{
@@ -13,7 +16,8 @@ use crate::digest::package_fingerprint;
 use crate::package::{lock_is_contended, read_manifest, sha256, validate_surface_files};
 use crate::registry::validate_catalog_manifest_binding;
 use crate::surface_files::{
-    inspect_skill_surface_file, inspect_ui_surface_files, PluginSurfaceFileEvidence,
+    inspect_skill_surface_file, inspect_ui_surface_files, load_okf_bundle_files,
+    PluginSurfaceFileEvidence,
 };
 use crate::ExtensionManifest;
 
@@ -35,6 +39,36 @@ pub struct VerifiedArtifactPackage {
     root: PathBuf,
     catalog: PluginCatalogRecord,
     manifest: ExtensionManifest,
+}
+
+/// Path-free immutable bytes for one exact catalog-bound OKF surface.
+///
+/// The payload is created only while a [`VerifiedArtifactPackage`] lease is
+/// held. Its bundle contract and byte snapshot can cross the Knowledge adapter
+/// boundary without granting access to the package filesystem.
+#[derive(Debug, PartialEq, Eq)]
+pub struct VerifiedOkfSurfacePayload {
+    surface_id: String,
+    bundle: OkfBundleContract,
+    files: Vec<OkfBundleFile>,
+}
+
+impl VerifiedOkfSurfacePayload {
+    pub fn surface_id(&self) -> &str {
+        &self.surface_id
+    }
+
+    pub fn bundle(&self) -> &OkfBundleContract {
+        &self.bundle
+    }
+
+    pub fn files(&self) -> &[OkfBundleFile] {
+        &self.files
+    }
+
+    pub fn into_parts(self) -> (OkfBundleContract, Vec<OkfBundleFile>) {
+        (self.bundle, self.files)
+    }
 }
 
 impl fmt::Debug for VerifiedArtifactPackage {
@@ -123,6 +157,24 @@ impl VerifiedArtifactPackage {
         let evidence = inspect_ui_surface_files(surface, &self.root).await?;
         self.verify_unchanged().await?;
         Ok(evidence)
+    }
+
+    /// Read one exact immutable OKF contribution without exposing its package
+    /// path to the effect owner or Knowledge adapter.
+    pub async fn read_okf_surface(&self, surface_id: &str) -> UseResult<VerifiedOkfSurfacePayload> {
+        let surface = self
+            .manifest
+            .okf
+            .iter()
+            .find(|surface| surface.id == surface_id)
+            .ok_or_else(surface_missing)?;
+        let files = load_okf_bundle_files(surface, &self.root).await?;
+        self.verify_unchanged().await?;
+        Ok(VerifiedOkfSurfacePayload {
+            surface_id: surface.id.clone(),
+            bundle: surface.bundle.clone(),
+            files,
+        })
     }
 
     /// Recompute the complete package identity while both coordinated read
@@ -322,4 +374,5 @@ fn surface_missing() -> UseError {
 const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<VerifiedArtifactPackage>();
+    assert_send_sync::<VerifiedOkfSurfacePayload>();
 };

@@ -28,7 +28,6 @@ pub use model::{
 };
 #[cfg(all(test, windows))]
 pub(crate) use package::install_before_candidate_commit_hook;
-use package::{commit_candidate_root, validate_candidate_source};
 
 use super::{
     ensure_no_installed_dependents, published_binding_matches_extension, verify_package_integrity,
@@ -190,16 +189,10 @@ impl ExtensionRegistry {
             }
         }
 
-        validate_candidate_source(candidate).await?;
         let target = self.lifecycle_package_root(identity);
-        commit_candidate_root(
-            candidate,
-            &target,
-            &artifact_store,
-            &artifact_admission,
-            identity.package_sha256(),
-        )
-        .await?;
+        artifact_store
+            .admit_prepared_package(&artifact_admission, candidate)
+            .await?;
         if let Some((retained_identity, receipt)) = retained_candidate {
             let retained = self
                 .retain_lifecycle_receipt(

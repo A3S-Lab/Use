@@ -202,9 +202,19 @@ stable path-free receipt independent of retry claim metadata. Contention safely
 defers the same key; tampering, absence, or authority substitution is a
 proved-no-effect rejection; this read-only adapter cannot report unknown
 acceptance. Static stop/remove are path-independent projection receipts.
-Remaining adapters and dispatcher composition must derive all manifest, Grant,
-Runtime, and capability inputs only from committed Control authority and
-immutable artifacts.
+The second concrete adapter now covers OKF Knowledge. It reads first-use OKF
+content only as a path-free verified Artifact payload, saves staged receipt
+evidence before promotion, saves promoted evidence before reporting applied,
+and replays retained promoted evidence without Artifact access. Pre-effect
+contention safely defers; authority or byte drift rejects; ambiguity after
+stage, promote, remove, or receipt persistence remains unknown for explicit
+same-key reconciliation. Stop performs no Knowledge mutation and remove uses
+the retained receipt. A real SQLite composition test carries one committed
+claim through the dispatcher and back into durable Control evidence. Artifact
+admission is separately idempotent and creates no lifecycle authority; its
+reference guard spans the distinct Control commit. Runtime, Flow, Capability
+Index, invocation-lease adapters, and production composition must derive all
+inputs only from committed Control authority and immutable artifacts.
 A private path-free registry also freezes the five external payload-owner IDs
 and exact ACL backup policies. Artifact Store exclusion is explicit; the four
 snapshotted owners must produce one complete, generation-bound canonical

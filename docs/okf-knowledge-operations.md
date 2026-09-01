@@ -141,6 +141,19 @@ SQLite schema, invalid receipts, inconsistent storage evidence, and FTS
 corruption. Store the returned manifest with the operator's broader backup
 inventory.
 
+The inactive Control effect path now drives this same Knowledge engine from
+committed authority rather than a lifecycle filesystem receipt. First prepare
+reads a named OKF bundle as verified bytes from the Artifact Store, stages the
+exact receipt-owned generation, saves staged evidence before promotion, saves
+promoted evidence before reporting applied, and records both the observation
+and capability-projection digests in Control. Replay of a promoted binding no
+longer needs package bytes. Stop changes no Knowledge payload; remove uses only
+the retained receipt. Failures before an external effect may safely defer or
+reject, while any ambiguous stage, promote, remove, or post-effect receipt
+write remains unknown and requires explicit same-key reconciliation. A real
+SQLite integration test covers the complete Control claim-to-observation path.
+This adapter remains inactive until the coordinated ADR-003 cutover.
+
 The inactive Control Store qualification layer now reuses this verified
 archive through a stricter owner boundary. While one exclusive installation
 maintenance fence is held, it binds the archive to the canonical Control

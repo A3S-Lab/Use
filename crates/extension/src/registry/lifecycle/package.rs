@@ -290,6 +290,33 @@ impl ExtensionLifecyclePackage {
     }
 }
 
+impl ArtifactStore {
+    /// Admit verified package bytes without creating installation lifecycle state.
+    ///
+    /// This operation owns only immutable, content-addressed Artifact Store
+    /// materialization. It does not install, select, enable, or publish the
+    /// package. Callers must retain `artifact_admission` while committing the
+    /// separate authority that will reference these bytes.
+    pub async fn admit_prepared_package(
+        &self,
+        artifact_admission: &ArtifactReferenceAdmission,
+        candidate: &ExtensionLifecyclePackage,
+    ) -> UseResult<()> {
+        artifact_admission.ensure_store(self)?;
+        validate_candidate_source(candidate).await?;
+        let package_sha256 = candidate
+            .package_digest()
+            .strip_prefix("sha256:")
+            .ok_or_else(|| {
+                lifecycle_identity_error(
+                    "The prepared package digest is not a canonical SHA-256 identity.",
+                )
+            })?;
+        let target = self.expanded_package_path(candidate.package_digest())?;
+        commit_candidate_root(candidate, &target, self, artifact_admission, package_sha256).await
+    }
+}
+
 pub(super) async fn validate_candidate_source(
     candidate: &ExtensionLifecyclePackage,
 ) -> UseResult<()> {
