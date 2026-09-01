@@ -5,7 +5,9 @@ use a3s_use_core::{
     InstallationId, PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlannedProviderEvidence,
     PluginOperationAction, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
 };
+use a3s_use_extension::StateMaintenanceLock;
 use async_trait::async_trait;
+use tokio::sync::Notify;
 
 use super::aggregate_tests::fixtures::{
     control_installation, digest, initialized_store, operation, transition,
@@ -41,12 +43,19 @@ enum Disposition {
     Unknown,
 }
 
+#[derive(Default)]
+struct DispatchGate {
+    entered: Notify,
+    release: Notify,
+}
+
 struct RecordingPorts {
     dispositions: Mutex<VecDeque<Disposition>>,
     calls: Mutex<Vec<&'static str>>,
     authority_generations: Mutex<Vec<u64>>,
     inspect_store: Option<ControlStore>,
     delay_ms: u64,
+    gate: Option<Arc<DispatchGate>>,
 }
 
 impl RecordingPorts {
@@ -57,6 +66,7 @@ impl RecordingPorts {
             authority_generations: Mutex::new(Vec::new()),
             inspect_store: None,
             delay_ms: 0,
+            gate: None,
         }
     }
 
@@ -70,6 +80,11 @@ impl RecordingPorts {
         self
     }
 
+    fn with_gate(mut self, gate: Arc<DispatchGate>) -> Self {
+        self.gate = Some(gate);
+        self
+    }
+
     async fn before_call(&self, owner: &'static str, authority_generation: u64) {
         if let Some(store) = &self.inspect_store {
             store.inspect().await.unwrap();
@@ -79,6 +94,10 @@ impl RecordingPorts {
             .lock()
             .unwrap()
             .push(authority_generation);
+        if let Some(gate) = &self.gate {
+            gate.entered.notify_one();
+            gate.release.notified().await;
+        }
         if self.delay_ms > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(self.delay_ms)).await;
         }
@@ -280,6 +299,66 @@ async fn dispatcher_enters_provider_only_after_commit_and_releases_store_resourc
     ));
     assert_eq!(recording.calls(), vec!["knowledge-host"]);
     assert_eq!(recording.authority_generations(), vec![1]);
+    assert_eq!(
+        store.effects(reviewed.operation_id()).await.unwrap()[0].status,
+        ControlEffectStatus::Applied
+    );
+}
+
+#[tokio::test]
+async fn dispatcher_fences_restore_from_claim_through_observation() {
+    let (_temporary, store) = initialized_store().await;
+    let reviewed = operation("operation:dispatcher");
+    store.register_operation(reviewed.clone()).await.unwrap();
+    store
+        .commit_transition(transition(control_installation(), &reviewed))
+        .await
+        .unwrap();
+    let gate = Arc::new(DispatchGate::default());
+    let recording = Arc::new(RecordingPorts::new([Disposition::Applied]).with_gate(gate.clone()));
+    let dispatcher = ControlEffectDispatcher::new(
+        store.clone(),
+        ports(recording),
+        Arc::new(TestClock::new([30, 35])),
+    );
+    let state_root = store.state_root.clone();
+
+    let dispatch = tokio::spawn(async move {
+        dispatcher
+            .dispatch_next(dispatch_request("claim:maintenance-fence", false))
+            .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), gate.entered.notified())
+        .await
+        .expect("the owner must be entered after the durable claim");
+
+    let maintenance = StateMaintenanceLock::new(state_root);
+    let mut exclusive = tokio::spawn(async move { maintenance.acquire_exclusive().await.unwrap() });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), &mut exclusive)
+            .await
+            .is_err(),
+        "restore must not acquire its exclusive fence between claim and observation"
+    );
+
+    gate.release.notify_one();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), dispatch)
+        .await
+        .expect("dispatch must finish after the owner is released")
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        result,
+        ControlEffectDispatchResult::Observed {
+            outcome: ControlEffectOutcome::Applied,
+            ..
+        }
+    ));
+    let exclusive = tokio::time::timeout(std::time::Duration::from_secs(5), exclusive)
+        .await
+        .expect("restore may acquire only after the observation is durable")
+        .unwrap();
+    drop(exclusive);
     assert_eq!(
         store.effects(reviewed.operation_id()).await.unwrap()[0].status,
         ControlEffectStatus::Applied

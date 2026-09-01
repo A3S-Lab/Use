@@ -63,13 +63,18 @@ must provide a bounded typed inventory, deterministic digest, snapshot method,
 offline verifier, and restore contract where its backup policy requires one.
 
 The inactive one-effect dispatcher now qualifies the transaction-to-provider
-boundary. It commits a claim, releases the SQLite transaction and bounded
+boundary. It retains one installation-wide shared maintenance fence across the
+complete claim/effect/observation interval, commits a claim, releases the SQLite
+transaction and bounded
 executor, routes the exact identity through one of seven typed owner ports, and
 records applied, deferred, rejected, or unknown evidence in a later
 transaction. Deferred is allowed only when the owner proves that no effect was
 accepted; its bounded durable not-before time blocks early claims and then
 permits automatic retry of the same key. A hard provider timeout must leave a
 fixed observation budget inside the claim lease and is recorded as unknown.
+The maintenance fence owns neither a database transaction nor an executor
+permit, but prevents an exclusive whole-installation restore from replacing
+Control and owner state before the observation is durable.
 Process exit, cancellation, expired claim, and
 ambiguous acceptance can resume only by explicitly reusing the committed
 idempotency key. Remaining production owner adapters and dispatcher

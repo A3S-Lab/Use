@@ -163,8 +163,9 @@ selection；package state、Grant、lifecycle identity 与 provider selection �
 invocation lease、Runtime Task/不透明 Service readiness、Flow artifact、Knowledge projection
 或 Skill/UI content evidence。记录 applied cutover observation 的事务会在 drain 之前原子推进
 publication；之后的必需 effect 失败会保留为使用相同 key 显式 reconciliation 的 pending 状态，
-而不会回滚已可见 generation。未启用的单 effect dispatcher 现在会先提交 claim，在 owner I/O 前释放
-SQLite 事务与有界 executor，再把精确 identity 路由到彼此独立的 Capability Index、invocation lease、
+而不会回滚已可见 generation。未启用的单 effect dispatcher 现在会在 `claim → owner I/O → observation`
+全过程持有 installation 级共享 maintenance fence，然后提交 claim，并在 owner I/O 前释放 SQLite 事务与有界
+executor，再把精确 identity 路由到彼此独立的 Capability Index、invocation lease、
 Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后记录 applied、deferred、rejected 或 unknown observation。
 Deferred 只用于 owner 已证明未接受任何 effect 的结果；有界、持久化的 not-before 时间会阻止提前 claim，
 并在到期后允许自动复用原 key。Provider timeout 必须在 claim lease 内保留固定的 observation 预算并作为 unknown evidence；取消、

@@ -290,7 +290,9 @@ commit-before-observation-before-terminal time ordering.
 
 The inactive kernel now includes a one-effect dispatcher that exercises this
 boundary without activating it. Claim is one short Control transaction. The
-dispatcher then releases both that transaction and the bounded executor before
+dispatcher first acquires one installation-wide shared maintenance fence and
+retains it through the later observation, then releases both the claim
+transaction and the bounded executor before
 routing the exact committed identity through a separate typed Capability Index,
 invocation-lease, Runtime, Flow, Knowledge, Skill, or UI port. A second short
 transaction records owner-shaped applied evidence or explicit
