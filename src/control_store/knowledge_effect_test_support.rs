@@ -273,12 +273,18 @@ pub(super) fn request(
 }
 
 pub(super) async fn knowledge_owner_fixture() -> KnowledgeOwnerFixture {
-    knowledge_owner_fixture_for(crate::test_installation()).await
+    let (fixture, artifact_admission) =
+        knowledge_owner_fixture_for(crate::test_installation()).await;
+    drop(artifact_admission);
+    fixture
 }
 
 pub(super) async fn knowledge_owner_fixture_for(
     installation: InstallationId,
-) -> KnowledgeOwnerFixture {
+) -> (
+    KnowledgeOwnerFixture,
+    a3s_use_extension::ArtifactReferenceAdmission,
+) {
     let temporary = tempfile::tempdir().unwrap();
     let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("crates/extension/fixtures/packages/plugin-v3-okf/package");
@@ -298,7 +304,6 @@ pub(super) async fn knowledge_owner_fixture_for(
         .admit_prepared_package(&artifact_admission, &candidate)
         .await
         .unwrap();
-    drop(artifact_admission);
     let selected_surfaces = candidate
         .manifest()
         .plugin_surfaces()
@@ -317,26 +322,30 @@ pub(super) async fn knowledge_owner_fixture_for(
     )
     .unwrap();
     let adapter = Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths(&paths));
-    KnowledgeOwnerFixture {
-        package_root: artifact_store
-            .expanded_package_path(candidate.package_digest())
-            .unwrap(),
-        authority: ControlPackageEffectAuthority {
-            generation_operation_id: "operation:knowledge-owner".to_string(),
-            installation_generation: 1,
-            snapshot_digest: digest('3'),
-            committed_at_ms: 1,
-            host: PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap(),
-            package,
-            lifecycle_generation: 1,
-            grant: None,
+    (
+        KnowledgeOwnerFixture {
+            package_root: artifact_store
+                .expanded_package_path(candidate.package_digest())
+                .unwrap(),
+            authority: ControlPackageEffectAuthority {
+                generation_operation_id: "operation:knowledge-owner".to_string(),
+                installation_generation: 1,
+                snapshot_digest: digest('3'),
+                committed_at_ms: 1,
+                host: PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION"))
+                    .unwrap(),
+                package,
+                lifecycle_generation: 1,
+                grant: None,
+            },
+            bindings: OkfKnowledgeBindingStore::from_extension_paths(&paths),
+            client: OkfKnowledgeClient::new(adapter.clone()),
+            adapter,
+            paths,
+            _temporary: temporary,
         },
-        bindings: OkfKnowledgeBindingStore::from_extension_paths(&paths),
-        client: OkfKnowledgeClient::new(adapter.clone()),
-        adapter,
-        paths,
-        _temporary: temporary,
-    }
+        artifact_admission,
+    )
 }
 
 fn verified_catalog(candidate: &ExtensionLifecyclePackage) -> VerifiedPluginCatalogRecord {

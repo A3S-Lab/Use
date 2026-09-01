@@ -21,7 +21,7 @@ use crate::okf_knowledge::OkfKnowledgeSearchRequest;
 #[tokio::test]
 async fn committed_claim_dispatches_through_the_real_knowledge_owner_and_persists_evidence() {
     let installation = control_installation();
-    let fixture = knowledge_owner_fixture_for(installation.clone()).await;
+    let (fixture, artifact_admission) = knowledge_owner_fixture_for(installation.clone()).await;
     let store = ControlStore::from_extension_paths(&fixture.paths).unwrap();
     store.initialize().await.unwrap();
     let reviewed = operation("operation:knowledge-dispatch");
@@ -30,6 +30,7 @@ async fn committed_claim_dispatches_through_the_real_knowledge_owner_and_persist
         .commit_transition(transition(installation.clone(), &reviewed))
         .await
         .unwrap();
+    drop(artifact_admission);
     let owner = Arc::new(ControlOkfKnowledgeEffectPort::new(
         fixture.paths.artifact_store(),
         fixture.client.clone(),
