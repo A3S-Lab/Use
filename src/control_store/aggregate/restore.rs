@@ -171,7 +171,7 @@ fn restore_effect_record(
             "UPDATE effect_outbox
              SET status = ?2, attempt = ?3, claim_owner = ?4, claim_token = ?5,
                  lease_until_ms = ?6, application_json = ?7, evidence_digest = ?8,
-                 error_code = ?9, observed_at_ms = ?10
+                 error_code = ?9, observed_at_ms = ?10, retry_not_before_ms = ?11
              WHERE idempotency_key = ?1",
             params![
                 effect.intent.idempotency_key,
@@ -184,6 +184,7 @@ fn restore_effect_record(
                 effect.evidence_digest,
                 effect.error_code,
                 effect.observed_at_ms.map(to_i64).transpose()?,
+                effect.retry_not_before_ms.map(to_i64).transpose()?,
             ],
         )
         .map_err(|error| mutation_error("restore Control Store outbox effect", error))?;

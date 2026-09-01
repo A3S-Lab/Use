@@ -77,6 +77,7 @@ pub(in crate::control_store) struct ControlEffectDispatchRequest {
     pub(in crate::control_store) claim_token: String,
     pub(in crate::control_store) lease_duration_ms: u64,
     pub(in crate::control_store) provider_timeout_ms: u64,
+    pub(in crate::control_store) deferred_retry_delay_ms: u64,
     pub(in crate::control_store) explicit_reconciliation: bool,
 }
 
@@ -88,6 +89,7 @@ pub(in crate::control_store) enum ControlEffectDispatchResult {
         sequence: u32,
         attempt: u32,
         outcome: ControlEffectOutcome,
+        retry_not_before_ms: Option<u64>,
         observation_changed: bool,
     },
 }

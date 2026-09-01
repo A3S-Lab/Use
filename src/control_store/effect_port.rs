@@ -10,12 +10,17 @@ use super::model::{
 
 /// Classification returned by an external effect owner.
 ///
-/// `Rejected` means the owner can prove that it accepted no effect. `Unknown`
-/// means acceptance is ambiguous and therefore requires explicit same-key
+/// `Deferred` and `Rejected` both mean the owner can prove that it accepted no
+/// effect. A deferral is transient and becomes eligible for bounded same-key
+/// retry; rejection is terminal under the committed policy. `Unknown` means
+/// acceptance is ambiguous and therefore requires explicit same-key
 /// reconciliation. Provider ports return this enum directly so an ordinary
-/// transport error can never be mistaken for a safe rejection.
+/// transport error can never be mistaken for a safe no-effect result.
 pub(in crate::control_store) enum ControlEffectPortOutcome<T> {
     Applied(T),
+    /// The owner proves that it accepted no effect, but a bounded same-key
+    /// retry may succeed after transient contention or unavailability.
+    Deferred(ControlEffectFailure),
     Rejected(ControlEffectFailure),
     Unknown(ControlEffectFailure),
 }
@@ -29,6 +34,10 @@ impl<T> ControlEffectPortOutcome<T> {
         Self::Rejected(failure)
     }
 
+    pub(in crate::control_store) fn deferred(failure: ControlEffectFailure) -> Self {
+        Self::Deferred(failure)
+    }
+
     pub(in crate::control_store) fn unknown(failure: ControlEffectFailure) -> Self {
         Self::Unknown(failure)
     }
@@ -39,6 +48,7 @@ impl<T> ControlEffectPortOutcome<T> {
     ) -> ControlEffectPortOutcome<U> {
         match self {
             Self::Applied(application) => ControlEffectPortOutcome::Applied(map(application)),
+            Self::Deferred(failure) => ControlEffectPortOutcome::Deferred(failure),
             Self::Rejected(failure) => ControlEffectPortOutcome::Rejected(failure),
             Self::Unknown(failure) => ControlEffectPortOutcome::Unknown(failure),
         }

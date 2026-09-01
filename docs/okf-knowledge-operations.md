@@ -156,8 +156,9 @@ committed OKF bundle. Applied prepare evidence must equal the retained
 observation and capability-projection digests. Reconciliation runs against the
 temporary SQLite snapshot before the destination archive is written, so a
 semantic failure leaves neither archive nor receipt. Removed or pruned applied
-data requires a matching remove effect. Claimed and unknown effects remain
-explicit reconciliation evidence and cannot select desired state. This private
+data requires a matching remove effect. Deferred effects remain safe-no-effect
+scheduling evidence; claimed and unknown effects remain explicit reconciliation
+evidence. None can select desired state. This private
 path is not a CLI command and is not connected to production state backup or
 restore. It can now stage an offline-verified snapshot database beneath a clean
 target state root, re-audit its exact inventory, and activate it under that

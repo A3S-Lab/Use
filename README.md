@@ -1289,7 +1289,7 @@ The machine-checked
 current state leaf, external owner, operational file, and consumer that must
 switch together; it explicitly keeps production activation inactive and
 forbids dual writes or legacy fallback reads.
-The private A2 Control Store kernel now qualifies its clean-state schema-v9
+The private A2 Control Store kernel now qualifies its clean-state schema-v10
 aggregate. Each operation stores the canonical complete reviewed Plan envelope
 and versioned authorization evidence, then derives and revalidates its operation
 ID, Plan and authorization digests, action, root package, installation scope,
@@ -1336,8 +1336,10 @@ owner-specific evidence instead of an arbitrary success digest: Capability
 Index and invocation-lease receipts, exact Runtime selection plus portable
 Task or opaque `gateway:` Service binding/readiness evidence, Flow artifact
 digests, Knowledge projection digests, and immutable Skill/UI content digests.
-Every application rebinds the exact idempotency key and intent; rejected or
-unknown outcomes retain diagnostic evidence only. Recording an applied
+Every application rebinds the exact idempotency key and intent. Deferred,
+rejected, and unknown outcomes retain diagnostic evidence only. Deferred is
+reserved for an owner that proves it accepted no effect; it persists a bounded
+not-before time for automatic retry with the same key. Recording an applied
 capability-cutover observation retires the prior publication, publishes the
 exact candidate, and advances the capability cursor in that same transaction,
 before drain, retirement, or operation completion. A required post-cutover
@@ -1350,10 +1352,12 @@ offline-verifiable export plus staged restore. Its inactive dispatcher now
 claims at most one committed effect, releases the claim transaction and bounded
 executor before entering an owner, routes Capability Index, invocation-lease,
 Runtime, Flow, Knowledge, Skill, and UI work through separate typed ports, then
-records owner-specific applied, rejected, or unknown evidence in a later
-transaction. A provider timeout must leave a fixed observation budget inside
-its claim lease; timeout is durable unknown evidence, and cancellation or
-process exit requires explicit same-key reconciliation. Tests prove
+records owner-specific applied, deferred, rejected, or unknown evidence in a
+later transaction. A deferred effect cannot be reclaimed before its durable
+not-before time and is then retried automatically with the same key. A provider
+timeout must leave a fixed observation budget inside its claim lease; timeout
+is durable unknown evidence, and cancellation or process exit requires explicit
+same-key reconciliation. Tests prove
 commit-before-effect, Store re-entry during provider I/O, exact-key recovery
 after an unobserved process exit, hung-provider bounding, and all seven owner
 routes. The claim transaction now also derives an owner-shaped committed
@@ -1394,8 +1398,9 @@ Knowledge observation and capability-projection digests. This join runs against
 the temporary SQLite snapshot before the destination archive is written, so a
 semantic mismatch leaves no archive or receipt. A removed or missing formerly
 applied payload requires the same lifecycle's recorded remove effect, while
-claimed or unknown outcomes remain evidence to reconcile rather than a new
-desired-state authority. An absent Knowledge database produces an explicit
+deferred outcomes remain safe-no-effect scheduling evidence, while claimed or
+unknown outcomes remain evidence to reconcile; none is a new desired-state
+authority. An absent Knowledge database produces an explicit
 zero-file manifest without creating live directories; manifests and receipts
 contain no host paths. An offline-verified Knowledge snapshot can now stream
 its exact database into a caller-owned, state-root-local candidate without

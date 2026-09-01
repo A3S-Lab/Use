@@ -13,7 +13,7 @@ use super::model::{
 };
 use super::schema::{ControlStoreMetadata, CONTROL_STORE_SCHEMA_VERSION};
 
-const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v9";
+const CONTROL_STORE_EXPORT_SCHEMA: &str = "a3s.use.control-store-export.v10";
 pub(in crate::control_store) const MAX_CONTROL_STORE_EXPORT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EXPORTED_GENERATIONS: usize = 4096;
 const MAX_EXPORTED_OPERATIONS: usize = 8192;
@@ -89,7 +89,7 @@ pub(super) fn verify(
         ));
     }
     let export: ControlStoreExport = serde_json::from_slice(bytes)
-        .map_err(|_| export_error("The Control Store export is not valid schema-v9 JSON."))?;
+        .map_err(|_| export_error("The Control Store export is not valid schema-v10 JSON."))?;
     validate_export(&export)?;
     let canonical = canonical_json(&export)?;
     if canonical != bytes {
@@ -482,6 +482,7 @@ fn validate_effect_record(record: &ControlEffectRecord) -> UseResult<()> {
                 && record.evidence_digest.is_none()
                 && record.error_code.is_none()
                 && record.observed_at_ms.is_none()
+                && record.retry_not_before_ms.is_none()
         }
         ControlEffectStatus::Claimed => {
             has_claim
@@ -489,6 +490,22 @@ fn validate_effect_record(record: &ControlEffectRecord) -> UseResult<()> {
                 && record.evidence_digest.is_none()
                 && record.error_code.is_none()
                 && record.observed_at_ms.is_none()
+                && record.retry_not_before_ms.is_none()
+        }
+        ControlEffectStatus::Deferred => {
+            has_claim
+                && record.application.is_none()
+                && record.evidence_digest.as_deref().is_some_and(valid_sha256)
+                && record
+                    .error_code
+                    .as_deref()
+                    .is_some_and(|code| !code.is_empty() && code.len() <= 128)
+                && valid_observation_time(record)
+                && record.retry_not_before_ms.is_some_and(|retry| {
+                    record.observed_at_ms.is_some_and(|observed| {
+                        retry > observed && retry - observed <= super::model::MAX_EFFECT_DEFERRAL_MS
+                    })
+                })
         }
         ControlEffectStatus::Applied => {
             has_claim
@@ -500,6 +517,7 @@ fn validate_effect_record(record: &ControlEffectRecord) -> UseResult<()> {
                 })
                 && record.evidence_digest.as_deref().is_some_and(valid_sha256)
                 && record.error_code.is_none()
+                && record.retry_not_before_ms.is_none()
                 && valid_observation_time(record)
         }
         ControlEffectStatus::Rejected | ControlEffectStatus::Unknown => {
@@ -510,6 +528,7 @@ fn validate_effect_record(record: &ControlEffectRecord) -> UseResult<()> {
                     .error_code
                     .as_deref()
                     .is_some_and(|code| !code.is_empty() && code.len() <= 128)
+                && record.retry_not_before_ms.is_none()
                 && valid_observation_time(record)
         }
     };

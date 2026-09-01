@@ -152,8 +152,9 @@ require the exact bound Control export, exact prepare/bundle origin, matching
 applied observation/projection evidence, and a remove effect for removed or
 missing applied payload. The Control join runs against the temporary SQLite
 snapshot before the archive is written, so semantic failure leaves neither an
-archive nor a receipt. Claimed and unknown effects remain reconciliation
-evidence only. A verified owner snapshot can now stage and re-audit its exact
+archive nor a receipt. Deferred effects remain safe-no-effect scheduling
+evidence; claimed and unknown effects remain reconciliation evidence only.
+None selects desired state. A verified owner snapshot can now stage and re-audit its exact
 database beneath a clean target state root without changing live Knowledge.
 Activation requires that target's exclusive maintenance fence, rejects
 unowned, existing, or ambiguous state, and publishes by one replayable atomic

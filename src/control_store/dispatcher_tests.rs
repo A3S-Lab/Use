@@ -28,7 +28,7 @@ use super::model::{
     ControlEffectAuthority, ControlEffectIntent, ControlEffectKind, ControlEffectOutcome,
     ControlEffectOwner, ControlEffectStatus, ControlEffectSubject, ControlGeneration,
     ControlOperationStatus, ControlPackageEffectAuthority, ControlProviderSelection,
-    ControlRuntimeBindingObservation, ControlRuntimeEffectAuthority,
+    ControlRuntimeBindingObservation, ControlRuntimeEffectAuthority, MAX_EFFECT_DEFERRAL_MS,
 };
 use super::ControlStore;
 use crate::plugin_lifecycle::PluginLifecycleAction;
@@ -36,6 +36,7 @@ use crate::plugin_lifecycle::PluginLifecycleAction;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Disposition {
     Applied,
+    Deferred,
     Rejected,
     Unknown,
 }
@@ -92,6 +93,9 @@ impl RecordingPorts {
             .unwrap_or(Disposition::Applied)
         {
             Disposition::Applied => ControlEffectPortOutcome::applied(applied),
+            Disposition::Deferred => ControlEffectPortOutcome::deferred(
+                ControlEffectFailure::new(digest('d'), "provider.temporarily_unavailable").unwrap(),
+            ),
             Disposition::Rejected => ControlEffectPortOutcome::rejected(
                 ControlEffectFailure::new(digest('e'), "provider.rejected").unwrap(),
             ),
@@ -224,6 +228,7 @@ fn dispatch_request(token: &str, explicit_reconciliation: bool) -> ControlEffect
         claim_token: token.to_string(),
         lease_duration_ms: 10_000,
         provider_timeout_ms: 5_000,
+        deferred_retry_delay_ms: 1_000,
         explicit_reconciliation,
     }
 }
@@ -380,6 +385,68 @@ async fn unknown_acceptance_requires_explicit_same_key_reconciliation() {
 }
 
 #[tokio::test]
+async fn safe_no_effect_deferral_retries_automatically_after_its_delay() {
+    let (_temporary, store) = initialized_store().await;
+    let reviewed = operation("operation:dispatcher");
+    store.register_operation(reviewed.clone()).await.unwrap();
+    store
+        .commit_transition(transition(control_installation(), &reviewed))
+        .await
+        .unwrap();
+    let recording = Arc::new(RecordingPorts::new([
+        Disposition::Deferred,
+        Disposition::Applied,
+    ]));
+    let dispatcher = ControlEffectDispatcher::new(
+        store.clone(),
+        ports(recording.clone()),
+        Arc::new(TestClock::new([30, 35, 44, 45, 50])),
+    );
+    let mut first_request = dispatch_request("claim:deferred", false);
+    first_request.deferred_retry_delay_ms = 10;
+
+    let first = dispatcher.dispatch_next(first_request).await.unwrap();
+    let ControlEffectDispatchResult::Observed {
+        idempotency_key: first_key,
+        attempt: 1,
+        outcome: ControlEffectOutcome::Deferred,
+        retry_not_before_ms: Some(45),
+        ..
+    } = first
+    else {
+        panic!("the first owner result must be a bounded deferral");
+    };
+    assert_eq!(
+        store.effects(reviewed.operation_id()).await.unwrap()[0].status,
+        ControlEffectStatus::Deferred
+    );
+
+    assert_eq!(
+        dispatcher
+            .dispatch_next(dispatch_request("claim:deferred:early", false))
+            .await
+            .unwrap(),
+        ControlEffectDispatchResult::Idle
+    );
+    let replayed = dispatcher
+        .dispatch_next(dispatch_request("claim:deferred:retry", false))
+        .await
+        .unwrap();
+    let ControlEffectDispatchResult::Observed {
+        idempotency_key,
+        attempt: 2,
+        outcome: ControlEffectOutcome::Applied,
+        retry_not_before_ms: None,
+        ..
+    } = replayed
+    else {
+        panic!("the due deferral must retry the same effect automatically");
+    };
+    assert_eq!(idempotency_key, first_key);
+    assert_eq!(recording.calls(), vec!["knowledge-host", "knowledge-host"]);
+}
+
+#[tokio::test]
 async fn expired_claim_after_process_exit_replays_only_with_the_committed_key() {
     let (_temporary, store) = initialized_store().await;
     let reviewed = operation("operation:dispatcher");
@@ -508,6 +575,22 @@ async fn dispatcher_rejects_a_timeout_that_cannot_leave_observation_budget() {
     let mut request = dispatch_request("claim:invalid-timeout", false);
     request.provider_timeout_ms = request.lease_duration_ms - 999;
 
+    assert_eq!(
+        dispatcher.dispatch_next(request).await.unwrap_err().code,
+        "use.control_store.dispatch_invalid"
+    );
+    assert!(recording.calls().is_empty());
+
+    let mut request = dispatch_request("claim:invalid-deferral", false);
+    request.deferred_retry_delay_ms = 0;
+    assert_eq!(
+        dispatcher.dispatch_next(request).await.unwrap_err().code,
+        "use.control_store.dispatch_invalid"
+    );
+    assert!(recording.calls().is_empty());
+
+    let mut request = dispatch_request("claim:unbounded-deferral", false);
+    request.deferred_retry_delay_ms = MAX_EFFECT_DEFERRAL_MS + 1;
     assert_eq!(
         dispatcher.dispatch_next(request).await.unwrap_err().code,
         "use.control_store.dispatch_invalid"

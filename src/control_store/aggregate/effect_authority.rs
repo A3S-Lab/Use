@@ -394,6 +394,7 @@ fn materializations_for(
                     ))
                 }
                 ControlEffectStatus::Pending
+                | ControlEffectStatus::Deferred
                 | ControlEffectStatus::Claimed
                 | ControlEffectStatus::Unknown => {
                     return Err(corruption_error(

@@ -71,7 +71,7 @@ diagnostic、backup 与 restore 的读取方必须一起切换。
 禁止旧状态回退读取的前提下同步切换的消费者。这只冻结了实现边界；生产启用仍保持关闭，
 也尚未完成任何 A2 项。
 
-当前检入的 Control Store 内核仍刻意保持未启用状态。其 clean-state schema-v9
+当前检入的 Control Store 内核仍刻意保持未启用状态。其 clean-state schema-v10
 聚合会持久化每个规范化的完整 reviewed Plan envelope 与带版本的 authorization
 evidence，并从中推导 operation identity、Plan/authorization digest、action、root
 package、installation scope 与 generation cursor；重启、离线导出验证和 staged restore
@@ -94,15 +94,17 @@ selection 是事务事实，不会再被复制为伪 effect。Payload 字节、�
 digest 与关系投影在同一事务提交；claim 与 completion 会在重启后把它们
 重新绑定到已提交 generation，并拒绝不完整的 outbox inventory。Applied outcome 现在会保存
 规范化、owner-specific 的 Capability Index、invocation lease、Runtime Task/不透明 Service
-readiness、Flow artifact、Knowledge projection 或 Skill/UI content evidence；rejected 与 unknown
-outcome 不能携带 applied state。记录 cutover application 的事务会在 drain 前原子推进 publication；
+readiness、Flow artifact、Knowledge projection 或 Skill/UI content evidence；deferred、rejected 与
+unknown outcome 不能携带 applied state。Deferred 只表示 owner 已证明没有接受任何 effect，并持久化
+一个有界 not-before 时间，以便到期后自动复用原 key。记录 cutover application 的事务会在 drain 前原子推进 publication；
 之后的必需 effect 失败保持 effects-pending，并以同一 key 显式 reconciliation，而不会回滚已可见
 generation；operation completion 也不能早于 provider observation。该内核还验证了 snapshot、
 完整 Grant、reviewed provider selection、capability history、跨重启的 unknown/expired claim
 显式 reconciliation、可离线验证的确定性导出，以及 clean staged restore。未启用的单 effect
 dispatcher 现在会先提交 claim，在 owner I/O 前释放事务与有界 executor，再把精确 identity 路由到
 彼此独立的 Capability Index、invocation lease、Runtime、Flow、Knowledge、Skill 或 UI 端口，并在之后
-记录 owner-shaped observation。Provider timeout 必须在 claim lease 内保留固定的 observation 预算，
+记录 owner-shaped observation。经 owner 证明的 safe-no-effect deferral 会在持久化 not-before 时间之前
+阻止 claim，到期后无需 reconciliation，只自动重试原 key。Provider timeout 必须在 claim lease 内保留固定的 observation 预算，
 并记录为 unknown evidence；进程退出、取消、过期 claim 与含糊结果都必须显式复用同一 key 完成
 reconciliation。测试已覆盖 provider I/O 期间重入 Store、七类路由、挂起 provider 的有界终止，以及
 effect 后 observation 前退出。同一个 claim 事务现在还会推导 owner-shaped committed context：package
@@ -123,7 +125,8 @@ Knowledge owner 已能生成并独立复验受注册大小上限约束的 OKF SQ
 binding/selection inventory；数据库缺失时使用不会创建 live state 的零文件 manifest。Snapshot 创建与
 离线验证都要求精确绑定的 Control export，把每个保留 incarnation 关联到其 prepare intent 与已提交
 OKF bundle，核对 applied observation/projection evidence，并要求已删除或缺失的 applied data 具有对应
-remove effect。Claimed 与 unknown outcome 仅作为 reconciliation evidence。它仍未接入旧 backup scanner。
+remove effect。Deferred outcome 仅作为 safe-no-effect 调度证据；claimed 与 unknown outcome 仅作为
+reconciliation evidence，三者都不能选择 desired state。它仍未接入旧 backup scanner。
 通过验证的 Knowledge snapshot 现在可以在 clean target 的 state root 下暂存并重新审计精确数据库，
 随后在持有对应排他 maintenance fence 时，通过一次原子 rename 发布；仅在保留该 staged attempt 与 fence
 时，rename 后的重试才是幂等的。非 owner、已有、含糊、链接、重新绑定或 policy 不匹配的 target 会
