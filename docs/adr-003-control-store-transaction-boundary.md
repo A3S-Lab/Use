@@ -424,15 +424,28 @@ SQLite file, and physically digest-bound. External candidates reuse their
 owner-native adapters under the same guard. Staging changes no live authority
 path; exact retries and interrupted Control construction recover, while
 contaminated targets, links, unknown state, rebinding, and completed-candidate
-drift fail closed. The Control component separately qualifies its own
-clean-target publication boundary under that retained guard: it revalidates
-the attempt, semantic export, physical evidence, and sidecar-free state before
-a no-clobber atomic move, then reconciles the exact post-move state to one
-path-free result. This is not a cross-process transaction because no durable
-top-level active marker exists yet. Coordinated activation and its durable
-cross-owner crash journal, the full subprocess-exit matrix, production
-lifecycle conversion and dispatch, indivisible reader/writer cutover, and
-deletion of legacy mutable stores remain open;
+drift fail closed. The complete-set coordinator now qualifies durable top-level
+Control activation intent. The immutable attempt descriptor remains the
+restore identity. One canonical `activation.json` is the mutable ordered
+journal, and the global `.maintenance.restore.json` marker binds the same
+attempt and immutable operation while blocking ordinary shared access. The
+protocol writes journal, then marker, then owner effect, then checkpoint.
+Control preflight occurs before durable intent; the attempt, semantic export,
+physical evidence, and sidecar-free boundary are revalidated after the marker
+before no-clobber atomic publication. Its first checkpoint stores only the
+canonical path-free result length and domain-separated digest. Reopen
+reacquires the exact exclusive guard and rebinds the same verified snapshot,
+attempt, and Knowledge policy before reconstructing every present unactivated
+owner candidate. Journal-only and deterministic temporary states recover
+before effects, and post-publication/pre-checkpoint replay converges to the
+exact Control result. Missing or ambiguous marker state after an effect,
+rebinding, links, and evidence drift fail closed. The marker remains active
+after this checkpoint, and exact completed replay validates without rewriting
+the journal. This is a durable one-owner checkpoint boundary, not coordinated
+complete-set activation. Cross-owner checkpoints and activation order, marker
+retirement, the full subprocess-exit matrix, production lifecycle conversion
+and dispatch, indivisible reader/writer cutover, and deletion of legacy mutable
+stores remain open;
 activating or mirroring the kernel before that coordinated change would violate
 this decision.
 

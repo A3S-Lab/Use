@@ -1464,16 +1464,27 @@ by its owner-native adapter under the same guard. Present and absent owners,
 completed retries, and interrupted Control staging are deterministic, while a
 nonempty target, unknown or linked entries, snapshot/policy rebinding, and
 completed-candidate drift fail closed without touching live authority paths.
-The Control component now also owns a qualification-only clean-target
-publication primitive. While that same attempt and exclusive guard remain
-retained, it revalidates the canonical export, physical database evidence,
-sidecar-free state, and attempt descriptor, then atomically publishes
-`control.sqlite3` without replacement. Candidate-before-publication and exact
-live-after-publication states converge to one path-free result; ambiguous,
-linked, missing, or drifted state fails closed. This qualifies complete-set
-staging and the Control component's retained-guard publication boundary only.
-Coordinated activation, a durable cross-owner journal and process-exit matrix,
-production backup/restore wiring, and the authority cutover remain open.
+The complete-set coordinator now durably begins its qualification-only Control
+activation before any live effect. The immutable attempt descriptor remains the
+restore identity; `activation.json` is the sole mutable journal, and the global
+`.maintenance.restore.json` marker binds that attempt to one immutable
+activation operation. Publication order is journal, global marker, owner
+effect, then checkpoint. Control preflight rejects invalid candidates before
+the marker is written, and owner-native revalidation after the marker closes
+the race before the no-clobber atomic `control.sqlite3` publication. The marker
+continues to block ordinary shared state access after the Control checkpoint;
+this partial phase never clears it. Reopening reacquires the exact exclusive
+guard, rebinds the same verified snapshot, attempt, and Knowledge policy,
+reconstructs every present unactivated owner candidate, and verifies or
+replays the canonical path-free Control result. Journal-only, marker-partial,
+and post-publication/pre-checkpoint boundaries converge deterministically.
+Missing marker state after an effect, ambiguous final/partial markers,
+snapshot rebinding, linked paths, or journal/marker/result drift fail closed.
+Exact checkpoint replay performs validation without rewriting the journal.
+This qualifies durable top-level intent, one owner checkpoint, and guard
+release/reopen recovery. Cross-owner checkpoints and activation order, marker
+retirement, the full subprocess-exit matrix, production backup/restore wiring,
+and the authority cutover remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

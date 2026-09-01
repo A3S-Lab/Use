@@ -1,5 +1,5 @@
 use a3s_use_core::UseResult;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::super::ControlPayloadSnapshotBinding;
@@ -11,10 +11,10 @@ const EVIDENCE_SCHEMA: &str = "a3s.use.control-store-restore-candidate.v1";
 const EVIDENCE_DOMAIN: &[u8] = b"a3s.use.control-store-restore-candidate.v1\0";
 pub(super) const MAX_CONTROL_CANDIDATE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct ControlCandidateEvidence {
-    schema: &'static str,
+    schema: String,
     snapshot_descriptor_digest: String,
     binding: ControlPayloadSnapshotBinding,
     database_bytes: u64,
@@ -31,7 +31,7 @@ impl ControlCandidateEvidence {
         database_sha256: String,
     ) -> UseResult<Self> {
         let mut evidence = Self {
-            schema: EVIDENCE_SCHEMA,
+            schema: EVIDENCE_SCHEMA.to_owned(),
             snapshot_descriptor_digest: snapshot_descriptor_digest.to_owned(),
             binding: binding.clone(),
             database_bytes,
@@ -105,7 +105,7 @@ impl ControlCandidateEvidence {
             database_sha256: &'a str,
         }
         let bytes = canonical_json(&Descriptor {
-            schema: self.schema,
+            schema: &self.schema,
             snapshot_descriptor_digest: &self.snapshot_descriptor_digest,
             binding: &self.binding,
             database_bytes: self.database_bytes,

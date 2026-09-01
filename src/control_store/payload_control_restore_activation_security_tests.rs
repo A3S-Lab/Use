@@ -1,12 +1,13 @@
 use std::io::Write;
 
-use a3s_use_extension::StateMaintenanceLock;
+use a3s_use_extension::{StateMaintenanceLock, ACTIVE_STATE_RESTORE_MARKER};
 use tempfile::TempDir;
 
 use super::payload_installation_restore_staging_tests::{absent_snapshot, candidate_bytes};
 use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
 
-const ERROR_CODE: &str = "use.control_store.complete_restore_staging_invalid";
+const ERROR_CODE: &str = "use.control_store.complete_restore_activation_invalid";
+const STAGING_ERROR_CODE: &str = "use.control_store.complete_restore_staging_invalid";
 
 #[tokio::test]
 async fn control_restore_activation_rejects_a_guard_for_another_root() {
@@ -28,7 +29,7 @@ async fn control_restore_activation_rejects_a_guard_for_another_root() {
         .activate(&wrong)
         .await
         .unwrap_err();
-    assert_eq!(error.code, ERROR_CODE);
+    assert_eq!(error.code, STAGING_ERROR_CODE);
     assert!(!state_root.join("control.sqlite3").exists());
     assert!(staged.control_candidate_path().is_file());
 }
@@ -53,6 +54,7 @@ async fn control_restore_activation_rejects_a_preexisting_live_target_without_cl
     );
     assert_eq!(std::fs::read(live).unwrap(), b"foreign");
     assert_eq!(candidate_bytes(candidate), before);
+    assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
 }
 
 #[tokio::test]
@@ -76,6 +78,7 @@ async fn control_restore_activation_rejects_candidate_drift() {
         ERROR_CODE
     );
     assert!(!state_root.join("control.sqlite3").exists());
+    assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
 }
 
 #[tokio::test]
@@ -94,6 +97,7 @@ async fn control_restore_activation_rejects_a_missing_candidate_without_a_live_d
         ERROR_CODE
     );
     assert!(!state_root.join("control.sqlite3").exists());
+    assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
 }
 
 #[tokio::test]
@@ -122,6 +126,7 @@ async fn control_restore_activation_rejects_evidence_drift() {
         ERROR_CODE
     );
     assert!(!state_root.join("control.sqlite3").exists());
+    assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
 }
 
 #[tokio::test]
@@ -146,6 +151,7 @@ async fn control_restore_activation_rejects_attempt_descriptor_drift() {
     );
     assert!(!state_root.join("control.sqlite3").exists());
     assert!(staged.control_candidate_path().is_file());
+    assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
 }
 
 #[tokio::test]
@@ -188,6 +194,7 @@ async fn control_restore_activation_rejects_an_operational_sidecar() {
     );
     assert!(!state_root.join("control.sqlite3").exists());
     assert!(staged.control_candidate_path().is_file());
+    assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
 }
 
 #[cfg(any(unix, windows))]

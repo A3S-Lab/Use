@@ -188,12 +188,20 @@ builds Control and every owner-native candidate. Control is checkpointed to one
 SQLite file, export-round-tripped, and physically digest-bound; no live owner
 path is changed. Exact retry and interrupted Control staging recover, while
 target contamination, links, unknown entries, rebinding, and completed-candidate
-drift fail closed. Control now also owns its clean-target publication primitive
-under the still-retained attempt and guard: canonical export, physical bytes,
-sidecar absence, and attempt evidence are rechecked before no-clobber atomic
-publication, and exact post-publication replay returns the same path-free
-result. This does not provide a durable cross-process boundary. Complete-set
-activation, its cross-owner journal and complete subprocess crash matrix,
+drift fail closed. Control activation now records durable top-level intent. The
+immutable attempt remains authoritative, `activation.json` is the sole mutable
+ordered journal, and the global `.maintenance.restore.json` marker binds the
+same immutable operation while blocking ordinary shared access. The protocol
+writes journal, marker, owner effect, and checkpoint in that order. Preflight
+runs before intent; semantic, physical, sidecar, and attempt evidence are
+rechecked after the marker before atomic no-clobber publication. Reopen
+reacquires the exact guard, rebinds the same verified snapshot, attempt, and
+policy, reconstructs present unactivated owner candidates, and converges safe
+temporary and post-publication/pre-checkpoint boundaries. Missing or ambiguous
+marker state after an effect, links, rebinding, and evidence drift fail closed.
+The canonical path-free Control checkpoint replays without a journal rewrite,
+and the global marker deliberately remains active. Cross-owner checkpoints and
+activation order, marker retirement, the complete subprocess crash matrix,
 production conversion and dispatch, backup/restore and reachability
 integration, and coordinated authority cutover remain open; no A2 roadmap item
 is complete yet.

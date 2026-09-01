@@ -230,16 +230,25 @@ round-tripped, and physically digest-bound; the four external candidates reuse
 their owner-native staging and validation under that same guard. No live owner
 path is changed. Exact replay, interrupted Control staging, explicit owner
 absence, and target isolation are qualified; links, unknown entries,
-rebinding, and completed-candidate drift fail closed. Control now also owns a
-separate clean-target publication primitive: while the same exact attempt and
-guard remain retained, it rechecks semantic export and physical evidence,
-rejects sidecars or ambiguous candidate/live states, atomically publishes
-without replacement, and returns the same path-free result on exact
-post-publication replay. Cross-owner activation authority and process-exit
-recovery are still absent because no durable top-level marker/journal has been
-committed. Its activation ordering, full subprocess-exit qualification,
-production backup/restore wiring, and the coordinated reader/writer cutover
-remain A2 work. The
+rebinding, and completed-candidate drift fail closed. Control activation now
+begins with durable top-level intent. The immutable attempt descriptor remains
+the restore identity, one canonical `activation.json` is the mutable ordered
+journal, and the global `.maintenance.restore.json` marker binds the same
+immutable operation while blocking ordinary shared access. The coordinator
+writes journal, marker, owner effect, and checkpoint in that order. Control
+preflight precedes intent, and the semantic export, physical evidence,
+sidecar-free boundary, and attempt are revalidated after the marker before
+no-clobber publication. The first ordered checkpoint stores a digest and byte
+count for the canonical path-free result. Reopen reacquires the exact exclusive
+guard, rebinds the same snapshot, attempt, and policy, reconstructs present
+unactivated owner candidates, and converges both candidate and
+post-publication Control boundaries. Safe journal/marker temporary states
+recover; missing or ambiguous markers after an effect, links, rebinding, and
+evidence drift fail closed. The marker remains active after Control completion,
+and exact checkpoint replay performs no journal rewrite. Cross-owner activation
+ordering and checkpoints, marker retirement, full subprocess-exit
+qualification, production backup/restore wiring, and the coordinated
+reader/writer cutover remain A2 work. The
 machine-checked
 [cutover contract](control-store-cutover.md) now freezes the current authority,
 external-owner, operational-state, and consumer inventory against the actual

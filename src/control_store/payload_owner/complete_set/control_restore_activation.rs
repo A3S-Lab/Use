@@ -17,11 +17,55 @@ use super::restore::{restore_staging_invalid, restore_staging_io};
 use crate::control_store::executor::ControlStoreExecutor;
 use crate::control_store::filesystem::CONTROL_STORE_DATABASE_FILE;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlRestoreBoundary {
+    Candidate,
+    Live,
+}
+
+struct ValidatedControlRestoreBoundary {
+    physical_root: std::path::PathBuf,
+    physical_staging: std::path::PathBuf,
+    state: ControlRestoreBoundary,
+}
+
 impl StagedControlStoreRestore {
+    pub(super) async fn preflight(&self, maintenance: &StateMaintenanceGuard) -> UseResult<()> {
+        self.validate_boundary(maintenance).await.map(|_| ())
+    }
+
     pub(in crate::control_store) async fn activate(
         &self,
         maintenance: &StateMaintenanceGuard,
     ) -> UseResult<ControlStoreRestoreResult> {
+        let boundary = self.validate_boundary(maintenance).await?;
+        if boundary.state == ControlRestoreBoundary::Candidate {
+            publish_noclobber(
+                boundary.physical_staging.join(CANDIDATE_FILE),
+                boundary.physical_root.join(CONTROL_STORE_DATABASE_FILE),
+            )
+            .await?;
+            sync_directory(&boundary.physical_staging).await?;
+            sync_directory(&boundary.physical_root).await?;
+        }
+        let final_boundary = self.validate_boundary(maintenance).await?;
+        if final_boundary.state != ControlRestoreBoundary::Live {
+            return Err(restore_staging_invalid(
+                "The Control activation did not converge to one live database.",
+            ));
+        }
+        ControlStoreRestoreResult::new(
+            &self.registry,
+            &self.snapshot_descriptor_digest,
+            &self.binding,
+            &self.evidence,
+        )
+    }
+
+    async fn validate_boundary(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<ValidatedControlRestoreBoundary> {
         if !maintenance.is_exclusive_for(&self.state_root) {
             return Err(restore_staging_invalid(
                 "Control activation requires the exact target's exclusive maintenance guard.",
@@ -56,26 +100,15 @@ impl StagedControlStoreRestore {
         let live = self.state_root.join(CONTROL_STORE_DATABASE_FILE);
         let candidate_exists = optional_regular_file(&self.candidate).await?;
         let live_exists = optional_regular_file(&live).await?;
-        match (candidate_exists, live_exists) {
-            (true, false) => {
-                let physical_candidate = physical_staging.join(CANDIDATE_FILE);
-                validate_database(
-                    &self.registry,
-                    &self.snapshot_descriptor_digest,
-                    &self.binding,
-                    &self.evidence,
-                    &physical_candidate,
-                )
-                .await?;
-                publish_noclobber(
-                    physical_candidate,
-                    physical_root.join(CONTROL_STORE_DATABASE_FILE),
-                )
-                .await?;
-                sync_directory(&physical_staging).await?;
-                sync_directory(&physical_root).await?;
-            }
-            (false, true) => {}
+        let (state, database) = match (candidate_exists, live_exists) {
+            (true, false) => (
+                ControlRestoreBoundary::Candidate,
+                physical_staging.join(CANDIDATE_FILE),
+            ),
+            (false, true) => (
+                ControlRestoreBoundary::Live,
+                physical_root.join(CONTROL_STORE_DATABASE_FILE),
+            ),
             (true, true) => {
                 return Err(restore_staging_invalid(
                     "The Control candidate and live database both exist.",
@@ -86,35 +119,28 @@ impl StagedControlStoreRestore {
                     "The Control candidate and live database are both missing.",
                 ))
             }
-        }
-
-        if optional_regular_file(&self.candidate).await? || !optional_regular_file(&live).await? {
-            return Err(restore_staging_invalid(
-                "The Control activation did not converge to one live database.",
-            ));
-        }
+        };
         validate_database(
             &self.registry,
             &self.snapshot_descriptor_digest,
             &self.binding,
             &self.evidence,
-            &physical_root.join(CONTROL_STORE_DATABASE_FILE),
+            &database,
         )
         .await?;
         validate_evidence(self).await?;
         validate_entries(&self.staging_directory).await?;
         require_no_sidecars(&self.staging_directory).await?;
         require_no_live_sidecars(&self.state_root).await?;
-        ControlStoreRestoreResult::new(
-            &self.registry,
-            &self.snapshot_descriptor_digest,
-            &self.binding,
-            &self.evidence,
-        )
+        Ok(ValidatedControlRestoreBoundary {
+            physical_root,
+            physical_staging,
+            state,
+        })
     }
 }
 
-async fn validate_evidence(staged: &StagedControlStoreRestore) -> UseResult<()> {
+pub(super) async fn validate_evidence(staged: &StagedControlStoreRestore) -> UseResult<()> {
     let expected = staged.evidence.canonical_bytes(MAX_EVIDENCE_BYTES)?;
     let path = staged.staging_directory.join(EVIDENCE_FILE);
     let Some(length) = optional_regular_file_length(&path).await? else {
@@ -132,7 +158,7 @@ async fn validate_evidence(staged: &StagedControlStoreRestore) -> UseResult<()> 
     Ok(())
 }
 
-async fn validate_database(
+pub(super) async fn validate_database(
     registry: &ControlPayloadOwnerRegistry,
     snapshot_descriptor_digest: &str,
     binding: &ControlPayloadSnapshotBinding,
@@ -174,7 +200,7 @@ async fn validate_database(
     )
 }
 
-async fn require_no_live_sidecars(state_root: &Path) -> UseResult<()> {
+pub(super) async fn require_no_live_sidecars(state_root: &Path) -> UseResult<()> {
     for suffix in ["-wal", "-shm", "-journal"] {
         if optional_regular_file(&state_root.join(format!("{CONTROL_STORE_DATABASE_FILE}{suffix}")))
             .await?

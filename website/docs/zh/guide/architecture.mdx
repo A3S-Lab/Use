@@ -215,11 +215,16 @@ Control 数据库和全部四个 owner candidate。无路径 descriptor 会先�
 registry、Knowledge policy 与固定 component set。Control 会被 checkpoint 为单一文件，按规范 export
 往返复验并绑定物理摘要；外部 candidate 在同一 guard 下复用 owner-native 校验。整个过程不修改任何 live
 authority 路径。精确重试和中断的 Control 构建可以恢复；被污染的 target、link、未知 entry、重绑定与
-candidate 漂移都会 fail closed。Control 还拥有独立的 clean-target publication primitive：在同一个精确
-attempt 与 guard 仍被保留时，它会重新校验 semantic export、物理证据与 sidecar absence，以 no-clobber
-方式原子发布，并把精确的 post-publication replay 收敛为同一个无路径结果；含糊或漂移的 candidate/live
-状态会 fail closed。Complete-set activation、持久化跨 owner journal、完整 subprocess-exit 验收、生产
-backup/restore 接线，以及所有消费者的协调权威切换完成前，该内核仍保持禁用。
+candidate 漂移都会 fail closed。Control activation 现在会在修改 live state 前持久化顶层 intent。不可变
+attempt 仍是 restore identity；`activation.json` 是唯一可变的有序 journal，全局
+`.maintenance.restore.json` marker 绑定同一个不可变 operation，并持续阻止普通共享访问。固定写入顺序是
+journal、marker、owner effect、checkpoint。Preflight 在 intent 前拒绝无效状态；写入 marker 后、原子
+no-clobber 发布前，会再次校验 semantic、物理、sidecar 与 attempt 边界。Reopen 会重新取得精确 fence，绑定
+相同 verified snapshot、attempt 与 policy，重建仍存在且尚未激活的 owner candidate，并收敛安全的
+journal/marker temporary 与 post-publication/pre-checkpoint 边界。Effect 之后 marker 缺失或含糊、link、
+重绑定和 evidence 漂移都会 fail closed。Control checkpoint 绑定规范的无路径结果，完成态 replay 不会重写
+journal，全局 marker 则继续保持 active。跨 owner checkpoint 与激活顺序、marker 退休、完整
+subprocess-exit 验收、生产 backup/restore 接线，以及所有消费者的协调权威切换完成前，该内核仍保持禁用。
 
 ## 运行时可见性
 
