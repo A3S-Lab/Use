@@ -3,7 +3,7 @@ use super::*;
 pub(super) const CATALOG: &[u8] =
     include_bytes!("../../../crates/core/fixtures/plugins/catalog-record-okf-v3.json");
 
-pub(super) fn digest(seed: char) -> String {
+pub(in crate::control_store) fn digest(seed: char) -> String {
     format!("sha256:{}", seed.to_string().repeat(64))
 }
 
@@ -479,7 +479,7 @@ pub(super) fn capability_subject(
     }
 }
 
-pub(super) async fn initialized_store() -> (tempfile::TempDir, ControlStore) {
+pub(in crate::control_store) async fn initialized_store() -> (tempfile::TempDir, ControlStore) {
     let temporary = tempfile::tempdir().unwrap();
     let store = ControlStore::new(temporary.path().join("state"), control_installation()).unwrap();
     store.initialize().await.unwrap();

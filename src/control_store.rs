@@ -11,6 +11,8 @@ use a3s_use_core::{InstallationId, UseError, UseResult};
 use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
 
 mod aggregate;
+mod dispatcher;
+mod effect_port;
 mod executor;
 mod export;
 mod filesystem;
@@ -371,6 +373,8 @@ impl ControlStore {
 mod aggregate_tests;
 #[cfg(test)]
 mod cutover_manifest_tests;
+#[cfg(test)]
+mod dispatcher_tests;
 #[cfg(test)]
 mod payload_control_restore_activation_security_tests;
 #[cfg(test)]

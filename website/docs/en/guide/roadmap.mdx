@@ -115,7 +115,18 @@ same-key reconciliation instead of rolling back visible state, and completion
 cannot predate provider observations. The kernel also qualifies snapshots,
 full Grants, reviewed provider selections, capability history, explicit
 unknown/expired-claim reconciliation, deterministic offline-verifiable export,
-and clean staged restore. Production lifecycle code does not construct it.
+and clean staged restore. Its inactive one-effect dispatcher commits a claim,
+releases the transaction and bounded executor before owner I/O, routes the exact
+identity through separate Capability Index, invocation-lease, Runtime, Flow,
+Knowledge, Skill, or UI ports, and records a later owner-shaped observation.
+Provider timeout must leave a fixed observation budget inside the claim lease
+and becomes unknown evidence; process exit, cancellation, expired claims, and
+ambiguity require explicit same-key reconciliation. Tests cover Store re-entry
+during provider I/O, all seven routes, hung-provider bounding, and exit after an
+unobserved effect.
+Production lifecycle code does not construct it, and real adapters must derive
+their complete inputs only from committed Control authority and immutable
+artifacts.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact
@@ -211,9 +222,10 @@ An 18-boundary real-child-process matrix qualifies the top-level protocol,
 including every retirement boundary. The canonical `attempt.json` and complete
 `activation.json` then form the exact installation-bound terminal receipt.
 Legacy backup and artifact reachability exclude only that receipt; incomplete,
-extended, linked, or tampered evidence fails closed. Production conversion and
-dispatch, backup/restore wiring, and coordinated authority cutover remain open;
-no A2 roadmap item is complete yet.
+extended, linked, or tampered evidence fails closed. Production Grant
+conversion, committed-authority owner adapters and dispatcher composition,
+backup/restore wiring, and coordinated authority cutover remain open; no A2
+roadmap item is complete yet.
 
 ## Implemented baseline
 

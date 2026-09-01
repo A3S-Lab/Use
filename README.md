@@ -1334,13 +1334,23 @@ identity; it cannot roll back an already visible generation. Completion cannot
 predate any provider observation. The kernel also qualifies typed generation
 transitions, full Grant and reviewed provider selection evidence, idempotent
 outbox reconciliation, bounded execution, corruption checks, and deterministic
-offline-verifiable export plus staged restore. It is not
-constructed by production lifecycle code and does not create a second
-authority beside the current JSON stores. Production lifecycle conversion
-still must feed authorization-v2 Grant evidence, dispatch the derived inventory
-through real typed owner ports, and populate the qualified observation contract
-without conflating applied evidence with reviewed selection. The kernel now
-also qualifies the path-free external-payload registration and
+offline-verifiable export plus staged restore. Its inactive dispatcher now
+claims at most one committed effect, releases the claim transaction and bounded
+executor before entering an owner, routes Capability Index, invocation-lease,
+Runtime, Flow, Knowledge, Skill, and UI work through separate typed ports, then
+records owner-specific applied, rejected, or unknown evidence in a later
+transaction. A provider timeout must leave a fixed observation budget inside
+its claim lease; timeout is durable unknown evidence, and cancellation or
+process exit requires explicit same-key reconciliation. Tests prove
+commit-before-effect, Store re-entry during provider I/O, exact-key recovery
+after an unobserved process exit, hung-provider bounding, and all seven owner
+routes. The dispatcher is not constructed by production lifecycle code and does
+not create a second authority beside the current JSON stores. Production
+lifecycle conversion still must feed authorization-v2 Grant evidence and
+compose real owner adapters that reconstruct their complete inputs only from
+committed Control authority and immutable artifacts, without conflating applied
+evidence with reviewed selection. The kernel now also qualifies the path-free
+external-payload registration and
 snapshot-evidence boundary. Its five frozen owner identities and fixed backup
 policies are checked against the ACL cutover inventory. The global Artifact
 Store is explicitly excluded, while the other four owners must produce one
@@ -1491,9 +1501,9 @@ it can only resume bounded retirement of the five link-free staging trees. The
 surviving canonical `attempt.json` and complete `activation.json` form the exact
 installation-bound terminal receipt. Legacy backup and artifact reachability
 exclude only that two-file receipt; incomplete, extended, linked, or tampered
-evidence fails closed. Production Grant conversion and effect dispatch,
-backup/restore command wiring, indivisible consumer cutover, and deletion of
-legacy mutable stores remain open.
+evidence fails closed. Production Grant conversion, committed-authority owner
+adapters and dispatcher composition, backup/restore command wiring, indivisible
+consumer cutover, and deletion of legacy mutable stores remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

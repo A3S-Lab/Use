@@ -134,11 +134,22 @@ capability cursor before drain and teardown. A post-cutover required failure
 stays pending for explicit same-key reconciliation rather than rolling back a
 visible generation, and completion cannot predate its observations.
 
+The inactive dispatcher now realizes the post-commit half of that protocol. It
+claims one durable effect, releases the database transaction and bounded worker,
+routes the exact identity through one of seven typed owner ports, and records a
+later applied, rejected, or unknown observation. Its enforced provider timeout
+leaves a fixed budget inside the claim lease and is classified as unknown,
+leaving time for the observation transaction. Cancellation, process exit after
+a possible effect, and expired or unknown claims require explicit replay with
+the same committed idempotency key. Qualification tests cover all routes, Store
+re-entry during owner I/O, a hung owner, and the unobserved-effect crash
+boundary.
+
 Production lifecycle code does not construct it, so it neither mirrors nor
 replaces the current JSON authority. Lifecycle
-conversion still must feed the reviewed Grant evidence, dispatch effects
-through real typed external owners, and populate the qualified observation
-contract.
+conversion still must feed the reviewed Grant evidence and compose real owner
+adapters whose full manifest, Grant, Runtime, and capability inputs come only
+from committed Control authority and immutable artifacts.
 The inactive kernel now has a path-free external-payload registry/evidence
 contract: five fixed owner identities and ACL backup policies, explicit global
 Artifact Store exclusion, and one exact canonical receipt set for the four

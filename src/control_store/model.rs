@@ -415,7 +415,7 @@ pub(super) fn valid_machine_id(value: &str) -> bool {
         })
 }
 
-fn valid_error_code(value: &str) -> bool {
+pub(in crate::control_store) fn valid_error_code(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
         && matches!(value.as_bytes().first(), Some(b'a'..=b'z'))
