@@ -7,6 +7,7 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::restore::{restore_staging_invalid, restore_staging_io};
+use super::restore_activation_filesystem::{ACTIVATION_FILE, ACTIVATION_TEMPORARY_FILE};
 
 pub(super) const ATTEMPT_DIRECTORY: &str = ".control-installation-restore";
 pub(super) const CONTROL_DIRECTORY: &str = "control";
@@ -131,7 +132,11 @@ async fn validate_attempt_entries(attempt: &Path) -> UseResult<()> {
         let metadata = fs::symlink_metadata(entry.path())
             .await
             .map_err(|error| restore_staging_io("inspect complete restore attempt entry", error))?;
-        let valid = if name == ATTEMPT_FILE || name == ATTEMPT_PARTIAL_FILE {
+        let valid = if name == ATTEMPT_FILE
+            || name == ATTEMPT_PARTIAL_FILE
+            || name == ACTIVATION_FILE
+            || name == ACTIVATION_TEMPORARY_FILE
+        {
             !a3s_use_core::metadata_is_link_or_reparse_point(&metadata) && metadata.is_file()
         } else if component_names.contains(name.as_str()) {
             !a3s_use_core::metadata_is_link_or_reparse_point(&metadata) && metadata.is_dir()

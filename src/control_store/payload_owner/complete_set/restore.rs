@@ -6,7 +6,7 @@ use std::path::Path;
 
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::super::host_projection::StagedControlHostProjectionRestore;
@@ -17,6 +17,7 @@ use super::super::ControlPayloadSnapshotBinding;
 use super::control_restore::{self, StagedControlStoreRestore};
 use super::control_restore_result::ControlStoreRestoreResult;
 use super::coordinator::VerifiedControlInstallationSnapshot;
+use super::restore_activation;
 use super::restore_filesystem::{
     self, CONTROL_DIRECTORY, HOST_PROJECTION_DIRECTORY, KNOWLEDGE_DIRECTORY,
     OBSERVATIONS_DIRECTORY, RESTORE_COORDINATOR_DIRECTORY,
@@ -28,9 +29,9 @@ const RESTORE_ATTEMPT_SCHEMA: &str = "a3s.use.control-installation-restore-attem
 const RESTORE_ATTEMPT_DOMAIN: &[u8] = b"a3s.use.control-installation-restore-attempt.v1\0";
 const MAX_RESTORE_ATTEMPT_BYTES: usize = 128 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-enum RestoreComponent {
+pub(super) enum RestoreComponent {
     ControlStore,
     HostProjection,
     Knowledge,
@@ -39,13 +40,23 @@ enum RestoreComponent {
 }
 
 impl RestoreComponent {
-    const ALL: [Self; 5] = [
+    pub(super) const ALL: [Self; 5] = [
         Self::ControlStore,
         Self::HostProjection,
         Self::Knowledge,
         Self::Observations,
         Self::RestoreCoordinator,
     ];
+
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::ControlStore => "control-store",
+            Self::HostProjection => "host-projection",
+            Self::Knowledge => "knowledge",
+            Self::Observations => "observations",
+            Self::RestoreCoordinator => "restore-coordinator",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -76,7 +87,7 @@ impl KnowledgePolicyEvidence {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ControlInstallationRestoreAttempt {
+pub(super) struct ControlInstallationRestoreAttempt {
     schema: &'static str,
     snapshot_created_at_ms: u64,
     snapshot_descriptor_digest: String,
@@ -88,7 +99,7 @@ struct ControlInstallationRestoreAttempt {
 }
 
 impl ControlInstallationRestoreAttempt {
-    fn new(
+    pub(super) fn new(
         registry: &ControlPayloadOwnerRegistry,
         snapshot: &ControlInstallationSnapshotManifest,
         policy: OkfKnowledgeStoragePolicy,
@@ -173,7 +184,7 @@ impl ControlInstallationRestoreAttempt {
         Ok(format!("sha256:{:x}", digest.finalize()))
     }
 
-    fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
+    pub(super) fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
         let bytes = canonical_json(self).map_err(|error| {
             restore_staging_invalid(format!(
                 "Failed to encode the complete restore descriptor: {error}"
@@ -186,19 +197,24 @@ impl ControlInstallationRestoreAttempt {
         }
         Ok(bytes)
     }
+
+    pub(super) fn descriptor_digest(&self) -> &str {
+        &self.descriptor_digest
+    }
 }
 
 #[derive(Debug)]
 pub(in crate::control_store) struct StagedControlInstallationRestore {
-    staging_directory: PathBuf,
-    attempt_bytes: Vec<u8>,
-    attempt_digest: String,
-    control: StagedControlStoreRestore,
-    host_projection: StagedControlHostProjectionRestore,
-    knowledge: StagedControlKnowledgePayloadRestore,
-    observations: StagedControlObservationPayloadRestore,
-    restore_coordinator: StagedControlRestoreCoordinatorRestore,
-    maintenance: StateMaintenanceGuard,
+    pub(super) state_root: PathBuf,
+    pub(super) staging_directory: PathBuf,
+    pub(super) attempt_bytes: Vec<u8>,
+    pub(super) attempt_digest: String,
+    pub(super) control: StagedControlStoreRestore,
+    pub(super) host_projection: StagedControlHostProjectionRestore,
+    pub(super) knowledge: StagedControlKnowledgePayloadRestore,
+    pub(super) observations: StagedControlObservationPayloadRestore,
+    pub(super) restore_coordinator: StagedControlRestoreCoordinatorRestore,
+    pub(super) maintenance: StateMaintenanceGuard,
 }
 
 impl VerifiedControlInstallationSnapshot {
@@ -296,6 +312,7 @@ impl VerifiedControlInstallationSnapshot {
         .await
         .map_err(wrap_stage_error)?;
         Ok(StagedControlInstallationRestore {
+            state_root,
             staging_directory,
             attempt_bytes,
             attempt_digest: attempt.descriptor_digest,
@@ -313,10 +330,74 @@ impl StagedControlInstallationRestore {
     pub(in crate::control_store) async fn activate_control(
         &self,
     ) -> UseResult<ControlStoreRestoreResult> {
-        restore_filesystem::validate_attempt(&self.staging_directory, &self.attempt_bytes)
+        self.control
+            .preflight(&self.maintenance)
             .await
-            .map_err(wrap_stage_error)?;
-        self.control.activate(&self.maintenance).await
+            .map_err(wrap_activation_error)?;
+        restore_activation::begin(
+            &self.state_root,
+            &self.staging_directory,
+            &self.attempt_bytes,
+            &self.attempt_digest,
+            self.control.candidate_path(),
+        )
+        .await
+        .map_err(wrap_activation_error)?;
+        let result = self
+            .control
+            .activate(&self.maintenance)
+            .await
+            .map_err(wrap_activation_error)?;
+        restore_activation::validate_result_registry(&self.control.registry, &result)
+            .map_err(wrap_activation_error)?;
+        restore_activation::checkpoint_control(
+            &self.state_root,
+            &self.staging_directory,
+            &self.attempt_digest,
+            &result,
+        )
+        .await
+        .map_err(wrap_activation_error)?;
+        Ok(result)
+    }
+
+    #[cfg(test)]
+    pub(in crate::control_store) async fn begin_control_activation_for_test(
+        &self,
+    ) -> UseResult<()> {
+        self.control
+            .preflight(&self.maintenance)
+            .await
+            .map_err(wrap_activation_error)?;
+        restore_activation::begin(
+            &self.state_root,
+            &self.staging_directory,
+            &self.attempt_bytes,
+            &self.attempt_digest,
+            self.control.candidate_path(),
+        )
+        .await
+        .map(|_| ())
+        .map_err(wrap_activation_error)
+    }
+
+    #[cfg(test)]
+    pub(in crate::control_store) fn activation_journal_path_for_test(&self) -> PathBuf {
+        restore_activation::journal_path(&self.staging_directory)
+    }
+
+    #[cfg(test)]
+    pub(in crate::control_store) async fn activation_checkpoint_count_for_test(
+        &self,
+    ) -> UseResult<usize> {
+        restore_activation::load(
+            &self.state_root,
+            &self.staging_directory,
+            &self.attempt_digest,
+        )
+        .await
+        .map(|activation| activation.checkpoint_count())
+        .map_err(wrap_activation_error)
     }
 
     #[cfg(test)]
@@ -365,7 +446,7 @@ impl StagedControlInstallationRestore {
     }
 }
 
-fn wrap_owner_error(owner: &str, error: UseError) -> UseError {
+pub(super) fn wrap_owner_error(owner: &str, error: UseError) -> UseError {
     restore_staging_invalid(format!(
         "The complete restore {owner} candidate failed verification: {}",
         error.message
@@ -392,4 +473,26 @@ pub(super) fn restore_staging_invalid(message: impl Into<String>) -> UseError {
 
 pub(super) fn restore_staging_io(action: &str, error: io::Error) -> UseError {
     restore_staging_invalid(format!("Failed to {action}: {error}"))
+}
+
+pub(super) fn wrap_activation_error(error: UseError) -> UseError {
+    if error.code == "use.control_store.complete_restore_activation_invalid" {
+        error
+    } else {
+        restore_activation_invalid(format!(
+            "The complete restore activation boundary rejected its state: {}",
+            error.message
+        ))
+    }
+}
+
+pub(super) fn restore_activation_invalid(message: impl Into<String>) -> UseError {
+    UseError::new(
+        "use.control_store.complete_restore_activation_invalid",
+        message,
+    )
+}
+
+pub(super) fn restore_activation_io(action: &str, error: io::Error) -> UseError {
+    restore_activation_invalid(format!("Failed to {action}: {error}"))
 }

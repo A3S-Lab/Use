@@ -17,10 +17,15 @@ mod control_restore;
 mod control_restore_activation;
 mod control_restore_evidence;
 mod control_restore_filesystem;
+mod control_restore_reopen;
 mod control_restore_result;
 mod coordinator;
 mod restore;
+mod restore_activation;
+mod restore_activation_filesystem;
+mod restore_activation_storage;
 mod restore_filesystem;
+mod restore_reopen;
 
 #[cfg(test)]
 pub(in crate::control_store) use control_restore_result::ControlStoreRestoreResult;

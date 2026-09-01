@@ -150,16 +150,26 @@ candidates are created beneath `.control-installation-restore`. The Control
 candidate is single-file checkpointed, export-round-tripped, and physically
 digest-bound. No live authority path is changed, and exact retry or interrupted
 Control construction is deterministic; contaminated targets, links, unknown
-entries, rebinding, and candidate drift fail closed. The Control component can
-now publish only its exact candidate under the still-retained guard. It
-revalidates the attempt, canonical export, physical bytes, and sidecar-free
-state, uses no-clobber atomic publication, and reconciles the exact
-post-publication state to the same path-free result. Both-present,
-both-missing, linked, or drifted states fail closed. This qualifies complete-set
-backup assembly, restore staging, and one in-process component publication
-boundary only. Coordinated activation, its durable cross-owner journal and
-subprocess recovery matrix, production backup/restore wiring, and indivisible
-authority cutover remain required before this gate can close.
+entries, rebinding, and candidate drift fail closed. Control activation now
+durably records top-level intent before live publication. The immutable attempt
+descriptor stays authoritative; `activation.json` is the sole mutable ordered
+journal, and the global `.maintenance.restore.json` marker binds the same
+immutable operation and blocks ordinary shared access. The write order is
+journal, marker, owner effect, checkpoint. Preflight rejects invalid Control
+state before intent; owner-native semantic, physical, sidecar, and attempt
+checks run again after the marker before the no-clobber atomic move. The first
+checkpoint binds the canonical path-free result by byte count and
+domain-separated digest. Reopen reacquires the exact exclusive fence, rebinds
+the same snapshot, attempt, and policy, and reconstructs every present
+unactivated candidate. Journal-only, deterministic temporary, and
+post-publication/pre-checkpoint boundaries converge; missing or ambiguous
+marker state after an effect, links, rebinding, and evidence drift fail closed.
+Exact completed replay is read-only. The global marker remains active, so this
+qualifies complete-set backup assembly, restore staging, durable top-level
+intent, and one owner checkpoint only. Cross-owner activation order and
+checkpoints, marker retirement, the subprocess recovery matrix, production
+backup/restore wiring, and indivisible authority cutover remain required before
+this gate can close.
 
 ## Non-negotiable cutover invariants
 

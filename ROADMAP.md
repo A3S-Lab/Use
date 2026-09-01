@@ -685,19 +685,30 @@ and bound by durable physical digest evidence. No live Control, Host,
 Knowledge, observation, or restore-history path is changed. Exact retries and
 interrupted Control staging recover deterministically; target contamination,
 links, unknown entries, snapshot or policy rebinding, and completed-candidate
-drift fail closed. The Control component now also has its owner-native
-clean-target publication primitive. Under the still-retained exact guard and
-attempt, it rechecks canonical export semantics, physical candidate evidence,
-sidecar absence, and the top-level attempt descriptor before a no-clobber
-atomic move to live `control.sqlite3`. Candidate-before-publication and exact
-live-after-publication states replay to the same path-free result; both-present,
-both-missing, linked, or drifted state fails closed. This closes qualification
-of complete-set restore staging and one component's retained-process
-publication boundary, not coordinated activation or process-exit recovery. A
-durable cross-owner activation journal and order, the full subprocess-exit
-matrix, production Grant conversion and effect dispatch, production
-backup/restore wiring, indivisible consumer cutover, and deletion of legacy
-mutable stores remain open; no A2 checkbox is complete yet.
+drift fail closed. The complete-set coordinator now durably begins its
+owner-native Control activation before changing live state. The immutable
+attempt descriptor remains the restore identity. A canonical `activation.json`
+journal binds that attempt to an immutable operation; the global
+`.maintenance.restore.json` marker binds the same identity and blocks ordinary
+shared access. The fixed write order is journal, marker, owner effect,
+checkpoint. Control preflight runs before durable intent, and its owner-native
+semantic and physical checks run again after the marker before the no-clobber
+atomic move to live `control.sqlite3`. The first ordered checkpoint retains
+only the canonical path-free result length and a domain-separated digest.
+Reopening reacquires the exact exclusive guard, rebinds the same verified
+snapshot, attempt, and Knowledge policy, reconstructs every present unactivated
+owner candidate, and either publishes Control or verifies its exact live
+result. Journal-only and marker/journal temporary boundaries recover before any
+effect; post-publication/pre-checkpoint replay converges, while missing or
+ambiguous markers after effects, snapshot rebinding, links, and evidence drift
+fail closed. The marker deliberately remains active after the Control
+checkpoint, and exact checkpoint replay is read-only. This closes durable
+top-level intent, one owner checkpoint, and guard-release/reopen qualification,
+not complete-set activation. Cross-owner checkpoints and activation order,
+marker retirement, the full subprocess-exit matrix, production Grant
+conversion and effect dispatch, production backup/restore wiring, indivisible
+consumer cutover, and deletion of legacy mutable stores remain open; no A2
+checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions

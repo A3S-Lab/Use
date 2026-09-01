@@ -264,15 +264,23 @@ set. Control is single-file checkpointed, export-round-tripped, and physically
 digest-bound; external candidates reuse owner-native validation under the same
 guard. No live authority path changes. Exact retry and interrupted Control
 construction recover, while contaminated targets, links, unknown entries,
-rebinding, and candidate drift fail closed. Control also owns a separate
-clean-target publication primitive under the still-retained exact attempt and
-guard. It rechecks semantic export, physical evidence, and sidecar absence,
-publishes without replacement, and reconciles exact post-publication replay to
-one path-free result. Ambiguous or drifted candidate/live state fails closed.
-Complete-set activation, its durable cross-owner journal and full
-subprocess-exit qualification, production backup/restore wiring, and
-coordinated authority cutover remain disabled until every consumer can switch
-together.
+rebinding, and candidate drift fail closed. Control activation now durably
+records top-level intent before live publication. The immutable attempt remains
+the restore identity; `activation.json` is the sole mutable ordered journal,
+and the global `.maintenance.restore.json` marker binds the same operation and
+blocks ordinary shared access. The fixed order is journal, marker, owner effect,
+then checkpoint. Preflight rejects invalid state before intent, while semantic,
+physical, sidecar, and attempt checks run again after the marker before atomic
+no-clobber publication. Reopen reacquires the exact fence, rebinds the same
+verified snapshot, attempt, and policy, reconstructs present unactivated owner
+candidates, and converges journal/marker temporary and
+post-publication/pre-checkpoint boundaries. Missing or ambiguous markers after
+an effect, links, rebinding, and evidence drift fail closed. The Control
+checkpoint binds the canonical path-free result, completed replay does not
+rewrite it, and the global marker remains active. Cross-owner checkpoints and
+activation order, marker retirement, full subprocess-exit qualification,
+production backup/restore wiring, and coordinated authority cutover remain
+disabled until every consumer can switch together.
 
 ## Runtime visibility
 

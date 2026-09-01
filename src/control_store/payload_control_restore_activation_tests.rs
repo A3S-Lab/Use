@@ -1,10 +1,9 @@
 use tempfile::TempDir;
 
-use super::aggregate_tests::fixtures::control_installation;
 use super::payload_installation_restore_staging_tests::absent_snapshot;
 use super::payload_installation_snapshot_tests::registry;
-use super::ControlStore;
 use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
+use a3s_use_extension::{StateMaintenanceLock, ACTIVE_STATE_RESTORE_MARKER};
 
 #[tokio::test]
 async fn control_restore_activation_publishes_and_replays_one_exact_database() {
@@ -31,10 +30,14 @@ async fn control_restore_activation_publishes_and_replays_one_exact_database() {
 
     let replay = staged.activate_control().await.unwrap();
     assert_eq!(replay, first);
+    assert!(state_root.join(ACTIVE_STATE_RESTORE_MARKER).is_file());
     drop(staged);
 
-    let restored = ControlStore::new(state_root, control_installation()).unwrap();
-    restored.inspect().await.unwrap();
+    let blocked = StateMaintenanceLock::new(state_root)
+        .try_acquire_shared()
+        .await
+        .unwrap_err();
+    assert_eq!(blocked.code, "use.state.maintenance_restore_active");
 }
 
 #[tokio::test]
@@ -48,6 +51,7 @@ async fn control_restore_activation_reconciles_the_post_publication_boundary() {
         .unwrap();
     let candidate = staged.control_candidate_path().to_path_buf();
     let live = state_root.join("control.sqlite3");
+    staged.begin_control_activation_for_test().await.unwrap();
     std::fs::rename(&candidate, &live).unwrap();
 
     let result = staged.activate_control().await.unwrap();

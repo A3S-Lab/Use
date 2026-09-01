@@ -144,11 +144,15 @@ registry、receipt、schema、digest 与字节账目。单一固定顺序 archiv
 policy 与五个 component；随后保留一个排他 fence，构建 Control 和全部 owner-native candidate。Control 会
 checkpoint 为单一 SQLite 文件，按 export 往返复验并绑定物理摘要，且不会修改任何 live owner 路径。精确
 重试与中断的 Control 暂存可以恢复；target 污染、link、未知 entry、重绑定与完成 candidate 漂移都会 fail
-closed。Control 现在还拥有自己的 clean-target publication primitive：在同一个 attempt 与 guard 仍被保留时，
-它会在 no-clobber 原子发布前重检 canonical export、物理字节、sidecar absence 与 attempt 证据，并让精确的
-post-publication replay 返回同一个无路径结果。这还不是持久化跨进程边界。Complete-set activation、跨 owner
-journal、完整 subprocess 崩溃矩阵、生产 lifecycle 转换与 dispatch、backup/restore 与 reachability 集成和
-协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+closed。Control activation 现在会持久化顶层 intent。不可变 attempt 仍是权威；`activation.json` 是唯一可变的
+有序 journal，全局 `.maintenance.restore.json` marker 绑定同一个不可变 operation，并阻止普通共享访问。
+协议固定按 journal、marker、owner effect、checkpoint 的顺序写入。Preflight 在 intent 前执行；marker 写入后、
+原子 no-clobber 发布前，会再次校验 semantic、物理、sidecar 与 attempt 证据。Reopen 会重新取得精确 guard，
+绑定相同 verified snapshot、attempt 与 policy，重建仍存在且尚未激活的 owner candidate，并收敛安全的
+temporary 与 post-publication/pre-checkpoint 边界。Effect 后 marker 缺失或含糊、link、重绑定和 evidence 漂移
+都会 fail closed。规范的无路径 Control checkpoint 在完成态 replay 时不会重写 journal，全局 marker 则刻意
+保持 active。跨 owner checkpoint 与激活顺序、marker 退休、完整 subprocess 崩溃矩阵、生产 lifecycle 转换与
+dispatch、backup/restore 与 reachability 集成和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 
