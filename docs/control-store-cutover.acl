@@ -459,6 +459,17 @@ control_store_cutover {
     may_choose_desired_state    = false
   }
 
+  operational_state "complete-restore-attempt" {
+    state_paths = [".control-installation-restore"]
+    implementation = [
+      "src/artifact_reachability/installation.rs",
+      "src/control_store/payload_owner/complete_set/restore_retirement.rs",
+      "src/state_backup/inventory.rs",
+    ]
+    disposition   = "retire-staging-retain-terminal"
+    backup_policy = "excluded"
+  }
+
   operational_state "outer-fences" {
     state_paths = [
       ".installation-mutation.lock",

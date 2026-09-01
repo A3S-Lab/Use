@@ -9,14 +9,15 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use super::restore::{restore_staging_invalid, restore_staging_io};
 use super::restore_activation_filesystem::{ACTIVATION_FILE, ACTIVATION_TEMPORARY_FILE};
 
-pub(super) const ATTEMPT_DIRECTORY: &str = ".control-installation-restore";
+pub(super) const ATTEMPT_DIRECTORY: &str =
+    crate::installation_state_layout::CONTROL_INSTALLATION_RESTORE_ATTEMPT_DIRECTORY;
 pub(super) const CONTROL_DIRECTORY: &str = "control";
 pub(super) const HOST_PROJECTION_DIRECTORY: &str = "host-projection";
 pub(super) const KNOWLEDGE_DIRECTORY: &str = "knowledge";
 pub(super) const OBSERVATIONS_DIRECTORY: &str = "observations";
 pub(super) const RESTORE_COORDINATOR_DIRECTORY: &str = "restore-coordinator";
 
-const ATTEMPT_FILE: &str = "attempt.json";
+pub(super) const ATTEMPT_FILE: &str = "attempt.json";
 const ATTEMPT_PARTIAL_FILE: &str = "attempt.json.partial";
 const MAX_ATTEMPT_BYTES: u64 = 128 * 1024;
 
@@ -57,6 +58,17 @@ pub(super) async fn validate_complete_attempt(
 }
 
 pub(super) async fn validate_attempt(attempt: &Path, expected_evidence: &[u8]) -> UseResult<()> {
+    validate_attempt_evidence(attempt, expected_evidence).await?;
+    for name in component_names() {
+        validate_directory(&attempt.join(name)).await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn validate_attempt_evidence(
+    attempt: &Path,
+    expected_evidence: &[u8],
+) -> UseResult<()> {
     validate_attempt_entries(attempt).await?;
     let evidence = attempt.join(ATTEMPT_FILE);
     let Some(evidence_length) = optional_regular_file_length(&evidence).await? else {
@@ -72,9 +84,6 @@ pub(super) async fn validate_attempt(attempt: &Path, expected_evidence: &[u8]) -
         return Err(restore_staging_invalid(
             "The complete restore attempt has no durable exact descriptor.",
         ));
-    }
-    for name in component_names() {
-        validate_directory(&attempt.join(name)).await?;
     }
     Ok(())
 }
@@ -234,7 +243,7 @@ async fn attempt_contains_component(attempt: &Path) -> UseResult<bool> {
     Ok(false)
 }
 
-fn component_names() -> [&'static str; 5] {
+pub(super) fn component_names() -> [&'static str; 5] {
     [
         CONTROL_DIRECTORY,
         HOST_PROJECTION_DIRECTORY,

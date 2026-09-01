@@ -152,10 +152,13 @@ closed。完整激活会在持久化顶层 intent 前预检全部 owner。不可
 digest 绑定规范的无路径结果；Coordinator owner 还会在修改历史前校验精确 marker 字节、长度与摘要。Reopen
 会重新取得精确 guard，绑定相同 verified snapshot、attempt、registry 与 policy，并重建或验证每个
 candidate/live 边界。Journal/marker partial、五个 effect 后 checkpoint 前边界、marker 退休前的第五个
-checkpoint，以及删除后的进程退出都能收敛。只有完整 journal 才允许 marker 缺失；乱序 live root、含糊
-marker、link、重绑定和 evidence 漂移都会 fail closed。完成态 replay 只读。13 个真实子进程退出边界覆盖
-顶层协议。生产 lifecycle 转换与 dispatch、backup/restore 与 reachability 集成、保留 attempt 生命周期和
-协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+checkpoint，以及 marker 删除和五个暂存树按固定顺序退休后的进程退出都能收敛。只有完整 journal 才允许
+marker 缺失；乱序 live root、含糊 marker、link、重绑定和 evidence 漂移都会 fail closed。完成态 replay
+不再执行 owner effect，只能恢复五个无 link 暂存树的有界固定顺序退休。18 个真实子进程退出边界覆盖顶层
+协议和每个退休边界。规范的 `attempt.json` 与完整 `activation.json` 构成精确绑定 installation 的终态
+收据。旧 backup 和 artifact reachability 只排除该收据；不完整、扩展、含 link 或被篡改的 evidence 都会
+fail closed。生产 lifecycle 转换与 dispatch、backup/restore 接线和协调一致的权威切换仍未完成，因此尚未
+完成任何 A2 roadmap 项。
 
 ## 已实现基线
 

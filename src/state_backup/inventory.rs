@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
-use a3s_use_core::UseResult;
+use a3s_use_core::{InstallationId, UseResult};
 use a3s_use_extension::{ExtensionPaths, ACTIVE_STATE_RESTORE_MARKER};
 use sha2::{Digest, Sha256};
 
@@ -84,6 +84,7 @@ fn scan_files(
     scan_root(
         paths.data_root(),
         StateBackupRoot::Data,
+        paths.installation(),
         &mut files,
         &mut visited_entries,
         &mut portable_paths,
@@ -92,6 +93,7 @@ fn scan_files(
     scan_root(
         paths.state_root(),
         StateBackupRoot::State,
+        paths.installation(),
         &mut files,
         &mut visited_entries,
         &mut portable_paths,
@@ -105,6 +107,7 @@ fn scan_files(
 fn scan_root(
     root: &Path,
     kind: StateBackupRoot,
+    installation: &InstallationId,
     files: &mut Vec<ScannedFile>,
     visited_entries: &mut u64,
     portable_paths: &mut BTreeSet<(StateBackupRoot, String)>,
@@ -173,6 +176,15 @@ fn scan_root(
                     "A Use-owned backup entry cannot be inspected: {error}"
                 ))
             })?;
+            if excluded_terminal_complete_restore_receipt(
+                kind,
+                &relative,
+                &absolute,
+                &metadata,
+                installation,
+            )? {
+                continue;
+            }
             if excluded_active_restore_entry(kind, &relative, &metadata, active_plan_digest)? {
                 continue;
             }
@@ -221,6 +233,42 @@ fn scan_root(
         }
     }
     Ok(())
+}
+
+fn excluded_terminal_complete_restore_receipt(
+    root: StateBackupRoot,
+    relative: &Path,
+    absolute: &Path,
+    metadata: &std::fs::Metadata,
+    installation: &InstallationId,
+) -> UseResult<bool> {
+    if root != StateBackupRoot::State
+        || relative.components().count() != 1
+        || relative.file_name().and_then(|name| name.to_str())
+            != Some(installation_state_layout::CONTROL_INSTALLATION_RESTORE_ATTEMPT_DIRECTORY)
+    {
+        return Ok(false);
+    }
+    if a3s_use_core::metadata_is_link_or_reparse_point(metadata) || !metadata.is_dir() {
+        return Err(state_backup_path_invalid(
+            "The complete restore terminal receipt is not an owned directory.",
+        ));
+    }
+    let receipt_installation = crate::control_store::validate_terminal_restore_receipt_blocking(
+        absolute,
+    )
+    .map_err(|error| {
+        state_backup_nonterminal(format!(
+            "A complete Control Store restore attempt is not exact terminal evidence: {}",
+            error.message
+        ))
+    })?;
+    if &receipt_installation != installation {
+        return Err(state_backup_invalid(
+            "The complete restore terminal receipt belongs to a different installation.",
+        ));
+    }
+    Ok(true)
 }
 
 fn excluded_active_restore_entry(

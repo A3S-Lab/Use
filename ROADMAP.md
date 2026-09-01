@@ -705,11 +705,16 @@ all five post-effect/pre-checkpoint boundaries, the final checkpoint before
 retirement, and exit immediately after marker deletion converge. A missing
 marker is valid only beside the complete five-checkpoint journal; out-of-order
 live roots, ambiguous markers, snapshot rebinding, links, and evidence drift
-fail closed. Exact completed replay is read-only. A real-child-process matrix
-qualifies 13 top-level durable exits. Production Grant conversion and effect
-dispatch, production backup/restore wiring, retained-attempt cleanup or terminal
-receipt, indivisible consumer cutover, and deletion of legacy mutable stores
-remain open; no A2 checkbox is complete yet.
+fail closed. Exact completed replay performs no owner effect and can only resume
+bounded fixed-order retirement of the five link-free staging trees. A
+real-child-process matrix qualifies 18 top-level durable exits, including each
+retirement boundary. The surviving canonical `attempt.json` and complete
+`activation.json` are the exact installation-bound terminal receipt. Legacy
+backup and artifact reachability exclude only that receipt; incomplete,
+extended, linked, or tampered evidence fails closed. Production Grant conversion
+and effect dispatch, production backup/restore wiring, indivisible consumer
+cutover, and deletion of legacy mutable stores remain open; no A2 checkbox is
+complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions

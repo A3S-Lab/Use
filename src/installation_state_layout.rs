@@ -1,5 +1,8 @@
 use a3s_use_extension::ACTIVE_STATE_RESTORE_MARKER;
 
+pub(crate) const CONTROL_INSTALLATION_RESTORE_ATTEMPT_DIRECTORY: &str =
+    ".control-installation-restore";
+
 const STATE_DIRECTORIES: &[&str] = &[
     "bindings",
     "extension-generations",
@@ -67,6 +70,10 @@ mod tests {
         assert!(supported_root_entry("installation-snapshot.json", false));
         assert!(supported_operation_directory("package-graphs"));
         assert!(supported_binding_directory("knowledge"));
+        assert!(!supported_root_entry(
+            CONTROL_INSTALLATION_RESTORE_ATTEMPT_DIRECTORY,
+            true
+        ));
         assert!(!supported_root_entry("future-authority", true));
     }
 }
