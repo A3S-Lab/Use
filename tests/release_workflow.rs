@@ -18,6 +18,7 @@ fn crate_recovery_publication_is_source_bound_ordered_and_idempotent() {
     assert!(workflow.contains("if [ \"$extension_version\" != \"$facade_version\" ]"));
     assert!(workflow.contains("for package in a3s-use-core a3s-use-extension a3s-use; do"));
     assert!(workflow.contains("cargo publish --locked -p \"$package\""));
+    assert!(workflow.contains("cargo package --locked -p \"$package\""));
     assert!(workflow.contains("already exists; skipping upload"));
     assert!(workflow.contains("wait_until_visible \"$package\" \"$version\""));
     assert!(!workflow.contains("cargo publish --locked -p a3s-use-browser"));
@@ -42,8 +43,9 @@ fn crate_recovery_publication_is_source_bound_ordered_and_idempotent() {
 fn published_facade_uses_the_registry_flow_release_required_by_code_core() {
     let manifest = include_str!("../Cargo.toml");
     assert!(manifest.contains("a3s-flow = \"=1.1.0\""));
-    assert!(manifest.contains("version = \"0.3.5\""));
-    assert!(manifest.contains("a3s-use-extension = { version = \"0.3.5\""));
+    assert!(manifest.contains("version = \"0.3.6\""));
+    assert!(manifest.contains("a3s-use-core = { version = \"0.2.5\""));
+    assert!(manifest.contains("a3s-use-extension = { version = \"0.3.6\""));
     assert!(!manifest.contains("a3s-flow = { version = \"=1.0.0\", git ="));
 }
 
@@ -69,6 +71,21 @@ fn release_publishes_only_use_owned_crates_in_dependency_order() {
     assert!(
         workflow.contains("version=\"$(package_version \"${package}\")\""),
         "each crate must be checked and awaited using its own package version"
+    );
+    let verify = position(workflow, "verify_package a3s-use-core");
+    assert!(
+        verify < core,
+        "the core tarball must be verified before it is published"
+    );
+    let verify_extension = position(workflow, "verify_package a3s-use-extension");
+    assert!(
+        core_visible < verify_extension && verify_extension < extension,
+        "the extension tarball must be verified after core visibility and before upload"
+    );
+    let verify_facade = position(workflow, "\n          verify_package a3s-use\n");
+    assert!(
+        extension_visible < verify_facade && verify_facade < facade,
+        "the facade tarball must be verified after extension visibility and before upload"
     );
     assert!(
         !workflow.contains("publish_once a3s-use-browser"),
