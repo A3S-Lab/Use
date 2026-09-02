@@ -233,10 +233,14 @@ without Artifact paths. Any ambiguity after an external or persistence effect
 remains unknown. Runtime now exposes a bounded canonical
 `RuntimeSurfacePlan` payload and `CommittedRuntimeSurfaceResolver`, so a host
 can reconstruct all inputs after restart and recheck exact provider evidence.
-Production composition must still supply the durable host source and atomic
-dispatcher from committed Control authority and immutable artifacts; the
-process-local Runtime selection used for qualification is not production
-authority.
+Production composition must still bind the durable source and atomic
+dispatcher to committed Control authority and immutable artifacts. The
+installation-scoped, host-owned `RuntimeSurfacePlanStore` is now the qualified
+source: it uses canonical digest addressing, bounded batch publication,
+no-clobber writes, restart-safe reads, and fail-closed tamper checks. It owns
+payload bytes, not desired state, so lifecycle conversion must publish exact
+new records before the corresponding Control commit. The process-local Runtime
+selection used for qualification is not production authority.
 A private path-free registry also freezes the five external payload-owner IDs
 and exact ACL backup policies. Artifact Store exclusion is explicit; the four
 snapshotted owners must produce one complete, generation-bound canonical

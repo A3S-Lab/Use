@@ -349,9 +349,13 @@ release-backed Tool Task/Service and Streamable HTTP MCP, consumes only a
 verified path-free Artifact payload on first prepare, persists monotonic
 Runtime/Gateway recovery evidence, replays final receipts without Artifact
 access, and treats every post-effect ambiguity as unknown. These ports are not
-production-composed yet: production must reconstruct the complete Runtime plan
-after restart from exact committed semantics evidence and immutable artifacts,
-then cut over the dispatcher without any legacy mutable-file authority.
+production-composed yet. The qualified host-owned
+`RuntimeSurfacePlanStore` now gives production a bounded, canonical,
+no-clobber payload source, but lifecycle conversion must publish the exact
+records before committing their Control effects. Production must reconstruct
+the complete Runtime plan after restart from that source plus exact committed
+semantics evidence and immutable artifacts, then cut over the dispatcher
+without any legacy mutable-file authority.
 
 The kernel uses WAL with full synchronous durability and foreign-key
 enforcement, rejects unknown schema or filesystem state, and serializes
