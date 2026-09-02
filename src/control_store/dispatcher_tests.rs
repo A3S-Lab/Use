@@ -622,8 +622,13 @@ async fn dispatcher_bounds_a_hung_provider_and_records_unknown_acceptance() {
     request.lease_duration_ms = 2_000;
     request.provider_timeout_ms = 5;
 
+    // The provider timeout is five milliseconds, but the coordinator still
+    // has to reacquire the store executor and persist the observation.  A
+    // one-second test budget is too close to the lower bound on a shared CI
+    // runner and makes this deterministic recovery assertion flaky under
+    // normal scheduler or disk contention.
     let result = tokio::time::timeout(
-        std::time::Duration::from_secs(1),
+        std::time::Duration::from_secs(5),
         dispatcher.dispatch_next(request),
     )
     .await

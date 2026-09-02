@@ -403,6 +403,31 @@ pub async fn inspect_tool_surface_files(
     digest_surface_files(package_root, &canonical_root, paths).await
 }
 
+/// Revalidate and read the signed release descriptor backing one managed Tool
+/// surface. Native executable Tasks are deliberately rejected because they do
+/// not have a Runtime release plan.
+pub(crate) async fn read_tool_surface_file(
+    surface: &super::ToolSurface,
+    package_root: &Path,
+) -> UseResult<(PluginSurfaceFileEvidence, ToolReleaseDescriptor)> {
+    let evidence = inspect_tool_surface_files(surface, package_root).await?;
+    let release = match &surface.workload {
+        super::ToolWorkload::Task(task) => match &task.source {
+            super::ToolTaskSource::Release { release } => release,
+            super::ToolTaskSource::Executable { .. } => {
+                return Err(UseError::new(
+                    "use.artifact_store.runtime_surface_invalid",
+                    "A native Tool Task has no managed Runtime release descriptor.",
+                ));
+            }
+        },
+        super::ToolWorkload::Service(service) => &service.release,
+    };
+    let descriptor =
+        read_tool_release_descriptor("Runtime Tool", &package_root.join(release)).await?;
+    Ok((evidence, descriptor))
+}
+
 /// Revalidate and digest the exact immutable files backing one MCP surface.
 ///
 /// A stdio executable remains a per-connection MCP launcher. A Streamable HTTP
@@ -440,6 +465,35 @@ pub async fn inspect_mcp_surface_files(
         }
     };
     digest_surface_files(package_root, &canonical_root, vec![path]).await
+}
+
+/// Revalidate and read the signed release descriptor backing one managed
+/// Streamable HTTP MCP surface. Stdio launchers remain native-host owned.
+pub(crate) async fn read_mcp_surface_file(
+    surface: &super::PluginMcpSurface,
+    package_root: &Path,
+) -> UseResult<(PluginSurfaceFileEvidence, McpReleaseDescriptor)> {
+    let release = match &surface.launch {
+        super::PluginMcpLaunch::StreamableHttp { release } => release,
+        super::PluginMcpLaunch::Stdio { .. } => {
+            return Err(UseError::new(
+                "use.artifact_store.runtime_surface_invalid",
+                "A stdio MCP launcher has no managed Runtime Service release descriptor.",
+            ));
+        }
+    };
+    let evidence = inspect_mcp_surface_files(surface, package_root).await?;
+    let path = package_root.join(release);
+    let bytes = read_bounded_file(
+        "Runtime MCP release descriptor",
+        &path,
+        MAX_RELEASE_DESCRIPTOR_BYTES as u64,
+        "use.extension.release_descriptor_invalid",
+    )
+    .await?;
+    let descriptor = McpReleaseDescriptor::from_json(&bytes)
+        .map_err(|error| release_descriptor_error("Runtime MCP", &path, error))?;
+    Ok((evidence, descriptor))
 }
 
 /// Revalidate and digest one immutable `SKILL.md` contribution.

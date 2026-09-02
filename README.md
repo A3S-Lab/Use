@@ -1419,8 +1419,8 @@ state excluded from backup and must be rebuilt from restored Control evidence;
 lease files are excluded as well. A real composition test joins Knowledge,
 Skill, Capability Index, Control publication, stale admission, and drain.
 Production lifecycle conversion still must feed authorization-v2 Grant
-evidence, qualify the Runtime adapter, and compose the dispatcher. The inactive
-kernel now also has a committed-authority Flow owner: it reads a bounded Flow
+evidence and compose the dispatcher. The inactive kernel now also has a
+committed-authority Flow owner: it reads a bounded Flow
 source as a path-free verified Artifact Store payload, publishes a durable
 no-clobber content-addressed copy in an owner-controlled workspace, and invokes
 only the typed `a3s-flow` Native TypeScript preflight. Package paths never cross
@@ -1428,7 +1428,22 @@ that boundary; compiler/cache paths are operational host configuration rather
 than desired-state authority. Source substitution and failed preflight reject
 without a Control observation, while Artifact Store contention safely defers.
 Stop/remove are path-independent receipts. This qualification remains inactive
-until Runtime and production dispatcher composition are cut over together.
+until production dispatcher composition is cut over. A committed-authority
+Runtime owner is now qualified on the same boundary for release-backed Tool
+Tasks, Tool Services, and Streamable HTTP MCP. First prepare consumes only a
+path-free verified Tool/MCP release payload and an explicit Runtime selection
+whose provider and full semantics digest match committed Control authority.
+Tasks persist a self-contained binding without starting a unit. Services first
+persist `requested`, then retain exact Runtime and typed Gateway readiness
+evidence, and commit the final binding before deleting recovery authority.
+Exact final receipts replay without Artifact access; a retained terminal
+provisioning record reconciles without another Runtime apply; stop/remove use
+only receipt-owned provider, Gateway, and generation evidence. Pre-effect
+contention is deferred, invalid authority or immutable bytes are rejected, and
+all persistence or protocol ambiguity after a Runtime/Gateway effect remains
+unknown. This owner is still qualification-only: production composition must
+reconstruct the complete Runtime plan after restart from committed
+semantics-digest authority rather than retain a process-local selection.
 The kernel now
 also qualifies the path-free
 external-payload registration and
@@ -1583,9 +1598,10 @@ it can only resume bounded retirement of the five link-free staging trees. The
 surviving canonical `attempt.json` and complete `activation.json` form the exact
 installation-bound terminal receipt. Legacy backup and artifact reachability
 exclude only that two-file receipt; incomplete, extended, linked, or tampered
-evidence fails closed. Production Grant conversion, remaining Runtime and Flow
-adapters, dispatcher composition, backup/restore command wiring, indivisible
-consumer cutover, and deletion of legacy mutable stores remain open.
+evidence fails closed. Production Grant conversion, restart-safe Runtime plan
+reconstruction, Runtime/Flow dispatcher composition, backup/restore command
+wiring, indivisible consumer cutover, and deletion of legacy mutable stores
+remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
 boundary without adding another package surface or protocol fork.

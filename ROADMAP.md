@@ -647,8 +647,22 @@ the typed `a3s-flow` Native TypeScript preflight. Compiler/cache paths are
 operational host configuration, never package authority; source substitution
 and failed preflight reject without a Control observation, while Artifact Store
 contention remains a same-key deferral. Stop/remove are path-independent
-receipts. Runtime and production dispatcher composition must follow the same
-boundary, and no adapter may read legacy authority or treat a path as authority.
+receipts. The same inactive qualification now includes a committed-authority
+Runtime owner for release-backed Tool Tasks, Tool Services, and Streamable HTTP
+MCP. First prepare reads a verified, path-free Tool/MCP release payload and
+requires the injected plan/provider semantics to match the exact committed
+package and provider selection. Task preparation persists no Runtime unit;
+Services advance a durable `requested` -> `runtime-applied` -> `gateway-ready`
+record before committing the final binding. Exact final receipts replay without
+Artifact access, the final-binding/provisioning overlap reconciles without a
+second Runtime apply, and retirement verifies receipt-owned provider evidence
+before Gateway drain and Runtime stop/remove. Pre-effect contention safely
+defers; authority or immutable-byte drift rejects; every ambiguity after a
+Runtime, Gateway, or receipt effect remains unknown. Production still needs a
+restart-safe resolver that reconstructs the full plan from its committed
+semantics digest plus atomic dispatcher composition; a process-local selection
+must never become production authority, and no adapter may read legacy
+authority or treat a path as authority.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
@@ -800,10 +814,11 @@ real-child-process matrix qualifies 18 top-level durable exits, including each
 retirement boundary. The surviving canonical `attempt.json` and complete
 `activation.json` are the exact installation-bound terminal receipt. Legacy
 backup and artifact reachability exclude only that receipt; incomplete,
-extended, linked, or tampered evidence fails closed. Production Grant conversion,
-remaining Runtime and Flow adapters, dispatcher composition, production
-backup/restore wiring, indivisible consumer cutover, and deletion of legacy
-mutable stores remain open; no A2 checkbox is complete yet.
+extended, linked, or tampered evidence fails closed. Production Grant
+conversion, restart-safe Runtime plan reconstruction, Runtime/Flow dispatcher
+composition, production backup/restore wiring, indivisible consumer cutover,
+and deletion of legacy mutable stores remain open; no A2 checkbox is complete
+yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions
@@ -1187,8 +1202,13 @@ Status: in progress
 - [x] Exit real test subprocesses at all six nested Service provisioning
   windows for Tool and HTTP MCP, then prove exact-key recovery, one Runtime
   and Gateway effect, terminal replay, and drain/remove without residue.
+- [x] Qualify the inactive committed-authority Runtime owner for release-backed
+  Tool Task/Service and Streamable HTTP MCP payloads, monotonic Service
+  provisioning, exact final-receipt replay, typed Gateway readiness, and
+  receipt-owned retirement without exposing Artifact Store paths.
 - [ ] Compose production Runtime Service providers in A3S Code and managed
-  hosts with exact plan-time and apply-time evidence.
+  hosts with a restart-safe committed-plan resolver and exact plan-time and
+  apply-time evidence.
 - [x] Consume the reviewed Runtime Task projection in Code CLI/TUI and agent
   tool discovery, then route invocation through the leased Use dispatcher. A3S
   CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7`

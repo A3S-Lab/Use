@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
-    CatalogSurface, PluginCatalogRecord, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    CatalogMcpTransport, CatalogSurface, PluginCatalogRecord, PluginSurfaceKind, ToolWorkloadClass,
+    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
 };
 use fs2::FileExt;
 
@@ -175,6 +176,39 @@ async fn verified_package_lease_reads_one_named_flow_snapshot_without_exposing_p
 
     let error = package.read_flow_surface("missing").await.unwrap_err();
     assert_eq!(error.code, "use.artifact_store.surface_missing");
+}
+
+#[tokio::test]
+async fn verified_package_lease_reads_managed_runtime_releases_without_exposing_package_root() {
+    let fixture = runtime_package_fixture();
+    let catalog = catalog_for_runtime_fixture(&fixture).await;
+    let (_temporary, store, _, package_root) =
+        stage_fixture_with_catalog(&fixture, catalog.clone()).await;
+    let package = store.acquire_verified_package(&catalog).await.unwrap();
+
+    let tool = package.read_tool_surface("index").await.unwrap();
+    let mcp = package.read_mcp_surface("library").await.unwrap();
+
+    assert_eq!(tool.surface().id, "index");
+    assert_eq!(
+        tool.descriptor().artifact.digest,
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    );
+    assert_eq!(tool.evidence().file_count(), 2);
+    assert_eq!(mcp.surface().id, "library");
+    assert_eq!(
+        mcp.descriptor().artifact.digest,
+        "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    );
+    assert_eq!(mcp.evidence().file_count(), 1);
+    let package_root = package_root.to_string_lossy();
+    assert!(!format!("{tool:?}").contains(&*package_root));
+    assert!(!format!("{mcp:?}").contains(&*package_root));
+
+    let native = package.read_tool_surface("convert").await.unwrap_err();
+    assert_eq!(native.code, "use.artifact_store.runtime_surface_invalid");
+    let stdio = package.read_mcp_surface("local-library").await.unwrap_err();
+    assert_eq!(stdio.code, "use.artifact_store.runtime_surface_invalid");
 }
 
 #[tokio::test]
@@ -379,6 +413,77 @@ async fn catalog_for_static_fixture(root: &Path) -> VerifiedPluginCatalogRecord 
     verified_catalog(record)
 }
 
+async fn catalog_for_runtime_fixture(root: &Path) -> VerifiedPluginCatalogRecord {
+    let (manifest, manifest_bytes) = crate::package::read_manifest(root).await.unwrap();
+    let fingerprint = crate::digest::package_fingerprint(root).await.unwrap();
+    let mut record = PluginCatalogRecord::from_json(include_bytes!(
+        "../../../core/fixtures/plugins/catalog-record-v3.json"
+    ))
+    .unwrap();
+    record.surfaces = manifest
+        .plugin_surfaces()
+        .unwrap()
+        .into_iter()
+        .map(|surface| {
+            let workload = manifest
+                .tools
+                .iter()
+                .find(|tool| {
+                    surface.surface.kind == PluginSurfaceKind::Tool && tool.id == surface.surface.id
+                })
+                .map(|tool| match &tool.workload {
+                    crate::ToolWorkload::Task(_) => ToolWorkloadClass::Task,
+                    crate::ToolWorkload::Service(_) => ToolWorkloadClass::Service,
+                });
+            let mcp_transport = manifest
+                .mcp_servers
+                .iter()
+                .find(|mcp| {
+                    surface.surface.kind == PluginSurfaceKind::Mcp && mcp.id == surface.surface.id
+                })
+                .map(|mcp| match &mcp.launch {
+                    crate::PluginMcpLaunch::Stdio { .. } => CatalogMcpTransport::Stdio,
+                    crate::PluginMcpLaunch::StreamableHttp { .. } => {
+                        CatalogMcpTransport::StreamableHttp
+                    }
+                });
+            CatalogSurface {
+                kind: surface.surface.kind,
+                id: surface.surface.id,
+                optional: surface.optional,
+                workload,
+                mcp_transport,
+                mcp_tool_count: None,
+                okf_bundle: None,
+                requires: surface.dependencies,
+            }
+        })
+        .collect();
+    let mut local_library = record
+        .permission_ceiling
+        .surfaces
+        .iter()
+        .find(|permission| {
+            permission.surface.kind == PluginSurfaceKind::Mcp && permission.surface.id == "library"
+        })
+        .cloned()
+        .unwrap();
+    local_library.surface.id = "local-library".to_string();
+    local_library.native_execution = true;
+    local_library.private_service = false;
+    record.permission_ceiling.surfaces.push(local_library);
+    record
+        .permission_ceiling
+        .surfaces
+        .sort_by(|left, right| left.surface.cmp(&right.surface));
+    record.permission_ceiling_digest = record.permission_ceiling.descriptor_digest().unwrap();
+    record.package.expanded_bytes = fingerprint.byte_count;
+    record.package.file_count = fingerprint.file_count;
+    record.package.sha256 = Some(format!("sha256:{}", fingerprint.sha256));
+    record.package.manifest_sha256 = Some(format!("sha256:{}", sha256(&manifest_bytes)));
+    verified_catalog(record)
+}
+
 fn verified_catalog(record: PluginCatalogRecord) -> VerifiedPluginCatalogRecord {
     record.validate().unwrap();
     let provenance = VerifiedCatalogProvenance {
@@ -400,4 +505,8 @@ fn package_fixture() -> PathBuf {
 
 fn static_package_fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/plugin-v3-static/package")
+}
+
+fn runtime_package_fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/plugin-v3/package")
 }

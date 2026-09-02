@@ -315,8 +315,14 @@ payload, publishes a durable no-clobber content-addressed copy in its own
 workspace, and delegates Native TypeScript preflight to `a3s-flow` without
 receiving the Artifact Store package root. Source substitution and preflight
 failure are proved-no-effect rejection; Artifact Store contention is a
-same-key deferral. Runtime, production dispatcher composition, and conversion
-into the reviewed inputs used by the inactive kernel remain gate 3 work.
+same-key deferral. The Runtime gate-3 owner is also qualified for release-backed
+Tool Task/Service and Streamable HTTP MCP. It verifies path-free release bytes
+and committed provider semantics, uses durable monotonic Service provisioning,
+reconciles final receipt overlap without reapply, and retires only exact
+receipt-owned bindings. Post-effect uncertainty is always unknown. Remaining
+gate-3 work is restart-safe reconstruction of the complete Runtime plan from
+committed semantics evidence, production dispatcher composition, and
+conversion into these reviewed owner inputs.
 
 Production activation is blocked until all gates below are true:
 

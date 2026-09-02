@@ -343,10 +343,15 @@ publish with no-replace/no-follow semantics and exact crash staging replay.
 They and the lease files are derived operational state excluded from backup;
 restore must rebuild the Index from verified Control evidence before consumer
 cutover. A real composition fixture covers Knowledge and Skill preparation,
-Index publication, stale admission, and same-key drain retry. Runtime and Flow
-ports are not production adapters yet, and production composition must
-reconstruct their inputs from exact committed generations, reviewed evidence,
-and immutable artifacts, never from legacy mutable files.
+Index publication, stale admission, and same-key drain retry. Inactive Flow and
+Runtime owner adapters are now qualified. The Runtime owner covers
+release-backed Tool Task/Service and Streamable HTTP MCP, consumes only a
+verified path-free Artifact payload on first prepare, persists monotonic
+Runtime/Gateway recovery evidence, replays final receipts without Artifact
+access, and treats every post-effect ambiguity as unknown. These ports are not
+production-composed yet: production must reconstruct the complete Runtime plan
+after restart from exact committed semantics evidence and immutable artifacts,
+then cut over the dispatcher without any legacy mutable-file authority.
 
 The kernel uses WAL with full synchronous durability and foreign-key
 enforcement, rejects unknown schema or filesystem state, and serializes
