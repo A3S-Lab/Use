@@ -20,6 +20,8 @@ production-ready。合约完成和测试通过只是实现证据，不是发布�
 | installed receipt              | schema 6                                                                                 |
 | Extension Registry snapshot    | schema 3                                                                                 |
 | Capability snapshot            | schema 5                                                                                 |
+| Capability descriptor          | `a3s.use.capability-descriptor.v1`                                                       |
+| Capability Gateway catalog     | `a3s.use.capability-gateway-catalog.v1`                                                  |
 | snapshot cursor                | `a3s.use.extension-snapshot-cursor.v3` / `a3s.use.capability-snapshot-cursor.v4`         |
 | operation plan                 | `a3s.use.plugin-operation-plan.v4`                                                       |
 | host capabilities              | `a3s.use.plugin-host-capabilities.v6`，protocol 6                                        |
@@ -245,6 +247,10 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   planning operation、持久 reviewed-plan 重开与 digest-only apply。标准 MCP
   adapter 直接从冻结合约生成 10 个 v4 tool，确认只由注入的可信 host provider
   提供。
+- 无路径的 `CapabilityDescriptor` 与 catalog 合约、opaque reference 类型以及
+  embedding `CapabilityGatewayMcpServer` 已实现并通过 contract test。adapter
+  只通过注入 provider，以标准 MCP 发布 catalog 授权的 Tool；实时 generation
+  lease 解析、auth/rate limit、CLI wiring 与 production-host recovery 仍未完成。
 - standalone `plugin` CLI 已把同样 10 个 operation 映射到该 service。planning
   不产生 mutation；精确 apply 必须提供持久 operation ID、plan digest 与显式
   `--yes`，cached apply 和 replay 均保持零网络。
@@ -297,6 +303,17 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   upgrade、再次 invoke、uninstall 与 restart。
 - 证明 User/Workspace scope 隔离、watcher resume、terminal result replay，
   以及崩溃后不重复副作用。
+
+### 2a. 任意 agent 的 Capability Gateway — 进行中
+
+- PR [#192](https://github.com/A3S-Lab/Use/pull/192) 已冻结 portable
+  descriptor/catalog schema，并增加 embedding 标准 MCP adapter。
+- 仍需完成 server-side invocation-reference 解析、跨 call/stream 的精确
+  generation lease、drain/retirement、有界 authentication/rate limit 与
+  CLI/service wiring。
+- 需要用不共享 package filesystem 的独立 Rust、TypeScript、Python client
+  验证 discovery/invocation，并覆盖 upgrade、restart、uninstall 与跨 scope
+  拒绝。
 
 ### 3. 分布式 Flow 与 OS 集成 — 待完成
 
@@ -387,9 +404,17 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   identity 验证 checksum manifest，证据无效时 fail closed，并随版本保留
   已验证的 manifest 与 bundle。
 - 无编译缓存的逐字节重建现已在非发布资格运行
-  [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
-  中覆盖全部五个 release target 的所有随包原生可执行文件并通过。正式发布仍
-  受独立 witness 和产品门禁阻断。
+  [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660)
+  中覆盖全部五个 release target 的所有随包原生可执行文件并通过，源自精确的
+  `main` 提交 `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd`，并统一使用一个
+  release codegen unit；该运行不发布资产。`v0.3.5` 发布尝试因 public core
+  crate 过期而未创建 Release。发布工作流
+  [33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) 的 13
+  个 job 均通过，并从精确的 `main` 提交
+  `54758910f2f4ad9498137410e0a2207d412e99a1` 为 tag `v0.3.6` 发布已验证归档、
+  installer、SBOM/reproducibility 证据与 typed Use crate，见
+  [v0.3.6 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6)。独立
+  witness 与产品门禁仍未完成。
 - 仍需增加外部运营的完整 staged tree/最终归档 witness，并把验证证据保留在
   Release asset 信任边界之外。
 - 继续演练缺失 Registry/package/lifecycle/Grant authority 恢复、clean-machine

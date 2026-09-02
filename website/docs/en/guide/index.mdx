@@ -104,12 +104,20 @@ installer fails closed unless Cosign verifies that bundle before downloading
 the platform archive, then retains the verified manifest and bundle with the
 installed version. A second cache-free clean runner must also byte-match every
 shipped native executable before attested reproducibility evidence is
-published. The tagged `v0.3.2` attempt failed that gate on four targets, but
+published. The tagged `v0.3.2` attempt failed that gate on four targets. The
 non-publishing qualification run
-[32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
-subsequently passed all five targets. See
-[Trust & Security](./trust-security) for the remaining bootstrap boundary and
-optional GitHub attestation verification.
+[33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660)
+passed all five targets from exact `main` commit
+`4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd` and remains historical evidence.
+The `v0.3.5` publication attempt created no Release because the public core
+crate was stale. Release workflow
+[33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) passed all
+13 jobs for tag `v0.3.6` at exact `main` commit
+`54758910f2f4ad9498137410e0a2207d412e99a1` and published the development-preview
+[v0.3.6 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6), including
+the verified archives and typed crates. See [Trust & Security](./trust-security)
+for the remaining bootstrap boundary and optional GitHub attestation
+verification.
 
 ## Build from source
 
@@ -134,6 +142,31 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
 ## Exercise the development CLI
+
+### Expose the shared manager over standard MCP
+
+The standalone manager endpoint uses the same typed `PluginManagerService` as
+the CLI and TUI. It speaks standard MCP framing on stdout, so do not pass
+`--json` to this command:
+
+```bash
+a3s-use mcp serve manager \
+  --scope-kind user \
+  --scope-id user/current \
+  --offline
+```
+
+`manager`, `package-manager`, and `use/package-manager` are equivalent target
+names. The endpoint is the privileged management plane; an arbitrary agent
+must receive only the capabilities authorized by a separate Capability Gateway
+when that embedding API is enabled.
+
+Embedders can use `CapabilityGatewayMcpServer` with an injected
+`CapabilityGatewayInvocationProvider`. The server accepts an immutable,
+path-free catalog, publishes only its Tool descriptors, and dispatches through
+standard MCP; opaque invocation references stay server-side. Resolving those
+references from live package generations, holding leases across streams,
+authentication, rate limits, and CLI wiring are still roadmap work.
 
 The standalone CLI first persists the host-selected Registry trust boundary,
 then resolves a signed package and its complete SemVer dependency closure from

@@ -251,33 +251,37 @@ all shipped native executables and must byte-match the primary archive before
 deterministic `.reproducibility.json` evidence can be attested, checksummed,
 signed, and published beside the archive.
 
-The `v0.3.5` Rust compatibility release keeps the post-`v0.3.3` atomic
+The `v0.3.6` Rust compatibility release keeps the post-`v0.3.3` atomic
 snapshot-lease, shared manager, and Runtime service rebinding contracts while
-adding the installation-scoped Runtime plan payload owner. Complete snapshots
-now carry bounded, canonical Runtime plan archives through clean-target
-staging, activation, and crash replay; artifact reachability retains blobs
-referenced by committed plans. It aligns the facade's exact `a3s-flow 1.1.0`
-registry dependency with `a3s-code-core 8.0.3` and publishes
-`a3s-use-core 0.2.4`, `a3s-use-extension 0.3.5`, and `a3s-use 0.3.5`. The
-facade continues to use the same released Browser 0.3.2 provider as A3S Search,
-so a packaged consumer can resolve one nominal Browser/Core/Flow capability
-graph. This is a compatibility release and does not change the
-development-preview status.
+adding the standalone manager endpoint over standard MCP. Complete snapshots
+carry bounded, canonical Runtime plan archives through clean-target staging,
+activation, and crash replay; artifact reachability retains blobs referenced by
+committed plans. It aligns the facade's exact `a3s-flow 1.1.0` registry
+dependency with `a3s-code-core 8.0.3` and publishes `a3s-use-core 0.2.5`,
+`a3s-use-extension 0.3.6`, and `a3s-use 0.3.6`. The facade continues to use the
+same released Browser 0.3.2 provider as A3S Search, so a packaged consumer can
+resolve one nominal Browser/Core/Flow capability graph. This is a compatibility
+release and does not change the development-preview status.
 
 The tagged `v0.3.2` workflow exposed native linker metadata drift on four of
 five targets and therefore did not create a GitHub Release. The non-publishing
-[qualification run 32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
-froze `main` commit `e3d5f955a63cc136dbb07e9419a32760328df320` and passed
-the complete five-platform archive, isolated-install path scan, SBOM and
-attestation, and cache-free byte-for-byte rebuild matrix. Deterministic symbol
-stripping, content-derived Mach-O UUIDs, and PE/COFF plus ELF linker controls
-therefore satisfy the current release-workflow qualification while crates.io
-and GitHub Release publication remain intentionally skipped. Operators can
-additionally verify successful GitHub attestations by following
-[Verified release installation](docs/release-installation.md#additional-independent-verification).
+[qualification run 33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660)
+froze `main` commit `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd` and passed the
+complete five-platform archive, isolated-install path scan, SBOM and
+attestation, and cache-free byte-for-byte rebuild matrix; it remains historical
+evidence and never publishes assets. The earlier `v0.3.5` publication attempt
+did not create a GitHub Release because the public `a3s-use-core` crate was
+still `0.2.4`. Release workflow
+[33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) then built
+tag `v0.3.6` from exact `main` commit
+`54758910f2f4ad9498137410e0a2207d412e99a1`, passed all primary and independent
+five-target jobs, and published the development-preview
+[v0.3.6 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6) with the
+`a3s-use-core 0.2.5`, `a3s-use-extension 0.3.6`, and `a3s-use 0.3.6` packages.
 An externally operated full-archive witness, evidence retention outside GitHub
 Release, and the remaining product gates are still open, so this does not
-change the preview status above.
+change the preview status above. Operators can additionally verify successful
+GitHub attestations by following [Verified release installation](docs/release-installation.md#additional-independent-verification).
 
 ### Build and verify
 
@@ -379,7 +383,14 @@ a3s-use state plan-restore <backup> --scope-kind <user|workspace> --scope-id <id
 a3s-use state restore <backup> --rollback-backup <external-path> --plan-digest <sha256> --scope-kind <user|workspace> --scope-id <id> --yes [--json]
 a3s-use state restore-status --scope-kind <user|workspace> --scope-id <id> [--json]
 a3s-use capability snapshot|watch --scope-kind <user|workspace> --scope-id <id> [options] [--json]
+a3s-use mcp serve manager --scope-kind <user|workspace> --scope-id <id> [--offline]
 ```
+
+`mcp serve manager` speaks standard MCP on stdout and therefore must not be
+combined with `--json`. The `manager`, `package-manager`, and
+`use/package-manager` target names are equivalent. It composes the same typed
+`PluginManagerService` used by the CLI and TUI; it does not create a second
+catalog, plan, confirmation, or mutation path.
 
 Standalone Registry-backed `install`, `upgrade`, and `uninstall` now plan and
 apply through the shared `PluginManagerService`. Their existing component and
@@ -1661,6 +1672,8 @@ Only the following cognitive-package protocol line is accepted:
 | Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v3` |
 | Capability snapshot | schema version `5` |
 | Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |
+| Capability descriptor | `a3s.use.capability-descriptor.v1` |
+| Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
@@ -1706,6 +1719,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | MHS research-preview adapter profile | The A3S Use boundary, least-authority ceiling, exact managed-MCP publication gate, dependency graph, and no-implicit-write-retry rule are documented and contract-tested. This is not an MHS implementation or protocol-conformance claim |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
+| Capability Gateway contract and embedding MCP adapter | Implemented and contract-tested: immutable path-free descriptor/catalog contracts, opaque invocation/artifact/endpoint references, and a standard MCP `CapabilityGatewayMcpServer` that routes only catalog-authorized tools through an injected `CapabilityGatewayInvocationProvider`. Lifecycle resolver/lease/drain integration, CLI wiring, authentication/rate limits, and runtime provider composition remain open |
 | Registry target observations, explicit offline install/upgrade, bounded source working set, resumable downloads, usage, and confirmed source cleanup | Implemented with interruption, range, tamper, and zero-network tests; cleanup never claims global blob reclamation |
 | Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive reference boundary prevents maintenance or whole-installation restore from racing durable reference publication. Physical, Registry-reference, global-reference, and joined-reachability v1 evidence covers canonical content, staging, every durable owner, expectation mismatches, and checked storage usage. Optional canonical hard quota, full digest audit, exact-plan logical quarantine, and verified zero-reference rehydration remain separate authorities. Confirmed GC now accepts only a bounded explicit Blob/expanded-package digest allowlist, repeats the complete zero-reference proof, binds physical and lifecycle evidence plus predecessor completion into one canonical plan, and persists a global fail-closed fence before same-shard atomic retirement and bounded tombstone deletion. Terminal replay is read-only and cannot delete a later recreated object. Source prune, scoped uninstall, audit, quarantine, rehydration, quota pressure, and unreachability never independently authorize global deletion |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
@@ -1730,7 +1744,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Coordinated whole-installation backup, retention, and reviewed restore | Backup and retention are implemented under the exclusive maintenance fence with deterministic path-free manifests, exact Registry/receipt authority digests, allowlisted control-state families, explicit global Artifact Store exclusion, scan/copy/rescan consistency, full payload verification, exact-plan retention, and two-generation preservation. Same-version/OS/architecture restore now requires exact independently retained Registry, Artifact, and Grant authority, an explicit verified rollback archive, path-free digest confirmation, link/reparse-safe candidate staging, seven durable journal phases, 15 subprocess-exit recovery boundaries, terminal replay, read-only status, and bounded crash-recoverable history. Missing-authority and clean-machine recovery plus cross-platform operational disaster-recovery drills remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |
 | A3S Code CLI/TUI integration | Reviewed Runtime Task install, offline restart disable/re-enable, apply-time build drift rejection, watcher hot-plug, Host status-revision resumption across killed-process offline recovery with one effect and path-free history, scoped Code Exec agent discovery/invocation with frozen Task-catalog evidence, context review, and TUI `/packages` review are tested. The shared Host Manager now also qualifies signed six-surface Tool/MCP/Flow/Skill/UI/OKF install, invocation evidence, exact-generation upgrade, uninstall, replay, and User/Workspace scope fences; six-surface Code product-host E2E and release qualification remain open |
-| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and pinned Actions/tools are implemented. Non-publishing qualification run [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148) passed isolated archive execution and cache-free byte-for-byte rebuilds on all five targets from exact `main` commit `e3d5f955a63cc136dbb07e9419a32760328df320`; an externally operated full-archive witness and off-Release evidence retention remain open |
+| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and pinned Actions/tools are implemented. Qualification run [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660) passed isolated archive execution and cache-free byte-for-byte rebuilds on all five targets from exact `main` commit `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd`; the stale-core `v0.3.5` publication attempt created no Release. Release workflow [33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) passed all 13 jobs for tag `v0.3.6` at exact `main` commit `54758910f2f4ad9498137410e0a2207d412e99a1` and published the verified archives, typed crates (`a3s-use-core 0.2.5`, `a3s-use-extension 0.3.6`, `a3s-use 0.3.6`), SBOMs, attestations, and installers. An externally operated full-archive witness and off-Release evidence retention remain open |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
 | Public Registry operations, external full-archive reproducibility witness, off-Release evidence retention, support runbooks | Release blocker |
 

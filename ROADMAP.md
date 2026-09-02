@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 ## Product status
 
@@ -872,6 +872,14 @@ between graph siblings before their effects enter one installation outbox.
   no shared package filesystem. Cover install, live upgrade, prior-generation
   drain, uninstall, restart, and denied cross-scope access.
 
+Implementation note (2026-09-03): PR [#192](https://github.com/A3S-Lab/Use/pull/192)
+landed the portable descriptor and catalog contracts plus an embedding
+`CapabilityGatewayMcpServer` that speaks standard MCP and dispatches through an
+injected provider. This is a contract-level increment only; the A3 exit gate
+remains open until server-side lifecycle lease/drain integration, authentication
+and rate limits, CLI wiring, and the independent client/recovery matrix are
+implemented.
+
 Exit gate: an arbitrary MCP-capable coding agent can discover and invoke an
 authorized package without an A3S SDK, local package path, or duplicated
 lifecycle implementation.
@@ -1002,6 +1010,8 @@ are frozen.
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
 | Extension Registry snapshot | schema version 3 |
 | Capability snapshot | schema version 5 |
+| Capability descriptor | `a3s.use.capability-descriptor.v1` |
+| Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
 | Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |
 | Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v3` |
 | Coordinated Use state backup | `a3s.use.state-backup.v2` |
@@ -1462,10 +1472,10 @@ Status: in progress
   replacement-race qualification stays open.
 - [x] Verify release archives install and run without repository-local paths.
   Non-publishing qualification run
-  [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
+  [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660)
   scanned all five target archives for checkout paths and ran the installed
   native executables with isolated homes and working directories from exact
-  `main` commit `e3d5f955a63cc136dbb07e9419a32760328df320`.
+  `main` commit `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd`.
 
 Exit gate: every supported target passes the same signed six-surface package
 and failure-injection scenarios.
@@ -1503,13 +1513,24 @@ Status: in progress
   verified manifest and bundle with the installed version.
 - [x] Pass byte-for-byte independent rebuilds for every shipped native
   executable on all five targets. The tagged `v0.3.2` attempt exposed drift on
-  four targets and did not publish a Release. After deterministic symbol
-  stripping and platform linker metadata controls were applied,
-  non-publishing qualification run
-  [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
-  rebuilt every shipped native executable without a build cache and
-  byte-matched all five primary archives from exact `main` commit
-  `e3d5f955a63cc136dbb07e9419a32760328df320`.
+  four targets and did not publish a Release. The current non-publishing
+  qualification run
+  [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660)
+  rebuilt every shipped native executable without a compiled-artifact cache,
+  with one release codegen unit, and byte-matched all five primary archives
+  from exact `main` commit
+  `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd`.
+- [x] Publish the development-preview `v0.3.6` GitHub Release after the exact
+  tagged source, five verified platform archives, deterministic
+  SBOM/reproducibility evidence, installers, and Use-owned typed crates passed
+  the release workflow. Release workflow run
+  [33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) passed
+  all 13 jobs for exact `main` commit
+  `54758910f2f4ad9498137410e0a2207d412e99a1`; the release publishes
+  `a3s-use-core 0.2.5`, `a3s-use-extension 0.3.6`, and `a3s-use 0.3.6`.
+  The cancelled `v0.3.5` attempt did not create a GitHub Release because the
+  public core crate was stale; do not treat that tag as published evidence.
+  This does not close the external-witness or product-readiness gates.
 - [ ] Add an externally operated witness for the complete staged tree and final
   archive digest, and retain verification evidence outside the Release asset
   trust boundary.
