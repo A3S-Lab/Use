@@ -321,7 +321,10 @@ pub(super) fn package_lock() -> PluginPackageLock {
     .unwrap()
 }
 
-pub(super) fn snapshot(installation: InstallationId, generation: u64) -> InstallationSnapshot {
+pub(in crate::control_store) fn snapshot(
+    installation: InstallationId,
+    generation: u64,
+) -> InstallationSnapshot {
     let package_lock = package_lock();
     let selections = package_lock
         .packages

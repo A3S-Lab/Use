@@ -241,6 +241,12 @@ no-clobber writes, restart-safe reads, and fail-closed tamper checks. It owns
 payload bytes, not desired state, so lifecycle conversion must publish exact
 new records before the corresponding Control commit. The process-local Runtime
 selection used for qualification is not production authority.
+The qualification composition now has one reviewed-operation-only entry point.
+Control projects graph, Grant, provider, capability, and effect fields from the
+durable operation, checks exact Runtime prepare coverage and reviewed Grant
+proposal digests, then publishes immutable plan bytes before committing the
+projected generation under one shared installation fence. This is an internal
+cutover proof, not a public API or production lifecycle wiring.
 A private path-free registry also freezes the five external payload-owner IDs
 and exact ACL backup policies. Artifact Store exclusion is explicit; the four
 snapshotted owners must produce one complete, generation-bound canonical

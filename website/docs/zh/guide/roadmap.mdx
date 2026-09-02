@@ -149,7 +149,8 @@ semantics digest 重建完整计划并重新校验精确 provider evidence。安
 `RuntimeSurfacePlanStore` 现已作为持久化 source 完成验收，支持规范 digest 寻址、有界批量发布、no-clobber
 写入、可重启读取和篡改 fail closed。它只拥有 payload 字节而不拥有 desired state，因此生命周期转换必须先
 发布精确的新记录，再提交对应的 Control effect。生产 lifecycle 仍未构造 dispatcher；它必须把该 source
-与原子的 composition 绑定到 committed authority，不能把本次验收使用的进程内 selection 当作生产权威。私有的无路径 payload
+与原子的 composition 绑定到 committed authority，不能把本次验收使用的进程内 selection 当作生产权威。当前内部资格组合会从已注册的 reviewed operation 投影完整的 Control transition，校验精确的 Runtime
+prepare 覆盖与 reviewed Grant proposal digest，并在同一个安装级共享 maintenance fence 下先发布 immutable plan，再提交投影后的 generation。这进一步收窄了 cutover 边界，但不会激活 private kernel，也不接受调用方选择的 transition 字段。私有的无路径 payload
 契约现已冻结五个外部 owner ID
 及其 ACL backup policy；
 全局 Artifact Store 被明确排除，另外四个 owner 必须形成一组完整、规范、绑定精确 installation、

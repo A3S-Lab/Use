@@ -22,7 +22,7 @@ pub(super) fn bind_action_effects(
     transition
 }
 
-pub(super) fn reviewed_grant_operation(
+pub(in crate::control_store) fn reviewed_grant_operation(
     operation_id: &str,
     action: PluginOperationAction,
     prior: Option<&ControlGeneration>,

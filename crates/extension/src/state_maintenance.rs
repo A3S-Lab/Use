@@ -40,6 +40,16 @@ pub struct StateMaintenanceGuard {
 }
 
 impl StateMaintenanceGuard {
+    /// Prove that this guard owns a shared maintenance lock for the exact
+    /// configured state root.
+    ///
+    /// Shared guards are the ordinary mutation boundary. Exposing the mode
+    /// check keeps cross-store coordinators from relying on a comment that a
+    /// caller already holds the right file lock.
+    pub fn is_shared_for(&self, state_root: &Path) -> bool {
+        matches!(self.mode, MaintenanceMode::Shared) && self.state_root == state_root
+    }
+
     /// Prove that this unforgeable guard owns the exclusive maintenance lock
     /// for the exact configured state root.
     pub fn is_exclusive_for(&self, state_root: &Path) -> bool {
@@ -236,6 +246,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let lock = StateMaintenanceLock::new(temporary.path());
         let shared = lock.acquire_shared().await.unwrap();
+        assert!(shared.is_shared_for(temporary.path()));
         assert!(!shared.is_exclusive_for(temporary.path()));
         let exclusive_lock = lock.clone();
         let mut exclusive =
@@ -251,6 +262,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(exclusive.is_exclusive_for(temporary.path()));
+        assert!(!exclusive.is_shared_for(temporary.path()));
         assert!(!exclusive.is_exclusive_for(&temporary.path().join("other")));
 
         assert!(lock.try_acquire_shared().await.unwrap().is_none());

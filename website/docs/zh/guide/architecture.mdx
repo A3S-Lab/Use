@@ -200,7 +200,11 @@ provider evidence，持久化单调 Runtime/Gateway recovery state，并在不�
 它使用规范 digest 寻址、有界批量发布、no-clobber 写入、可重启读取，并在篡改时 fail closed。
 它只拥有 payload 字节，不拥有 desired state；生命周期转换必须先发布精确的新 plan，再提交引用这些 plan
 的 Control effect。Runtime/Flow 生产 composition 仍必须把该 source 与原子的 dispatcher 绑定到 committed
-Control authority；验收使用的进程内 Runtime selection 不是生产权威。
+Control authority；验收使用的进程内 Runtime selection 不是生产权威。当前资格组合还提供唯一的
+reviewed-operation-only 内部入口：Control 从持久化 operation 投影 graph、Grant、provider、capability
+和 effect 字段，校验精确的 Runtime prepare 覆盖与 reviewed Grant proposal digest，然后在同一个安装级
+共享 maintenance fence 下先发布 immutable plan 字节，再提交投影后的 generation。这只是 cutover
+验证，不是 public API，也尚未接入生产 lifecycle。
 私有的无路径 registry 还冻结了五个外部 payload owner ID 与精确
 ACL backup policy：全局 Artifact Store 被明确排除，另外四个 owner 必须生成完整、绑定 generation、
 且具有 schema、digest 与计数上限的规范 receipt 集。私有 snapshot session 现在会在同一个排他

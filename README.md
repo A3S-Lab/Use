@@ -212,7 +212,7 @@ curl --proto '=https' --tlsv1.2 -fsSLo /tmp/a3s-use-install.sh \
 sh /tmp/a3s-use-install.sh
 ```
 
-Windows x86_64 with PowerShell 7:
+Windows x86_64 with Windows PowerShell 5.1 or PowerShell 7:
 
 ```powershell
 $installer = Join-Path $env:TEMP 'a3s-use-install.ps1'
@@ -1447,6 +1447,12 @@ reconstruct the full plan after restart and recheck provider evidence. This
 owner is still qualification-only: production composition must supply the
 durable host source and atomic dispatcher rather than retain a process-local
 selection as authority.
+The inactive Control composition proof now accepts only a reviewed operation
+identity and host-produced immutable plan payloads. It projects all mutable
+transition fields inside Control, validates exact Runtime publication and Grant
+authority, and orders plan publication before the generation commit under one
+shared installation fence. This narrows the cutover boundary without making
+the private kernel or legacy consumers production-active.
 The kernel now
 also qualifies the path-free
 external-payload registration and

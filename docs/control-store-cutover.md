@@ -329,6 +329,13 @@ before the Control commit references them. Remaining gate-3 work is binding
 that publication to lifecycle conversion, composing the resolver with the
 production dispatcher, and converting lifecycle inputs into these reviewed
 owner requests.
+An internal qualification composition now derives a transition directly from
+the registered reviewed operation instead of accepting caller-selected graph,
+Grant, provider, capability, or effect fields. It validates the exact Runtime
+prepare inventory and proposal digests, publishes plan payloads first, and
+commits the derived generation under the same shared maintenance guard. The
+entry point remains private and inactive until the complete lifecycle cutover
+and legacy-authority deletion gates pass.
 
 Production activation is blocked until all gates below are true:
 

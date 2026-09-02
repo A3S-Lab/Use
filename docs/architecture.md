@@ -1,7 +1,7 @@
 # A3S Use Architecture
 
 Status: development preview; not production-ready
-Last updated: 2026-08-31
+Last updated: 2026-09-02
 
 ## Product boundary
 
@@ -220,6 +220,14 @@ provider while rechecking plan semantics and capability evidence. Lifecycle
 conversion still must feed reviewed Grant evidence and compose this resolver
 into one production dispatcher; all inputs must come only from committed
 Control authority and immutable artifacts.
+The inactive qualification composition now provides one internal
+reviewed-operation entry point: the Control Store projects graph, Grant,
+provider, capability, and effect fields from the durable operation, checks the
+exact Runtime prepare inventory and reviewed Grant proposal digests, then
+publishes immutable plan bytes before committing the projected generation under
+one shared installation fence. This proves the ordering and authority
+boundary, but it is not a public API and production lifecycle code still does
+not construct it.
 The inactive kernel now has a path-free external-payload registry/evidence
 contract: five fixed owner identities and ACL backup policies, explicit global
 Artifact Store exclusion, and one exact canonical receipt set for the four
