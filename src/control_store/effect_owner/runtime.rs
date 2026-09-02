@@ -15,11 +15,13 @@ use super::super::effect_port::{
 use super::super::model::ControlEffectOwner;
 use crate::plugin_runtime::{
     RuntimeBindingReceipt, RuntimeBindingStore, RuntimeEndpointRef, RuntimeMcpInitializeEvidence,
-    RuntimeProviderSelection, RuntimeProviderSelectionResolver, RuntimeServiceBindingReceipt,
-    RuntimeServiceProvisioningPhase, RuntimeServiceProvisioningReceipt,
-    RuntimeServiceReadinessEvidence, RuntimeSurfaceContract, RuntimeSurfacePlan,
-    RuntimeSurfacePlanKey, RuntimeSurfaceResolver, SelectedRuntimeSurface,
+    RuntimeServiceBindingReceipt, RuntimeServiceProvisioningPhase,
+    RuntimeServiceProvisioningReceipt, RuntimeServiceReadinessEvidence, RuntimeSurfaceContract,
+    RuntimeSurfacePlan, RuntimeSurfacePlanKey, RuntimeSurfaceResolver, SelectedRuntimeSurface,
 };
+
+#[cfg(test)]
+use crate::plugin_runtime::{RuntimeProviderSelection, RuntimeProviderSelectionResolver};
 
 mod evidence;
 mod validation;
@@ -114,6 +116,7 @@ pub(in crate::control_store) struct ControlRuntimeEffectPort {
 }
 
 impl ControlRuntimeEffectPort {
+    #[cfg(test)]
     pub(in crate::control_store) fn new(
         artifact_store: ArtifactStore,
         selection: RuntimeProviderSelection,

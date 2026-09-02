@@ -43,7 +43,7 @@ pub(in crate::control_store) struct ControlEffectDispatcher {
 }
 
 impl ControlEffectDispatcher {
-    pub(in crate::control_store) fn new(
+    fn from_parts(
         store: ControlStore,
         ports: ControlEffectPorts,
         clock: Arc<dyn ControlEffectClock>,
@@ -53,6 +53,15 @@ impl ControlEffectDispatcher {
             ports,
             clock,
         }
+    }
+
+    #[cfg(test)]
+    pub(in crate::control_store) fn new(
+        store: ControlStore,
+        ports: ControlEffectPorts,
+        clock: Arc<dyn ControlEffectClock>,
+    ) -> Self {
+        Self::from_parts(store, ports, clock)
     }
 
     pub(in crate::control_store) async fn dispatch_next(
@@ -390,6 +399,38 @@ impl ControlEffectDispatcher {
                 "A claimed Control effect does not map to its typed owner port.",
             )),
         }
+    }
+}
+
+/// Installation-scoped production composition for the Control effect
+/// dispatcher.
+///
+/// The runtime owns exactly one store/dispatcher pair and one complete typed
+/// provider set.  Keeping construction here prevents a future host from
+/// creating a second ad-hoc dispatcher with a different clock, provider set,
+/// or maintenance boundary.  The composition remains behind the inactive
+/// Control cutover until all legacy consumers switch in one commit.
+#[derive(Clone)]
+pub(crate) struct ControlEffectRuntime {
+    dispatcher: ControlEffectDispatcher,
+}
+
+impl ControlEffectRuntime {
+    pub(crate) fn compose(
+        store: ControlStore,
+        ports: ControlEffectPorts,
+        clock: Arc<dyn ControlEffectClock>,
+    ) -> Self {
+        Self {
+            dispatcher: ControlEffectDispatcher::from_parts(store, ports, clock),
+        }
+    }
+
+    pub(crate) async fn dispatch_next(
+        &self,
+        request: ControlEffectDispatchRequest,
+    ) -> UseResult<ControlEffectDispatchResult> {
+        self.dispatcher.dispatch_next(request).await
     }
 }
 

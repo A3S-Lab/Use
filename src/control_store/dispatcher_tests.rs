@@ -14,7 +14,7 @@ use super::aggregate_tests::fixtures::{
 };
 use super::dispatcher::{
     ControlEffectClock, ControlEffectDispatchRequest, ControlEffectDispatchResult,
-    ControlEffectDispatcher, ControlEffectPorts, RoutedControlEffectOutcome,
+    ControlEffectDispatcher, ControlEffectPorts, ControlEffectRuntime, RoutedControlEffectOutcome,
     SystemControlEffectClock,
 };
 use super::effect_port::{
@@ -262,7 +262,7 @@ async fn dispatcher_enters_provider_only_after_commit_and_releases_store_resourc
     let recording = Arc::new(
         RecordingPorts::new([Disposition::Applied]).with_reentrant_inspection(store.clone()),
     );
-    let dispatcher = ControlEffectDispatcher::new(
+    let dispatcher = ControlEffectRuntime::compose(
         store.clone(),
         ports(recording.clone()),
         Arc::new(TestClock::new([20, 30, 35])),
