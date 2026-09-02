@@ -34,6 +34,8 @@ pub const MAX_RUNTIME_SURFACE_PLAN_RECORD_BYTES: usize = MAX_RUNTIME_SURFACE_PLA
 /// Prevent an interrupted or malicious writer from turning one installation's
 /// plan directory into an unbounded source of work.
 pub const MAX_RUNTIME_SURFACE_PLAN_RECORDS: usize = 4096;
+/// Bound one publication request before any host-owned bytes are written.
+pub const MAX_RUNTIME_SURFACE_PLAN_BATCH_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PLAN_STORE_DIRECTORY_ENTRIES: usize = MAX_RUNTIME_SURFACE_PLAN_RECORDS * 2;
 const PLAN_STORE_DIRECTORY: &str = "runtime-plans";
 const PLAN_STORE_LOCK: &str = ".runtime-plans.lock";
@@ -49,6 +51,31 @@ struct RuntimeSurfacePlanStoreRecord {
     schema: String,
     key: RuntimeSurfacePlanKey,
     plan: RuntimeSurfacePlan,
+}
+
+/// One immutable key/payload pair admitted to the host-owned plan store.
+///
+/// The pair is validated before a publication request acquires a lock. It is
+/// intentionally separate from the on-disk envelope so callers cannot supply
+/// or depend on a filesystem path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeSurfacePlanPublication {
+    pub key: RuntimeSurfacePlanKey,
+    pub plan: RuntimeSurfacePlan,
+}
+
+impl RuntimeSurfacePlanPublication {
+    pub fn new(key: RuntimeSurfacePlanKey, plan: RuntimeSurfacePlan) -> UseResult<Self> {
+        validate_record(&key, &plan)?;
+        Ok(Self { key, plan })
+    }
+}
+
+/// Result of an idempotent batch publication.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeSurfacePlanPublishResult {
+    pub published: usize,
+    pub existing: usize,
 }
 
 /// Installation-scoped, host-owned source of immutable Runtime plan payloads.
@@ -108,20 +135,51 @@ impl RuntimeSurfacePlanStore {
         key: &RuntimeSurfacePlanKey,
         plan: &RuntimeSurfacePlan,
     ) -> UseResult<bool> {
-        self.validate_key_scope(key)?;
-        validate_record(key, plan)?;
-        let bytes = encode_record(key, plan)?;
+        let publication = RuntimeSurfacePlanPublication::new(key.clone(), plan.clone())?;
+        let result = self.publish(std::slice::from_ref(&publication)).await?;
+        debug_assert_eq!(result.published + result.existing, 1);
+        Ok(result.published == 1)
+    }
+
+    /// Publish a bounded set of exact immutable plan records.
+    ///
+    /// Publication is idempotent for equal canonical content and never
+    /// replaces an existing key. If a later write fails, already-published
+    /// records remain valid and a retry converges on the same result; callers
+    /// must therefore treat the operation as a monotonic payload publication,
+    /// not as a transaction that can roll bytes back.
+    pub async fn publish(
+        &self,
+        publications: &[RuntimeSurfacePlanPublication],
+    ) -> UseResult<RuntimeSurfacePlanPublishResult> {
+        let prepared = self.prepare_publications(publications)?;
+        if prepared.is_empty() {
+            return Ok(RuntimeSurfacePlanPublishResult {
+                published: 0,
+                existing: 0,
+            });
+        }
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
         let _lock = self.acquire_lock().await?;
         ensure_owned_directory(&self.state_root, &self.root).await?;
-        let path = self.path_for(key)?;
-        if let Some(existing) = read_record_at(&path).await? {
-            return compare_existing(&existing, &bytes);
+        let existing_records = self.scan_records().await?;
+        let mut published = 0_usize;
+        let mut existing = 0_usize;
+        let mut pending = Vec::new();
+        for (path, bytes, _) in prepared {
+            if let Some((_, current)) = existing_records
+                .iter()
+                .find(|(current_path, _)| *current_path == path)
+            {
+                compare_existing(current, &bytes)?;
+                existing = existing.saturating_add(1);
+            } else {
+                pending.push((path, bytes));
+            }
         }
-        let count = count_records(&self.root).await?;
-        if count >= MAX_RUNTIME_SURFACE_PLAN_RECORDS {
+        if existing_records.len().saturating_add(pending.len()) > MAX_RUNTIME_SURFACE_PLAN_RECORDS {
             return Err(store_error(
                 PLAN_STORE_ERROR,
                 format!(
@@ -129,8 +187,14 @@ impl RuntimeSurfacePlanStore {
                 ),
             ));
         }
-        write_new_record(&self.root, &path, &bytes).await?;
-        Ok(true)
+        for (path, bytes) in pending {
+            write_new_record(&self.root, &path, &bytes).await?;
+            published = published.saturating_add(1);
+        }
+        Ok(RuntimeSurfacePlanPublishResult {
+            published,
+            existing,
+        })
     }
 
     /// Read one exact plan, returning None only when its addressed record is
@@ -167,10 +231,89 @@ impl RuntimeSurfacePlanStore {
         if !validate_existing_directory(&self.root).await? {
             return Ok(Vec::new());
         }
+        let mut keys = self
+            .scan_records()
+            .await?
+            .into_iter()
+            .map(|(_, record)| record.key)
+            .collect::<Vec<_>>();
+        keys.sort();
+        if keys.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "The Runtime plan store contains duplicate key records.",
+            ));
+        }
+        Ok(keys)
+    }
+
+    fn validate_key_scope(&self, key: &RuntimeSurfacePlanKey) -> UseResult<()> {
+        key.validate()?;
+        self.installation.ensure_same(&key.scope)
+    }
+
+    fn path_for(&self, key: &RuntimeSurfacePlanKey) -> UseResult<PathBuf> {
+        let digest = key.descriptor_digest()?;
+        let hex = digest.strip_prefix("sha256:").ok_or_else(|| {
+            store_error(PLAN_STORE_ERROR, "A Runtime plan key digest is invalid.")
+        })?;
+        Ok(self.root.join(format!("{hex}.json")))
+    }
+
+    fn prepare_publications(
+        &self,
+        publications: &[RuntimeSurfacePlanPublication],
+    ) -> UseResult<Vec<(PathBuf, Vec<u8>, RuntimeSurfacePlanKey)>> {
+        if publications.len() > MAX_RUNTIME_SURFACE_PLAN_RECORDS {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "The Runtime plan publication batch exceeds its record bound.",
+            ));
+        }
+        let mut total_bytes = 0_usize;
+        let mut prepared = Vec::with_capacity(publications.len());
+        for publication in publications {
+            self.validate_key_scope(&publication.key)?;
+            validate_record(&publication.key, &publication.plan)?;
+            let bytes = encode_record(&publication.key, &publication.plan)?;
+            total_bytes = total_bytes.checked_add(bytes.len()).ok_or_else(|| {
+                store_error(
+                    PLAN_STORE_ERROR,
+                    "The Runtime plan publication byte count overflowed.",
+                )
+            })?;
+            if total_bytes > MAX_RUNTIME_SURFACE_PLAN_BATCH_BYTES {
+                return Err(store_error(
+                    PLAN_STORE_ERROR,
+                    "The Runtime plan publication batch exceeds its byte bound.",
+                ));
+            }
+            let path = self.path_for(&publication.key)?;
+            prepared.push((path, bytes, publication.key.clone()));
+        }
+        prepared.sort_by(|left, right| left.0.cmp(&right.0));
+        if prepared
+            .windows(2)
+            .any(|pair| pair[0].2 == pair[1].2 || pair[0].0 == pair[1].0)
+        {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "A Runtime plan publication batch contains duplicate key identities.",
+            ));
+        }
+        Ok(prepared)
+    }
+
+    /// Scan and semantically verify every record beneath the owned root.
+    ///
+    /// Callers hold either the installation maintenance guard or the plan-store
+    /// lock. The scan still permits bounded temporary files because a writer
+    /// may have been interrupted after syncing its temporary bytes.
+    async fn scan_records(&self) -> UseResult<Vec<(PathBuf, RuntimeSurfacePlanStoreRecord)>> {
         let mut entries = fs::read_dir(&self.root)
             .await
             .map_err(|error| path_error("read Runtime plan store", &self.root, error))?;
-        let mut keys = Vec::new();
+        let mut records = Vec::new();
         let mut entries_seen = 0_usize;
         while let Some(entry) = entries
             .next_entry()
@@ -202,7 +345,8 @@ impl RuntimeSurfacePlanStore {
                     "The Runtime plan store contains an unknown entry.",
                 ));
             }
-            let record = read_record_at(&entry.path()).await?.ok_or_else(|| {
+            let path = entry.path();
+            let record = read_record_at(&path).await?.ok_or_else(|| {
                 store_error(
                     PLAN_STORE_ERROR,
                     "A Runtime plan record disappeared during inventory.",
@@ -210,36 +354,16 @@ impl RuntimeSurfacePlanStore {
             })?;
             self.validate_key_scope(&record.key)?;
             validate_record(&record.key, &record.plan)?;
-            let expected = self.path_for(&record.key)?;
-            if expected != entry.path() {
+            if self.path_for(&record.key)? != path {
                 return Err(store_error(
                     PLAN_STORE_ERROR,
                     "A Runtime plan record is not stored at its canonical key path.",
                 ));
             }
-            keys.push(record.key);
+            records.push((path, record));
         }
-        keys.sort();
-        if keys.windows(2).any(|pair| pair[0] == pair[1]) {
-            return Err(store_error(
-                PLAN_STORE_ERROR,
-                "The Runtime plan store contains duplicate key records.",
-            ));
-        }
-        Ok(keys)
-    }
-
-    fn validate_key_scope(&self, key: &RuntimeSurfacePlanKey) -> UseResult<()> {
-        key.validate()?;
-        self.installation.ensure_same(&key.scope)
-    }
-
-    fn path_for(&self, key: &RuntimeSurfacePlanKey) -> UseResult<PathBuf> {
-        let digest = key.descriptor_digest()?;
-        let hex = digest.strip_prefix("sha256:").ok_or_else(|| {
-            store_error(PLAN_STORE_ERROR, "A Runtime plan key digest is invalid.")
-        })?;
-        Ok(self.root.join(format!("{hex}.json")))
+        records.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(records)
     }
 
     async fn acquire_lock(&self) -> UseResult<StdFile> {
@@ -394,10 +518,10 @@ async fn read_record_at(path: &Path) -> UseResult<Option<RuntimeSurfacePlanStore
     Ok(Some(record))
 }
 
-fn compare_existing(existing: &RuntimeSurfacePlanStoreRecord, requested: &[u8]) -> UseResult<bool> {
+fn compare_existing(existing: &RuntimeSurfacePlanStoreRecord, requested: &[u8]) -> UseResult<()> {
     let existing = encode_record(&existing.key, &existing.plan)?;
     if existing == requested {
-        Ok(false)
+        Ok(())
     } else {
         Err(store_error(
             PLAN_STORE_CONFLICT,
@@ -461,51 +585,6 @@ async fn write_new_record(root: &Path, path: &Path, bytes: &[u8]) -> UseResult<(
         ));
     }
     sync_parent(parent).await
-}
-
-async fn count_records(root: &Path) -> UseResult<usize> {
-    let mut entries = fs::read_dir(root)
-        .await
-        .map_err(|error| path_error("read Runtime plan store", root, error))?;
-    let mut count = 0_usize;
-    let mut seen = 0_usize;
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|error| path_error("read Runtime plan store entry", root, error))?
-    {
-        seen = seen.saturating_add(1);
-        if seen > MAX_PLAN_STORE_DIRECTORY_ENTRIES {
-            return Err(store_error(
-                PLAN_STORE_ERROR,
-                "The Runtime plan store directory exceeds its entry bound.",
-            ));
-        }
-        let file_name = entry.file_name();
-        let name = file_name.to_str().ok_or_else(|| {
-            store_error(PLAN_STORE_ERROR, "A Runtime plan filename is not UTF-8.")
-        })?;
-        if name == PLAN_STORE_LOCK {
-            validate_regular_file(&entry.path()).await?;
-        } else if is_temporary_name(name) {
-            validate_temporary_file(&entry.path()).await?;
-        } else if is_record_name(name) {
-            let record = read_record_at(&entry.path()).await?.ok_or_else(|| {
-                store_error(
-                    PLAN_STORE_ERROR,
-                    "A Runtime plan record disappeared during inventory.",
-                )
-            })?;
-            validate_record(&record.key, &record.plan)?;
-            count = count.saturating_add(1);
-        } else {
-            return Err(store_error(
-                PLAN_STORE_ERROR,
-                "The Runtime plan store contains an unknown entry.",
-            ));
-        }
-    }
-    Ok(count)
 }
 
 fn is_record_name(name: &str) -> bool {

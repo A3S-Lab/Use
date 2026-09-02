@@ -40,7 +40,8 @@ pub use model::{
     RUNTIME_TASK_BINDING_SCHEMA,
 };
 pub use plan_store::{
-    RuntimeSurfacePlanStore, MAX_RUNTIME_SURFACE_PLAN_RECORDS,
+    RuntimeSurfacePlanPublication, RuntimeSurfacePlanPublishResult, RuntimeSurfacePlanStore,
+    MAX_RUNTIME_SURFACE_PLAN_BATCH_BYTES, MAX_RUNTIME_SURFACE_PLAN_RECORDS,
     MAX_RUNTIME_SURFACE_PLAN_RECORD_BYTES, RUNTIME_SURFACE_PLAN_STORE_SCHEMA,
 };
 pub use planner::{plan_mcp_service_release, plan_tool_service_release, plan_tool_task_release};

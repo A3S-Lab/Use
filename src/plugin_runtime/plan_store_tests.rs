@@ -49,6 +49,70 @@ async fn plan_store_round_trips_after_reopen_and_exposes_only_key_inventory() {
 }
 
 #[tokio::test]
+async fn batch_publication_is_bounded_deterministic_and_idempotent() {
+    let descriptor = service_descriptor();
+    let plan = plan_tool_service_release(
+        context(PluginSurfaceKind::Tool, "index"),
+        &service_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let provider = evidence(&plan, &capabilities(&plan));
+    let key = RuntimeSurfacePlanKey::new(
+        plan.context().package_id(),
+        plan.context().package_digest(),
+        plan.context().scope().clone(),
+        plan.surface(),
+        plan.context().generation(),
+        Some(plan.context().grant_digest().to_owned()),
+        provider.semantics_profile_digest.clone(),
+        provider.provider_id.clone(),
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    )
+    .unwrap();
+    let publication = RuntimeSurfacePlanPublication::new(key.clone(), plan.clone()).unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let store =
+        RuntimeSurfacePlanStore::new(temporary.path(), plan.context().scope().clone()).unwrap();
+
+    assert_eq!(
+        store
+            .publish(std::slice::from_ref(&publication))
+            .await
+            .unwrap(),
+        RuntimeSurfacePlanPublishResult {
+            published: 1,
+            existing: 0,
+        }
+    );
+    assert_eq!(
+        store
+            .publish(std::slice::from_ref(&publication))
+            .await
+            .unwrap(),
+        RuntimeSurfacePlanPublishResult {
+            published: 0,
+            existing: 1,
+        }
+    );
+    assert_eq!(
+        store.publish(&[]).await.unwrap(),
+        RuntimeSurfacePlanPublishResult {
+            published: 0,
+            existing: 0,
+        }
+    );
+    let error = store
+        .publish(&[publication.clone(), publication])
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.runtime.plan_store_invalid");
+    assert_eq!(store.inspect_keys().await.unwrap(), vec![key]);
+}
+
+#[tokio::test]
 async fn concurrent_publishers_converge_without_replacing_immutable_content() {
     let descriptor = service_descriptor();
     let plan = plan_tool_service_release(
