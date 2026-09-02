@@ -456,6 +456,13 @@ Status: in progress
   [development-preview release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6)
   and typed crates (`a3s-use-core 0.2.5`, `a3s-use-extension 0.3.6`, and
   `a3s-use 0.3.6`).
+- The subsequent release workflow
+  [33687297386](https://github.com/A3S-Lab/Use/actions/runs/33687297386) passed
+  all 13 jobs for tag `v0.3.7` at exact `main` commit
+  `48a0b76f8a4a87a11d16627c7bd7567920852508` and published the verified
+  [development-preview release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.7)
+  and typed crates (`a3s-use-core 0.2.6`, `a3s-use-extension 0.3.7`, and
+  `a3s-use 0.3.7`).
 - Add an externally operated full-tree/final-archive witness and retain its
   evidence outside the Release asset trust boundary.
 - [x] Verify release archives in clean Linux/macOS/Windows environments.

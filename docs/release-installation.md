@@ -118,6 +118,13 @@ publication attempt also created no Release because the public
 all five targets, and published the development-preview
 [GitHub Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6), including
 `a3s-use-core 0.2.5`, `a3s-use-extension 0.3.6`, and `a3s-use 0.3.6`.
+Release workflow
+[33687297386](https://github.com/A3S-Lab/Use/actions/runs/33687297386) then built
+tag `v0.3.7` from exact `main` commit
+`48a0b76f8a4a87a11d16627c7bd7567920852508`, passed the independent evidence on
+all five targets, and published the current development-preview
+[GitHub Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.7), including
+`a3s-use-core 0.2.6`, `a3s-use-extension 0.3.7`, and `a3s-use 0.3.7`.
 The non-publishing qualification run
 [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660) remains
 historical evidence from the prior source commit; it never publishes crates or
@@ -130,7 +137,7 @@ add an independent attestation check, or the same commands can be used before
 running a reviewed installer:
 
 ```bash
-version=0.3.6
+version=0.3.7
 tag="v${version}"
 archive="a3s-use-${version}-darwin-arm64.tar.gz"
 rebuild="a3s-use-${version}-darwin-arm64.reproducibility.json"
