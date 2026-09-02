@@ -518,6 +518,19 @@ ownership fails closed. Candidate rollback inspects a `requested` unit before
 dropping a pre-apply marker, while later phases replay the original bind key,
 drain, and receipt-owned removal.
 
+The inactive Control Store Runtime owner consumes these contracts without
+receiving a package root. On first prepare it acquires the exact admitted
+package through the Artifact Store and reads one bounded, verified Tool or MCP
+release payload. Native Tool Tasks and stdio MCP are rejected at this managed
+boundary. The selected Runtime plan must match the committed package,
+generation, provider build/capabilities/enforcement, and complete semantics
+digest before any provider effect. A retained final binding is sufficient for
+path-independent replay and retirement. Artifact contention before effects may
+defer; invalid authority or content rejects; any uncertainty after Runtime,
+Gateway, or receipt mutation is unknown. Production composition still requires
+a restart-safe committed-plan resolver and does not treat the process-local
+selection used by qualification tests as authority.
+
 The lifecycle diagnostic is a read-only JSON projection, not a mutable disk
 record or recovery input. It reports latest/previous operation identity,
 action, status, generation, digests, checkpoint progress, bounded failure

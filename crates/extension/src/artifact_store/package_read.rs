@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use a3s_use_core::{
-    OkfBundleContract, OkfBundleFile, PluginCatalogRecord, UseError, UseResult,
-    VerifiedPluginCatalogRecord,
+    McpReleaseDescriptor, OkfBundleContract, OkfBundleFile, PluginCatalogRecord,
+    ToolReleaseDescriptor, UseError, UseResult, VerifiedPluginCatalogRecord,
 };
 use fs2::FileExt;
 
@@ -17,9 +17,10 @@ use crate::package::{lock_is_contended, read_manifest, sha256, validate_surface_
 use crate::registry::validate_catalog_manifest_binding;
 use crate::surface_files::{
     inspect_skill_surface_file, inspect_ui_surface_files, load_okf_bundle_files,
-    read_flow_surface_file, PluginSurfaceFileEvidence,
+    read_flow_surface_file, read_mcp_surface_file, read_tool_surface_file,
+    PluginSurfaceFileEvidence,
 };
-use crate::{ExtensionManifest, PluginFlowSurface};
+use crate::{ExtensionManifest, PluginFlowSurface, PluginMcpSurface, ToolSurface};
 
 const READ_LOCK_WAIT: Duration = Duration::from_secs(2);
 const READ_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(25);
@@ -62,6 +63,75 @@ pub struct VerifiedFlowSurfacePayload {
     surface: PluginFlowSurface,
     source: Vec<u8>,
     evidence: PluginSurfaceFileEvidence,
+}
+
+/// Path-free immutable bytes and release descriptor for one managed Tool
+/// surface. The package root and descriptor path remain private to the
+/// Artifact Store lease; Runtime receives only the reviewed manifest shape,
+/// descriptor, and file evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedToolSurfacePayload {
+    surface: ToolSurface,
+    descriptor: ToolReleaseDescriptor,
+    evidence: PluginSurfaceFileEvidence,
+}
+
+impl VerifiedToolSurfacePayload {
+    pub fn surface(&self) -> &ToolSurface {
+        &self.surface
+    }
+
+    pub fn descriptor(&self) -> &ToolReleaseDescriptor {
+        &self.descriptor
+    }
+
+    pub fn evidence(&self) -> &PluginSurfaceFileEvidence {
+        &self.evidence
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        ToolSurface,
+        ToolReleaseDescriptor,
+        PluginSurfaceFileEvidence,
+    ) {
+        (self.surface, self.descriptor, self.evidence)
+    }
+}
+
+/// Path-free immutable release descriptor and file evidence for one managed
+/// Streamable HTTP MCP surface. Stdio MCP launchers intentionally do not
+/// produce this payload because their lifecycle belongs to the native host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedMcpSurfacePayload {
+    surface: PluginMcpSurface,
+    descriptor: McpReleaseDescriptor,
+    evidence: PluginSurfaceFileEvidence,
+}
+
+impl VerifiedMcpSurfacePayload {
+    pub fn surface(&self) -> &PluginMcpSurface {
+        &self.surface
+    }
+
+    pub fn descriptor(&self) -> &McpReleaseDescriptor {
+        &self.descriptor
+    }
+
+    pub fn evidence(&self) -> &PluginSurfaceFileEvidence {
+        &self.evidence
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        PluginMcpSurface,
+        McpReleaseDescriptor,
+        PluginSurfaceFileEvidence,
+    ) {
+        (self.surface, self.descriptor, self.evidence)
+    }
 }
 
 impl VerifiedFlowSurfacePayload {
@@ -223,6 +293,45 @@ impl VerifiedArtifactPackage {
         Ok(VerifiedFlowSurfacePayload {
             surface: surface.clone(),
             source,
+            evidence,
+        })
+    }
+
+    /// Read one exact immutable managed Tool release without exposing the
+    /// package path to the Runtime owner.
+    pub async fn read_tool_surface(
+        &self,
+        surface_id: &str,
+    ) -> UseResult<VerifiedToolSurfacePayload> {
+        let surface = self
+            .manifest
+            .tools
+            .iter()
+            .find(|surface| surface.id == surface_id)
+            .ok_or_else(surface_missing)?;
+        let (evidence, descriptor) = read_tool_surface_file(surface, &self.root).await?;
+        self.verify_unchanged().await?;
+        Ok(VerifiedToolSurfacePayload {
+            surface: surface.clone(),
+            descriptor,
+            evidence,
+        })
+    }
+
+    /// Read one exact immutable managed Streamable HTTP MCP release without
+    /// exposing the package path to the Runtime owner.
+    pub async fn read_mcp_surface(&self, surface_id: &str) -> UseResult<VerifiedMcpSurfacePayload> {
+        let surface = self
+            .manifest
+            .mcp_servers
+            .iter()
+            .find(|surface| surface.id == surface_id)
+            .ok_or_else(surface_missing)?;
+        let (evidence, descriptor) = read_mcp_surface_file(surface, &self.root).await?;
+        self.verify_unchanged().await?;
+        Ok(VerifiedMcpSurfacePayload {
+            surface: surface.clone(),
+            descriptor,
             evidence,
         })
     }
@@ -426,4 +535,6 @@ const _: fn() = || {
     assert_send_sync::<VerifiedArtifactPackage>();
     assert_send_sync::<VerifiedFlowSurfacePayload>();
     assert_send_sync::<VerifiedOkfSurfacePayload>();
+    assert_send_sync::<VerifiedToolSurfacePayload>();
+    assert_send_sync::<VerifiedMcpSurfacePayload>();
 };

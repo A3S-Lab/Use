@@ -198,6 +198,18 @@ impl FakeRuntime {
         }
     }
 
+    pub(crate) fn apply_count(&self) -> usize {
+        self.apply_count.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn stop_count(&self) -> usize {
+        self.stop_count.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn remove_count(&self) -> usize {
+        self.remove_count.load(Ordering::SeqCst)
+    }
+
     pub(super) fn with_logs(mut self, logs: Vec<RuntimeLogChunk>) -> Self {
         self.logs = logs;
         self

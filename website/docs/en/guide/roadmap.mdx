@@ -174,8 +174,18 @@ durable no-clobber content-addressed owner copy, and delegates Native
 TypeScript preflight only to `a3s-flow`. Package roots never cross the owner
 boundary; source substitution and failed preflight reject without a Control
 observation, while Artifact Store contention safely defers under the same key.
-Production lifecycle still does not construct the dispatcher; Runtime and
-composition must use the same committed Control boundary.
+The inactive Runtime owner now follows the same committed boundary for
+release-backed Tool Tasks, Tool Services, and Streamable HTTP MCP. First
+prepare reads only a path-free verified release payload. Tasks persist no
+Runtime unit; Services persist `requested`, exact Runtime observation, typed
+Gateway readiness, and the final binding in monotonic order. Final receipts
+replay without Artifact access, terminal provisioning overlap reconciles
+without reapply, and retirement uses only exact receipt-owned evidence.
+Pre-effect contention defers, authority or byte drift rejects, and every
+post-effect ambiguity remains unknown. Production lifecycle still does not
+construct the dispatcher: it must reconstruct the complete Runtime plan after
+restart from committed semantics-digest authority rather than use the
+process-local selection retained by this qualification.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact
@@ -273,9 +283,9 @@ including every retirement boundary. The canonical `attempt.json` and complete
 `activation.json` then form the exact installation-bound terminal receipt.
 Legacy backup and artifact reachability exclude only that receipt; incomplete,
 extended, linked, or tampered evidence fails closed. Production Grant
-conversion, remaining Runtime and Flow adapters, dispatcher composition,
-backup/restore wiring, and coordinated authority cutover remain open; no A2
-roadmap item is complete yet.
+conversion, restart-safe Runtime plan reconstruction, Runtime/Flow dispatcher
+composition, backup/restore wiring, and coordinated authority cutover remain
+open; no A2 roadmap item is complete yet.
 
 ## Implemented baseline
 
@@ -351,7 +361,8 @@ roadmap item is complete yet.
 
 ### 1. Managed-host provider composition — in progress
 
-- Add production Runtime Service and HTTP MCP/Gateway providers.
+- Add production Runtime Service and HTTP MCP/Gateway providers with a
+  restart-safe resolver for the full committed Runtime plan.
 - Complete managed Knowledge Workspace/session carriers and leased prior-
   generation query qualification. Standalone OKF quota/retention/GC is
   implemented, but managed composition is not.

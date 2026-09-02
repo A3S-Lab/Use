@@ -36,7 +36,8 @@ pub use inventory::{
     ARTIFACT_STORE_INVENTORY_SCHEMA, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
 };
 pub use package_read::{
-    VerifiedArtifactPackage, VerifiedFlowSurfacePayload, VerifiedOkfSurfacePayload,
+    VerifiedArtifactPackage, VerifiedFlowSurfacePayload, VerifiedMcpSurfacePayload,
+    VerifiedOkfSurfacePayload, VerifiedToolSurfacePayload,
 };
 pub use quarantine::{
     ArtifactQuarantinePlan, ArtifactQuarantineRecord, ArtifactQuarantineResult,

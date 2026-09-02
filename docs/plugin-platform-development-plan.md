@@ -115,8 +115,12 @@ Status: in progress
   Runtime-effect, runtime-applied, Gateway-effect, gateway-ready, and
   final-binding commit windows; require one effect, exact replay, and complete
   route/unit/binding cleanup.
-- Complete production Runtime Service provider
-  composition without weakening exact-generation drain and removal.
+- [x] Qualify the inactive committed-authority Runtime owner with path-free
+  Tool/MCP release payloads, typed Gateway readiness, monotonic Service
+  provisioning, exact receipt replay, and fail-closed retirement.
+- [ ] Complete production Runtime Service provider composition with a
+  restart-safe resolver for the full committed Runtime plan, without weakening
+  exact-generation drain and removal.
 - [x] Recover a confirmed same-generation provider resource loss by draining
   and removing only the stale Gateway route, retaining the Runtime unit,
   replaying apply with a new exact request key, and publishing a fresh binding

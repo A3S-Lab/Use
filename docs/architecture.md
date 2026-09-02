@@ -200,9 +200,18 @@ content-addressed copy in its own workspace, and delegates preflight only to
 compiler/cache paths are operational host configuration, not desired-state
 authority. Source substitution and failed preflight prove no Control effect,
 while Artifact Store contention is a same-key deferral. Stop/remove are
-path-independent receipts. Lifecycle conversion still must feed reviewed Grant
-evidence and qualify Runtime and production dispatcher composition; all inputs
-must come only from committed Control authority and immutable artifacts.
+path-independent receipts. Runtime is now qualified on that same inactive
+boundary for release-backed Tool Tasks, Tool Services, and Streamable HTTP MCP.
+Its first prepare consumes a verified path-free release payload, checks the
+complete selected-plan semantics against committed provider evidence, and then
+persists either a self-contained Task binding or monotonic Service provisioning
+through Runtime and typed Gateway readiness before final binding commit. Final
+receipt replay needs no Artifact access; retirement is generation- and
+receipt-owned; any ambiguity after an external or persistence effect remains
+unknown. Lifecycle conversion still must feed reviewed Grant evidence,
+reconstruct the complete Runtime plan after restart from committed digest
+authority, and compose the production dispatcher; all inputs must come only
+from committed Control authority and immutable artifacts.
 The inactive kernel now has a path-free external-payload registry/evidence
 contract: five fixed owner identities and ACL backup policies, explicit global
 Artifact Store exclusion, and one exact canonical receipt set for the four
