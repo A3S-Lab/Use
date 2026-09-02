@@ -663,6 +663,9 @@ fn installed_release_smoke_is_checkout_independent() {
     assert!(unix.contains("export A3S_USE_HOME=\"${RUNNER_TEMP}/release-smoke-home-"));
     assert!(unix.contains("cd \"${smoke_cwd}\""));
     assert!(unix.contains("\"${install_root}/a3s-use-browser-driver\" --version"));
+    assert!(unix.contains(
+        "capability snapshot \\\n            --scope-kind user \\\n            --scope-id release-smoke"
+    ));
 
     assert!(windows.contains("scripts/verify-release-portability.py"));
     assert!(windows.contains("--release-root $root"));
@@ -670,6 +673,9 @@ fn installed_release_smoke_is_checkout_independent() {
     assert!(windows.contains("$env:A3S_USE_HOME = Join-Path $env:RUNNER_TEMP"));
     assert!(windows.contains("Set-Location $smokeCwd"));
     assert!(windows.contains("& \"$root/a3s-use-browser-driver.exe\" --version"));
+    assert!(windows.contains(
+        "capability snapshot `\n            --scope-kind user `\n            --scope-id release-smoke"
+    ));
 }
 
 fn write_release_fixture(root: &Path, reverse: bool) {
