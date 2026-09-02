@@ -347,8 +347,8 @@ async fn runtime_claim_carries_the_exact_grant_and_reviewed_provider_selection()
         let sequence = effects
             .iter()
             .find(|effect| {
-                effect.status != ControlEffectStatus::Applied
-                    && !(effect.status == ControlEffectStatus::Rejected && !effect.intent.required)
+                (effect.intent.required || effect.status != ControlEffectStatus::Rejected)
+                    && effect.status != ControlEffectStatus::Applied
             })
             .unwrap()
             .intent
