@@ -5,9 +5,7 @@ use a3s_use_core::{
     PlannedProviderEvidence, PluginSurfaceRef, PluginWorkspaceGrant, UseError, UseResult,
 };
 use olpc_cjson::CanonicalFormatter;
-use rusqlite::{
-    params, Connection, ErrorCode, OptionalExtension, Row, Transaction, TransactionBehavior,
-};
+use rusqlite::{params, Connection, ErrorCode, Row, Transaction, TransactionBehavior};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -325,6 +323,8 @@ fn read_published_capability_from(
     connection: &Connection,
     installation: &InstallationId,
 ) -> UseResult<Option<ControlPublishedCapabilityCursor>> {
+    use rusqlite::OptionalExtension as _;
+
     let (_, capability_generation) = read_cursors(connection)?;
     if capability_generation == 0 {
         return Ok(None);
