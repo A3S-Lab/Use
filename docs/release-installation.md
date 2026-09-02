@@ -102,19 +102,26 @@ not change the development-preview status.
 Before evidence publication, each extracted archive is scanned for the build
 checkout path in native and slash-normalized UTF-8 and UTF-16 encodings. The
 workflow then runs both native executables from an isolated working directory
-and an isolated `A3S_USE_HOME`. Non-publishing qualification run
-[32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
-passed this gate on all five targets from exact `main` commit
-`e3d5f955a63cc136dbb07e9419a32760328df320`.
+and an isolated `A3S_USE_HOME`. The current non-publishing qualification run
+[33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660)
+passed this gate and the cache-free, byte-for-byte rebuild matrix on all five
+targets from exact `main` commit
+`4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd`.
 
 The tagged `v0.3.2` workflow failed the independent rebuild comparison on four
-targets and therefore did not create a GitHub Release. After deterministic
-symbol stripping and platform-specific linker metadata controls were applied,
-qualification run 32600882148 rebuilt every shipped native executable without
-a compiled-artifact cache and byte-matched all five primary archives. The run
-also produced the corresponding run-scoped SBOMs, attestations, and
-reproducibility records while intentionally skipping crates.io and GitHub
-Release publication.
+targets and therefore did not create a GitHub Release. The later `v0.3.5`
+publication attempt also created no Release because the public
+`a3s-use-core` crate was still `0.2.4`. The successful release workflow
+[33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) built tag
+`v0.3.6` from exact `main` commit
+`54758910f2f4ad9498137410e0a2207d412e99a1`, passed the independent evidence on
+all five targets, and published the development-preview
+[GitHub Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6), including
+`a3s-use-core 0.2.5`, `a3s-use-extension 0.3.6`, and `a3s-use 0.3.6`.
+The non-publishing qualification run
+[33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660) remains
+historical evidence from the prior source commit; it never publishes crates or
+release assets.
 
 ## Additional independent verification
 
@@ -123,7 +130,7 @@ add an independent attestation check, or the same commands can be used before
 running a reviewed installer:
 
 ```bash
-version=0.3.2
+version=0.3.6
 tag="v${version}"
 archive="a3s-use-${version}-darwin-arm64.tar.gz"
 rebuild="a3s-use-${version}-darwin-arm64.reproducibility.json"

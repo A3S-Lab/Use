@@ -96,10 +96,18 @@ keyless Sigstore checksum bundle。installer 会在下载平台归档前 fail cl
 地验证该 bundle，并把已验证 manifest 与 bundle 保留在安装版本目录中。
 第二台无编译缓存的干净 runner 还必须逐字节匹配全部随包原生可执行文件，
 通过后才会发布带 attestation 的 reproducibility 证据。带 tag 的 `v0.3.2`
-尝试在四个 target 上未通过该门禁，但后续非发布资格运行
-[32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
-已让全部五个平台通过。剩余 bootstrap 边界与可选 GitHub attestation 验证见
-[信任与安全](./trust-security)。
+尝试在四个 target 上未通过该门禁。当前非发布资格运行
+[33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660)
+以精确的 `main` 提交
+`4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd` 让全部五个平台通过，并作为历史
+证据保留。`v0.3.5` 发布尝试因 public core crate 过期而未创建 Release。
+发布工作流
+[33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) 的 13 个
+job 均通过，并从精确的 `main` 提交
+`54758910f2f4ad9498137410e0a2207d412e99a1` 为 tag `v0.3.6` 发布
+development-preview [v0.3.6 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6)，
+包含已验证归档与 typed crate。剩余 bootstrap 边界与可选 GitHub attestation
+验证见[信任与安全](./trust-security)。
 
 ## 从源码构建
 
@@ -124,6 +132,23 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
 ## 试用开发版 CLI
+
+### 通过标准 MCP 暴露共享 Manager
+
+standalone manager endpoint 与 CLI、TUI 共用同一个类型化
+`PluginManagerService`。它在 stdout 上使用标准 MCP framing，因此不要给该
+命令传入 `--json`：
+
+```bash
+a3s-use mcp serve manager \
+  --scope-kind user \
+  --scope-id user/current \
+  --offline
+```
+
+`manager`、`package-manager` 与 `use/package-manager` 是等价的 target 名称。
+该 endpoint 属于高权限管理平面；任意 agent 只有在启用独立的 Capability
+Gateway embedding API 后，才能获得被授权的能力。
 
 standalone CLI 会先持久化由宿主选择的 Registry 信任边界，再从同一组 enabled
 source 解析签名包及其完整 SemVer 依赖闭包：

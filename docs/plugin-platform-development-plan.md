@@ -165,6 +165,23 @@ Acceptance:
 - stdio and HTTP MCP use the same package plan/cutover model; and
 - endpoint or health failure keeps the required MCP and dependents unpublished.
 
+### A3 Capability Gateway contract
+
+- [x] Freeze path-free `CapabilityDescriptor` and catalog contracts with
+  domain-separated opaque invocation, artifact, and endpoint references.
+- [x] Provide an embedding `CapabilityGatewayMcpServer` that exposes only
+  catalog-authorized Tool descriptors over standard MCP and delegates calls to
+  an injected `CapabilityGatewayInvocationProvider`.
+- [ ] Resolve references from the live Use host, hold exact package-generation
+  leases through calls/streams, and integrate drain and retirement.
+- [ ] Add CLI/service wiring, bounded authentication and rate limits, provider
+  composition, and the independent Rust/TypeScript/Python client recovery
+  matrix.
+
+PR [#192](https://github.com/A3S-Lab/Use/pull/192) records the contract and
+adapter boundary. The checked items are not an A3 exit-gate claim; lifecycle,
+authorization, and production-host integration remain explicit follow-up work.
+
 ### A3 Managed Knowledge
 
 - [x] Enforce atomic receipt-accounted expanded-byte and projection quotas for
@@ -427,15 +444,22 @@ Status: in progress
   with Cosign against the exact tag workflow identity before archive download,
   fail closed, and retain the verified evidence with the installed version.
 - [x] Pass byte-for-byte rebuilds for every shipped native executable on a
-  second cache-free clean runner for all release targets. Non-publishing
-  qualification run
-  [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
+  second cache-free clean runner for all release targets. Qualification run
+  [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660)
   byte-matched all five primary archives from exact `main` commit
-  `e3d5f955a63cc136dbb07e9419a32760328df320`.
+  `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd` with one release codegen unit;
+  this qualification run is non-publishing evidence. The stale-core `v0.3.5`
+  publication attempt created no GitHub Release. Release workflow
+  [33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) passed
+  all 13 jobs for tag `v0.3.6` at exact `main` commit
+  `54758910f2f4ad9498137410e0a2207d412e99a1` and published the verified
+  [development-preview release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6)
+  and typed crates (`a3s-use-core 0.2.5`, `a3s-use-extension 0.3.6`, and
+  `a3s-use 0.3.6`).
 - Add an externally operated full-tree/final-archive witness and retain its
   evidence outside the Release asset trust boundary.
 - [x] Verify release archives in clean Linux/macOS/Windows environments.
-  Qualification run 32600882148 scanned every target archive for checkout
+  Qualification run 33651777660 scanned every target archive for checkout
   paths and passed isolated-home/working-directory execution on all five
   targets.
 
