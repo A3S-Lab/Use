@@ -1,6 +1,8 @@
 mod confirmation;
 #[cfg(feature = "mcp")]
 mod mcp;
+#[cfg(feature = "mcp")]
+mod mcp_error;
 mod model;
 mod service;
 

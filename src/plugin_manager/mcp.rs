@@ -18,6 +18,7 @@ use serde::Serialize;
 
 use crate::cognitive_package::CognitiveRegistryAccess;
 
+use super::mcp_error::{invalid_input, operation_error, startup_error, tool_error};
 use super::{PluginManagerConfirmationProvider, PluginManagerService};
 
 const MCP_ERROR: &str = "use.plugin.manager_mcp_invalid";
@@ -83,10 +84,11 @@ impl PluginManagerMcpServer {
         let service = self
             .serve(rmcp::transport::stdio())
             .await
-            .map_err(|error| mcp_error(format!("Failed to start Plugin Manager MCP: {error}")))?;
-        service.waiting().await.map_err(|error| {
-            mcp_error(format!("Plugin Manager MCP stopped with an error: {error}"))
-        })?;
+            .map_err(|_| startup_error("Failed to start Plugin Manager MCP."))?;
+        service
+            .waiting()
+            .await
+            .map_err(|_| startup_error("Plugin Manager MCP stopped with an error."))?;
         Ok(())
     }
 
@@ -229,35 +231,18 @@ fn mcp_tool(definition: PluginManagerToolDefinition) -> UseResult<Tool> {
 }
 
 fn parse_input<T: DeserializeOwned>(arguments: Option<JsonObject>) -> Result<T, rmcp::ErrorData> {
-    serde_json::from_value(serde_json::Value::Object(arguments.unwrap_or_default())).map_err(
-        |error| {
-            rmcp::ErrorData::invalid_params(
-                format!("Invalid Plugin Manager tool input: {error}"),
-                None,
-            )
-        },
-    )
+    serde_json::from_value(serde_json::Value::Object(arguments.unwrap_or_default()))
+        .map_err(|_| invalid_input())
 }
 
 fn tool_result<T: Serialize>(result: UseResult<T>) -> CallToolResult {
     match result {
         Ok(output) => match serde_json::to_value(output) {
             Ok(value) => CallToolResult::structured(value),
-            Err(error) => tool_error(mcp_error(format!(
-                "Failed to encode Plugin Manager output: {error}"
-            ))),
+            Err(_) => tool_error(operation_error()),
         },
         Err(error) => tool_error(error),
     }
-}
-
-fn tool_error(error: UseError) -> CallToolResult {
-    CallToolResult::structured_error(serde_json::to_value(error).unwrap_or_else(|_| {
-        serde_json::json!({
-            "code": "use.error_encoding_failed",
-            "message": "Failed to encode A3S Use error."
-        })
-    }))
 }
 
 fn mcp_error(message: impl Into<String>) -> UseError {
@@ -369,6 +354,31 @@ mod tests {
                 .map(Vec::len),
             Some(0)
         );
+
+        let result = client
+            .call_tool(CallToolRequestParam {
+                name: "plugin_plan_uninstall".into(),
+                arguments: Some(
+                    serde_json::json!({
+                        "packageId": "acme/private-package",
+                        "scopeKind": "workspace",
+                        "scopeId": "workspace:plugin-manager-mcp-tests"
+                    })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                ),
+            })
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let error = result.structured_content.expect("structured MCP error");
+        assert_eq!(error["code"], "use.plugin.package_graph_missing");
+        assert_eq!(
+            error["message"],
+            "The requested package or state was not found."
+        );
+        assert!(!error.to_string().contains("acme/private-package"));
 
         client.cancel().await.unwrap();
         server_handle.await.unwrap();
