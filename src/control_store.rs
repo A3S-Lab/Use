@@ -26,7 +26,8 @@ use export::VerifiedControlStoreExport;
 use filesystem::CONTROL_STORE_DATABASE_FILE;
 use model::{
     ClaimedControlEffect, ControlEffectClaim, ControlEffectObservation, ControlEffectRecord,
-    ControlGeneration, ControlOperationRecord, ControlTransition, ReviewedControlOperation,
+    ControlGeneration, ControlOperationRecord, ControlPublishedCapabilityCursor, ControlTransition,
+    ReviewedControlOperation,
 };
 use payload_owner::{ControlPayloadOwnerRegistry, ControlPayloadSnapshotSession};
 use schema::{ControlStoreInspection, ControlStoreMetadata};
@@ -254,6 +255,18 @@ impl ControlStore {
             .await
     }
 
+    async fn published_capability(&self) -> UseResult<Option<ControlPublishedCapabilityCursor>> {
+        let _maintenance = StateMaintenanceLock::new(&self.state_root)
+            .acquire_shared()
+            .await?;
+        filesystem::require_initialized(&self.state_root, &self.database_path).await?;
+        let database_path =
+            filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
+        self.executor
+            .published_capability(database_path, self.installation.clone())
+            .await
+    }
+
     async fn effects(&self, operation_id: &str) -> UseResult<Vec<ControlEffectRecord>> {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
@@ -372,6 +385,8 @@ impl ControlStore {
 
 #[cfg(test)]
 mod aggregate_tests;
+#[cfg(test)]
+mod capability_plane_effect_tests;
 #[cfg(test)]
 mod cutover_manifest_tests;
 #[cfg(test)]

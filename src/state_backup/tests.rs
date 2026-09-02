@@ -30,6 +30,14 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
     )
     .unwrap();
     std::fs::write(paths.state_root().join(".installation-mutation.lock"), b"").unwrap();
+    std::fs::create_dir_all(paths.state_root().join("capability-index/sha256/aa")).unwrap();
+    std::fs::write(
+        paths
+            .state_root()
+            .join("capability-index/sha256/aa/index.json"),
+        b"derived capability index bytes",
+    )
+    .unwrap();
 
     let first = temporary.path().join("first.a3s-use-state-backup");
     let manager = StateBackupManager::new(paths.clone());
@@ -53,6 +61,8 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
     assert!(!encoded.contains(temporary.path().to_str().unwrap()));
     assert!(!encoded.contains(".installation-mutation.lock"));
     assert!(!encoded.contains(".maintenance.lock"));
+    assert!(!encoded.contains("capability-index"));
+    assert!(!encoded.contains("derived capability index bytes"));
     assert!(!encoded.contains("global immutable artifact bytes"));
 
     let verified = StateBackupManager::verify_backup(&first).await.unwrap();

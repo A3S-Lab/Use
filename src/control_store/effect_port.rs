@@ -124,6 +124,104 @@ pub(in crate::control_store) struct ControlInvocationDrainRequest {
     pub(in crate::control_store) lifecycle_action: PluginLifecycleAction,
 }
 
+impl ControlInvocationDrainRequest {
+    /// Revalidate one exact prior package incarnation at the invocation owner
+    /// boundary before attempting to exclude active calls.
+    pub(in crate::control_store) fn validate_for_owner(&self) -> UseResult<()> {
+        let authority = &self.authority;
+        let catalog = &authority.package.package.catalog;
+        let selected = catalog
+            .selected_state(&authority.package.selected_surfaces)
+            .map_err(|_| invocation_authority_error())?;
+        let grant_required = authority.package.enabled && !selected.permissions.surfaces.is_empty();
+        let grant_matches = match authority.grant.as_ref() {
+            None => !grant_required,
+            Some(selection) => {
+                grant_required
+                    && self.identity.installation.kind == InstallationKind::Workspace
+                    && selection.grant.scope_id == self.identity.installation.id
+                    && selection.receipt_revision > 0
+                    && selection.receipt_revision
+                        <= authority.installation_generation.saturating_add(1)
+                    && selection.package_id() == self.package_id
+                    && selection.grant.package_digest == self.package_digest
+                    && selection.grant.descriptor_digest().is_ok_and(|digest| {
+                        digest == selection.grant_digest
+                            && selection
+                                .grant
+                                .validate_active_against(
+                                    &catalog.record.permission_ceiling,
+                                    authority.committed_at_ms,
+                                )
+                                .is_ok()
+                    })
+            }
+        };
+        let subject = ControlEffectSubject::Package {
+            package_id: self.package_id.clone(),
+            lifecycle_generation: self.lifecycle_generation,
+            package_digest: self.package_digest.clone(),
+            manifest_digest: self.manifest_digest.clone(),
+            action: self.lifecycle_action,
+        };
+        let idempotency_matches = ControlEffectIntent::new(
+            self.identity.sequence,
+            self.identity.installation.clone(),
+            self.identity.plan_digest.clone(),
+            self.identity.operation_action,
+            self.identity.installation_generation,
+            subject,
+            ControlEffectOwner::InvocationLeases,
+            ControlEffectKind::CallsDrain,
+            self.identity.required,
+        )
+        .is_ok_and(|intent| intent.idempotency_key == self.identity.idempotency_key);
+        let lifecycle_matches = matches!(
+            (self.identity.operation_action, self.lifecycle_action),
+            (
+                PluginOperationAction::Upgrade,
+                PluginLifecycleAction::Uninstall
+            ) | (
+                PluginOperationAction::Disable,
+                PluginLifecycleAction::Disable
+            ) | (
+                PluginOperationAction::Uninstall,
+                PluginLifecycleAction::Uninstall
+            )
+        );
+        let host_matches =
+            VersionReq::parse(&catalog.record.requires_use).is_ok_and(|requirement| {
+                Version::parse(&authority.host.use_version)
+                    .is_ok_and(|version| requirement.matches(&version))
+            }) && (catalog.record.target == "any"
+                || catalog.record.target == authority.host.target);
+        if !valid_machine_id(&self.identity.operation_id)
+            || !valid_machine_id(&authority.generation_operation_id)
+            || self.identity.attempt == 0
+            || self.identity.deadline_at_ms == 0
+            || !self.identity.required
+            || self.identity.installation_generation != authority.installation_generation
+            || authority.installation_generation == 0
+            || !valid_sha256(&authority.snapshot_digest)
+            || authority.committed_at_ms == 0
+            || authority.host.validate().is_err()
+            || !host_matches
+            || authority.package.validate().is_err()
+            || authority.package.package_id() != self.package_id
+            || authority.lifecycle_generation != self.lifecycle_generation
+            || catalog.record.package.sha256.as_deref() != Some(self.package_digest.as_str())
+            || catalog.record.package.manifest_sha256.as_deref()
+                != Some(self.manifest_digest.as_str())
+            || !grant_matches
+            || !lifecycle_matches
+            || !idempotency_matches
+        {
+            return Err(invocation_authority_error());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::control_store) enum ControlSurfaceEffectAction {
     Prepare,
@@ -414,5 +512,12 @@ fn surface_authority_error() -> a3s_use_core::UseError {
     a3s_use_core::UseError::new(
         "use.control_store.surface_authority_invalid",
         "Surface execution requires one exact committed package authority.",
+    )
+}
+
+fn invocation_authority_error() -> a3s_use_core::UseError {
+    a3s_use_core::UseError::new(
+        "use.control.invocation_authority_invalid",
+        "Invocation drain requires one exact committed prior package authority.",
     )
 }

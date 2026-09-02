@@ -129,8 +129,14 @@ stop/remove 也不依赖 artifact 路径。生产 lifecycle 仍不会构造 disp
 prepare 使用经过验证的无路径字节，先保存 staged receipt 再 promote，在 applied 前保存 promoted evidence，
 并可仅凭保留 receipt 重放；任何可能已被接受的外部 effect 或后续 receipt 写入歧义都保持 unknown。真实
 SQLite 组合测试覆盖已提交 claim 到持久化 Control observation。Artifact-only admission 具备幂等性、会重验
-prepared source、不创建 lifecycle receipt，并让 reference admission 跨越独立 Control commit。仍待实现的是
-Runtime、Flow、Capability Index、invocation lease adapter 与生产 composition。私有的无路径 payload 契约现已冻结五个外部 owner ID
+prepared source、不创建 lifecycle receipt，并让 reference admission 跨越独立 Control commit。Capability
+Index 与 invocation lease 现在由第三个真实的 Capability Plane adapter 共同实现。它只写规范、内容寻址的
+Index document，applied Control observation 仍是唯一 publication cursor。Admission 在取得每个精确 package
+incarnation 的共享锁前后各读取一次 Control cursor，因此并发 cutover 会让 admission 返回 stale；排他 drain
+会在 accepted call 活跃时安全 deferred。发布具备 no-follow、no-replace 与精确崩溃重放语义。Index 和 lease
+文件都是备份排除的派生 operational state，restore 必须从 Control evidence 重建 Index。真实组合测试覆盖
+Knowledge、Skill、cutover、stale admission 与同一 key 的 drain 重试。仍待实现的是 Runtime、Flow adapter
+与生产 composition。私有的无路径 payload 契约现已冻结五个外部 owner ID
 及其 ACL backup policy；
 全局 Artifact Store 被明确排除，另外四个 owner 必须形成一组完整、规范、绑定精确 installation、
 Control generation、registry/owner schema、digest 与有界计数的 receipt。私有 session 现在会在一个
@@ -189,7 +195,7 @@ marker 缺失；乱序 live root、含糊 marker、link、重绑定和 evidence 
 不再执行 owner effect，只能恢复五个无 link 暂存树的有界固定顺序退休。18 个真实子进程退出边界覆盖顶层
 协议和每个退休边界。规范的 `attempt.json` 与完整 `activation.json` 构成精确绑定 installation 的终态
 收据。旧 backup 和 artifact reachability 只排除该收据；不完整、扩展、含 link 或被篡改的 evidence 都会
-fail closed。生产 Grant 转换、Runtime、Flow、Capability Index、invocation lease adapter 与 dispatcher 组合、backup/restore 接线和
+fail closed。生产 Grant 转换、Runtime 与 Flow adapter、dispatcher 组合、backup/restore 接线和
 协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线

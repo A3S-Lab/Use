@@ -1403,9 +1403,24 @@ real Knowledge adapter and back into a durable Control application
 observation. Artifact admission is separately idempotent and revalidates the
 prepared source while creating no installation lifecycle receipt; callers must
 retain its global reference-admission guard through the separate authority
-commit. Production lifecycle conversion still must feed authorization-v2
-Grant evidence, qualify the Runtime, Flow, Capability Index, and
-invocation-lease adapters, and compose the dispatcher. The kernel now
+commit. A third concrete Capability Plane adapter now owns both Capability
+Index publication and invocation drain. It materializes one canonical,
+content-addressed Index document from the committed candidate and exact
+terminal surface observations, without adding another SQLite database or
+mutable `current` file. The applied cutover observation remains the sole
+publication transaction in Control Store. Invocation admission verifies that
+document, reads the Control publication before and after acquiring shared
+locks for every exact package lifecycle incarnation, and returns stale if a
+cutover raced. Drain first proves that the old incarnation is no longer
+published, then safely defers while any accepted call retains its shared lock;
+the same effect key applies after release. Index publication is no-replace,
+no-follow, crash-replayable, and path-free. The Index is derived operational
+state excluded from backup and must be rebuilt from restored Control evidence;
+lease files are excluded as well. A real composition test joins Knowledge,
+Skill, Capability Index, Control publication, stale admission, and drain.
+Production lifecycle conversion still must feed authorization-v2 Grant
+evidence, qualify the Runtime and Flow adapters, and compose the dispatcher.
+The kernel now
 also qualifies the path-free
 external-payload registration and
 snapshot-evidence boundary. Its five frozen owner identities and fixed backup
@@ -1559,9 +1574,8 @@ it can only resume bounded retirement of the five link-free staging trees. The
 surviving canonical `attempt.json` and complete `activation.json` form the exact
 installation-bound terminal receipt. Legacy backup and artifact reachability
 exclude only that two-file receipt; incomplete, extended, linked, or tampered
-evidence fails closed. Production Grant conversion, remaining Runtime, Flow,
-Capability Index, and invocation-lease adapters and dispatcher composition, backup/restore
-command wiring, indivisible
+evidence fails closed. Production Grant conversion, remaining Runtime and Flow
+adapters, dispatcher composition, backup/restore command wiring, indivisible
 consumer cutover, and deletion of legacy mutable stores remain open.
 The research-preview
 [MHS integration profile](docs/mhs-integration.md) defines the hardware adapter

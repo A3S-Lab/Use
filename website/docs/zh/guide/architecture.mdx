@@ -183,9 +183,16 @@ Store lease 获取精确 package，在不暴露 package root 的情况下读取�
 stage、promote、remove 或 effect 后 receipt 写入的歧义都保持 unknown，并要求显式复用同一 key 进行
 reconciliation。Stop 不修改 Knowledge payload，remove 只使用保留 receipt。真实 SQLite 组合测试已覆盖
 已提交 claim、dispatcher、Knowledge materialization 与持久化 Control observation。独立 Artifact admission
-具备幂等性，不创建 lifecycle authority，并让 reference guard 跨越单独的 Control commit。Runtime、Flow、
-Capability Index、invocation lease adapter 与生产 composition 仍必须只从已提交 Control authority 与
-immutable artifact 推导输入。
+具备幂等性，不创建 lifecycle authority，并让 reference guard 跨越单独的 Control commit。Capability Index
+与 invocation lease 现在由第三个真实的 Capability Plane adapter 共同实现。它根据已提交
+candidate 与精确的终态 surface evidence 生成规范、内容寻址的 Index document，不增加第二个 SQLite 或
+mutable current 文件；Control 中 applied cutover observation 是唯一 publication cursor。Admission 会在取得
+每个精确 package lifecycle incarnation 的共享锁前后各读取一次该 cursor；drain 仅允许已经不再发布的旧
+incarnation 取得排他锁，并在 accepted call 仍活跃时安全 deferred。No-follow、no-replace 发布与精确 staging
+重放保护 immutable Index。Index 与 lease 文件都是不进入备份的派生 operational state；restore 必须从已
+验证 Control evidence 重建 Index。真实组合测试已经覆盖 Knowledge、Skill、cutover、stale admission 与
+同一 key 的 drain 重试。Runtime、Flow 与生产 composition 仍必须只从已提交 Control authority 和 immutable
+artifact 推导输入。
 私有的无路径 registry 还冻结了五个外部 payload owner ID 与精确
 ACL backup policy：全局 Artifact Store 被明确排除，另外四个 owner 必须生成完整、绑定 generation、
 且具有 schema、digest 与计数上限的规范 receipt 集。私有 snapshot session 现在会在同一个排他

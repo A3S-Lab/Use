@@ -462,6 +462,17 @@ control_store_cutover {
     may_choose_desired_state    = false
   }
 
+  operational_state "capability-index" {
+    state_paths = ["capability-index"]
+    implementation = [
+      "src/control_store/effect_owner/capability_plane.rs",
+      "src/control_store/effect_owner/capability_plane/index.rs",
+      "src/control_store/effect_owner/capability_plane/model.rs",
+    ]
+    disposition  = "rebuild-from-control-generation"
+    backup_policy = "excluded"
+  }
+
   operational_state "complete-restore-attempt" {
     state_paths = [".control-installation-restore"]
     implementation = [
@@ -491,6 +502,7 @@ control_store_cutover {
     implementation = [
       "crates/extension/src/generation_lease.rs",
       "crates/extension/src/registry/snapshot_lease.rs",
+      "src/control_store/effect_owner/capability_plane/lease.rs",
     ]
     disposition  = "rebind-to-control-generation"
     backup_policy = "excluded"

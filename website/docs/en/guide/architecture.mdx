@@ -212,9 +212,21 @@ same-key reconciliation. Stop performs no Knowledge mutation and remove uses
 the retained receipt. A real SQLite composition test carries one committed
 claim through the dispatcher and back into durable Control evidence. Artifact
 admission is separately idempotent and creates no lifecycle authority; its
-reference guard spans the distinct Control commit. Runtime, Flow, Capability
-Index, invocation-lease adapters, and production composition must derive all
-inputs only from committed Control authority and immutable artifacts.
+reference guard spans the distinct Control commit. A third concrete Capability
+Plane adapter now implements Capability Index and invocation leases together.
+It writes one canonical content-addressed Index document from the committed
+candidate and exact terminal surface evidence, without a second SQLite store or
+mutable current file; Control's applied cutover observation is the sole
+publication cursor. Admission reads that cursor before and after taking shared
+locks for every exact package lifecycle incarnation. Drain requires the old
+incarnation to be unpublished and takes its exclusive lock, safely deferring
+while an accepted call is active. No-follow, no-replace publication and exact
+staging replay protect the immutable Index. Index and lease files are derived
+operational state excluded from backup; restore must rebuild the Index from
+verified Control evidence. A real composition test covers Knowledge, Skill,
+cutover, stale admission, and same-key drain retry. Runtime, Flow, and
+production composition must derive all inputs only from committed Control
+authority and immutable artifacts.
 A private path-free registry also freezes the five external payload-owner IDs
 and exact ACL backup policies. Artifact Store exclusion is explicit; the four
 snapshotted owners must produce one complete, generation-bound canonical

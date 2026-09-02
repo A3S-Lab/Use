@@ -5,6 +5,7 @@ use a3s_use_core::{
     PluginWorkspaceGrant, UseError, UseResult,
 };
 use serde::{Deserialize, Serialize};
+mod capability_publication;
 mod effect;
 mod effect_application;
 mod effect_authority;
@@ -13,6 +14,7 @@ mod operation;
 mod projection;
 mod provider;
 
+pub(super) use capability_publication::*;
 pub(super) use effect::*;
 pub(super) use effect_application::*;
 pub(super) use effect_authority::*;

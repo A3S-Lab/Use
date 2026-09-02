@@ -9,8 +9,8 @@ use super::export::{
 };
 use super::model::{
     corruption_error, ClaimedControlEffect, ControlEffectClaim, ControlEffectObservation,
-    ControlEffectRecord, ControlGeneration, ControlOperationRecord, ControlTransition,
-    ReviewedControlOperation,
+    ControlEffectRecord, ControlGeneration, ControlOperationRecord,
+    ControlPublishedCapabilityCursor, ControlTransition, ReviewedControlOperation,
 };
 use super::schema::{self, ControlStoreInspection, ControlStoreMetadata};
 
@@ -73,6 +73,11 @@ enum ControlStoreRequest {
         database_path: PathBuf,
         installation: InstallationId,
         response: oneshot::Sender<UseResult<Option<ControlGeneration>>>,
+    },
+    PublishedCapability {
+        database_path: PathBuf,
+        installation: InstallationId,
+        response: oneshot::Sender<UseResult<Option<ControlPublishedCapabilityCursor>>>,
     },
     Effects {
         database_path: PathBuf,
@@ -265,6 +270,21 @@ impl ControlStoreExecutor {
     ) -> UseResult<Option<ControlGeneration>> {
         let (response, receiver) = oneshot::channel();
         self.send(ControlStoreRequest::CurrentGeneration {
+            database_path,
+            installation,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn published_capability(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+    ) -> UseResult<Option<ControlPublishedCapabilityCursor>> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::PublishedCapability {
             database_path,
             installation,
             response,
@@ -483,6 +503,16 @@ fn run_worker(mut receiver: mpsc::Receiver<ControlStoreRequest>) {
                 response,
             } => {
                 let _ = response.send(aggregate::current_generation(&database_path, &installation));
+            }
+            ControlStoreRequest::PublishedCapability {
+                database_path,
+                installation,
+                response,
+            } => {
+                let _ = response.send(aggregate::published_capability(
+                    &database_path,
+                    &installation,
+                ));
             }
             ControlStoreRequest::Effects {
                 database_path,
