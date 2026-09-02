@@ -462,6 +462,18 @@ control_store_cutover {
     may_choose_desired_state    = false
   }
 
+  external_owner "runtime-plan-payload" {
+    state_paths = ["runtime-plans"]
+    implementation = [
+      "src/plugin_runtime/plan_store.rs",
+      "src/control_store/payload_owner/runtime_plans.rs",
+    ]
+    payload                     = "installation-scoped immutable Runtime surface plan records"
+    backup_policy               = "owner-snapshot"
+    registered_before_activation = true
+    may_choose_desired_state    = false
+  }
+
   operational_state "capability-index" {
     state_paths = ["capability-index"]
     implementation = [

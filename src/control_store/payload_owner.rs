@@ -10,19 +10,22 @@
 //! The Restore Coordinator owner snapshots and offline-verifies only its
 //! bounded terminal history while excluding active recovery evidence. Its
 //! restore adapter preserves the exact active restore and replayably replaces
-//! only terminal history. No owner participates in the production state-backup
+//! only terminal history. The Runtime plan owner snapshots immutable,
+//! installation-scoped plan payloads and rehydrates them before Host
+//! projection activation. No owner participates in the production state-backup
 //! path yet. The complete-set snapshot coordinator now publishes and
 //! offline-verifies one no-clobber archive containing the Control export and
 //! every registered owner receipt plus each present payload. Coordinated
 //! clean-target staging now binds the same complete set beneath one retained
 //! exclusive fence without touching live authority. Qualification activation
-//! preflights every candidate, then publishes and checkpoints Control, Host,
-//! Knowledge, observations, and Restore Coordinator state in one fixed order.
-//! Its global marker is retired only after all five checkpoints are durable.
-//! The five staging trees are then retired in fixed order, leaving the exact
-//! attempt descriptor and complete journal as a terminal receipt. Subprocess
-//! tests cover every top-level effect and retirement boundary. Production
-//! backup/restore wiring and the indivisible authority cutover remain separate.
+//! preflights every candidate, then publishes and checkpoints Control, Runtime
+//! plans, Host, Knowledge, observations, and Restore Coordinator state in one
+//! fixed order. Its global marker is retired only after all six checkpoints are
+//! durable. The six staging trees are then retired in fixed order, leaving the
+//! exact attempt descriptor and complete journal as a terminal receipt.
+//! Subprocess tests cover every top-level effect and retirement boundary.
+//! Production backup/restore wiring and the indivisible authority cutover
+//! remain separate.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
@@ -34,6 +37,7 @@ mod knowledge;
 mod observations;
 mod registry;
 mod restore_coordinator;
+mod runtime_plans;
 mod session;
 mod snapshot;
 
@@ -71,6 +75,13 @@ pub(in crate::control_store) use restore_coordinator::{
     StagedControlRestoreCoordinatorRestore, VerifiedControlRestoreCoordinatorSnapshot,
     CONTROL_RESTORE_COORDINATOR_SNAPSHOT_SCHEMA,
 };
+#[cfg(test)]
+pub(in crate::control_store) use runtime_plans::{
+    ControlRuntimePlanPayloadEntry, ControlRuntimePlanPayloadRestoreResult,
+    ControlRuntimePlanPayloadRestoreState, ControlRuntimePlanPayloadSnapshot,
+    ControlRuntimePlanPayloadState, VerifiedControlRuntimePlanPayloadSnapshot,
+    CONTROL_RUNTIME_PLAN_PAYLOAD_SNAPSHOT_SCHEMA,
+};
 pub(in crate::control_store) use session::{
     ControlPayloadSnapshotBinding, ControlPayloadSnapshotSession,
 };
@@ -93,6 +104,7 @@ pub(in crate::control_store) enum ControlPayloadOwnerId {
     KnowledgePayload,
     PlanningAndDiagnosticObservations,
     RestoreCoordinator,
+    RuntimePlanPayload,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,21 +125,25 @@ const OBSERVATION_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] = &[
 ];
 const RESTORE_COORDINATOR_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] =
     &[ControlPayloadLiveLocation::OperationRoot("state-restores")];
+const RUNTIME_PLAN_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] =
+    &[ControlPayloadLiveLocation::StateRoot("runtime-plans")];
 
 impl ControlPayloadOwnerId {
-    pub(in crate::control_store) const ALL: [Self; 5] = [
+    pub(in crate::control_store) const ALL: [Self; 6] = [
         Self::ArtifactStore,
         Self::HostProtocolProjection,
         Self::KnowledgePayload,
         Self::PlanningAndDiagnosticObservations,
         Self::RestoreCoordinator,
+        Self::RuntimePlanPayload,
     ];
 
-    pub(in crate::control_store) const SNAPSHOTTED: [Self; 4] = [
+    pub(in crate::control_store) const SNAPSHOTTED: [Self; 5] = [
         Self::HostProtocolProjection,
         Self::KnowledgePayload,
         Self::PlanningAndDiagnosticObservations,
         Self::RestoreCoordinator,
+        Self::RuntimePlanPayload,
     ];
 
     pub(in crate::control_store) const fn as_str(self) -> &'static str {
@@ -137,6 +153,7 @@ impl ControlPayloadOwnerId {
             Self::KnowledgePayload => "knowledge-payload",
             Self::PlanningAndDiagnosticObservations => "planning-and-diagnostic-observations",
             Self::RestoreCoordinator => "restore-coordinator",
+            Self::RuntimePlanPayload => "runtime-plan-payload",
         }
     }
 
@@ -155,6 +172,7 @@ impl ControlPayloadOwnerId {
                 ControlPayloadBackupPolicy::RegisteredTerminalSnapshot
             }
             Self::RestoreCoordinator => ControlPayloadBackupPolicy::ExcludeActiveRegisterTerminal,
+            Self::RuntimePlanPayload => ControlPayloadBackupPolicy::OwnerSnapshot,
         }
     }
 
@@ -165,6 +183,7 @@ impl ControlPayloadOwnerId {
             Self::KnowledgePayload => KNOWLEDGE_LIVE_LOCATIONS,
             Self::PlanningAndDiagnosticObservations => OBSERVATION_LIVE_LOCATIONS,
             Self::RestoreCoordinator => RESTORE_COORDINATOR_LIVE_LOCATIONS,
+            Self::RuntimePlanPayload => RUNTIME_PLAN_LIVE_LOCATIONS,
         }
     }
 

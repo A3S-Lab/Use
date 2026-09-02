@@ -15,7 +15,7 @@ use super::restore::{
 use super::restore_activation;
 use super::restore_filesystem::{
     self, CONTROL_DIRECTORY, HOST_PROJECTION_DIRECTORY, KNOWLEDGE_DIRECTORY,
-    OBSERVATIONS_DIRECTORY, RESTORE_COORDINATOR_DIRECTORY,
+    OBSERVATIONS_DIRECTORY, RESTORE_COORDINATOR_DIRECTORY, RUNTIME_PLANS_DIRECTORY,
 };
 use super::restore_retirement;
 use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
@@ -110,6 +110,20 @@ impl VerifiedControlInstallationSnapshot {
         )
         .await
         .map_err(wrap_activation_error)?;
+        let runtime_plans = self
+            .runtime_plans
+            .stage_clean_restore_under_exclusive(
+                state_root.clone(),
+                restore_filesystem::component_directory(
+                    &staging_directory,
+                    RUNTIME_PLANS_DIRECTORY,
+                ),
+                &maintenance,
+            )
+            .await
+            .map_err(|error| {
+                wrap_activation_error(wrap_owner_error("Runtime plan payload replay", error))
+            })?;
         let host_projection = self
             .host_projection
             .stage_clean_restore_under_exclusive(
@@ -173,6 +187,7 @@ impl VerifiedControlInstallationSnapshot {
             state: ControlInstallationRestoreState::Prepared(Box::new(
                 PreparedControlInstallationRestore {
                     control,
+                    runtime_plans,
                     host_projection,
                     knowledge,
                     observations,

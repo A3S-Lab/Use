@@ -493,6 +493,8 @@ mod payload_restore_coordinator_security_tests;
 #[cfg(test)]
 mod payload_restore_coordinator_tests;
 #[cfg(test)]
+mod payload_runtime_plan_tests;
+#[cfg(test)]
 mod payload_snapshot_session_tests;
 #[cfg(test)]
 mod runtime_effect_tests;

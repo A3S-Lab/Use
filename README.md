@@ -441,9 +441,15 @@ every canonical blob observation from all preserved source datastores,
 including replaced sources, under the same guard. The global path-free
 `a3s.use.artifact-reference-inventory.v1` view now aggregates those observations
 with every installation snapshot, current and retained receipt, non-cancelled
-package-graph operation, and applying or rolling-back lifecycle journal. It
-validates installation identity and source layout, rejects conflicting physical
-expectations, and retains references even when content is missing. The joined
+package-graph operation, applying or rolling-back lifecycle journal, and
+immutable Runtime plan payload. Runtime plan records are decoded while holding
+the installation maintenance and plan-store locks, so their referenced Blob
+artifacts remain reachable during cleanup. Production publication through an
+`ExtensionPaths`-bound plan store acquires global reference admission before
+that installation fence; stores created for isolated offline/test state do not
+carry a global Artifact Store boundary. It validates installation identity and
+source layout, rejects conflicting physical expectations, and retains
+references even when content is missing. The joined
 `a3s.use.artifact-reachability-inventory.v1` view captures that logical evidence
 and the physical inventory in one guarded collection pass. New publication is
 frozen; reference retirement can only leave conservative extra owners. One row
@@ -1456,9 +1462,9 @@ the private kernel or legacy consumers production-active.
 The kernel now
 also qualifies the path-free
 external-payload registration and
-snapshot-evidence boundary. Its five frozen owner identities and fixed backup
+snapshot-evidence boundary. Its six frozen owner identities and fixed backup
 policies are checked against the ACL cutover inventory. The global Artifact
-Store is explicitly excluded, while the other four owners must produce one
+Store is explicitly excluded, while the other five owners must produce one
 complete, canonically ordered receipt set bound to the exact installation,
 Control generation, registry digest, owner schema, inventory/manifest digests,
 and bounded file/byte accounting. Decoded evidence is revalidated before its
@@ -1560,8 +1566,12 @@ terminal slot, so a 64-record source deterministically drops the same native
 oldest record the journal would prune. The typed complete-set marker has no
 retained operation and therefore preserves all 64 source records. The canonical
 result is path-free and snapshot-bound. This remains inactive qualification
-code. The private complete-set snapshot coordinator now captures the canonical
-Control export and all four registered owner snapshots under one exact
+code. The Runtime plan owner now snapshots immutable installation-scoped plan
+records, verifies their complete key and canonical envelope, and restores them
+before Host projection activation; referenced Runtime artifact digests are also
+included in installation artifact-reachability evidence. The private complete-
+set snapshot coordinator now captures the canonical Control export and all five
+registered owner snapshots under one exact
 maintenance fence and timestamp. It binds the fixed owner set, receipts,
 digests, schemas, and byte accounting in one path-free canonical manifest,
 streams them into a single no-clobber archive outside every Use data and state
@@ -1571,7 +1581,7 @@ payload bytes; the global Artifact Store remains outside installation backup.
 Archive header, manifest, length, payload digest, trailing-byte, link, drift,
 rebinding, and overwrite failures all fail closed. This complete-set writer is
 also inactive qualification code. An offline-verified complete snapshot can
-now stage the Control database and all four owner candidates beneath one fixed
+now stage the Control database and all five owner candidates beneath one fixed
 `.control-installation-restore` directory while retaining the exact target's
 exclusive maintenance fence. One canonical path-free attempt descriptor binds
 the snapshot, installation, owner registry, Knowledge storage policy, and
@@ -1587,28 +1597,29 @@ protocol. Before durable intent, every present or absent owner candidate is
 revalidated against a clean target. The immutable attempt descriptor remains
 the restore identity; `activation.json` is the sole mutable journal, and the
 typed global `.maintenance.restore.json` marker binds that attempt to one
-immutable activation operation. The fixed owner order is Control Store, Host
-projection, Knowledge, observations, then Restore Coordinator. Each step uses
+immutable activation operation. The fixed owner order is Control Store, Runtime
+plans, Host projection, Knowledge, observations, then Restore Coordinator.
+Each step uses
 the same journal-marker-effect-checkpoint discipline, and each checkpoint binds
 the canonical path-free owner result by length and a domain-separated digest.
 The Restore Coordinator receives the exact expected marker bytes, length, and
-digest before it changes history. Only the fifth durable checkpoint permits
+digest before it changes history. Only the sixth durable checkpoint permits
 global marker retirement. Reopening reacquires the exact exclusive guard,
 rebinds the same verified snapshot, attempt, owner registry, and Knowledge
 policy, and reconstructs or verifies every owner at its exact candidate/live
 boundary. Journal and marker partials, every owner effect before checkpoint,
 the final checkpoint before marker deletion, process exit immediately after
 marker deletion, and exit after each fixed-order staging retirement all converge
-deterministically. An 18-boundary subprocess matrix exercises those top-level
-exits. A missing marker is accepted only with the complete five-checkpoint
+deterministically. A 21-boundary subprocess matrix exercises those top-level
+exits. A missing marker is accepted only with the complete six-checkpoint
 journal; ambiguous markers, out-of-order live roots, snapshot rebinding, linked
 paths, or evidence drift fail closed. Completed replay performs no owner effect;
-it can only resume bounded retirement of the five link-free staging trees. The
+it can only resume bounded retirement of the six link-free staging trees. The
 surviving canonical `attempt.json` and complete `activation.json` form the exact
 installation-bound terminal receipt. Legacy backup and artifact reachability
 exclude only that two-file receipt; incomplete, extended, linked, or tampered
-evidence fails closed. Production Grant conversion, restart-safe Runtime plan
-reconstruction, Runtime/Flow dispatcher composition, backup/restore command
+evidence fails closed. Production Grant conversion, Runtime/Flow dispatcher
+composition, backup/restore command
 wiring, indivisible consumer cutover, and deletion of legacy mutable stores
 remain open.
 The research-preview

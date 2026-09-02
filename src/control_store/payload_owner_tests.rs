@@ -5,7 +5,7 @@ use crate::control_store::model::valid_sha256;
 fn registry_requires_the_exact_typed_external_owner_set() {
     let registry = registry();
     registry.validate().unwrap();
-    assert_eq!(registry.registrations().len(), 5);
+    assert_eq!(registry.registrations().len(), 6);
     assert_eq!(
         registry
             .registrations()
@@ -118,14 +118,14 @@ fn snapshot_set_is_generation_bound_path_free_and_deterministic() {
     let snapshot =
         ControlPayloadSnapshotSet::new(&registry, binding.clone(), receipts.clone()).unwrap();
     snapshot.validate(&registry).unwrap();
-    assert_eq!(snapshot.receipts.len(), 4);
+    assert_eq!(snapshot.receipts.len(), 5);
     assert_eq!(
         snapshot.receipts[0].owner,
         ControlPayloadOwnerId::HostProtocolProjection
     );
-    assert_eq!(snapshot.file_count, 10);
-    assert_eq!(snapshot.byte_count, 10 * 1024);
-    assert_eq!(snapshot.manifest_bytes, 10 * 128);
+    assert_eq!(snapshot.file_count, 15);
+    assert_eq!(snapshot.byte_count, 15 * 1024);
+    assert_eq!(snapshot.manifest_bytes, 15 * 128);
     let first_digest = snapshot.descriptor_digest(&registry).unwrap();
     assert!(valid_sha256(&first_digest));
 

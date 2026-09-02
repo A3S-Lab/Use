@@ -39,6 +39,7 @@ pub use model::{
     MAX_RUNTIME_SURFACE_PLAN_BYTES, RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_SURFACE_PLAN_SCHEMA,
     RUNTIME_TASK_BINDING_SCHEMA,
 };
+pub(crate) use plan_store::RuntimeSurfacePlanStoredRecord;
 pub use plan_store::{
     RuntimeSurfacePlanPublication, RuntimeSurfacePlanPublishResult, RuntimeSurfacePlanStore,
     MAX_RUNTIME_SURFACE_PLAN_BATCH_BYTES, MAX_RUNTIME_SURFACE_PLAN_RECORDS,

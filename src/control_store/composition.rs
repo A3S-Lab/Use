@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use a3s_runtime::RuntimeClientRegistry;
 use a3s_use_core::{PluginSurfaceRef, UseError, UseResult};
-use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
+use a3s_use_extension::{ArtifactStore, ExtensionPaths, StateMaintenanceLock};
 
 use super::dispatcher::{
     ControlEffectClock, ControlEffectDispatchRequest, ControlEffectDispatchResult,
@@ -66,6 +66,7 @@ pub(in crate::control_store) struct ControlEffectCompositionDependencies {
 pub(in crate::control_store) struct ControlStoreRuntimeComposition {
     store: ControlStore,
     plan_store: RuntimeSurfacePlanStore,
+    artifact_store: ArtifactStore,
     effects: ControlEffectRuntime,
 }
 
@@ -118,7 +119,7 @@ impl ControlStoreRuntimeComposition {
             ))),
             OkfKnowledgeBindingStore::from_extension_paths(paths),
         ));
-        let static_surface = Arc::new(ControlStaticSurfaceEffectPort::new(artifact_store));
+        let static_surface = Arc::new(ControlStaticSurfaceEffectPort::new(artifact_store.clone()));
         let ports = ControlEffectPorts::new(
             capability.clone(),
             capability,
@@ -132,6 +133,7 @@ impl ControlStoreRuntimeComposition {
         Ok(Self {
             store,
             plan_store,
+            artifact_store,
             effects,
         })
     }
@@ -162,6 +164,10 @@ impl ControlStoreRuntimeComposition {
         &self,
         publications: &[RuntimeSurfacePlanPublication],
     ) -> UseResult<crate::plugin_runtime::RuntimeSurfacePlanPublishResult> {
+        // `RuntimeSurfacePlanStore::from_extension_paths` carries the same
+        // global Artifact Store and acquires reference admission before its
+        // installation fence. Keep this entry point thin so the lock order is
+        // defined in one place for every standalone publication caller.
         self.plan_store.publish(publications).await
     }
 
@@ -186,6 +192,11 @@ impl ControlStoreRuntimeComposition {
         committed_at_ms: u64,
         publications: &[RuntimeSurfacePlanPublication],
     ) -> UseResult<ControlGeneration> {
+        // The projected Control transition retains package and Runtime
+        // artifact references. Reference admission is therefore the outer
+        // boundary; the installation maintenance fence is nested beneath it
+        // and remains held through plan publication plus the authority CAS.
+        let _artifact_admission = self.artifact_store.acquire_reference_admission().await?;
         let _maintenance = StateMaintenanceLock::new(&self.store.state_root)
             .acquire_shared()
             .await?;

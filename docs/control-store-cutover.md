@@ -86,9 +86,9 @@ composition remain part of the indivisible cutover; they may derive full inputs
 only from committed Control authority and immutable artifacts, never from the
 legacy stores.
 
-The inactive kernel now freezes these five identities and their exact backup
+The inactive kernel now freezes these six identities and their exact backup
 policies in a path-free typed registry contract. Artifact Store exclusion is
-explicit; receipts for the other four owners must be complete, canonically
+explicit; receipts for the other five owners must be complete, canonically
 ordered, bounded, and tied to one installation and Control export. A private
 snapshot session now freezes the canonical export digest and generation under
 one exclusive maintenance fence without holding a database transaction across
@@ -162,7 +162,11 @@ record to reserve the active operation's slot. The typed complete-set marker
 has no retained operation and preserves all 64 source records. Source and active
 identities may never collide. Durable activation, retired, candidate,
 and deterministic publication-partial evidence make each local crash boundary
-replayable and tamper-evident. The private complete-set snapshot coordinator
+replayable and tamper-evident. The Runtime plan payload is the fifth
+snapshotted owner. It captures canonical immutable plan envelopes, validates
+their full installation-scoped keys, restores them before Host projection, and
+contributes referenced Runtime blob digests to artifact reachability. The
+private complete-set snapshot coordinator
 now captures the canonical Control export and every registered owner beneath
 one exclusive maintenance fence and timestamp. Its path-free canonical
 manifest binds the fixed owner registry, receipts, schemas, digests, and byte
@@ -172,7 +176,7 @@ no-clobber semantics; absent owners add no payload and the global Artifact Store
 is excluded. The verified complete set can now stage one clean target under a
 single retained exclusive maintenance fence. A canonical path-free attempt
 descriptor binds the snapshot, installation, owner registry, Knowledge policy,
-and fixed five-component set before the Control and four owner-native
+and fixed six-component set before the Control and five owner-native
 candidates are created beneath `.control-installation-restore`. The Control
 candidate is single-file checkpointed, export-round-tripped, and physically
 digest-bound. No live authority path is changed, and exact retry or interrupted
@@ -182,19 +186,20 @@ preflights every owner before durably recording top-level intent. The immutable
 attempt descriptor stays authoritative; `activation.json` is the sole mutable
 ordered journal, and the typed global `.maintenance.restore.json` marker binds
 the same immutable operation and blocks ordinary shared access. Control Store,
-Host projection, Knowledge, observations, and Restore Coordinator execute in
-that fixed order; each step follows journal, marker, owner effect, checkpoint.
+Runtime plans, Host projection, Knowledge, observations, and Restore
+Coordinator execute in that fixed order; each step follows journal, marker,
+owner effect, checkpoint.
 Every checkpoint binds its canonical path-free result by byte count and a
 domain-separated digest. The Restore Coordinator verifies the exact complete
 marker bytes, length, and digest before history mutation. Reopen reacquires the
 exact exclusive fence, rebinds the same snapshot, attempt, registry, and policy,
 and reconstructs or verifies every candidate/live boundary. Journal and marker
-partials, each post-effect/pre-checkpoint boundary, the fifth checkpoint before
+partials, each post-effect/pre-checkpoint boundary, the sixth checkpoint before
 retirement, and exit after marker deletion converge. Marker absence is accepted
-only with all five checkpoints; out-of-order live roots, ambiguous markers,
+only with all six checkpoints; out-of-order live roots, ambiguous markers,
 links, rebinding, and evidence drift fail closed. Exact completed replay performs
-no owner effect and can only resume bounded fixed-order retirement of the five
-link-free staging trees. A real-child-process matrix covers 18 top-level durable
+no owner effect and can only resume bounded fixed-order retirement of the six
+link-free staging trees. A real-child-process matrix covers 21 top-level durable
 exits, including each retirement boundary. The canonical `attempt.json` and
 complete `activation.json` then remain as the exact installation-bound terminal
 receipt. Legacy backup and artifact reachability exclude only that two-file

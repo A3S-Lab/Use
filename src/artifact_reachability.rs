@@ -57,6 +57,7 @@ pub enum ArtifactReferenceSource {
     RetainedReceipt,
     PendingPackageGraph,
     PluginLifecycleOperation,
+    RuntimePlanPayload,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -199,9 +199,9 @@ prepare coverage and reviewed Grant proposal digests, and orders immutable plan
 publication before the projected generation commit under one shared
 installation fence. This narrows the cutover boundary but does not activate the
 private kernel or accept caller-selected transition fields.
-The private path-free payload contract now freezes five external owner IDs and
+The private path-free payload contract now freezes six external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
-one complete canonical receipt set for the other four owners, bound to an exact
+one complete canonical receipt set for the other five owners, bound to an exact
 installation, Control generation, registry/owner schemas, digests, and bounded
 accounting. A private session now freezes the exact canonical Control export
 digest under one exclusive maintenance fence and releases the SQLite
@@ -259,9 +259,13 @@ history. Durable activation evidence binds exact before/source/target
 inventories. A legacy whole-installation marker reserves one slot at the native
 64-record limit; the typed complete-set marker has no retained operation and
 preserves all 64 records. Marker-only handoff, status progress, and every local
-partial are deterministic and tamper-evident. The private complete-set snapshot
-coordinator now captures one canonical Control export and all four registered
-owner snapshots beneath one maintenance fence and timestamp. A path-free
+partial are deterministic and tamper-evident. The Runtime plan owner is the
+fifth snapshotted owner. It captures immutable installation-scoped plan
+envelopes, validates complete key/plan binding, restores them before Host
+projection activation, and contributes referenced Runtime blob digests to
+installation reachability. The private complete-set snapshot coordinator now
+captures one canonical Control export and all five registered owner snapshots
+beneath one maintenance fence and timestamp. A path-free
 canonical manifest binds the exact registry, receipts, schemas, digests, and
 byte accounting. One fixed-order archive is streamed outside every Use data and
 state root, fully audited through the owner-native offline verifiers, and
@@ -269,7 +273,7 @@ published without replacement. Absent owners add no payload, and the global
 Artifact Store stays excluded. The verified aggregate can now stage one
 deterministic clean-target attempt beneath `.control-installation-restore`.
 One path-free descriptor binds the exact snapshot, installation, registry,
-Knowledge policy, and five-component set before a retained exclusive fence
+Knowledge policy, and six-component set before a retained exclusive fence
 builds Control and every owner-native candidate. Control is checkpointed to one
 SQLite file, export-round-tripped, and physically digest-bound; no live owner
 path is changed. Exact retry and interrupted Control staging recover, while
@@ -278,20 +282,20 @@ drift fail closed. Complete activation now preflights every owner before durable
 top-level intent. The immutable attempt remains authoritative,
 `activation.json` is the sole mutable ordered journal, and the typed global
 `.maintenance.restore.json` marker binds the same immutable operation while
-blocking ordinary shared access. Control Store, Host projection, Knowledge,
-observations, and Restore Coordinator execute in fixed order; every step follows
-journal, marker, owner effect, checkpoint. Each checkpoint binds its canonical
+blocking ordinary shared access. Control Store, Runtime plans, Host projection,
+Knowledge, observations, and Restore Coordinator execute in fixed order; every
+step follows journal, marker, owner effect, checkpoint. Each checkpoint binds its canonical
 path-free result by byte count and a domain-separated digest, while the
 coordinator owner additionally verifies the exact marker bytes, length, and
 digest before mutation. Reopen reacquires the exact guard, rebinds the same
 verified snapshot, attempt, registry, and policy, and reconstructs or verifies
-every candidate/live boundary. Journal and marker partials, all five
-post-effect/pre-checkpoint boundaries, the fifth checkpoint before retirement,
+every candidate/live boundary. Journal and marker partials, all six
+post-effect/pre-checkpoint boundaries, the sixth checkpoint before retirement,
 and exit after deletion converge. Marker absence is accepted only beside the
 complete journal; out-of-order roots, ambiguous markers, links, rebinding, and
 evidence drift fail closed. Completed replay performs no owner effect and can
-only resume bounded fixed-order retirement of the five link-free staging trees.
-An 18-boundary real-child-process matrix qualifies the top-level protocol,
+only resume bounded fixed-order retirement of the six link-free staging trees.
+A 21-boundary real-child-process matrix qualifies the top-level protocol,
 including every retirement boundary. The canonical `attempt.json` and complete
 `activation.json` then form the exact installation-bound terminal receipt.
 Legacy backup and artifact reachability exclude only that receipt; incomplete,

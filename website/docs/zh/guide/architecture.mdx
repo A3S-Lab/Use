@@ -86,7 +86,8 @@ planning target、presentation media 与 expanded package tree 都按 SHA-256
 分片存放，不携带 Registry source 或 installation authority。Registry datastore
 只保留 canonical source observation 与 resumable partial；installation snapshot
 保留 selection 与 lifecycle authority。Source prune 与 scoped uninstall 永不删除
-全局字节。跨 source reachability、hard quota admission 与无路径只读 digest audit
+全局字节。Runtime plan payload 会在安装级 maintenance fence 与 plan-store lock 下解码，
+其引用的 Blob 会继续计入 reachability。跨 source reachability、hard quota admission 与无路径只读 digest audit
 已覆盖两个物理层。Exact-plan 逻辑隔离会重新审计完整 mismatch，发布 canonical
 no-clobber marker，保留原始字节并阻止新的普通访问；隔离 marker 本身不授予恢复
 或删除权限。Verified rehydration 现通过 `ArtifactStoreMaintenance` 独立执行：同一
@@ -205,8 +206,8 @@ reviewed-operation-only 内部入口：Control 从持久化 operation 投影 gra
 和 effect 字段，校验精确的 Runtime prepare 覆盖与 reviewed Grant proposal digest，然后在同一个安装级
 共享 maintenance fence 下先发布 immutable plan 字节，再提交投影后的 generation。这只是 cutover
 验证，不是 public API，也尚未接入生产 lifecycle。
-私有的无路径 registry 还冻结了五个外部 payload owner ID 与精确
-ACL backup policy：全局 Artifact Store 被明确排除，另外四个 owner 必须生成完整、绑定 generation、
+私有的无路径 registry 还冻结了六个外部 payload owner ID 与精确
+ACL backup policy：全局 Artifact Store 被明确排除，另外五个 owner 必须生成完整、绑定 generation、
 且具有 schema、digest 与计数上限的规范 receipt 集。私有 snapshot session 现在会在同一个排他
 maintenance fence 下冻结规范 Control export 及其 digest，同时不会让数据库事务跨越 owner I/O。
 Knowledge owner 是首个已验收 adapter：它可以生成并离线复验有界 OKF SQLite/FTS5 archive 与规范的
@@ -214,7 +215,9 @@ binding/selection inventory；数据库缺失时则记录零文件 manifest，�
 创建与离线验证都会要求 binding 指定的精确 Control export。每个保留的 Knowledge incarnation 必须关联
 其原始 prepare intent 与已提交 OKF bundle；applied observation/projection evidence 必须一致，而已删除或
 缺失的 applied payload 必须存在对应 remove effect。Deferred outcome 只保留为 safe-no-effect 调度证据；
-claimed 与 unknown outcome 只保留为 reconciliation evidence，三者都不能选择 desired state。
+claimed 与 unknown outcome 只保留为 reconciliation evidence，三者都不能选择 desired state。Runtime plan
+owner 是第五个被快照的 owner：它捕获安装级不可变 plan envelope，验证完整 key/plan 绑定，在 Host
+projection 激活前恢复 plan，并把引用的 Runtime blob digest 纳入 installation artifact reachability。
 离线验证通过的 Knowledge snapshot 现在可以把精确数据库暂存到
 clean target 的 state root 下，且不修改 live payload。激活必须持有该 target 的排他 maintenance fence，
 重新审计数据库与 inventory，拒绝非 owner、已有或含糊状态，并通过一次原子 rename 发布无路径结果；
@@ -250,26 +253,26 @@ operation 的状态前进，但会拒绝 marker、candidate、retired record 或
 对应 operation，因此保留全部 64 条源记录。
 
 私有 complete-set snapshot coordinator 现在会在同一个 maintenance fence 和 timestamp 下捕获规范 Control
-export 与全部四个已注册 owner snapshot。一个无路径的规范 manifest 绑定固定 owner registry、receipt、schema、
+export 与全部五个已注册 owner snapshot。一个无路径的规范 manifest 绑定固定 owner registry、receipt、schema、
 digest 和字节账目。Coordinator 按固定协议顺序把内容流式写入位于所有 Use data/state root 之外的单文件
 archive，复用每个 owner-native offline verifier，并仅以 no-clobber 方式发布通过完整审计的文件。Absent owner
 不会增加虚构 payload 字节，全局 Artifact Store 继续排除在外。这些路径仍是未启用的 qualification code。
 通过验证的聚合现在可以保留目标的精确排他 fence，并在固定 `.control-installation-restore` 目录下暂存
-Control 数据库和全部四个 owner candidate。无路径 descriptor 会先绑定 snapshot、installation、owner
-registry、Knowledge policy 与固定 component set。Control 会被 checkpoint 为单一文件，按规范 export
+Control 数据库和全部五个 owner candidate。无路径 descriptor 会先绑定 snapshot、installation、owner
+registry、Knowledge policy 与固定六组件 set。Control 会被 checkpoint 为单一文件，按规范 export
 往返复验并绑定物理摘要；外部 candidate 在同一 guard 下复用 owner-native 校验。整个过程不修改任何 live
 authority 路径。精确重试和中断的 Control 构建可以恢复；被污染的 target、link、未知 entry、重绑定与
 candidate 漂移都会 fail closed。完整激活会在持久化顶层 intent 前预检全部 owner。不可变 attempt 仍是
 restore identity；`activation.json` 是唯一可变的有序 journal，typed 全局 `.maintenance.restore.json`
-marker 绑定同一个不可变 operation，并持续阻止普通共享访问。固定 owner 顺序是 Control Store、Host
-projection、Knowledge、observations、Restore Coordinator；每一步都遵循 journal、marker、owner effect、
+marker 绑定同一个不可变 operation，并持续阻止普通共享访问。固定 owner 顺序是 Control Store、Runtime
+plans、Host projection、Knowledge、observations、Restore Coordinator；每一步都遵循 journal、marker、owner effect、
 checkpoint。每个 checkpoint 通过字节数与 domain-separated digest 绑定规范的无路径结果；Coordinator owner
 还会在修改历史前验证精确 marker 字节、长度与摘要。Reopen 会重新取得精确 fence，绑定相同 verified
-snapshot、attempt、registry 与 policy，并重建或验证每个 candidate/live 边界。Journal/marker partial、五个
-effect 后 checkpoint 前边界、marker 退休前的最终 checkpoint，以及 marker 删除和五个暂存树按固定顺序
-退休后的进程退出都能收敛。只有完整五 checkpoint journal 才允许 marker 缺失；乱序 live root、含糊
-marker、link、重绑定和 evidence 漂移都会 fail closed。完成态 replay 不再执行 owner effect，只能恢复五个
-无 link 暂存树的有界固定顺序退休。18 个真实子进程退出边界覆盖顶层协议和每个退休边界。最终保留的规范
+snapshot、attempt、registry 与 policy，并重建或验证每个 candidate/live 边界。Journal/marker partial、六个
+effect 后 checkpoint 前边界、marker 退休前的最终 checkpoint，以及 marker 删除和六个暂存树按固定顺序
+退休后的进程退出都能收敛。只有完整六 checkpoint journal 才允许 marker 缺失；乱序 live root、含糊
+marker、link、重绑定和 evidence 漂移都会 fail closed。完成态 replay 不再执行 owner effect，只能恢复六个
+无 link 暂存树的有界固定顺序退休。21 个真实子进程退出边界覆盖顶层协议和每个退休边界。最终保留的规范
 `attempt.json` 与完整 `activation.json` 构成精确绑定 installation 的终态收据。旧 backup 和 artifact
 reachability 只排除这两个文件；不完整、扩展、含 link 或被篡改的 evidence 都会 fail closed。生产
 backup/restore 接线与所有消费者的协调权威切换完成前，该内核仍保持禁用。

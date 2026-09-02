@@ -1,4 +1,6 @@
 use a3s_use_core::{PlanQualifiedSurfaceRef, PluginSurfaceKind};
+use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
+use std::time::Duration;
 use tokio::task::JoinSet;
 
 use super::test_support::*;
@@ -110,6 +112,52 @@ async fn batch_publication_is_bounded_deterministic_and_idempotent() {
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.plan_store_invalid");
     assert_eq!(store.inspect_keys().await.unwrap(), vec![key]);
+}
+
+#[tokio::test]
+async fn extension_path_publication_waits_for_global_collection_boundary() {
+    let descriptor = service_descriptor();
+    let plan = plan_tool_service_release(
+        context(PluginSurfaceKind::Tool, "index"),
+        &service_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let provider = evidence(&plan, &capabilities(&plan));
+    let key = RuntimeSurfacePlanKey::from_plan(&plan, &provider).unwrap();
+    let publication = RuntimeSurfacePlanPublication::new(key, plan).unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        publication.key.scope.clone(),
+    )
+    .unwrap();
+    let store = RuntimeSurfacePlanStore::from_extension_paths(&paths);
+    let collection = paths.artifact_store().acquire_collection().await.unwrap();
+
+    // The publication task must remain pending while the collector owns the
+    // exclusive side of the global reference boundary. This proves the
+    // ExtensionPaths constructor cannot accidentally bypass the outer lock.
+    let mut task = tokio::spawn({
+        let store = store.clone();
+        async move { store.publish(&[publication]).await }
+    });
+    tokio::task::yield_now().await;
+    assert!(tokio::time::timeout(Duration::from_millis(100), &mut task)
+        .await
+        .is_err());
+
+    drop(collection);
+    let result = tokio::time::timeout(Duration::from_secs(1), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(result.published, 1);
+    assert_eq!(result.existing, 0);
 }
 
 #[tokio::test]
@@ -244,6 +292,63 @@ async fn plan_store_rejects_cross_installation_keys_before_path_access() {
         "use.installation.identity_mismatch"
     );
     assert!(!other.root().exists());
+}
+
+#[tokio::test]
+async fn unscoped_inventory_is_read_only_when_the_plan_root_or_lock_is_missing() {
+    let temporary = tempfile::tempdir().unwrap();
+    let installation = a3s_use_core::InstallationId::new(
+        a3s_use_core::InstallationKind::Workspace,
+        "workspace-01",
+    )
+    .unwrap();
+    let state_root = temporary.path().join("state");
+    let root = state_root.join("runtime-plans");
+    let maintenance = StateMaintenanceLock::new(&state_root)
+        .acquire_shared()
+        .await
+        .unwrap();
+
+    let records =
+        RuntimeSurfacePlanStore::inspect_records_unscoped_under_maintenance(&root, &maintenance)
+            .await
+            .unwrap();
+    assert!(records.is_empty());
+    assert!(!root.exists());
+    assert!(!root.join(".runtime-plans.lock").exists());
+    drop(maintenance);
+
+    // A restored owner root intentionally has no operational lock. Inventory
+    // must inspect it without manufacturing one as a side effect.
+    let descriptor = service_descriptor();
+    let plan = plan_tool_service_release(
+        context(PluginSurfaceKind::Tool, "index"),
+        &service_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let provider = evidence(&plan, &capabilities(&plan));
+    let key = RuntimeSurfacePlanKey::from_plan(&plan, &provider).unwrap();
+    let store = RuntimeSurfacePlanStore::new(&state_root, installation.clone()).unwrap();
+    let publication = RuntimeSurfacePlanPublication::new(key, plan).unwrap();
+    store.publish(&[publication]).await.unwrap();
+    let lock_path = store.root().join(".runtime-plans.lock");
+    tokio::fs::remove_file(&lock_path).await.unwrap();
+    assert!(!lock_path.exists());
+
+    let maintenance = StateMaintenanceLock::new(&state_root)
+        .acquire_shared()
+        .await
+        .unwrap();
+
+    let records =
+        RuntimeSurfacePlanStore::inspect_records_unscoped_under_maintenance(&root, &maintenance)
+            .await
+            .unwrap();
+    assert_eq!(records.len(), 1);
+    assert!(!lock_path.exists());
 }
 
 #[cfg(unix)]

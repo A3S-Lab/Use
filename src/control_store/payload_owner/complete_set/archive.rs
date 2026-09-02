@@ -15,7 +15,7 @@ mod path;
 
 pub(super) use path::{publish, resolve_destination};
 
-const ARCHIVE_MAGIC: &[u8] = b"A3S-USE-CONTROL-SNAPSHOT-V1\n";
+const ARCHIVE_MAGIC: &[u8] = b"A3S-USE-CONTROL-SNAPSHOT-V2\n";
 const MANIFEST_LENGTH_BYTES: usize = 8;
 const MANIFEST_DIGEST_BYTES: usize = 32;
 const COPY_BUFFER_BYTES: usize = 128 * 1024;
@@ -26,6 +26,7 @@ pub(super) struct ArchiveSources {
     pub(super) knowledge: PathBuf,
     pub(super) observations: PathBuf,
     pub(super) restore_coordinator: PathBuf,
+    pub(super) runtime_plans: PathBuf,
 }
 
 pub(super) struct ExtractedArchive {
@@ -35,6 +36,7 @@ pub(super) struct ExtractedArchive {
     pub(super) knowledge: Option<PathBuf>,
     pub(super) observations: Option<PathBuf>,
     pub(super) restore_coordinator: Option<PathBuf>,
+    pub(super) runtime_plans: Option<PathBuf>,
     pub(super) temporary: tempfile::TempDir,
 }
 
@@ -138,7 +140,7 @@ pub(super) fn extract(
     }
     let manifest: ControlInstallationSnapshotManifest = serde_json::from_slice(&manifest_bytes)
         .map_err(|_| {
-            snapshot_invalid("The complete snapshot manifest is not valid schema-v1 JSON.")
+            snapshot_invalid("The complete snapshot manifest is not valid canonical JSON.")
         })?;
     manifest.validate(registry).map_err(|error| {
         snapshot_invalid(format!(
@@ -172,6 +174,7 @@ pub(super) fn extract(
     let mut knowledge = None;
     let mut observations = None;
     let mut restore_coordinator = None;
+    let mut runtime_plans = None;
     for entry in &entries {
         match entry.kind {
             ArchiveEntryKind::ControlExport => {
@@ -191,6 +194,7 @@ pub(super) fn extract(
                     ArchiveEntryKind::Knowledge => knowledge = Some(path),
                     ArchiveEntryKind::Observations => observations = Some(path),
                     ArchiveEntryKind::RestoreCoordinator => restore_coordinator = Some(path),
+                    ArchiveEntryKind::RuntimePlans => runtime_plans = Some(path),
                     ArchiveEntryKind::ControlExport => {
                         return Err(snapshot_invalid(
                             "The Control export was classified as an owner payload.",
@@ -228,6 +232,7 @@ pub(super) fn extract(
         knowledge,
         observations,
         restore_coordinator,
+        runtime_plans,
         temporary,
     })
 }
@@ -249,6 +254,7 @@ fn validate_sources(entries: &[ArchiveEntry], sources: &ArchiveSources) -> UseRe
         ArchiveEntryKind::Knowledge,
         ArchiveEntryKind::Observations,
         ArchiveEntryKind::RestoreCoordinator,
+        ArchiveEntryKind::RuntimePlans,
     ] {
         let path = source_path(sources, kind)?;
         let expected = entries.iter().find(|entry| entry.kind == kind);
@@ -279,6 +285,7 @@ fn source_path(sources: &ArchiveSources, kind: ArchiveEntryKind) -> UseResult<&P
         ArchiveEntryKind::Knowledge => Ok(&sources.knowledge),
         ArchiveEntryKind::Observations => Ok(&sources.observations),
         ArchiveEntryKind::RestoreCoordinator => Ok(&sources.restore_coordinator),
+        ArchiveEntryKind::RuntimePlans => Ok(&sources.runtime_plans),
         ArchiveEntryKind::ControlExport => Err(snapshot_invalid(
             "The Control export has no external owner payload path.",
         )),
@@ -436,6 +443,7 @@ fn entry_file_name(kind: ArchiveEntryKind) -> UseResult<&'static str> {
         ArchiveEntryKind::Knowledge => Ok("knowledge.sqlite3"),
         ArchiveEntryKind::Observations => Ok("observations.payload"),
         ArchiveEntryKind::RestoreCoordinator => Ok("restore-coordinator.payload"),
+        ArchiveEntryKind::RuntimePlans => Ok("runtime-plans.archive"),
     }
 }
 

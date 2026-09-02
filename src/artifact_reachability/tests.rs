@@ -1,13 +1,15 @@
 use a3s_use_core::{
-    CatalogAvailability, InstallationKind, InstallationPackageSelection, PluginCatalogRecord,
-    PluginPackageLock, PluginPackageLockHost, PluginPackageResolver, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V3,
+    CatalogAvailability, InstallationId, InstallationKind, InstallationPackageSelection,
+    PluginCatalogRecord, PluginPackageLock, PluginPackageLockHost, PluginPackageResolver,
+    PluginSurfaceKind, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    PLUGIN_CATALOG_SCHEMA_V3,
 };
 use a3s_use_extension::{
-    ExtensionManifest, ExtensionPaths, ExtensionReceipt, ExtensionTrust,
+    ExtensionManifest, ExtensionPaths, ExtensionReceipt, ExtensionTrust, ToolServiceSurface,
     EXTENSION_RECEIPT_SCHEMA_VERSION,
 };
 use sha2::{Digest, Sha256};
+use std::path::PathBuf;
 use tokio::fs;
 
 use super::*;
@@ -456,6 +458,59 @@ async fn global_inventory_joins_path_free_references_across_installations() {
     assert!(!serde_json::to_string(&joined)
         .unwrap()
         .contains("packageRoot"));
+}
+
+#[tokio::test]
+async fn global_inventory_keeps_runtime_plan_artifacts_reachable() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let installation = InstallationId::new(InstallationKind::Workspace, "workspace-01").unwrap();
+    let paths = roots.for_installation(installation.clone()).unwrap();
+    let descriptor = crate::plugin_runtime::test_support::service_descriptor();
+    let surface = ToolServiceSurface {
+        release: PathBuf::from("releases/service.json"),
+        base_path: "/api".to_owned(),
+        contract: None,
+    };
+    let plan = crate::plugin_runtime::plan_tool_service_release(
+        crate::plugin_runtime::test_support::context(PluginSurfaceKind::Tool, "index"),
+        &surface,
+        &descriptor,
+        crate::plugin_runtime::test_support::artifact(
+            &descriptor.artifact.digest,
+            &descriptor.artifact.media_type,
+        ),
+        crate::plugin_runtime::test_support::policy(),
+    )
+    .unwrap();
+    let provider = crate::plugin_runtime::test_support::evidence(
+        &plan,
+        &crate::plugin_runtime::test_support::capabilities(&plan),
+    );
+    let key = crate::plugin_runtime::RuntimeSurfacePlanKey::from_plan(&plan, &provider).unwrap();
+    crate::plugin_runtime::RuntimeSurfacePlanStore::from_extension_paths(&paths)
+        .put(&key, &plan)
+        .await
+        .unwrap();
+
+    let inventory = ArtifactReachabilityInspector::new(roots)
+        .inspect_references()
+        .await
+        .unwrap();
+    let artifact = inventory
+        .entries
+        .iter()
+        .find(|entry| {
+            entry.source == ArtifactReferenceSource::RuntimePlanPayload
+                && entry.digest == plan.spec().artifact.digest
+        })
+        .expect("runtime plan artifact should be retained by reachability");
+    assert_eq!(artifact.kind, ArtifactKind::Blob);
+    assert_eq!(artifact.installation.as_ref(), Some(&installation));
+    assert_eq!(artifact.reference_count, 1);
 }
 
 #[tokio::test]

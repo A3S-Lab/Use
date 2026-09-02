@@ -350,6 +350,55 @@ async fn composition_initializes_one_root_and_commits_without_runtime_payloads()
 }
 
 #[tokio::test]
+async fn composition_is_fenced_by_global_artifact_reference_admission() {
+    let temporary = tempfile::tempdir().unwrap();
+    let installation = control_installation();
+    let paths = ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        installation,
+    )
+    .unwrap();
+    let composition = ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        ControlEffectCompositionDependencies {
+            runtime_registry: std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: std::sync::Arc::new(RejectingReadiness),
+            flow: std::sync::Arc::new(RejectingFlow),
+            clock: std::sync::Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+    let reviewed = super::aggregate_tests::fixtures::operation("operation:admission-fence");
+    composition
+        .store()
+        .register_operation(reviewed.clone())
+        .await
+        .unwrap();
+    let before = composition.store().current_generation().await.unwrap();
+
+    // A collector owns the exclusive side of the global reference boundary.
+    // The composition must fail before taking the installation fence or
+    // projecting/committing any Control generation.
+    let collection = paths.artifact_store().acquire_collection().await.unwrap();
+    let error = composition
+        .commit_reviewed_operation_with_runtime_plans(
+            reviewed.operation_id(),
+            reviewed.reviewed_at_ms + 10,
+            &[],
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.artifact_store.busy");
+    assert_eq!(
+        composition.store().current_generation().await.unwrap(),
+        before
+    );
+    drop(collection);
+}
+
+#[tokio::test]
 async fn composition_projects_a_reviewed_operation_without_caller_graph_fields() {
     let temporary = tempfile::tempdir().unwrap();
     let installation = control_installation();
