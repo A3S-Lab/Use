@@ -11,7 +11,7 @@ use a3s_use_core::{
 
 use crate::plugin_runtime::{
     plan_runtime_bundle, RuntimeProviderAssignment, RuntimeProviderSelection,
-    RuntimeProviderSelector, RuntimeSurfacePlan,
+    RuntimeProviderSelector, RuntimeSurfacePlan, RuntimeSurfacePlanPublication,
 };
 
 use super::{
@@ -51,6 +51,14 @@ impl BoundCognitivePackageProviderPlan {
         &self.providers
     }
 
+    /// Return the exact immutable Runtime plan payloads that must be
+    /// published before this reviewed plan is committed. The publications
+    /// carry no host paths and derive every lookup field from the selected
+    /// plan/provider pair.
+    pub fn runtime_plan_publications(&self) -> UseResult<Vec<RuntimeSurfacePlanPublication>> {
+        self.providers.runtime_plan_publications()
+    }
+
     pub fn into_parts(
         self,
     ) -> (
@@ -69,6 +77,12 @@ impl CognitivePackageProviderPlan {
 
     pub fn runtime_selection(&self) -> &RuntimeProviderSelection {
         &self.runtime_selection
+    }
+
+    /// Build deterministic host-owned Runtime plan publications for all
+    /// managed surfaces in this provider plan.
+    pub fn runtime_plan_publications(&self) -> UseResult<Vec<RuntimeSurfacePlanPublication>> {
+        self.runtime_selection.plan_publications()
     }
 
     pub fn into_parts(self) -> (Vec<PlannedProviderEvidence>, RuntimeProviderSelection) {
@@ -587,6 +601,7 @@ mod tests {
     use async_trait::async_trait;
 
     use crate::plugin_runtime::test_support::{service_descriptor, FakeRuntime, DIGEST_A};
+    use crate::plugin_runtime::RuntimeSurfacePlanKey;
 
     use super::*;
 
@@ -657,6 +672,20 @@ mod tests {
                 .spec()
                 .generation,
             8
+        );
+        let publications = planned.runtime_plan_publications().unwrap();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(
+            publications[0].key,
+            RuntimeSurfacePlanKey::from_plan(
+                planned.runtime_selection().surfaces()[0].plan(),
+                planned.runtime_selection().surfaces()[0].provider(),
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            publications[0].plan,
+            *planned.runtime_selection().surfaces()[0].plan()
         );
         planned
             .verify_reviewed_evidence(planned.provider_evidence())

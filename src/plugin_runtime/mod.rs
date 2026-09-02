@@ -45,6 +45,7 @@ pub use plan_store::{
     MAX_RUNTIME_SURFACE_PLAN_RECORD_BYTES, RUNTIME_SURFACE_PLAN_STORE_SCHEMA,
 };
 pub use planner::{plan_mcp_service_release, plan_tool_service_release, plan_tool_task_release};
+pub(crate) use provider_selector::provider_selection_digest;
 pub use provider_selector::{
     RuntimeProviderAssignment, RuntimeProviderSelection, RuntimeProviderSelector,
     SelectedRuntimeSurface,

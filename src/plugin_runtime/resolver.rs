@@ -23,7 +23,9 @@ use super::client::{
     runtime_capabilities_digest, validate_capabilities_for_plan, PluginRuntimeClient,
 };
 use super::model::{valid_sha256, RuntimeSurfacePlan};
-use super::provider_selector::{RuntimeProviderSelection, SelectedRuntimeSurface};
+use super::provider_selector::{
+    provider_selection_digest, RuntimeProviderSelection, SelectedRuntimeSurface,
+};
 
 const PLAN_RESOLVER_ERROR: &str = "use.plugin.runtime.plan_resolver_invalid";
 const PLAN_SOURCE_UNAVAILABLE: &str = "use.plugin.runtime.plan_source_unavailable";
@@ -123,6 +125,41 @@ impl RuntimeSurfacePlanKey {
             )
         })?;
         Ok(())
+    }
+
+    /// Derive the complete durable lookup key from one validated Runtime plan
+    /// and its reviewed provider evidence. This is the only supported way for
+    /// a host to construct a publication key from a selected surface; the
+    /// provider-selection digest is computed by the shared canonical helper.
+    pub fn from_plan(
+        plan: &RuntimeSurfacePlan,
+        evidence: &PlannedProviderEvidence,
+    ) -> UseResult<Self> {
+        plan.validate()?;
+        if evidence.surface != plan.surface()
+            || evidence.semantics_profile_digest
+                != plan
+                    .spec()
+                    .semantics_profile_digest
+                    .as_deref()
+                    .unwrap_or_default()
+        {
+            return Err(UseError::new(
+                PLAN_RESOLVER_ERROR,
+                "Runtime provider evidence does not bind the complete plan surface.",
+            ));
+        }
+        Self::new(
+            plan.context().package_id(),
+            plan.context().package_digest(),
+            plan.context().scope().clone(),
+            plan.surface(),
+            plan.context().generation(),
+            Some(plan.context().grant_digest().to_owned()),
+            evidence.semantics_profile_digest.clone(),
+            evidence.provider_id.clone(),
+            provider_selection_digest(evidence)?,
+        )
     }
 
     /// Check all key-bound fields against a decoded plan.  The descriptor
@@ -243,6 +280,12 @@ impl RuntimeSurfaceResolver for CommittedRuntimeSurfaceResolver {
                 "The durable Runtime plan does not match its committed lookup key.",
             ));
         }
+        if provider_selection_digest(evidence)? != key.selection_digest {
+            return Err(UseError::new(
+                PROVIDER_EVIDENCE_CHANGED,
+                "The committed Runtime provider evidence digest changed.",
+            ));
+        }
         plan.validate()?;
 
         let provider_id = ProviderId::parse(evidence.provider_id.clone()).map_err(|_| {
@@ -284,11 +327,7 @@ impl RuntimeSurfaceResolver for CommittedRuntimeSurfaceResolver {
             ));
         }
         validate_capabilities_for_plan(&plan, &capabilities)?;
-        Ok(SelectedRuntimeSurface::from_parts(
-            plan,
-            evidence.clone(),
-            client,
-        ))
+        SelectedRuntimeSurface::from_parts(plan, evidence.clone(), client)
     }
 }
 
@@ -331,6 +370,12 @@ impl RuntimeSurfaceResolver for RuntimeProviderSelectionResolver {
             return Err(UseError::new(
                 PLAN_RESOLVER_ERROR,
                 "The process-local Runtime selection differs from committed authority.",
+            ));
+        }
+        if selected.selection_digest() != key.selection_digest {
+            return Err(UseError::new(
+                PROVIDER_EVIDENCE_CHANGED,
+                "The committed Runtime provider evidence digest changed.",
             ));
         }
         Ok(selected)

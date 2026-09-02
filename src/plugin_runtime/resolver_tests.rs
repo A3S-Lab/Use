@@ -51,18 +51,7 @@ impl RuntimeProviderFactory for StaticFactory {
 }
 
 fn key_for(plan: &RuntimeSurfacePlan, evidence: &PlannedProviderEvidence) -> RuntimeSurfacePlanKey {
-    RuntimeSurfacePlanKey::new(
-        plan.context().package_id(),
-        plan.context().package_digest(),
-        plan.context().scope().clone(),
-        plan.surface(),
-        plan.context().generation(),
-        Some(plan.context().grant_digest().to_owned()),
-        evidence.semantics_profile_digest.clone(),
-        evidence.provider_id.clone(),
-        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-    )
-    .unwrap()
+    RuntimeSurfacePlanKey::from_plan(plan, evidence).unwrap()
 }
 
 fn registry_for(plan: &RuntimeSurfacePlan) -> Arc<RuntimeClientRegistry> {

@@ -2,12 +2,19 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_runtime::{ProviderId, RuntimeClientRegistry};
 use a3s_use_core::{PlanQualifiedSurfaceRef, PlannedProviderEvidence, UseError, UseResult};
+use olpc_cjson::CanonicalFormatter;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use super::client::{
     enforcement_profile, runtime_capabilities_digest, runtime_error,
     validate_capabilities_for_plan, PluginRuntimeClient,
 };
 use super::model::{runtime_contract_error, RuntimeSurfacePlan};
+use super::{RuntimeSurfacePlanKey, RuntimeSurfacePlanPublication};
+
+const CONTROL_PROVIDER_SELECTION_SCHEMA: &str = "a3s.use.control-provider-selection.v1";
+const MAX_CONTROL_PROVIDER_SELECTION_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeProviderAssignment {
@@ -46,6 +53,7 @@ pub struct SelectedRuntimeSurface {
     plan: RuntimeSurfacePlan,
     provider: PlannedProviderEvidence,
     client: PluginRuntimeClient,
+    selection_digest: String,
 }
 
 impl std::fmt::Debug for SelectedRuntimeSurface {
@@ -63,12 +71,14 @@ impl SelectedRuntimeSurface {
         plan: RuntimeSurfacePlan,
         provider: PlannedProviderEvidence,
         client: PluginRuntimeClient,
-    ) -> Self {
-        Self {
+    ) -> UseResult<Self> {
+        let selection_digest = provider_selection_digest(&provider)?;
+        Ok(Self {
             plan,
             provider,
             client,
-        }
+            selection_digest,
+        })
     }
 
     pub fn plan(&self) -> &RuntimeSurfacePlan {
@@ -81,6 +91,14 @@ impl SelectedRuntimeSurface {
 
     pub fn client(&self) -> &PluginRuntimeClient {
         &self.client
+    }
+
+    /// Digest of the canonical provider evidence descriptor used by the
+    /// Control Store Runtime owner. Keeping it on the selected value lets a
+    /// host publish the exact plan/key pair without reconstructing digest
+    /// rules at another boundary.
+    pub fn selection_digest(&self) -> &str {
+        &self.selection_digest
     }
 }
 
@@ -99,6 +117,23 @@ impl RuntimeProviderSelection {
             .iter()
             .map(|surface| surface.provider.clone())
             .collect()
+    }
+
+    /// Convert every connected managed Runtime surface into the immutable
+    /// publication consumed by [`RuntimeSurfacePlanStore`]. The resulting
+    /// keys are derived from the plan context and the exact provider evidence;
+    /// callers do not provide paths, generations, or digest fields manually.
+    pub fn plan_publications(&self) -> UseResult<Vec<RuntimeSurfacePlanPublication>> {
+        let mut publications = self
+            .surfaces
+            .iter()
+            .map(|selected| {
+                let key = RuntimeSurfacePlanKey::from_plan(selected.plan(), selected.provider())?;
+                RuntimeSurfacePlanPublication::new(key, selected.plan().clone())
+            })
+            .collect::<UseResult<Vec<_>>>()?;
+        publications.sort_by(|left, right| left.key.cmp(&right.key));
+        Ok(publications)
     }
 }
 
@@ -195,8 +230,42 @@ impl<'a> RuntimeProviderSelector<'a> {
                 plan,
                 provider,
                 client.clone(),
-            ));
+            )?);
         }
         Ok(RuntimeProviderSelection { surfaces })
     }
+}
+
+/// Compute the canonical digest shared by Runtime planning and the inactive
+/// Control Store provider-selection projection. This is intentionally kept in
+/// the Runtime boundary so a host cannot accidentally publish a key with a
+/// second, subtly different digest algorithm.
+pub(crate) fn provider_selection_digest(evidence: &PlannedProviderEvidence) -> UseResult<String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Descriptor<'a> {
+        schema: &'static str,
+        evidence: &'a PlannedProviderEvidence,
+    }
+
+    let descriptor = Descriptor {
+        schema: CONTROL_PROVIDER_SELECTION_SCHEMA,
+        evidence,
+    };
+    let mut bytes = Vec::new();
+    let mut serializer =
+        serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
+    descriptor.serialize(&mut serializer).map_err(|error| {
+        UseError::new(
+            "use.plugin.runtime.provider_selection_invalid",
+            format!("Failed to encode canonical Runtime provider evidence: {error}"),
+        )
+    })?;
+    if bytes.is_empty() || bytes.len() > MAX_CONTROL_PROVIDER_SELECTION_BYTES {
+        return Err(UseError::new(
+            "use.plugin.runtime.provider_selection_invalid",
+            "Canonical Runtime provider evidence exceeds its size bound.",
+        ));
+    }
+    Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
 }
