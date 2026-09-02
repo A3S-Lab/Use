@@ -83,12 +83,10 @@ fn scope() -> PluginManagedScope {
 }
 
 fn capabilities() -> PluginHostCapabilities {
-    PluginHostCapabilities::v6(
-        "host:node-01",
-        env!("CARGO_PKG_VERSION"),
-        "use:0.2.1:linux-x86_64",
-    )
-    .unwrap()
+    // This fixture freezes protocol v6, not the version of the crate running
+    // the test. Patch-only crate releases must not silently rewrite every
+    // cross-SDK capability digest when the protocol contract is unchanged.
+    PluginHostCapabilities::v6("host:node-01", "0.2.4", "use:0.2.1:linux-x86_64").unwrap()
 }
 
 fn candidate() -> VerifiedPluginCatalogRecord {

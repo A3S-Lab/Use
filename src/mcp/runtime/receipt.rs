@@ -207,9 +207,14 @@ pub(super) async fn read_optional_receipt(path: &Path) -> UseResult<Option<Brows
             ),
         ));
     }
-    let bytes = tokio::fs::read(path)
-        .await
-        .map_err(|error| service_path_io("read Browser MCP receipt", path, error))?;
+    let bytes = match tokio::fs::read(path).await {
+        Ok(bytes) => bytes,
+        // The service removes its receipt as part of a graceful stop.  A
+        // caller can observe the file between metadata and read, so a
+        // disappearing receipt is the same stable state as no receipt.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(service_path_io("read Browser MCP receipt", path, error)),
+    };
     let receipt = serde_json::from_slice::<BrowserServiceReceipt>(&bytes).map_err(|error| {
         UseError::new(
             "use.mcp.receipt_invalid",

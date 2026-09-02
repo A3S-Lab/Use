@@ -1,6 +1,6 @@
 [package]
 name = "a3s-use-mcp-release-fixture"
-version.workspace = true
+version = "0.2.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -10,7 +10,7 @@ publish = false
 description = "Headless Streamable HTTP MCP release conformance fixture"
 
 [dependencies]
-a3s-use-core = { version = "0.2.4", path = "../core" }
+a3s-use-core = { version = "0.2.5", path = "../core" }
 anyhow.workspace = true
 axum.workspace = true
 rmcp.workspace = true

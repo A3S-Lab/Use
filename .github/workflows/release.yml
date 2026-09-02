@@ -708,6 +708,16 @@ jobs:
             cargo publish --locked -p "${package}"
           }
 
+          verify_package() {
+            local package="$1"
+            echo "Verifying the packaged ${package} tarball before publication..."
+            # Run the same registry-aware package verification that cargo
+            # publish performs, but before uploading.  Dependency crates are
+            # waited on immediately below, so a stale public API or manifest
+            # requirement fails without creating a partial release.
+            cargo package --locked -p "${package}"
+          }
+
           wait_until_visible() {
             local package="$1"
             local version
@@ -723,10 +733,13 @@ jobs:
             exit 1
           }
 
+          verify_package a3s-use-core
           publish_once a3s-use-core
           wait_until_visible a3s-use-core
+          verify_package a3s-use-extension
           publish_once a3s-use-extension
           wait_until_visible a3s-use-extension
+          verify_package a3s-use
           publish_once a3s-use
           wait_until_visible a3s-use
 

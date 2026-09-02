@@ -55,7 +55,6 @@ struct RecordingPorts {
     calls: Mutex<Vec<&'static str>>,
     authority_generations: Mutex<Vec<u64>>,
     inspect_store: Option<ControlStore>,
-    delay_ms: u64,
     gate: Option<Arc<DispatchGate>>,
 }
 
@@ -66,18 +65,12 @@ impl RecordingPorts {
             calls: Mutex::new(Vec::new()),
             authority_generations: Mutex::new(Vec::new()),
             inspect_store: None,
-            delay_ms: 0,
             gate: None,
         }
     }
 
     fn with_reentrant_inspection(mut self, store: ControlStore) -> Self {
         self.inspect_store = Some(store);
-        self
-    }
-
-    fn with_delay_ms(mut self, delay_ms: u64) -> Self {
-        self.delay_ms = delay_ms;
         self
     }
 
@@ -98,9 +91,6 @@ impl RecordingPorts {
         if let Some(gate) = &self.gate {
             gate.entered.notify_one();
             gate.release.notified().await;
-        }
-        if self.delay_ms > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(self.delay_ms)).await;
         }
     }
 
@@ -612,7 +602,12 @@ async fn dispatcher_bounds_a_hung_provider_and_records_unknown_acceptance() {
         .commit_transition(transition(control_installation(), &reviewed))
         .await
         .unwrap();
-    let recording = Arc::new(RecordingPorts::new([Disposition::Applied]).with_delay_ms(500));
+    // Hold the provider at an explicit gate instead of relying on a wall-clock
+    // delay.  Store-executor contention can otherwise make observation take
+    // longer than the delay, allowing the detached provider task to finish
+    // before the restore-fence assertion runs.
+    let gate = Arc::new(DispatchGate::default());
+    let recording = Arc::new(RecordingPorts::new([Disposition::Applied]).with_gate(gate.clone()));
     let dispatcher = ControlEffectDispatcher::new(
         store.clone(),
         ports(recording.clone()),
@@ -622,18 +617,15 @@ async fn dispatcher_bounds_a_hung_provider_and_records_unknown_acceptance() {
     request.lease_duration_ms = 2_000;
     request.provider_timeout_ms = 5;
 
-    // The provider timeout is five milliseconds, but the coordinator still
-    // has to reacquire the store executor and persist the observation.  A
-    // one-second test budget is too close to the lower bound on a shared CI
-    // runner and makes this deterministic recovery assertion flaky under
-    // normal scheduler or disk contention.
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        dispatcher.dispatch_next(request),
-    )
-    .await
-    .expect("the dispatcher must bound a hung provider")
-    .unwrap();
+    let dispatch = tokio::spawn(async move { dispatcher.dispatch_next(request).await });
+    tokio::time::timeout(std::time::Duration::from_secs(5), gate.entered.notified())
+        .await
+        .expect("the provider must be entered before the timeout is observed");
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), dispatch)
+        .await
+        .expect("the dispatcher must bound a hung provider")
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         result,
         ControlEffectDispatchResult::Observed {
@@ -649,7 +641,8 @@ async fn dispatcher_bounds_a_hung_provider_and_records_unknown_acceptance() {
             .is_err(),
         "the still-running timed-out effect must retain a shared restore fence"
     );
-    let exclusive = tokio::time::timeout(std::time::Duration::from_secs(2), exclusive)
+    gate.release.notify_one();
+    let exclusive = tokio::time::timeout(std::time::Duration::from_secs(5), exclusive)
         .await
         .expect("restore may acquire after the timed-out effect future completes")
         .unwrap();

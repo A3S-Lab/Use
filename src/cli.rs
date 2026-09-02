@@ -169,6 +169,7 @@ fn help() -> CommandOutput {
             "  a3s-use ocr doctor [--json]\n",
             "  a3s-use ocr extract <image> [--json]\n",
             "  a3s-use extension list|inspect|doctor|diagnose|planning-evidence|snapshot|watch [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
+            "  a3s-use mcp serve manager --scope-kind <user|workspace> --scope-id <id> [--offline]\n",
             "  a3s-use mcp serve browser [--tools <profiles>]\n",
             "  a3s-use mcp serve ocr\n",
             "  a3s-use mcp start|status|stop [browser] [--json]"
@@ -410,6 +411,18 @@ async fn mcp(args: &[String]) -> UseResult<CommandOutput> {
         Some("serve") => {
             let target = value_argument(args, 1, "mcp serve requires a domain or package ID")?;
             match target {
+                "manager" | "package-manager" | "use/package-manager" => {
+                    #[cfg(all(feature = "extensions", feature = "mcp"))]
+                    {
+                        mcp_serve_manager(args).await?;
+                        Ok(CommandOutput::delegated(0))
+                    }
+                    #[cfg(not(all(feature = "extensions", feature = "mcp")))]
+                    Err(UseError::new(
+                        "use.mcp.disabled",
+                        "The standard Plugin Manager MCP endpoint requires the 'extensions' and 'mcp' features.",
+                    ))
+                }
                 "browser" | "use/browser" => {
                     #[cfg(feature = "browser")]
                     {
@@ -469,6 +482,60 @@ async fn mcp(args: &[String]) -> UseResult<CommandOutput> {
         }
         _ => Err(usage_error("mcp requires start, status, stop, or serve")),
     }
+}
+
+#[cfg(all(feature = "extensions", feature = "mcp"))]
+async fn mcp_serve_manager(args: &[String]) -> UseResult<()> {
+    validate_manager_mcp_args(args)?;
+    let installation = managed_scope_argument(args)?;
+    let access = if flag_argument(args, "--offline")? {
+        crate::cognitive_package::CognitiveRegistryAccess::Cached
+    } else {
+        crate::cognitive_package::CognitiveRegistryAccess::Refreshed
+    };
+    let service = crate::extension_cli::standalone_plugin_manager_service(installation)?;
+    let server = crate::plugin_manager::PluginManagerMcpServer::with_registry_access(
+        service,
+        access,
+        std::sync::Arc::new(crate::plugin_manager::FailClosedPluginManagerConfirmationProvider),
+    )?;
+    server.serve_stdio().await
+}
+
+#[cfg(all(feature = "extensions", feature = "mcp"))]
+fn validate_manager_mcp_args(args: &[String]) -> UseResult<()> {
+    // `args` still contains the `mcp` command's complete argument vector, so
+    // the target occupies index 1 and all endpoint options begin at index 2.
+    let mut index = 2;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--offline" => index += 1,
+            "--scope-kind" | "--scope-id" => {
+                if args
+                    .get(index + 1)
+                    .is_none_or(|value| value.starts_with('-'))
+                {
+                    return Err(usage_error(format!("{} requires a value", args[index])));
+                }
+                index += 2;
+            }
+            "--json" => {
+                return Err(usage_error(
+                    "mcp serve manager speaks standard MCP on stdout; remove --json",
+                ))
+            }
+            value => {
+                return Err(usage_error(format!(
+                    "unknown mcp serve manager option '{value}'"
+                )))
+            }
+        }
+    }
+    // Validate duplicate options and require both parts of the installation
+    // identity before constructing any Registry or lifecycle state.
+    let _ = managed_scope_argument(args)?;
+    flag_argument(args, "--offline")?;
+    Ok(())
 }
 
 async fn mcp_start(args: &[String]) -> UseResult<CommandOutput> {

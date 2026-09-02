@@ -132,7 +132,17 @@ jobs:
             return 1
           }
 
+          verify_package() {
+            local package="$1"
+            echo "Verifying the packaged ${package} tarball before publication..."
+            # Verify against the public registry graph before upload.  The
+            # loop below waits for each dependency before reaching its
+            # dependants, preventing a late cargo publish tarball failure.
+            cargo package --locked -p "$package"
+          }
+
           for package in a3s-use-core a3s-use-extension a3s-use; do
+            verify_package "$package"
             version="$(package_version "$package")"
             status="$(crate_status "$package" "$version")"
             case "$status" in

@@ -21,7 +21,47 @@ async fn help_exposes_only_supported_scoped_package_entrypoints() {
     assert!(output
         .human
         .contains("install <publisher/name> --scope-kind <user|workspace> --scope-id <id>"));
+    assert!(output
+        .human
+        .contains("mcp serve manager --scope-kind <user|workspace> --scope-id <id> [--offline]"));
     assert!(!output.human.contains("<external-route>"));
+}
+
+#[cfg(all(feature = "extensions", feature = "mcp"))]
+#[test]
+fn manager_mcp_entrypoint_requires_an_explicit_scope_and_rejects_cli_json() {
+    let missing_scope = validate_manager_mcp_args(&[
+        "serve".to_owned(),
+        "manager".to_owned(),
+        "--offline".to_owned(),
+    ])
+    .unwrap_err();
+    assert_eq!(missing_scope.code, "use.cli.invalid_usage");
+    assert!(missing_scope.message.contains("--scope-kind"));
+
+    let json = validate_manager_mcp_args(&[
+        "serve".to_owned(),
+        "manager".to_owned(),
+        "--scope-kind".to_owned(),
+        "user".to_owned(),
+        "--scope-id".to_owned(),
+        "user/current".to_owned(),
+        "--json".to_owned(),
+    ])
+    .unwrap_err();
+    assert_eq!(json.code, "use.cli.invalid_usage");
+    assert!(json.message.contains("standard MCP"));
+
+    validate_manager_mcp_args(&[
+        "serve".to_owned(),
+        "manager".to_owned(),
+        "--scope-kind".to_owned(),
+        "workspace".to_owned(),
+        "--scope-id".to_owned(),
+        "workspace/demo".to_owned(),
+        "--offline".to_owned(),
+    ])
+    .unwrap();
 }
 
 #[tokio::test]
