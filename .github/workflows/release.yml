@@ -362,7 +362,10 @@ jobs:
           assert value["data"]["model"] == "PP-OCRv6_small"
           assert value["data"]["source"]["mediaType"] == "image/bmp"
           PY
-          "${install_root}/a3s-use" capability snapshot --json > "${RUNNER_TEMP}/capabilities.json"
+          "${install_root}/a3s-use" capability snapshot \
+            --scope-kind user \
+            --scope-id release-smoke \
+            --json > "${RUNNER_TEMP}/capabilities.json"
           python3 - "${RUNNER_TEMP}/capabilities.json" "${install_root}" <<'PY'
           import json, pathlib, sys
           value = json.loads(pathlib.Path(sys.argv[1]).read_text())
@@ -452,7 +455,10 @@ jobs:
             $ocrExtract.data.model -ne "PP-OCRv6_small" -or
             $ocrExtract.data.source.mediaType -ne "image/bmp"
           ) { throw "Packaged PP-OCRv6 extraction smoke failed" }
-          $capabilities = (& "$root/a3s-use.exe" capability snapshot --json | ConvertFrom-Json)
+          $capabilities = (& "$root/a3s-use.exe" capability snapshot `
+            --scope-kind user `
+            --scope-id release-smoke `
+            --json | ConvertFrom-Json)
           $ocrCapability = $capabilities.data.registry.capabilities |
             Where-Object id -eq "use/ocr"
           if ($ocrCapability.mcp.target -ne "ocr-native" -or $ocrCapability.skills.Count -ne 1) {
