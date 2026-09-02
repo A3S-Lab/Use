@@ -1419,7 +1419,16 @@ state excluded from backup and must be rebuilt from restored Control evidence;
 lease files are excluded as well. A real composition test joins Knowledge,
 Skill, Capability Index, Control publication, stale admission, and drain.
 Production lifecycle conversion still must feed authorization-v2 Grant
-evidence, qualify the Runtime and Flow adapters, and compose the dispatcher.
+evidence, qualify the Runtime adapter, and compose the dispatcher. The inactive
+kernel now also has a committed-authority Flow owner: it reads a bounded Flow
+source as a path-free verified Artifact Store payload, publishes a durable
+no-clobber content-addressed copy in an owner-controlled workspace, and invokes
+only the typed `a3s-flow` Native TypeScript preflight. Package paths never cross
+that boundary; compiler/cache paths are operational host configuration rather
+than desired-state authority. Source substitution and failed preflight reject
+without a Control observation, while Artifact Store contention safely defers.
+Stop/remove are path-independent receipts. This qualification remains inactive
+until Runtime and production dispatcher composition are cut over together.
 The kernel now
 also qualifies the path-free
 external-payload registration and

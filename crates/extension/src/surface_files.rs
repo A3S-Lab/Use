@@ -468,17 +468,86 @@ pub async fn inspect_flow_surface_file(
     surface: &super::PluginFlowSurface,
     package_root: &Path,
 ) -> UseResult<PluginSurfaceFileEvidence> {
+    read_flow_surface_file(surface, package_root)
+        .await
+        .map(|(evidence, _)| evidence)
+}
+
+/// Read the exact bounded TypeScript bytes represented by Flow surface
+/// evidence. This remains crate-private so package paths cannot cross the
+/// verified Artifact Store lease boundary.
+pub(crate) async fn read_flow_surface_file(
+    surface: &super::PluginFlowSurface,
+    package_root: &Path,
+) -> UseResult<(PluginSurfaceFileEvidence, Vec<u8>)> {
     let canonical_root = canonical_package_root(package_root, "Flow").await?;
-    validate_text_asset(
-        "use.extension.flow_source_invalid",
-        "A3S Flow source",
-        "UTF-8 TypeScript",
-        &canonical_root,
-        &package_root.join(&surface.source),
-        MAX_FLOW_SOURCE_BYTES,
-    )
-    .await?;
-    digest_surface_files(package_root, &canonical_root, vec![surface.source.clone()]).await
+    let path = package_root.join(&surface.source);
+    validate_surface_file("A3S Flow source", &canonical_root, &path, false).await?;
+    let metadata = fs::symlink_metadata(&path)
+        .await
+        .map_err(|error| io_error("inspect A3S Flow source", &path, error))?;
+    if metadata.len() == 0 || metadata.len() > MAX_FLOW_SOURCE_BYTES {
+        return Err(UseError::new(
+            "use.extension.flow_source_invalid",
+            format!(
+                "A3S Flow source '{}' must contain between 1 byte and {MAX_FLOW_SOURCE_BYTES} bytes.",
+                path.display()
+            ),
+        ));
+    }
+    let capacity = usize::try_from(metadata.len()).map_err(|_| surface_evidence_limit())?;
+    let mut source = Vec::with_capacity(capacity);
+    let file = fs::File::open(&path)
+        .await
+        .map_err(|error| io_error("open A3S Flow source", &path, error))?;
+    file.take(MAX_FLOW_SOURCE_BYTES.saturating_add(1))
+        .read_to_end(&mut source)
+        .await
+        .map_err(|error| io_error("read A3S Flow source", &path, error))?;
+    if source.len() as u64 != metadata.len() || source.len() as u64 > MAX_FLOW_SOURCE_BYTES {
+        return Err(UseError::new(
+            "use.extension.package_changed",
+            format!(
+                "A3S Flow source '{}' changed while it was read.",
+                path.display()
+            ),
+        ));
+    }
+    std::str::from_utf8(&source).map_err(|error| {
+        UseError::new(
+            "use.extension.flow_source_invalid",
+            format!(
+                "A3S Flow source '{}' must be UTF-8 TypeScript: {error}",
+                path.display()
+            ),
+        )
+    })?;
+    let portable_path = surface
+        .source
+        .to_str()
+        .ok_or_else(|| {
+            UseError::new(
+                "use.extension.surface_invalid",
+                "Plugin surface paths must be valid UTF-8 on every platform.",
+            )
+        })?
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    let path_bytes = portable_path.as_bytes();
+    let path_len = u64::try_from(path_bytes.len()).map_err(|_| surface_evidence_limit())?;
+    let mut hasher = Sha256::new();
+    hasher.update(SURFACE_FILE_EVIDENCE_SCHEMA);
+    hasher.update(path_len.to_be_bytes());
+    hasher.update(path_bytes);
+    hasher.update(metadata.len().to_be_bytes());
+    hasher.update(&source);
+    Ok((
+        PluginSurfaceFileEvidence {
+            digest: format!("sha256:{:x}", hasher.finalize()),
+            file_count: 1,
+            expanded_bytes: metadata.len(),
+        },
+        source,
+    ))
 }
 
 /// Revalidate and digest one immutable UI contribution and all declared

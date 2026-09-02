@@ -309,9 +309,14 @@ admission stale on a racing cutover, while exclusive drain safely defers for an
 active call. Index and lease paths reject links, Index publication cannot
 replace an existing receipt, and exact staging replay is crash-safe. Both
 families are derived operational state excluded from backup; restore must
-rebuild the Index from verified Control evidence. Runtime and Flow adapters,
-production dispatcher composition, and conversion into the reviewed inputs
-used by the inactive kernel remain gate 3 work.
+rebuild the Index from verified Control evidence. The Flow adapter is now
+qualified as a gate-3 owner: it accepts only a path-free verified source
+payload, publishes a durable no-clobber content-addressed copy in its own
+workspace, and delegates Native TypeScript preflight to `a3s-flow` without
+receiving the Artifact Store package root. Source substitution and preflight
+failure are proved-no-effect rejection; Artifact Store contention is a
+same-key deferral. Runtime, production dispatcher composition, and conversion
+into the reviewed inputs used by the inactive kernel remain gate 3 work.
 
 Production activation is blocked until all gates below are true:
 
