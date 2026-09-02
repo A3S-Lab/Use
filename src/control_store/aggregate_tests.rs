@@ -34,7 +34,7 @@ mod effect_observations;
 mod effects;
 pub(super) mod fixtures;
 mod generations;
-mod grant_fixtures;
+pub(in crate::control_store) mod grant_fixtures;
 mod grants;
 mod operations;
 mod payloads;

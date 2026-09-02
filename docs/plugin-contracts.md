@@ -1,7 +1,7 @@
 # A3S Use Plugin Contract Reference
 
 Status: development preview
-Last updated: 2026-08-29
+Last updated: 2026-09-02
 
 ## Scope
 
@@ -534,6 +534,12 @@ source, not authority; lifecycle conversion must publish exact plan records
 before the corresponding Control commit. The process-local selection used by
 qualification tests remains non-authoritative and must not be used by
 production.
+The inactive composition proof uses a reviewed-operation-only entry point. It
+derives the complete transition inside Control, verifies one publication for
+each Runtime prepare and the exact reviewed Grant proposal digest, then
+publishes the immutable records before the generation commit while retaining
+one installation-wide shared maintenance guard. This internal proof does not
+make the private kernel or its legacy consumers production-active.
 
 The lifecycle diagnostic is a read-only JSON projection, not a mutable disk
 record or recovery input. It reports latest/previous operation identity,

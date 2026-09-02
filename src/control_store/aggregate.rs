@@ -277,6 +277,79 @@ pub(super) fn commit_transition(
     Ok(generation)
 }
 
+/// Project the next Control transition from the reviewed operation and the
+/// current durable cursors without accepting caller-supplied graph, Grant, or
+/// effect fields.
+///
+/// This is the first half of the production composition boundary.  The read
+/// transaction gives the caller one coherent operation/prior-generation
+/// snapshot; the later commit still performs its own compare-and-swap and
+/// projection validation because another shared reader may have raced the
+/// projection.  Returning the reviewed operation alongside the transition
+/// lets an external payload coordinator bind immutable Runtime plans to the
+/// exact reviewed Grant proposals before publishing any bytes.
+pub(super) fn project_transition(
+    path: &Path,
+    installation: &InstallationId,
+    operation_id: &str,
+    committed_at_ms: u64,
+) -> UseResult<(ReviewedControlOperation, ControlTransition)> {
+    if !valid_machine_id(operation_id) || committed_at_ms == 0 {
+        return Err(input_error(
+            "The Control Store transition projection request is invalid.",
+        ));
+    }
+    let connection = schema::open_verified_read(path, installation)?;
+    let transaction = connection.unchecked_transaction().map_err(|error| {
+        schema::sqlite_error("begin Control Store transition projection", error)
+    })?;
+    let operation = read_operation_from(&transaction, installation, operation_id)?
+        .ok_or_else(|| operation_missing(operation_id))?;
+    if operation.status != ControlOperationStatus::Reviewed {
+        return Err(conflict_error(
+            "Only a reviewed Control Store operation can be projected for commit.",
+        ));
+    }
+    let (generation, capability_generation) = read_cursors(&transaction)?;
+    if generation != operation.reviewed.expected_generation
+        || capability_generation != operation.reviewed.expected_capability_generation
+    {
+        return Err(generation_changed());
+    }
+    let prior = if operation.reviewed.expected_generation == 0 {
+        None
+    } else {
+        Some(
+            read_generation_from(
+                &transaction,
+                installation,
+                operation.reviewed.expected_generation,
+            )?
+            .ok_or_else(|| corruption_error("The prior Control Store generation is missing."))?,
+        )
+    };
+    let history = read_projection_history(&transaction, operation.reviewed.expected_generation)?;
+    let projected =
+        operation
+            .reviewed
+            .project_generation(prior.as_ref(), &history, committed_at_ms)?;
+    let transition = ControlTransition {
+        operation_id: operation.reviewed.operation_id().to_owned(),
+        plan_digest: operation.reviewed.plan_digest().to_owned(),
+        snapshot: projected.snapshot,
+        package_lifecycles: projected.package_lifecycles,
+        grants: projected.grants,
+        provider_selections: projected.provider_selections,
+        capability: projected.capability,
+        effects: projected.effects,
+        committed_at_ms,
+    };
+    transaction.commit().map_err(|error| {
+        schema::sqlite_error("finish Control Store transition projection", error)
+    })?;
+    Ok((operation.reviewed, transition))
+}
+
 pub(super) fn operation(
     path: &Path,
     installation: &InstallationId,

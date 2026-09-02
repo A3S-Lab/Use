@@ -28,7 +28,7 @@ pub(crate) const DIGEST_A: &str =
     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const DIGEST_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-pub(super) fn context(kind: PluginSurfaceKind, id: &str) -> RuntimeSurfaceContext {
+pub(crate) fn context(kind: PluginSurfaceKind, id: &str) -> RuntimeSurfaceContext {
     RuntimeSurfaceContext::new(
         "acme/research",
         DIGEST_A,
@@ -80,7 +80,7 @@ pub(crate) fn task_descriptor() -> ToolReleaseDescriptor {
     .unwrap()
 }
 
-pub(super) fn task_surface() -> ToolTaskSurface {
+pub(crate) fn task_surface() -> ToolTaskSurface {
     ToolTaskSurface {
         source: ToolTaskSource::Release {
             release: PathBuf::from("releases/task.json"),

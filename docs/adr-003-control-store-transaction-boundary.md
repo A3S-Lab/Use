@@ -356,6 +356,13 @@ records before committing their Control effects. Production must reconstruct
 the complete Runtime plan after restart from that source plus exact committed
 semantics evidence and immutable artifacts, then cut over the dispatcher
 without any legacy mutable-file authority.
+The qualification composition now exercises the intended ordering through one
+internal reviewed-operation entry point. It projects every mutable transition
+field from the durable operation, validates exact Runtime prepare coverage and
+reviewed Grant proposal digests, publishes the immutable plan records, and
+commits the projected generation while one shared installation maintenance
+guard remains held. This is a cutover proof, not production wiring; the
+production lifecycle still does not construct the kernel.
 
 The kernel uses WAL with full synchronous durability and foreign-key
 enforcement, rejects unknown schema or filesystem state, and serializes

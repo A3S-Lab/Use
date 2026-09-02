@@ -11,6 +11,11 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Windows PowerShell 5.1 does not preload the HttpClient assembly that the
+# installer uses for redirect-safe downloads. PowerShell 7 already loads it;
+# Add-Type is idempotent in both hosts.
+Add-Type -AssemblyName System.Net.Http
+
 $Repository = 'A3S-Lab/Use'
 
 function Fail([string]$Message) {
@@ -35,12 +40,12 @@ function Assert-DownloadUri([uri]$Uri, [switch]$AllowQuery) {
 }
 
 function Invoke-ReleaseFileDownload([uri]$Uri, [string]$Destination) {
-    $Handler = [Net.Http.HttpClientHandler]::new()
+    $Handler = [System.Net.Http.HttpClientHandler]::new()
     $Handler.AllowAutoRedirect = $false
     if ($Uri.IsLoopback) {
         $Handler.UseProxy = $false
     }
-    $Client = [Net.Http.HttpClient]::new($Handler)
+    $Client = [System.Net.Http.HttpClient]::new($Handler)
     $Client.DefaultRequestHeaders.UserAgent.ParseAdd('a3s-use-installer/1.0')
     try {
         $CurrentUri = $Uri
@@ -48,7 +53,7 @@ function Invoke-ReleaseFileDownload([uri]$Uri, [string]$Destination) {
             Assert-DownloadUri $CurrentUri -AllowQuery:($Redirect -gt 0)
             $Response = $Client.GetAsync(
                 $CurrentUri,
-                [Net.Http.HttpCompletionOption]::ResponseHeadersRead
+                [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
             ).GetAwaiter().GetResult()
             try {
                 $Status = [int]$Response.StatusCode

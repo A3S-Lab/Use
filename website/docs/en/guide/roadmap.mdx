@@ -193,6 +193,12 @@ conversion must publish exact new records before the corresponding Control
 commit. Production lifecycle still does not construct the dispatcher: it must
 bind this source and atomic composition to committed authority rather than use
 the process-local selection retained by this qualification.
+The internal qualification composition now derives the complete Control
+transition from a registered reviewed operation, verifies exact Runtime
+prepare coverage and reviewed Grant proposal digests, and orders immutable plan
+publication before the projected generation commit under one shared
+installation fence. This narrows the cutover boundary but does not activate the
+private kernel or accept caller-selected transition fields.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact

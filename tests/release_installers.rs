@@ -446,7 +446,7 @@ fn run_windows_installer_with_cosign(
     bin_dir: &Path,
     cosign: &Path,
 ) -> Output {
-    Command::new("pwsh")
+    Command::new(windows_powershell())
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.ps1"))
         .arg("-Version")
@@ -462,6 +462,22 @@ fn run_windows_installer_with_cosign(
         .arg("-NoPathUpdate")
         .output()
         .unwrap()
+}
+
+#[cfg(windows)]
+fn windows_powershell() -> &'static str {
+    let probe = Command::new("pwsh")
+        .args(["-NoProfile", "-Command", "$PSVersionTable.PSVersion"])
+        .output();
+    if probe.is_ok() {
+        "pwsh"
+    } else {
+        // Windows installations may provide only the inbox Windows
+        // PowerShell executable. The installer script intentionally stays
+        // compatible with both shells, so the test should exercise the
+        // available host instead of failing before the script starts.
+        "powershell"
+    }
 }
 
 #[cfg(unix)]

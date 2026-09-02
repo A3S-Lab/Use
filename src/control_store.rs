@@ -11,6 +11,7 @@ use a3s_use_core::{InstallationId, UseError, UseResult};
 use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
 
 mod aggregate;
+mod composition;
 mod dispatcher;
 mod effect_owner;
 mod effect_port;
@@ -31,6 +32,11 @@ use model::{
 };
 use payload_owner::{ControlPayloadOwnerRegistry, ControlPayloadSnapshotSession};
 use schema::{ControlStoreInspection, ControlStoreMetadata};
+
+#[allow(unused_imports)]
+pub(in crate::control_store) use composition::{
+    ControlEffectCompositionDependencies, ControlStoreRuntimeComposition,
+};
 
 pub(crate) fn validate_terminal_restore_receipt_blocking(
     attempt: &std::path::Path,
@@ -216,6 +222,17 @@ impl ControlStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        self.commit_transition_under_maintenance(transition).await
+    }
+
+    /// Commit a transition while the caller retains the installation-wide
+    /// shared maintenance guard. This is kept private to the composition
+    /// boundary so Runtime plan payload publication can be ordered before the
+    /// same transition without opening a second restore window.
+    async fn commit_transition_under_maintenance(
+        &self,
+        transition: ControlTransition,
+    ) -> UseResult<ControlGeneration> {
         filesystem::require_initialized(&self.state_root, &self.database_path).await?;
         let database_path =
             filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
@@ -225,6 +242,32 @@ impl ControlStore {
             .await?;
         filesystem::validate_initialized(&self.state_root, &self.database_path).await?;
         Ok(generation)
+    }
+
+    /// Project one reviewed operation while the caller retains the shared
+    /// installation maintenance guard. The executor performs all reads in a
+    /// single SQLite snapshot and returns both the immutable reviewed
+    /// operation and its derived transition for the external-payload commit
+    /// coordinator.
+    async fn project_transition_under_maintenance(
+        &self,
+        operation_id: &str,
+        committed_at_ms: u64,
+    ) -> UseResult<(ReviewedControlOperation, ControlTransition)> {
+        filesystem::require_initialized(&self.state_root, &self.database_path).await?;
+        let database_path =
+            filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
+        let projected = self
+            .executor
+            .project_transition(
+                database_path,
+                self.installation.clone(),
+                operation_id.to_string(),
+                committed_at_ms,
+            )
+            .await?;
+        filesystem::validate_initialized(&self.state_root, &self.database_path).await?;
+        Ok(projected)
     }
 
     async fn operation(&self, operation_id: &str) -> UseResult<Option<ControlOperationRecord>> {
@@ -387,6 +430,8 @@ impl ControlStore {
 mod aggregate_tests;
 #[cfg(test)]
 mod capability_plane_effect_tests;
+#[cfg(test)]
+mod composition_tests;
 #[cfg(test)]
 mod cutover_manifest_tests;
 #[cfg(test)]

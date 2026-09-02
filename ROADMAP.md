@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
 
 ## Product status
 
@@ -669,6 +669,12 @@ write-before-commit plan publication to lifecycle conversion and complete the
 atomic dispatcher composition; a process-local selection must never become
 production authority, and no adapter may read legacy authority or treat a path
 as authority.
+An internal qualification composition now derives the complete Control
+transition from a registered reviewed operation, validates exact Runtime
+prepare coverage and reviewed Grant proposal digests, and publishes immutable
+plan bytes before the projected generation under one shared installation
+maintenance fence. This narrows the production cutover boundary without
+activating the private kernel or accepting caller-selected transition fields.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
@@ -1216,6 +1222,10 @@ Status: in progress
 - [x] Qualify the installation-scoped host-owned Runtime plan store with
   canonical digest addressing, bounded batch publication, restart-safe reads,
   no-clobber immutability, and fail-closed tamper detection.
+- [x] Qualify a reviewed-operation-only Control composition that projects the
+  complete transition, validates Runtime publication authority, and orders
+  immutable plan publication before the generation commit under one shared
+  maintenance fence. This remains an inactive cutover proof.
 - [ ] Compose production Runtime Service providers in A3S Code and managed
   hosts with a durable host source and atomic dispatcher cutover, preserving
   exact plan-time and apply-time evidence.

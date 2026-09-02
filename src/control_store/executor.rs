@@ -63,6 +63,13 @@ enum ControlStoreRequest {
         transition: ControlTransition,
         response: oneshot::Sender<UseResult<ControlGeneration>>,
     },
+    ProjectTransition {
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+        committed_at_ms: u64,
+        response: oneshot::Sender<UseResult<(ReviewedControlOperation, ControlTransition)>>,
+    },
     Operation {
         database_path: PathBuf,
         installation: InstallationId,
@@ -240,6 +247,25 @@ impl ControlStoreExecutor {
             database_path,
             installation,
             transition,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn project_transition(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+        operation_id: String,
+        committed_at_ms: u64,
+    ) -> UseResult<(ReviewedControlOperation, ControlTransition)> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::ProjectTransition {
+            database_path,
+            installation,
+            operation_id,
+            committed_at_ms,
             response,
         })
         .await?;
@@ -483,6 +509,20 @@ fn run_worker(mut receiver: mpsc::Receiver<ControlStoreRequest>) {
                     &database_path,
                     &installation,
                     &transition,
+                ));
+            }
+            ControlStoreRequest::ProjectTransition {
+                database_path,
+                installation,
+                operation_id,
+                committed_at_ms,
+                response,
+            } => {
+                let _ = response.send(aggregate::project_transition(
+                    &database_path,
+                    &installation,
+                    &operation_id,
+                    committed_at_ms,
                 ));
             }
             ControlStoreRequest::Operation {

@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{InstallationId, UseError, UseResult};
-use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
+use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
 use async_trait::async_trait;
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -125,6 +125,15 @@ impl RuntimeSurfacePlanStore {
         &self.root
     }
 
+    /// Return the installation state root used for the store's maintenance
+    /// fence. This is crate-private because callers should normally obtain
+    /// the store from `ExtensionPaths`; the Control composition uses it to
+    /// prove that payload publication and the database commit share one root.
+    #[allow(dead_code)]
+    pub(crate) fn state_root(&self) -> &Path {
+        &self.state_root
+    }
+
     /// Publish one exact immutable plan record.
     ///
     /// true means a new record was published; false means the exact record
@@ -152,8 +161,7 @@ impl RuntimeSurfacePlanStore {
         &self,
         publications: &[RuntimeSurfacePlanPublication],
     ) -> UseResult<RuntimeSurfacePlanPublishResult> {
-        let prepared = self.prepare_publications(publications)?;
-        if prepared.is_empty() {
+        if publications.is_empty() {
             return Ok(RuntimeSurfacePlanPublishResult {
                 published: 0,
                 existing: 0,
@@ -162,6 +170,32 @@ impl RuntimeSurfacePlanStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        self.publish_under_maintenance(&_maintenance, publications)
+            .await
+    }
+
+    /// Publish records while the caller owns the installation-wide shared
+    /// maintenance guard. This is intentionally crate-private: the only
+    /// caller is the Control transition coordinator, which must keep plan
+    /// publication and the following local authority commit under one fence.
+    pub(crate) async fn publish_under_maintenance(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+        publications: &[RuntimeSurfacePlanPublication],
+    ) -> UseResult<RuntimeSurfacePlanPublishResult> {
+        if !maintenance.is_shared_for(&self.state_root) {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "Runtime plan publication requires the shared guard for its installation state root.",
+            ));
+        }
+        let prepared = self.prepare_publications(publications)?;
+        if prepared.is_empty() {
+            return Ok(RuntimeSurfacePlanPublishResult {
+                published: 0,
+                existing: 0,
+            });
+        }
         let _lock = self.acquire_lock().await?;
         ensure_owned_directory(&self.state_root, &self.root).await?;
         let existing_records = self.scan_records().await?;

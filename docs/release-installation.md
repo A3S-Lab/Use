@@ -15,7 +15,7 @@ gate is complete.
 | Windows x86_64 | `a3s-use-<version>-windows-x86_64.zip` |
 
 `install.sh` supports Linux and macOS. `install.ps1` requires Windows x86_64
-and PowerShell 7. Both installers require a trusted Cosign executable on
+and Windows PowerShell 5.1 or PowerShell 7. Both installers require a trusted Cosign executable on
 `PATH`, or an explicit path supplied by the operator. Unsupported systems fail
 before a release request.
 
