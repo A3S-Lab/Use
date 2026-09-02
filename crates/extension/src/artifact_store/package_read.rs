@@ -17,9 +17,9 @@ use crate::package::{lock_is_contended, read_manifest, sha256, validate_surface_
 use crate::registry::validate_catalog_manifest_binding;
 use crate::surface_files::{
     inspect_skill_surface_file, inspect_ui_surface_files, load_okf_bundle_files,
-    PluginSurfaceFileEvidence,
+    read_flow_surface_file, PluginSurfaceFileEvidence,
 };
-use crate::ExtensionManifest;
+use crate::{ExtensionManifest, PluginFlowSurface};
 
 const READ_LOCK_WAIT: Duration = Duration::from_secs(2);
 const READ_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(25);
@@ -51,6 +51,35 @@ pub struct VerifiedOkfSurfacePayload {
     surface_id: String,
     bundle: OkfBundleContract,
     files: Vec<OkfBundleFile>,
+}
+
+/// Path-free immutable bytes for one exact catalog-bound Flow surface.
+///
+/// The relative manifest contract and byte snapshot can cross the Flow owner
+/// boundary, but the Artifact Store package root cannot.
+#[derive(Debug, PartialEq, Eq)]
+pub struct VerifiedFlowSurfacePayload {
+    surface: PluginFlowSurface,
+    source: Vec<u8>,
+    evidence: PluginSurfaceFileEvidence,
+}
+
+impl VerifiedFlowSurfacePayload {
+    pub fn surface(&self) -> &PluginFlowSurface {
+        &self.surface
+    }
+
+    pub fn source(&self) -> &[u8] {
+        &self.source
+    }
+
+    pub fn evidence(&self) -> &PluginSurfaceFileEvidence {
+        &self.evidence
+    }
+
+    pub fn into_parts(self) -> (PluginFlowSurface, Vec<u8>, PluginSurfaceFileEvidence) {
+        (self.surface, self.source, self.evidence)
+    }
 }
 
 impl VerifiedOkfSurfacePayload {
@@ -174,6 +203,27 @@ impl VerifiedArtifactPackage {
             surface_id: surface.id.clone(),
             bundle: surface.bundle.clone(),
             files,
+        })
+    }
+
+    /// Read one exact immutable Flow contribution without exposing its
+    /// package path to the effect owner or compiler adapter.
+    pub async fn read_flow_surface(
+        &self,
+        surface_id: &str,
+    ) -> UseResult<VerifiedFlowSurfacePayload> {
+        let surface = self
+            .manifest
+            .flows
+            .iter()
+            .find(|surface| surface.id == surface_id)
+            .ok_or_else(surface_missing)?;
+        let (evidence, source) = read_flow_surface_file(surface, &self.root).await?;
+        self.verify_unchanged().await?;
+        Ok(VerifiedFlowSurfacePayload {
+            surface: surface.clone(),
+            source,
+            evidence,
         })
     }
 
@@ -374,5 +424,6 @@ fn surface_missing() -> UseError {
 const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<VerifiedArtifactPackage>();
+    assert_send_sync::<VerifiedFlowSurfacePayload>();
     assert_send_sync::<VerifiedOkfSurfacePayload>();
 };

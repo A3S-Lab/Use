@@ -168,9 +168,14 @@ drain safely defers while an accepted call is active. Publication is no-follow,
 no-replace, and crash-replayable. Index and lease files are derived operational
 state excluded from backup and the Index must be rebuilt from restored Control
 evidence. A real composition test covers Knowledge, Skill, cutover, stale
-admission, and same-key drain retry. Production lifecycle still does not
-construct the dispatcher; Runtime, Flow, and composition must use the same
-committed Control boundary.
+admission, and same-key drain retry. The inactive Flow owner now follows the
+same boundary: it reads a path-free verified source payload, publishes a
+durable no-clobber content-addressed owner copy, and delegates Native
+TypeScript preflight only to `a3s-flow`. Package roots never cross the owner
+boundary; source substitution and failed preflight reject without a Control
+observation, while Artifact Store contention safely defers under the same key.
+Production lifecycle still does not construct the dispatcher; Runtime and
+composition must use the same committed Control boundary.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact

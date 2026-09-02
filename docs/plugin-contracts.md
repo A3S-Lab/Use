@@ -241,6 +241,14 @@ remote OS placement must consume the same package-owned Flow identity.
 Missing Flow ownership fails before publication. Source presence is not a
 readiness fallback.
 
+The inactive Control Store Flow owner consumes the source through a verified,
+path-free Artifact Store payload, materializes it into an immutable
+content-addressed owner workspace, and delegates Native TypeScript preflight
+only to `a3s-flow`. The package root never crosses that boundary; compiler and
+cache paths are operational host configuration. Source substitution and failed
+preflight produce proved-no-effect rejection, while Artifact Store contention
+is a same-key deferral.
+
 ## Catalog and TUF provenance
 
 Every signed Registry target carries one complete catalog-v3 record in

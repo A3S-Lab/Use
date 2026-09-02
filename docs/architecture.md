@@ -192,8 +192,16 @@ same-key deferral. No-follow, no-replace publication and exact staging replay
 protect the immutable Index. Because the Index is fully derived from Control
 evidence, backup excludes both it and lease files; restore must reconstruct it
 before readers switch. A real composition test covers Knowledge, Skill,
-cutover, stale admission, and drain together. Lifecycle conversion still must
-feed reviewed Grant evidence and qualify Runtime and Flow owners; all inputs
+cutover, stale admission, and drain together. The Flow owner is now qualified
+on the same committed-authority boundary: it receives only a path-free,
+verified Native TypeScript snapshot, publishes a durable no-clobber
+content-addressed copy in its own workspace, and delegates preflight only to
+`a3s-flow`. The Artifact Store package root never crosses that boundary;
+compiler/cache paths are operational host configuration, not desired-state
+authority. Source substitution and failed preflight prove no Control effect,
+while Artifact Store contention is a same-key deferral. Stop/remove are
+path-independent receipts. Lifecycle conversion still must feed reviewed Grant
+evidence and qualify Runtime and production dispatcher composition; all inputs
 must come only from committed Control authority and immutable artifacts.
 The inactive kernel now has a path-free external-payload registry/evidence
 contract: five fixed owner identities and ACL backup policies, explicit global

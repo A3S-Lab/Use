@@ -115,6 +115,69 @@ async fn verified_package_lease_reads_one_named_okf_snapshot_without_exposing_it
 }
 
 #[tokio::test]
+async fn verified_package_lease_reads_one_named_flow_snapshot_without_exposing_package_root() {
+    let source = tempfile::tempdir().unwrap();
+    let fixture = source.path().join("package");
+    std::fs::create_dir_all(fixture.join("flows")).unwrap();
+    std::fs::write(fixture.join("README.md"), "# Flow fixture\n").unwrap();
+    std::fs::write(
+        fixture.join(MANIFEST_NAME),
+        r#"extension "acme/flow" {
+  schema_version = 3
+  version        = "1.0.0"
+  route          = "flow"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["execute"]
+
+  repository {
+    url      = "https://github.com/acme/flow"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  flow "reason" {
+    engine        = "a3s-flow"
+    runtime       = "native-ts"
+    source        = "flows/reason.ts"
+    export        = "run"
+    requires_tool = []
+    requires_mcp  = []
+    requires_okf  = []
+    optional      = false
+  }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        fixture.join("flows/reason.ts"),
+        "export function run() { return { type: 'complete', output: {} }; }\n",
+    )
+    .unwrap();
+    let catalog = catalog_for_static_fixture(&fixture).await;
+    let (_temporary, store, _, package_root) =
+        stage_fixture_with_catalog(&fixture, catalog.clone()).await;
+    let package = store.acquire_verified_package(&catalog).await.unwrap();
+
+    let payload = package.read_flow_surface("reason").await.unwrap();
+
+    assert_eq!(payload.surface().id, "reason");
+    assert_eq!(payload.surface().export_name, "run");
+    assert_eq!(
+        payload.source(),
+        std::fs::read(package_root.join("flows/reason.ts")).unwrap()
+    );
+    assert_eq!(payload.evidence().file_count(), 1);
+    assert_eq!(
+        payload.evidence().expanded_bytes(),
+        u64::try_from(payload.source().len()).unwrap()
+    );
+    assert!(payload.evidence().digest().starts_with("sha256:"));
+
+    let error = package.read_flow_surface("missing").await.unwrap_err();
+    assert_eq!(error.code, "use.artifact_store.surface_missing");
+}
+
+#[tokio::test]
 async fn verified_package_lease_fails_closed_for_content_tampering() {
     let fixture = package_fixture();
     let (_temporary, store, catalog, package_root) = stage_fixture(&fixture).await;
@@ -304,9 +367,11 @@ async fn catalog_for_static_fixture(root: &Path) -> VerifiedPluginCatalogRecord 
             requires: surface.dependencies,
         })
         .collect();
-    record.archive.target_name =
-        "extensions/acme/static/1.0.0/stable/linux-x86_64/acme-static-1.0.0-linux-x86_64.tar.gz"
-            .to_string();
+    let archive_name = manifest.package_id.replace('/', "-");
+    record.archive.target_name = format!(
+        "extensions/{}/{}/stable/linux-x86_64/{archive_name}-{}-linux-x86_64.tar.gz",
+        manifest.package_id, manifest.version, manifest.version
+    );
     record.package.expanded_bytes = fingerprint.byte_count;
     record.package.file_count = fingerprint.file_count;
     record.package.sha256 = Some(format!("sha256:{}", fingerprint.sha256));

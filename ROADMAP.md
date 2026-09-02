@@ -639,10 +639,16 @@ exclusive lock, safely deferring until accepted calls release it. Immutable
 publication is no-follow, no-replace, and crash-replayable. The Index and lease
 files are derived operational state excluded from backup; restore must rebuild
 the Index from verified Control evidence. A real composition test joins
-Knowledge, Skill, publication, stale admission, and same-key drain retry. This
-remains inactive ADR-003 step-3 qualification: Runtime, Flow, and production
-dispatcher composition must follow the same boundary, and no adapter may read
-legacy authority or treat a path as authority.
+Knowledge, Skill, publication, stale admission, and same-key drain retry. The
+inactive ADR-003 step-3 qualification now also includes a committed-authority
+Flow owner. It consumes a path-free verified source snapshot, durably publishes
+a no-clobber content-addressed source in its own workspace, and invokes only
+the typed `a3s-flow` Native TypeScript preflight. Compiler/cache paths are
+operational host configuration, never package authority; source substitution
+and failed preflight reject without a Control observation, while Artifact Store
+contention remains a same-key deferral. Stop/remove are path-independent
+receipts. Runtime and production dispatcher composition must follow the same
+boundary, and no adapter may read legacy authority or treat a path as authority.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
