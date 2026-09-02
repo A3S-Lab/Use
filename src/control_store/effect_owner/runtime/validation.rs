@@ -15,15 +15,19 @@ pub(super) fn validate_plan_identity(
     selected: &SelectedRuntimeSurface,
 ) -> UseResult<()> {
     let plan = selected.plan();
-    plan.spec()
-        .validate()
-        .map_err(|message| runtime_error(RUNTIME_PLAN_ERROR, message))?;
+    plan.validate()?;
     let context = plan.context();
+    let grant_matches = authority
+        .package
+        .grant
+        .as_ref()
+        .is_none_or(|grant| context.grant_digest() == grant.grant_digest.as_str());
     if context.package_id() != request.package_id
         || context.package_digest() != request.package_digest
         || context.scope() != &request.identity.installation
         || context.surface() != &request.surface
         || context.generation() != request.lifecycle_generation
+        || !grant_matches
         || authority.provider_selection.evidence.surface != plan.surface()
         || selected.provider().semantics_profile_digest
             != plan

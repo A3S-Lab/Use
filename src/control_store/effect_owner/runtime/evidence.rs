@@ -154,6 +154,7 @@ pub(super) fn before_effect_failure(
             | "use.artifact_store.io"
             | "use.extension.io"
             | "use.plugin.runtime.provider_unavailable"
+            | "use.plugin.runtime.plan_source_unavailable"
             | "use.plugin.runtime.deadline_exceeded"
             | "use.plugin.runtime.operation_failed"
             | "use.plugin.runtime.binding_io"

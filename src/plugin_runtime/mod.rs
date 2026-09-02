@@ -14,6 +14,9 @@ mod provisioning;
 #[cfg(test)]
 pub(crate) mod provisioning_fault_matrix;
 mod receipt;
+mod resolver;
+#[cfg(test)]
+mod resolver_tests;
 mod store;
 mod surface_observer;
 mod task;
@@ -30,7 +33,8 @@ pub use model::{
     RuntimeResourcePolicy, RuntimeServiceActivation, RuntimeServiceBindingReceipt,
     RuntimeServiceReadinessEvidence, RuntimeSurfaceContext, RuntimeSurfaceContract,
     RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeWorkloadPolicy,
-    RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_TASK_BINDING_SCHEMA,
+    MAX_RUNTIME_SURFACE_PLAN_BYTES, RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_SURFACE_PLAN_SCHEMA,
+    RUNTIME_TASK_BINDING_SCHEMA,
 };
 pub use planner::{plan_mcp_service_release, plan_tool_service_release, plan_tool_task_release};
 pub use provider_selector::{
@@ -42,6 +46,10 @@ pub use provisioning::{
     RUNTIME_SERVICE_PROVISIONING_SCHEMA,
 };
 pub use receipt::{RuntimeBindingReadiness, RuntimeBindingReceipt};
+pub use resolver::{
+    CommittedRuntimeSurfaceResolver, RuntimeProviderSelectionResolver, RuntimeSurfacePlanKey,
+    RuntimeSurfacePlanSource, RuntimeSurfaceResolver,
+};
 pub use store::{RuntimeBindingStore, MAX_RUNTIME_BINDING_GENERATIONS};
 pub use surface_observer::{
     RuntimeSurfaceObservation, RuntimeSurfaceObservationSnapshot, RuntimeSurfaceObservedState,

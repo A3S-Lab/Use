@@ -59,6 +59,18 @@ impl std::fmt::Debug for SelectedRuntimeSurface {
 }
 
 impl SelectedRuntimeSurface {
+    pub(crate) fn from_parts(
+        plan: RuntimeSurfacePlan,
+        provider: PlannedProviderEvidence,
+        client: PluginRuntimeClient,
+    ) -> Self {
+        Self {
+            plan,
+            provider,
+            client,
+        }
+    }
+
     pub fn plan(&self) -> &RuntimeSurfacePlan {
         &self.plan
     }
@@ -155,6 +167,7 @@ impl<'a> RuntimeProviderSelector<'a> {
 
         let mut surfaces = Vec::with_capacity(assignments.len());
         for (plan, assignment) in plans.into_iter().zip(assignments) {
+            plan.validate()?;
             let (client, capabilities, capability_digest) =
                 providers.get(&assignment.provider_id).ok_or_else(|| {
                     UseError::new(
@@ -178,11 +191,11 @@ impl<'a> RuntimeProviderSelector<'a> {
                 semantics_profile_digest,
                 enforcement: enforcement_profile(plan.spec().isolation)?,
             };
-            surfaces.push(SelectedRuntimeSurface {
+            surfaces.push(SelectedRuntimeSurface::from_parts(
                 plan,
                 provider,
-                client: client.clone(),
-            });
+                client.clone(),
+            ));
         }
         Ok(RuntimeProviderSelection { surfaces })
     }
