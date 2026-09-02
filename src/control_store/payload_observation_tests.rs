@@ -96,7 +96,7 @@ async fn terminal_observations_are_control_bound_and_active_attempts_are_exclude
         .collect::<Vec<_>>();
     receipts.push(snapshot.receipt);
     let complete = session.complete(receipts).unwrap();
-    assert_eq!(complete.receipts.len(), 4);
+    assert_eq!(complete.receipts.len(), 5);
     assert_eq!(
         complete
             .receipts

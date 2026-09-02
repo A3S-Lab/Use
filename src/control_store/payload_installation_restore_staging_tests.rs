@@ -9,10 +9,19 @@ use super::payload_knowledge_tests::support::seed_control_knowledge;
 use super::payload_owner::*;
 use super::ControlStore;
 use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
+use crate::plugin_runtime::test_support::{
+    artifact, capabilities, context, evidence, policy, service_descriptor,
+};
+use crate::plugin_runtime::{
+    plan_tool_service_release, RuntimeSurfacePlanKey, RuntimeSurfacePlanPublication,
+    RuntimeSurfacePlanStore,
+};
 use crate::state_restore::test_support::{
     restore_history_fixture, write_restore_history_operation,
 };
+use a3s_use_core::PluginSurfaceKind;
 use a3s_use_extension::StateMaintenanceLock;
+use a3s_use_extension::ToolServiceSurface;
 
 #[tokio::test]
 async fn complete_restore_stages_every_owner_under_one_exclusive_attempt() {
@@ -36,6 +45,9 @@ async fn complete_restore_stages_every_owner_under_one_exclusive_attempt() {
         .host_projection_candidate_path()
         .is_some_and(|path| path.is_dir()));
     assert!(staged
+        .runtime_plan_candidate_path()
+        .is_some_and(|path| path.is_dir()));
+    assert!(staged
         .knowledge_candidate_path()
         .is_some_and(|path| path.is_file()));
     assert!(staged
@@ -47,6 +59,7 @@ async fn complete_restore_stages_every_owner_under_one_exclusive_attempt() {
     for candidate in [
         Some(staged.control_candidate_path()),
         staged.host_projection_candidate_path(),
+        staged.runtime_plan_candidate_path(),
         staged.knowledge_candidate_path(),
         staged.observation_candidate_path(),
         staged.restore_coordinator_candidate_path(),
@@ -87,6 +100,7 @@ async fn complete_restore_stages_absence_without_inventing_owner_candidates() {
 
     assert!(staged.control_candidate_path().is_file());
     assert!(staged.host_projection_candidate_path().is_none());
+    assert!(staged.runtime_plan_candidate_path().is_none());
     assert!(staged.knowledge_candidate_path().is_none());
     assert!(staged.observation_candidate_path().is_none());
     assert!(staged.restore_coordinator_candidate_path().is_none());
@@ -192,6 +206,7 @@ pub(in crate::control_store) async fn populated_snapshot_at(
     seed_control_knowledge(&store, &paths).await;
     seed_host_projection_for_completed_operation(&store, &paths, &completed).await;
     seed_observations(&paths, &installation);
+    seed_runtime_plan(&paths).await;
     let restore = restore_history_fixture(&installation, 2_000).await;
     write_restore_history_operation(
         &paths.installation_state_root(),
@@ -220,4 +235,36 @@ pub(in crate::control_store) async fn populated_snapshot_at(
 
 pub(in crate::control_store) fn candidate_bytes(path: PathBuf) -> Vec<u8> {
     std::fs::read(path).unwrap()
+}
+
+async fn seed_runtime_plan(paths: &a3s_use_extension::ExtensionPaths) {
+    let descriptor = service_descriptor();
+    let surface = ToolServiceSurface {
+        release: PathBuf::from("releases/service.json"),
+        base_path: "/api".to_owned(),
+        contract: None,
+    };
+    let plan = plan_tool_service_release(
+        context(PluginSurfaceKind::Tool, "index"),
+        &surface,
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let provider = evidence(&plan, &capabilities(&plan));
+    let key = RuntimeSurfacePlanKey::from_plan(&plan, &provider).unwrap();
+    RuntimeSurfacePlanStore::from_extension_paths(paths)
+        .put(&key, &plan)
+        .await
+        .unwrap();
+    let publication = RuntimeSurfacePlanPublication::new(key, plan).unwrap();
+    assert_eq!(
+        RuntimeSurfacePlanStore::from_extension_paths(paths)
+            .publish(std::slice::from_ref(&publication))
+            .await
+            .unwrap()
+            .existing,
+        1
+    );
 }

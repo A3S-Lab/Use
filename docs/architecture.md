@@ -229,8 +229,8 @@ one shared installation fence. This proves the ordering and authority
 boundary, but it is not a public API and production lifecycle code still does
 not construct it.
 The inactive kernel now has a path-free external-payload registry/evidence
-contract: five fixed owner identities and ACL backup policies, explicit global
-Artifact Store exclusion, and one exact canonical receipt set for the four
+contract: six fixed owner identities and ACL backup policies, explicit global
+Artifact Store exclusion, and one exact canonical receipt set for the five
 snapshotted owners. Receipts bind installation, Control generation, registry
 and owner schemas, manifest/inventory digests, and bounded accounting; they do
 not embed host paths. A private session now binds one canonical Control export
@@ -301,9 +301,13 @@ The typed complete-set marker has no retained operation and preserves all 64
 source records. A source/active identity collision fails before any pruning
 decision. Candidate, retired, activation,
 and deterministic publication-partial evidence are revalidated on every
-replay, and the result is path-free and snapshot-bound.
+replay, and the result is path-free and snapshot-bound. The Runtime plan payload
+is the fifth snapshotted owner. It captures immutable installation-scoped plan
+envelopes, verifies the complete key/plan binding, restores plans before Host
+projection activation, and exposes referenced Runtime blob digests to the
+installation artifact-reachability scan.
 The private complete-set snapshot coordinator now captures one canonical
-Control export and all four registered owner snapshots under the same exclusive
+Control export and all five registered owner snapshots under the same exclusive
 maintenance fence and timestamp. A canonical path-free manifest binds the
 fixed owner registry, receipts, schemas, digests, and byte accounting. The
 coordinator streams those inputs in protocol order into one staged archive
@@ -313,12 +317,12 @@ Absent owners remain explicit without contributing payload bytes, and the
 global Artifact Store stays outside installation backup. This is qualified
 cross-owner snapshot assembly. Its offline-verified aggregate can now retain
 one exact target's exclusive maintenance fence and build a deterministic
-five-component restore attempt beneath the fixed
+six-component restore attempt beneath the fixed
 `.control-installation-restore` directory. A canonical path-free descriptor
 binds the complete snapshot, installation, owner registry, Knowledge policy,
 and component set before any candidate is created. The Control database is
 restored from the canonical export, checkpointed to a single file,
-round-tripped, and physically digest-bound; the four external candidates reuse
+round-tripped, and physically digest-bound; the five external candidates reuse
 their owner-native staging and validation under that same guard. No live owner
 path is changed. Exact replay, interrupted Control staging, explicit owner
 absence, and target isolation are qualified; links, unknown entries,
@@ -327,20 +331,20 @@ preflights every clean target, then records durable top-level intent. The
 immutable attempt descriptor remains the restore identity, one canonical
 `activation.json` is the mutable ordered journal, and the typed global
 `.maintenance.restore.json` marker binds the same immutable operation while
-blocking ordinary shared access. Control Store, Host projection, Knowledge,
-observations, and Restore Coordinator execute in fixed order; every owner uses
-journal, marker, effect, checkpoint. Each checkpoint binds the canonical
+blocking ordinary shared access. Control Store, Runtime plans, Host projection,
+Knowledge, observations, and Restore Coordinator execute in fixed order; every
+owner uses journal, marker, effect, checkpoint. Each checkpoint binds the canonical
 path-free result by byte count and a domain-separated digest. The coordinator
 owner additionally verifies the exact complete marker bytes, length, and digest
 before replacing history. Reopen reacquires the exact exclusive guard, rebinds
 the same snapshot, attempt, registry, and policy, and reconstructs or verifies
-every candidate/live boundary. Safe journal and marker partial states, all five
-post-effect/pre-checkpoint boundaries, the fifth checkpoint before marker
+every candidate/live boundary. Safe journal and marker partial states, all six
+post-effect/pre-checkpoint boundaries, the sixth checkpoint before marker
 retirement, and exit after deletion converge. Marker absence is accepted only
 with a complete journal; out-of-order live roots, ambiguous markers, links,
 rebinding, and evidence drift fail closed. Completed replay performs no owner
-effect and can only resume bounded fixed-order retirement of the five link-free
-staging trees. An 18-boundary real-child-process matrix qualifies the top-level
+effect and can only resume bounded fixed-order retirement of the six link-free
+staging trees. A 21-boundary real-child-process matrix qualifies the top-level
 protocol, including every retirement boundary. The surviving canonical
 `attempt.json` and complete `activation.json` form the exact
 installation-bound terminal receipt. Legacy backup and artifact reachability

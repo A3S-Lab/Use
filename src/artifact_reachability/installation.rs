@@ -5,7 +5,9 @@ use a3s_use_core::{
     InstallationId, InstallationKind, InstallationSnapshot, PluginPackageId, PluginPackageLock,
     UseError, UseResult, MAX_INSTALLATION_SNAPSHOT_BYTES,
 };
-use a3s_use_extension::{ArtifactKind, UsePaths, ACTIVE_STATE_RESTORE_MARKER};
+use a3s_use_extension::{
+    ArtifactKind, StateMaintenanceLock, UsePaths, ACTIVE_STATE_RESTORE_MARKER,
+};
 use tokio::fs;
 
 use super::{reference_invalid, ArtifactReferenceSource, RawArtifactReference};
@@ -14,6 +16,7 @@ use crate::cognitive_package::{
     PendingPackageGraphArtifactReferences,
 };
 use crate::installation_state_layout;
+use crate::plugin_runtime::RuntimeSurfacePlanStore;
 
 mod io;
 mod lifecycle;
@@ -113,6 +116,7 @@ async fn scan_installation(
     let mut retained_receipts = None;
     let mut pending_operations = None;
     let mut lifecycle_operations = None;
+    let mut runtime_plans = None;
     let mut entries = fs::read_dir(state_root)
         .await
         .map_err(|error| inventory_io("read installation state directory", state_root, error))?;
@@ -152,6 +156,7 @@ async fn scan_installation(
                 pending_operations = operation_roots.package_graphs;
                 lifecycle_operations = operation_roots.plugins;
             }
+            "runtime-plans" => runtime_plans = Some(path),
             _ => {}
         }
     }
@@ -188,6 +193,45 @@ async fn scan_installation(
     }
     if let Some(root) = lifecycle_operations {
         facts.merge(lifecycle::scan(&root, location, budget).await?)?;
+    }
+    if let Some(root) = runtime_plans {
+        let maintenance = StateMaintenanceLock::new(state_root)
+            .acquire_shared()
+            .await?;
+        let records = RuntimeSurfacePlanStore::inspect_records_unscoped_under_maintenance(
+            &root,
+            &maintenance,
+        )
+        .await?;
+        facts.merge(scan_runtime_plans(records, location, budget).await?)?;
+    }
+    Ok(facts)
+}
+
+async fn scan_runtime_plans(
+    records: Vec<crate::plugin_runtime::RuntimeSurfacePlanStoredRecord>,
+    location: &InstallationLocation,
+    budget: &mut InventoryBudget,
+) -> UseResult<SourceFacts> {
+    let mut facts = SourceFacts::default();
+    for record in records {
+        budget.observe_entry()?;
+        let (key, plan) = RuntimeSurfacePlanStore::decode_record_bytes(&record.bytes)?;
+        if key != record.key {
+            return Err(inventory_invalid(
+                "A Runtime plan reachability record differs from its decoded key.",
+            ));
+        }
+        location.validate_identity(&key.scope)?;
+        facts.observe_identity(key.scope.clone())?;
+        facts.references.push(RawArtifactReference {
+            kind: ArtifactKind::Blob,
+            digest: plan.spec().artifact.digest.clone(),
+            source: ArtifactReferenceSource::RuntimePlanPayload,
+            installation: Some(key.scope),
+            expected_bytes: None,
+            expected_files: None,
+        });
     }
     Ok(facts)
 }

@@ -13,7 +13,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{InstallationId, UseError, UseResult};
-use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
+use a3s_use_extension::{
+    ArtifactStore, ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock,
+};
 use async_trait::async_trait;
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -43,6 +45,8 @@ const PLAN_STORE_ERROR: &str = "use.plugin.runtime.plan_store_invalid";
 const PLAN_STORE_IO: &str = "use.plugin.runtime.plan_store_io";
 const PLAN_STORE_CONFLICT: &str = "use.plugin.runtime.plan_store_conflict";
 const PLAN_NOT_FOUND: &str = "use.plugin.runtime.plan_not_found";
+const PLAN_STORE_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+const PLAN_STORE_LOCK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +55,18 @@ struct RuntimeSurfacePlanStoreRecord {
     schema: String,
     key: RuntimeSurfacePlanKey,
     plan: RuntimeSurfacePlan,
+}
+
+/// Canonical bytes captured from one installation-scoped plan record.
+///
+/// The payload-owner snapshot layer deliberately carries bytes rather than a
+/// filesystem path.  This keeps the Runtime plan store responsible for
+/// decoding and validating its own envelope while the Control snapshot layer
+/// can stream those bytes into an archive or a clean restore candidate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RuntimeSurfacePlanStoredRecord {
+    pub(crate) key: RuntimeSurfacePlanKey,
+    pub(crate) bytes: Vec<u8>,
 }
 
 /// One immutable key/payload pair admitted to the host-owned plan store.
@@ -89,6 +105,11 @@ pub struct RuntimeSurfacePlanStore {
     installation: InstallationId,
     state_root: PathBuf,
     root: PathBuf,
+    /// The global Artifact Store is present for stores composed from
+    /// `ExtensionPaths`.  A store built with [`Self::new`] is intentionally
+    /// useful for isolated state (for example, an offline restore candidate)
+    /// and therefore has no global reference boundary to acquire.
+    artifact_store: Option<ArtifactStore>,
 }
 
 impl RuntimeSurfacePlanStore {
@@ -100,6 +121,7 @@ impl RuntimeSurfacePlanStore {
             root: state_root.join(PLAN_STORE_DIRECTORY),
             state_root,
             installation,
+            artifact_store: None,
         })
     }
 
@@ -111,6 +133,7 @@ impl RuntimeSurfacePlanStore {
             installation: paths.installation().clone(),
             root: state_root.join(PLAN_STORE_DIRECTORY),
             state_root,
+            artifact_store: Some(paths.artifact_store()),
         }
     }
 
@@ -132,6 +155,214 @@ impl RuntimeSurfacePlanStore {
     #[allow(dead_code)]
     pub(crate) fn state_root(&self) -> &Path {
         &self.state_root
+    }
+
+    /// Capture every valid record while an installation-wide exclusive
+    /// maintenance fence is held.  The returned values contain no host path
+    /// and are sorted by their canonical content-addressed filename.
+    pub(crate) async fn snapshot_records_under_maintenance(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<Vec<RuntimeSurfacePlanStoredRecord>> {
+        if !maintenance.is_exclusive_for(&self.state_root) {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "Runtime plan snapshot requires the exact installation's exclusive maintenance guard.",
+            ));
+        }
+        if !validate_existing_directory(&self.root).await? {
+            return Ok(Vec::new());
+        }
+        self.scan_records()
+            .await?
+            .into_iter()
+            .map(|(_, record)| {
+                let bytes = encode_record(&record.key, &record.plan)?;
+                Ok(RuntimeSurfacePlanStoredRecord {
+                    key: record.key,
+                    bytes,
+                })
+            })
+            .collect()
+    }
+
+    /// Inspect a caller-owned candidate directory using the same envelope and
+    /// path checks as the live store.  Restore owners use this after staging or
+    /// publication because a candidate is intentionally outside the live
+    /// store's maintenance root.
+    pub(crate) async fn inspect_records_at(
+        root: &Path,
+        installation: &InstallationId,
+    ) -> UseResult<Vec<RuntimeSurfacePlanStoredRecord>> {
+        installation.validate()?;
+        let store = Self {
+            installation: installation.clone(),
+            state_root: root.to_path_buf(),
+            root: root.to_path_buf(),
+            artifact_store: None,
+        };
+        if !validate_existing_directory(root).await? {
+            return Ok(Vec::new());
+        }
+        store
+            .scan_records()
+            .await?
+            .into_iter()
+            .map(|(_, record)| {
+                Ok(RuntimeSurfacePlanStoredRecord {
+                    bytes: encode_record(&record.key, &record.plan)?,
+                    key: record.key,
+                })
+            })
+            .collect()
+    }
+
+    /// Inspect a live directory while the enclosing installation already owns
+    /// its shared maintenance guard. The plan-store lock is acquired as the
+    /// second half of the read boundary, so a concurrent publisher cannot
+    /// change a record while it is being decoded into reachability evidence.
+    pub(crate) async fn inspect_records_unscoped_under_maintenance(
+        root: &Path,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<Vec<RuntimeSurfacePlanStoredRecord>> {
+        let state_root = root.parent().ok_or_else(|| {
+            store_error(
+                PLAN_STORE_ERROR,
+                "The Runtime plan store root has no enclosing installation state root.",
+            )
+        })?;
+        if root != state_root.join(PLAN_STORE_DIRECTORY) {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "Runtime plan inventory must target the canonical installation plan root.",
+            ));
+        }
+        if !maintenance.is_shared_for(state_root) {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "Runtime plan inventory requires the enclosing installation's shared maintenance guard.",
+            ));
+        }
+        if !validate_existing_directory(root).await? {
+            return Ok(Vec::new());
+        }
+        // Reachability inspection is read-only.  In particular, do not create
+        // a missing plan-store directory or lock as a side effect of a scan.
+        // A compliant publisher holds global reference admission before its
+        // state fence, so a root without a lock can still be inspected under
+        // the collector's enclosing boundary (for example immediately after
+        // a clean restore, whose operational lock is intentionally omitted).
+        let _lock = acquire_existing_shared_lock_for(state_root, root).await?;
+        scan_records_at(root, None)
+            .await?
+            .into_iter()
+            .map(|(_, record)| {
+                Ok(RuntimeSurfacePlanStoredRecord {
+                    bytes: encode_record(&record.key, &record.plan)?,
+                    key: record.key,
+                })
+            })
+            .collect()
+    }
+
+    /// Inspect a candidate that is expected to contain only immutable plan
+    /// records.  Unlike a live store, a restore candidate must not carry an
+    /// operational lock or interrupted temporary file across the activation
+    /// boundary.
+    pub(crate) async fn inspect_exact_records_at(
+        root: &Path,
+        installation: &InstallationId,
+    ) -> UseResult<Vec<RuntimeSurfacePlanStoredRecord>> {
+        validate_exact_record_directory(root).await?;
+        Self::inspect_records_at(root, installation).await
+    }
+
+    /// Decode and semantically validate one archived record without exposing
+    /// the private on-disk envelope to the payload-owner layer.
+    pub(crate) fn decode_record_bytes(
+        bytes: &[u8],
+    ) -> UseResult<(RuntimeSurfacePlanKey, RuntimeSurfacePlan)> {
+        let record = decode_record(bytes)?;
+        Ok((record.key, record.plan))
+    }
+
+    /// Materialize an exact set of records beneath a caller-owned clean
+    /// candidate directory.  The directory is intentionally not protected by
+    /// a second maintenance lock: the complete restore coordinator already
+    /// owns the target's exclusive fence and the candidate is outside all live
+    /// state paths.  Replays are no-clobber and reject any extra or substituted
+    /// record.
+    pub(crate) async fn materialize_records(
+        candidate_root: &Path,
+        installation: &InstallationId,
+        records: &[RuntimeSurfacePlanStoredRecord],
+    ) -> UseResult<()> {
+        installation.validate()?;
+        ensure_owned_directory(candidate_root, candidate_root).await?;
+        let candidate = Self {
+            installation: installation.clone(),
+            state_root: candidate_root.to_path_buf(),
+            root: candidate_root.to_path_buf(),
+            artifact_store: None,
+        };
+        let existing = candidate.scan_records().await?;
+        let mut expected: Vec<(PathBuf, Vec<u8>, RuntimeSurfacePlanKey)> =
+            Vec::with_capacity(records.len());
+        for record in records {
+            let (key, plan) = Self::decode_record_bytes(&record.bytes)?;
+            if key != record.key {
+                return Err(store_error(
+                    PLAN_STORE_ERROR,
+                    "An archived Runtime plan record key differs from its decoded envelope.",
+                ));
+            }
+            candidate.installation.ensure_same(&key.scope)?;
+            let path = candidate.path_for(&key)?;
+            let bytes = encode_record(&key, &plan)?;
+            if bytes != record.bytes {
+                return Err(store_error(
+                    PLAN_STORE_ERROR,
+                    "An archived Runtime plan record is not canonical.",
+                ));
+            }
+            expected.push((path, bytes, key));
+        }
+        expected.sort_by(|left, right| left.0.cmp(&right.0));
+        if expected
+            .windows(2)
+            .any(|pair| pair[0].0 == pair[1].0 || pair[0].2 == pair[1].2)
+        {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "An archived Runtime plan set contains duplicate key identities.",
+            ));
+        }
+        if existing.len() > expected.len() {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "The Runtime plan restore candidate contains an extra record.",
+            ));
+        }
+        for (path, bytes, _) in expected {
+            if let Some((_, current)) = existing.iter().find(|(current, _)| *current == path) {
+                compare_existing(current, &bytes)?;
+            } else {
+                write_new_record(candidate_root, &path, &bytes).await?;
+            }
+        }
+        let final_records = candidate.scan_records().await?;
+        if final_records.len() != records.len()
+            || final_records
+                .iter()
+                .map(|(_, record)| &record.key)
+                .ne(records.iter().map(|record| &record.key))
+        {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "The Runtime plan restore candidate differs from its exact archived inventory.",
+            ));
+        }
+        Ok(())
     }
 
     /// Publish one exact immutable plan record.
@@ -167,6 +398,16 @@ impl RuntimeSurfacePlanStore {
                 existing: 0,
             });
         }
+        // A durable Runtime plan retains an Artifact digest.  Stores created
+        // from ExtensionPaths therefore enter the global reference-admission
+        // boundary before taking their installation fence, so collection
+        // cannot derive an inventory between plan publication and visibility.
+        // The `new` constructor deliberately remains available for isolated
+        // state and has no global Artifact Store to coordinate.
+        let _artifact_admission = match &self.artifact_store {
+            Some(store) => Some(store.acquire_reference_admission().await?),
+            None => None,
+        };
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
@@ -287,11 +528,7 @@ impl RuntimeSurfacePlanStore {
     }
 
     fn path_for(&self, key: &RuntimeSurfacePlanKey) -> UseResult<PathBuf> {
-        let digest = key.descriptor_digest()?;
-        let hex = digest.strip_prefix("sha256:").ok_or_else(|| {
-            store_error(PLAN_STORE_ERROR, "A Runtime plan key digest is invalid.")
-        })?;
-        Ok(self.root.join(format!("{hex}.json")))
+        canonical_path_for(&self.root, key)
     }
 
     fn prepare_publications(
@@ -344,95 +581,135 @@ impl RuntimeSurfacePlanStore {
     /// lock. The scan still permits bounded temporary files because a writer
     /// may have been interrupted after syncing its temporary bytes.
     async fn scan_records(&self) -> UseResult<Vec<(PathBuf, RuntimeSurfacePlanStoreRecord)>> {
-        let mut entries = fs::read_dir(&self.root)
-            .await
-            .map_err(|error| path_error("read Runtime plan store", &self.root, error))?;
-        let mut records = Vec::new();
-        let mut entries_seen = 0_usize;
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|error| path_error("read Runtime plan store entry", &self.root, error))?
-        {
-            entries_seen = entries_seen.saturating_add(1);
-            if entries_seen > MAX_PLAN_STORE_DIRECTORY_ENTRIES {
-                return Err(store_error(
-                    PLAN_STORE_ERROR,
-                    "The Runtime plan store directory exceeds its entry bound.",
-                ));
-            }
-            let file_name = entry.file_name();
-            let name = file_name.to_str().ok_or_else(|| {
-                store_error(PLAN_STORE_ERROR, "A Runtime plan filename is not UTF-8.")
-            })?;
-            if name == PLAN_STORE_LOCK {
-                validate_regular_file(&entry.path()).await?;
-                continue;
-            }
-            if is_temporary_name(name) {
-                validate_temporary_file(&entry.path()).await?;
-                continue;
-            }
-            if !is_record_name(name) {
-                return Err(store_error(
-                    PLAN_STORE_ERROR,
-                    "The Runtime plan store contains an unknown entry.",
-                ));
-            }
-            let path = entry.path();
-            let record = read_record_at(&path).await?.ok_or_else(|| {
-                store_error(
-                    PLAN_STORE_ERROR,
-                    "A Runtime plan record disappeared during inventory.",
-                )
-            })?;
-            self.validate_key_scope(&record.key)?;
-            validate_record(&record.key, &record.plan)?;
-            if self.path_for(&record.key)? != path {
-                return Err(store_error(
-                    PLAN_STORE_ERROR,
-                    "A Runtime plan record is not stored at its canonical key path.",
-                ));
-            }
-            records.push((path, record));
-        }
-        records.sort_by(|left, right| left.0.cmp(&right.0));
-        Ok(records)
+        scan_records_at(&self.root, Some(&self.installation)).await
     }
 
     async fn acquire_lock(&self) -> UseResult<StdFile> {
-        fs::create_dir_all(&self.state_root)
-            .await
-            .map_err(|error| {
-                path_error("create Runtime plan state root", &self.state_root, error)
-            })?;
-        validate_directory(&self.state_root).await?;
-        ensure_owned_directory(&self.state_root, &self.root).await?;
-        let path = self.root.join(PLAN_STORE_LOCK);
-        match fs::symlink_metadata(&path).await {
-            Ok(metadata)
-                if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
-                    || !metadata.is_file() =>
-            {
-                return Err(store_error(
-                    PLAN_STORE_ERROR,
-                    "The Runtime plan store lock is not an owned regular file.",
-                ));
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(path_error("inspect Runtime plan store lock", &path, error)),
+        acquire_lock_for(&self.state_root, &self.root).await
+    }
+}
+
+async fn scan_records_at(
+    root: &Path,
+    expected_installation: Option<&InstallationId>,
+) -> UseResult<Vec<(PathBuf, RuntimeSurfacePlanStoreRecord)>> {
+    let mut entries = fs::read_dir(root)
+        .await
+        .map_err(|error| path_error("read Runtime plan store", root, error))?;
+    let mut records = Vec::new();
+    let mut entries_seen = 0_usize;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| path_error("read Runtime plan store entry", root, error))?
+    {
+        entries_seen = entries_seen.saturating_add(1);
+        if entries_seen > MAX_PLAN_STORE_DIRECTORY_ENTRIES {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "The Runtime plan store directory exceeds its entry bound.",
+            ));
         }
-        let error_path = path.clone();
-        tokio::task::spawn_blocking(move || {
-            let file = StdOpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .read(true)
-                .write(true)
-                .open(&path)?;
-            file.lock_exclusive()?;
-            Ok::<_, io::Error>(file)
+        let file_name = entry.file_name();
+        let name = file_name.to_str().ok_or_else(|| {
+            store_error(PLAN_STORE_ERROR, "A Runtime plan filename is not UTF-8.")
+        })?;
+        if name == PLAN_STORE_LOCK {
+            validate_regular_file(&entry.path()).await?;
+            continue;
+        }
+        if is_temporary_name(name) {
+            validate_temporary_file(&entry.path()).await?;
+            continue;
+        }
+        if !is_record_name(name) {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "The Runtime plan store contains an unknown entry.",
+            ));
+        }
+        let path = entry.path();
+        let record = read_record_at(&path).await?.ok_or_else(|| {
+            store_error(
+                PLAN_STORE_ERROR,
+                "A Runtime plan record disappeared during inventory.",
+            )
+        })?;
+        record.key.validate()?;
+        if let Some(installation) = expected_installation {
+            installation.ensure_same(&record.key.scope)?;
+        }
+        validate_record(&record.key, &record.plan)?;
+        if canonical_path_for(root, &record.key)? != path {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "A Runtime plan record is not stored at its canonical key path.",
+            ));
+        }
+        records.push((path, record));
+    }
+    records.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(records)
+}
+
+fn canonical_path_for(root: &Path, key: &RuntimeSurfacePlanKey) -> UseResult<PathBuf> {
+    let digest = key.descriptor_digest()?;
+    let hex = digest
+        .strip_prefix("sha256:")
+        .ok_or_else(|| store_error(PLAN_STORE_ERROR, "A Runtime plan key digest is invalid."))?;
+    Ok(root.join(format!("{hex}.json")))
+}
+
+async fn acquire_lock_for(state_root: &Path, root: &Path) -> UseResult<StdFile> {
+    fs::create_dir_all(state_root)
+        .await
+        .map_err(|error| path_error("create Runtime plan state root", state_root, error))?;
+    validate_directory(state_root).await?;
+    ensure_owned_directory(state_root, root).await?;
+    let path = root.join(PLAN_STORE_LOCK);
+    let file = open_plan_lock(&path, true)?.ok_or_else(|| {
+        store_error(
+            PLAN_STORE_IO,
+            "The Runtime plan store lock disappeared while it was opened.",
+        )
+    })?;
+    lock_plan_file(file, &path, LockMode::Exclusive).await
+}
+
+/// Open and shared-lock an existing plan-store lock without creating any
+/// filesystem entry.  A missing lock is valid for a restored owner root: the
+/// first publisher will create the operational lock under global reference
+/// admission, while a collector already holds the inverse boundary.
+async fn acquire_existing_shared_lock_for(
+    state_root: &Path,
+    root: &Path,
+) -> UseResult<Option<StdFile>> {
+    validate_directory(state_root).await?;
+    validate_directory(root).await?;
+    let path = root.join(PLAN_STORE_LOCK);
+    let Some(file) = open_plan_lock(&path, false)? else {
+        return Ok(None);
+    };
+    lock_plan_file(file, &path, LockMode::Shared)
+        .await
+        .map(Some)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum LockMode {
+    Shared,
+    Exclusive,
+}
+
+async fn lock_plan_file(mut file: StdFile, path: &Path, mode: LockMode) -> UseResult<StdFile> {
+    let deadline = tokio::time::Instant::now() + PLAN_STORE_LOCK_WAIT;
+    loop {
+        let attempt = tokio::task::spawn_blocking(move || {
+            let result = match mode {
+                LockMode::Shared => FileExt::try_lock_shared(&file),
+                LockMode::Exclusive => FileExt::try_lock_exclusive(&file),
+            };
+            (file, result)
         })
         .await
         .map_err(|error| {
@@ -440,8 +717,92 @@ impl RuntimeSurfacePlanStore {
                 PLAN_STORE_IO,
                 format!("Failed to acquire the Runtime plan store lock: {error}"),
             )
-        })?
-        .map_err(|error| path_error("acquire Runtime plan store lock", &error_path, error))
+        })?;
+        let (returned, result) = attempt;
+        match result {
+            Ok(()) => return Ok(returned),
+            Err(error) if plan_lock_is_contended(&error) => {
+                file = returned;
+                let now = tokio::time::Instant::now();
+                if now >= deadline {
+                    return Err(store_error(
+                        "use.plugin.runtime.plan_store_busy",
+                        "Another process owns the Runtime plan store lock.",
+                    ));
+                }
+                tokio::time::sleep(
+                    PLAN_STORE_LOCK_RETRY_INTERVAL.min(deadline.saturating_duration_since(now)),
+                )
+                .await;
+            }
+            Err(error) => return Err(path_error("acquire Runtime plan store lock", path, error)),
+        }
+    }
+}
+
+fn open_plan_lock(path: &Path, create: bool) -> UseResult<Option<StdFile>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => validate_plan_lock_metadata(path, &metadata)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound && !create => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(path_error("inspect Runtime plan store lock", path, error)),
+    }
+    let mut options = StdOpenOptions::new();
+    options
+        .create(create)
+        .truncate(false)
+        .read(true)
+        .write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+        options
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE);
+    }
+    let file = match options.open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound && !create => return Ok(None),
+        Err(error) => return Err(path_error("open Runtime plan store lock", path, error)),
+    };
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|error| path_error("inspect Runtime plan store lock", path, error))?;
+    validate_plan_lock_metadata(path, &metadata)?;
+    Ok(Some(file))
+}
+
+fn validate_plan_lock_metadata(path: &Path, metadata: &std::fs::Metadata) -> UseResult<()> {
+    if a3s_use_core::metadata_is_link_or_reparse_point(metadata) || !metadata.is_file() {
+        return Err(store_error(
+            PLAN_STORE_ERROR,
+            format!(
+                "The Runtime plan store lock '{}' is not an owned regular file.",
+                path.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn plan_lock_is_contended(error: &io::Error) -> bool {
+    if error.kind() == io::ErrorKind::WouldBlock {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        matches!(error.raw_os_error(), Some(32 | 33))
+    }
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 
@@ -497,6 +858,35 @@ fn encode_record(key: &RuntimeSurfacePlanKey, plan: &RuntimeSurfacePlan) -> UseR
     Ok(bytes)
 }
 
+fn decode_record(bytes: &[u8]) -> UseResult<RuntimeSurfacePlanStoreRecord> {
+    if bytes.is_empty() || bytes.len() > MAX_RUNTIME_SURFACE_PLAN_RECORD_BYTES {
+        return Err(store_error(
+            PLAN_STORE_ERROR,
+            "A Runtime plan record exceeds its size bound.",
+        ));
+    }
+    let record: RuntimeSurfacePlanStoreRecord = serde_json::from_slice(bytes).map_err(|error| {
+        store_error(
+            PLAN_STORE_ERROR,
+            format!("A Runtime plan record is invalid JSON: {error}"),
+        )
+    })?;
+    if record.schema != RUNTIME_SURFACE_PLAN_STORE_SCHEMA {
+        return Err(store_error(
+            PLAN_STORE_ERROR,
+            "The Runtime plan store record schema is unsupported.",
+        ));
+    }
+    validate_record(&record.key, &record.plan)?;
+    if encode_record(&record.key, &record.plan)? != bytes {
+        return Err(store_error(
+            PLAN_STORE_ERROR,
+            "A Runtime plan record is not canonical JSON.",
+        ));
+    }
+    Ok(record)
+}
+
 async fn read_record_at(path: &Path) -> UseResult<Option<RuntimeSurfacePlanStoreRecord>> {
     let metadata = match fs::symlink_metadata(path).await {
         Ok(metadata) => metadata,
@@ -525,31 +915,16 @@ async fn read_record_at(path: &Path) -> UseResult<Option<RuntimeSurfacePlanStore
             "A Runtime plan record changed outside its size bound while reading.",
         ));
     }
-    let record: RuntimeSurfacePlanStoreRecord =
-        serde_json::from_slice(&bytes).map_err(|error| {
-            store_error(
-                PLAN_STORE_ERROR,
-                format!(
-                    "Runtime plan record '{}' is invalid JSON: {error}",
-                    path.display()
-                ),
-            )
-        })?;
-    if record.schema != RUNTIME_SURFACE_PLAN_STORE_SCHEMA {
-        return Err(store_error(
+    decode_record(&bytes).map(Some).map_err(|error| {
+        store_error(
             PLAN_STORE_ERROR,
-            "The Runtime plan store record schema is unsupported.",
-        ));
-    }
-    validate_record(&record.key, &record.plan)?;
-    let canonical = encode_record(&record.key, &record.plan)?;
-    if canonical != bytes {
-        return Err(store_error(
-            PLAN_STORE_ERROR,
-            "The Runtime plan store record is not canonical JSON.",
-        ));
-    }
-    Ok(Some(record))
+            format!(
+                "Runtime plan record '{}' failed validation: {}",
+                path.display(),
+                error.message
+            ),
+        )
+    })
 }
 
 fn compare_existing(existing: &RuntimeSurfacePlanStoreRecord, requested: &[u8]) -> UseResult<()> {
@@ -683,6 +1058,36 @@ async fn ensure_owned_directory(root: &Path, target: &Path) -> UseResult<()> {
             Err(error) => return Err(path_error("create Runtime plan directory", &current, error)),
         }
         validate_directory(&current).await?;
+    }
+    Ok(())
+}
+
+async fn validate_exact_record_directory(root: &Path) -> UseResult<()> {
+    if !validate_existing_directory(root).await? {
+        return Ok(());
+    }
+    let mut entries = fs::read_dir(root)
+        .await
+        .map_err(|error| path_error("read exact Runtime plan candidate", root, error))?;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| path_error("read exact Runtime plan candidate entry", root, error))?
+    {
+        let name = entry.file_name();
+        let name = name.to_str().ok_or_else(|| {
+            store_error(
+                PLAN_STORE_ERROR,
+                "A Runtime plan candidate filename is not UTF-8.",
+            )
+        })?;
+        if !is_record_name(name) {
+            return Err(store_error(
+                PLAN_STORE_ERROR,
+                "A Runtime plan candidate contains an operational or unknown entry.",
+            ));
+        }
+        validate_regular_file(&entry.path()).await?;
     }
     Ok(())
 }

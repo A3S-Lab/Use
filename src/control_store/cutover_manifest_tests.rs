@@ -59,6 +59,7 @@ const EXTERNAL_OWNER_PATHS: &[&str] = &[
     "operations/package-resolutions",
     "operations/state-restores",
     "plugin-host-manager",
+    "runtime-plans",
 ];
 
 const OPERATIONAL_STATE_PATHS: &[&str] = &[

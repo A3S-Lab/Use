@@ -90,7 +90,7 @@ async fn snapshot_archives_only_terminal_restore_history() {
     let mut receipts = dummy_receipts(&session, ControlPayloadOwnerId::RestoreCoordinator);
     receipts.push(snapshot.receipt);
     let complete = session.complete(receipts).unwrap();
-    assert_eq!(complete.receipts.len(), 4);
+    assert_eq!(complete.receipts.len(), 5);
 }
 
 #[tokio::test]

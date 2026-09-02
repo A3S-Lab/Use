@@ -92,7 +92,9 @@ planning targets, presentation media, and expanded package trees are sharded by
 SHA-256 there and carry no Registry-source or installation authority. Registry
 datastores retain canonical source observations and resumable partials;
 installation snapshots retain selections and lifecycle authority. Source prune
-and scoped uninstall never delete global bytes. Cross-source reachability,
+and scoped uninstall never delete global bytes. Immutable Runtime plan payloads
+are decoded under the installation maintenance and plan-store locks, and their
+referenced Blob artifacts remain part of reachability. Cross-source reachability,
 hard quota admission, and path-free read-only digest audit now cover both
 physical tiers. Exact-plan logical quarantine re-audits a complete mismatch,
 publishes a canonical no-clobber marker, preserves the original bytes, and
@@ -247,8 +249,8 @@ durable operation, checks exact Runtime prepare coverage and reviewed Grant
 proposal digests, then publishes immutable plan bytes before committing the
 projected generation under one shared installation fence. This is an internal
 cutover proof, not a public API or production lifecycle wiring.
-A private path-free registry also freezes the five external payload-owner IDs
-and exact ACL backup policies. Artifact Store exclusion is explicit; the four
+A private path-free registry also freezes the six external payload-owner IDs
+and exact ACL backup policies. Artifact Store exclusion is explicit; the five
 snapshotted owners must produce one complete, generation-bound canonical
 receipt set with schema, digest, and accounting bounds. A private session now
 freezes one canonical Control export digest under the exclusive maintenance
@@ -261,7 +263,11 @@ export. Every retained Knowledge incarnation must join its original prepare
 intent and committed OKF bundle; applied observation/projection evidence must
 match, and removed or missing applied payload needs the matching remove effect.
 Deferred outcomes remain safe-no-effect scheduling evidence; claimed and
-unknown outcomes remain reconciliation evidence. None is desired state. An
+unknown outcomes remain reconciliation evidence. None is desired state. The
+Runtime plan owner is the fifth snapshotted owner: it captures immutable
+installation-scoped plan envelopes, validates complete key/plan binding,
+restores them before Host projection activation, and contributes referenced
+Runtime blob digests to installation reachability. An
 offline-verified Knowledge snapshot can now stage its exact database
 under a clean target state root without changing live payload state. Activation
 requires that target's exclusive maintenance fence, re-audits the database and
@@ -318,7 +324,7 @@ the native 64-record limit; the typed complete-set marker has no retained
 operation and preserves all 64 source records.
 
 The private complete-set snapshot coordinator now captures the canonical
-Control export and all four registered owner snapshots under one maintenance
+Control export and all five registered owner snapshots under one maintenance
 fence and timestamp. One path-free canonical manifest binds the fixed owner
 registry, receipts, schemas, digests, and byte accounting. The coordinator
 streams a fixed-order single-file archive outside every Use data and state root,
@@ -326,7 +332,7 @@ reuses each owner-native offline verifier, and publishes only the fully audited
 file without replacement. Absent owners add no payload bytes, and the global
 Artifact Store remains excluded. These paths remain inactive qualification
 code. The verified aggregate can now retain one target's exact exclusive fence
-and stage the Control database plus all four owner candidates beneath one fixed
+and stage the Control database plus all five owner candidates beneath one fixed
 `.control-installation-restore` directory. A path-free descriptor first binds
 the snapshot, installation, owner registry, Knowledge policy, and component
 set. Control is single-file checkpointed, export-round-tripped, and physically
@@ -337,20 +343,20 @@ rebinding, and candidate drift fail closed. Complete activation now preflights
 every owner before recording durable top-level intent. The immutable attempt
 remains the restore identity; `activation.json` is the sole mutable ordered
 journal, and the typed global `.maintenance.restore.json` marker binds the same
-operation and blocks ordinary shared access. Control Store, Host projection,
-Knowledge, observations, and Restore Coordinator execute in fixed order; each
-step follows journal, marker, owner effect, checkpoint. Every checkpoint binds
+operation and blocks ordinary shared access. Control Store, Runtime plans, Host
+projection, Knowledge, observations, and Restore Coordinator execute in fixed
+order; each step follows journal, marker, owner effect, checkpoint. Every checkpoint binds
 its canonical path-free result by byte count and a domain-separated digest. The
 coordinator owner also verifies the exact marker bytes, length, and digest before
 history mutation. Reopen reacquires the exact fence, rebinds the same verified
 snapshot, attempt, registry, and policy, and reconstructs or verifies every
-candidate/live boundary. Journal and marker partials, all five
+candidate/live boundary. Journal and marker partials, all six
 post-effect/pre-checkpoint boundaries, the final checkpoint before retirement,
 and exit after deletion converge. Marker absence is accepted only beside the
-complete five-checkpoint journal; out-of-order roots, ambiguous markers, links,
+complete six-checkpoint journal; out-of-order roots, ambiguous markers, links,
 rebinding, and evidence drift fail closed. Completed replay performs no owner
-effect and can only resume bounded fixed-order retirement of the five link-free
-staging trees. An 18-boundary real-child-process matrix qualifies the top-level
+effect and can only resume bounded fixed-order retirement of the six link-free
+staging trees. A 21-boundary real-child-process matrix qualifies the top-level
 protocol, including every retirement boundary. The canonical `attempt.json` and
 complete `activation.json` then form the exact installation-bound terminal
 receipt. Legacy backup and artifact reachability exclude only that two-file

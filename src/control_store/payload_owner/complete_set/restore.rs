@@ -10,25 +10,27 @@ use super::super::host_projection::StagedControlHostProjectionRestore;
 use super::super::knowledge::StagedControlKnowledgePayloadRestore;
 use super::super::observations::StagedControlObservationPayloadRestore;
 use super::super::restore_coordinator::StagedControlRestoreCoordinatorRestore;
+use super::super::runtime_plans::StagedControlRuntimePlanPayloadRestore;
 use super::super::{ControlPayloadOwnerId, ControlPayloadSnapshotBinding};
 use super::control_restore::{self, StagedControlStoreRestore};
 use super::coordinator::VerifiedControlInstallationSnapshot;
 use super::restore_activation::ControlInstallationRestoreResult;
 use super::restore_filesystem::{
     self, CONTROL_DIRECTORY, HOST_PROJECTION_DIRECTORY, KNOWLEDGE_DIRECTORY,
-    OBSERVATIONS_DIRECTORY, RESTORE_COORDINATOR_DIRECTORY,
+    OBSERVATIONS_DIRECTORY, RESTORE_COORDINATOR_DIRECTORY, RUNTIME_PLANS_DIRECTORY,
 };
 use super::{canonical_json, ControlInstallationSnapshotManifest, ControlPayloadOwnerRegistry};
 use crate::okf_knowledge::OkfKnowledgeStoragePolicy;
 
-const RESTORE_ATTEMPT_SCHEMA: &str = "a3s.use.control-installation-restore-attempt.v1";
-const RESTORE_ATTEMPT_DOMAIN: &[u8] = b"a3s.use.control-installation-restore-attempt.v1\0";
+const RESTORE_ATTEMPT_SCHEMA: &str = "a3s.use.control-installation-restore-attempt.v2";
+const RESTORE_ATTEMPT_DOMAIN: &[u8] = b"a3s.use.control-installation-restore-attempt.v2\0";
 pub(super) const MAX_RESTORE_ATTEMPT_BYTES: usize = 128 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum RestoreComponent {
     ControlStore,
+    RuntimePlans,
     HostProjection,
     Knowledge,
     Observations,
@@ -36,8 +38,9 @@ pub(super) enum RestoreComponent {
 }
 
 impl RestoreComponent {
-    pub(super) const ALL: [Self; 5] = [
+    pub(super) const ALL: [Self; 6] = [
         Self::ControlStore,
+        Self::RuntimePlans,
         Self::HostProjection,
         Self::Knowledge,
         Self::Observations,
@@ -47,6 +50,7 @@ impl RestoreComponent {
     pub(super) const fn label(self) -> &'static str {
         match self {
             Self::ControlStore => "control-store",
+            Self::RuntimePlans => "runtime-plans",
             Self::HostProjection => "host-projection",
             Self::Knowledge => "knowledge",
             Self::Observations => "observations",
@@ -57,6 +61,7 @@ impl RestoreComponent {
     pub(super) const fn staging_directory_name(self) -> &'static str {
         match self {
             Self::ControlStore => CONTROL_DIRECTORY,
+            Self::RuntimePlans => RUNTIME_PLANS_DIRECTORY,
             Self::HostProjection => HOST_PROJECTION_DIRECTORY,
             Self::Knowledge => KNOWLEDGE_DIRECTORY,
             Self::Observations => OBSERVATIONS_DIRECTORY,
@@ -67,6 +72,7 @@ impl RestoreComponent {
     pub(super) const fn payload_owner(self) -> Option<ControlPayloadOwnerId> {
         match self {
             Self::ControlStore => None,
+            Self::RuntimePlans => Some(ControlPayloadOwnerId::RuntimePlanPayload),
             Self::HostProjection => Some(ControlPayloadOwnerId::HostProtocolProjection),
             Self::Knowledge => Some(ControlPayloadOwnerId::KnowledgePayload),
             Self::Observations => Some(ControlPayloadOwnerId::PlanningAndDiagnosticObservations),
@@ -318,6 +324,7 @@ pub(super) enum ControlInstallationRestoreState {
 pub(super) struct PreparedControlInstallationRestore {
     pub(super) control: StagedControlStoreRestore,
     pub(super) host_projection: StagedControlHostProjectionRestore,
+    pub(super) runtime_plans: StagedControlRuntimePlanPayloadRestore,
     pub(super) knowledge: StagedControlKnowledgePayloadRestore,
     pub(super) observations: StagedControlObservationPayloadRestore,
     pub(super) restore_coordinator: StagedControlRestoreCoordinatorRestore,
@@ -367,6 +374,18 @@ impl VerifiedControlInstallationSnapshot {
         )
         .await
         .map_err(wrap_stage_error)?;
+        let runtime_plans = self
+            .runtime_plans
+            .stage_clean_restore_under_exclusive(
+                state_root.clone(),
+                restore_filesystem::component_directory(
+                    &staging_directory,
+                    RUNTIME_PLANS_DIRECTORY,
+                ),
+                &maintenance,
+            )
+            .await
+            .map_err(|error| wrap_owner_error("Runtime plan payload", error))?;
         let host_projection = self
             .host_projection
             .stage_clean_restore_under_exclusive(
@@ -425,6 +444,7 @@ impl VerifiedControlInstallationSnapshot {
             state: ControlInstallationRestoreState::Prepared(Box::new(
                 PreparedControlInstallationRestore {
                     control,
+                    runtime_plans,
                     host_projection,
                     knowledge,
                     observations,

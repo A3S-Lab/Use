@@ -57,6 +57,7 @@ pub enum StateBackupFamily {
     PackageGraph,
     Enablement,
     HostManager,
+    RuntimePlans,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

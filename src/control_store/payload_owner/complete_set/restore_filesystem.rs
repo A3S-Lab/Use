@@ -12,6 +12,7 @@ use super::restore_activation_filesystem::{ACTIVATION_FILE, ACTIVATION_TEMPORARY
 pub(super) const ATTEMPT_DIRECTORY: &str =
     crate::installation_state_layout::CONTROL_INSTALLATION_RESTORE_ATTEMPT_DIRECTORY;
 pub(super) const CONTROL_DIRECTORY: &str = "control";
+pub(super) const RUNTIME_PLANS_DIRECTORY: &str = "runtime-plans";
 pub(super) const HOST_PROJECTION_DIRECTORY: &str = "host-projection";
 pub(super) const KNOWLEDGE_DIRECTORY: &str = "knowledge";
 pub(super) const OBSERVATIONS_DIRECTORY: &str = "observations";
@@ -243,9 +244,10 @@ async fn attempt_contains_component(attempt: &Path) -> UseResult<bool> {
     Ok(false)
 }
 
-pub(super) fn component_names() -> [&'static str; 5] {
+pub(super) fn component_names() -> [&'static str; 6] {
     [
         CONTROL_DIRECTORY,
+        RUNTIME_PLANS_DIRECTORY,
         HOST_PROJECTION_DIRECTORY,
         KNOWLEDGE_DIRECTORY,
         OBSERVATIONS_DIRECTORY,

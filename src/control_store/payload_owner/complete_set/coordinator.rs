@@ -6,6 +6,7 @@ use super::super::host_projection::VerifiedControlHostProjectionSnapshot;
 use super::super::knowledge::VerifiedControlKnowledgePayloadSnapshot;
 use super::super::observations::VerifiedControlObservationPayloadSnapshot;
 use super::super::restore_coordinator::VerifiedControlRestoreCoordinatorSnapshot;
+use super::super::runtime_plans::VerifiedControlRuntimePlanPayloadSnapshot;
 use super::super::{ControlPayloadOwnerRegistry, ControlPayloadSnapshotSession};
 use super::{
     archive, nested_snapshot_invalid, snapshot_invalid, snapshot_io, snapshot_path_invalid,
@@ -22,6 +23,7 @@ pub(in crate::control_store) struct VerifiedControlInstallationSnapshot {
     pub(super) knowledge: VerifiedControlKnowledgePayloadSnapshot,
     pub(super) observations: VerifiedControlObservationPayloadSnapshot,
     pub(super) restore_coordinator: VerifiedControlRestoreCoordinatorSnapshot,
+    pub(super) runtime_plans: VerifiedControlRuntimePlanPayloadSnapshot,
     _temporary: tempfile::TempDir,
 }
 
@@ -92,6 +94,17 @@ impl VerifiedControlInstallationSnapshot {
             )
             .await
             .map_err(|error| nested_snapshot_invalid("Restore Coordinator", error))?;
+        let runtime_plans = extracted
+            .manifest
+            .runtime_plans
+            .verify_offline(
+                &registry,
+                binding,
+                &extracted.control_export,
+                extracted.runtime_plans.clone(),
+            )
+            .await
+            .map_err(|error| nested_snapshot_invalid("Runtime plan payload", error))?;
         Ok(Self {
             registry,
             manifest: extracted.manifest,
@@ -100,6 +113,7 @@ impl VerifiedControlInstallationSnapshot {
             knowledge,
             observations,
             restore_coordinator,
+            runtime_plans,
             _temporary: extracted.temporary,
         })
     }
@@ -137,6 +151,7 @@ impl ControlPayloadSnapshotSession {
         let knowledge_path = staging.path().join("knowledge.sqlite3");
         let observations_path = staging.path().join("observations.payload");
         let restore_path = staging.path().join("restore-coordinator.payload");
+        let runtime_plans_path = staging.path().join("runtime-plans.archive");
 
         let host_projection = self
             .snapshot_host_projection(host_path.clone(), created_at_ms)
@@ -150,11 +165,15 @@ impl ControlPayloadSnapshotSession {
         let restore_coordinator = self
             .snapshot_restore_coordinator(restore_path.clone(), created_at_ms)
             .await?;
+        let runtime_plans = self
+            .snapshot_runtime_plans(runtime_plans_path.clone(), created_at_ms)
+            .await?;
         let snapshot_set = self.complete(vec![
             host_projection.receipt.clone(),
             knowledge.receipt.clone(),
             observations.receipt.clone(),
             restore_coordinator.receipt.clone(),
+            runtime_plans.receipt.clone(),
         ])?;
         let control_export_bytes = u64::try_from(self.control_export().len())
             .map_err(|_| snapshot_invalid("The Control export byte count overflowed."))?;
@@ -168,6 +187,7 @@ impl ControlPayloadSnapshotSession {
                 knowledge,
                 observations,
                 restore_coordinator,
+                runtime_plans,
             },
         )?;
         let sources = archive::ArchiveSources {
@@ -176,6 +196,7 @@ impl ControlPayloadSnapshotSession {
             knowledge: knowledge_path,
             observations: observations_path,
             restore_coordinator: restore_path,
+            runtime_plans: runtime_plans_path,
         };
         let writing_manifest = manifest.clone();
         let temporary = tokio::task::spawn_blocking(move || {

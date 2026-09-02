@@ -151,9 +151,9 @@ semantics digest 重建完整计划并重新校验精确 provider evidence。安
 发布精确的新记录，再提交对应的 Control effect。生产 lifecycle 仍未构造 dispatcher；它必须把该 source
 与原子的 composition 绑定到 committed authority，不能把本次验收使用的进程内 selection 当作生产权威。当前内部资格组合会从已注册的 reviewed operation 投影完整的 Control transition，校验精确的 Runtime
 prepare 覆盖与 reviewed Grant proposal digest，并在同一个安装级共享 maintenance fence 下先发布 immutable plan，再提交投影后的 generation。这进一步收窄了 cutover 边界，但不会激活 private kernel，也不接受调用方选择的 transition 字段。私有的无路径 payload
-契约现已冻结五个外部 owner ID
+契约现已冻结六个外部 owner ID
 及其 ACL backup policy；
-全局 Artifact Store 被明确排除，另外四个 owner 必须形成一组完整、规范、绑定精确 installation、
+全局 Artifact Store 被明确排除，另外五个 owner 必须形成一组完整、规范、绑定精确 installation、
 Control generation、registry/owner schema、digest 与有界计数的 receipt。私有 session 现在会在一个
 排他 maintenance fence 下冻结精确的规范 Control export digest，并在 owner I/O 前释放 SQLite 事务。
 Knowledge owner 已能生成并独立复验受注册大小上限约束的 OKF SQLite/FTS5 archive 与规范
@@ -189,25 +189,27 @@ receipt 绑定到 Control export；空历史或仅 active 的历史不会创建 
 会保留 active marker 与可能存在的当前 operation，同时以可重放方式只替换终态历史。持久化 activation
 evidence 绑定精确 before/source/target inventory。达到原生 64-record 上限时，legacy whole-installation marker
 会预留一个槽位；typed complete-set marker 没有对应 operation，因此保留全部 64 条记录。Marker-only handoff、
-状态前进与每个本地 partial 都保持确定且可检测篡改。私有 complete-set snapshot coordinator 现在会在同一个 maintenance fence 与
-timestamp 下捕获一份规范 Control export 和全部四个已注册 owner snapshot。无路径规范 manifest 绑定精确
+状态前进与每个本地 partial 都保持确定且可检测篡改。Runtime plan owner 是第五个被快照的 owner：它捕获
+安装级不可变 plan envelope，验证完整 key/plan 绑定，在 Host projection 激活前恢复 plan，并把引用的 Runtime
+blob digest 纳入 installation artifact reachability。私有 complete-set snapshot coordinator 现在会在同一个 maintenance fence 与
+timestamp 下捕获一份规范 Control export 和全部五个已注册 owner snapshot。无路径规范 manifest 绑定精确
 registry、receipt、schema、digest 与字节账目。单一固定顺序 archive 会流式写到所有 Use data/state root
 之外，经所有 owner-native offline verifier 完整审计后才以 no-clobber 方式发布。Absent owner 不增加 payload，
 全局 Artifact Store 继续排除在外。通过验证的聚合现在可以在 `.control-installation-restore` 下暂存一个
 确定的 clean-target attempt。无路径 descriptor 会先绑定精确 snapshot、installation、registry、Knowledge
-policy 与五个 component；随后保留一个排他 fence，构建 Control 和全部 owner-native candidate。Control 会
+policy 与六个 component；随后保留一个排他 fence，构建 Control 和全部 owner-native candidate。Control 会
 checkpoint 为单一 SQLite 文件，按 export 往返复验并绑定物理摘要，且不会修改任何 live owner 路径。精确
 重试与中断的 Control 暂存可以恢复；target 污染、link、未知 entry、重绑定与完成 candidate 漂移都会 fail
 closed。完整激活会在持久化顶层 intent 前预检全部 owner。不可变 attempt 仍是权威；`activation.json` 是唯一
 可变的有序 journal，typed 全局 `.maintenance.restore.json` marker 绑定同一个不可变 operation，并阻止普通
-共享访问。Control Store、Host projection、Knowledge、observations、Restore Coordinator 按固定顺序执行；
+共享访问。Control Store、Runtime plans、Host projection、Knowledge、observations、Restore Coordinator 按固定顺序执行；
 每一步都遵循 journal、marker、owner effect、checkpoint。每个 checkpoint 通过字节数与 domain-separated
 digest 绑定规范的无路径结果；Coordinator owner 还会在修改历史前校验精确 marker 字节、长度与摘要。Reopen
 会重新取得精确 guard，绑定相同 verified snapshot、attempt、registry 与 policy，并重建或验证每个
-candidate/live 边界。Journal/marker partial、五个 effect 后 checkpoint 前边界、marker 退休前的第五个
-checkpoint，以及 marker 删除和五个暂存树按固定顺序退休后的进程退出都能收敛。只有完整 journal 才允许
+candidate/live 边界。Journal/marker partial、六个 effect 后 checkpoint 前边界、marker 退休前的第六个
+checkpoint，以及 marker 删除和六个暂存树按固定顺序退休后的进程退出都能收敛。只有完整 journal 才允许
 marker 缺失；乱序 live root、含糊 marker、link、重绑定和 evidence 漂移都会 fail closed。完成态 replay
-不再执行 owner effect，只能恢复五个无 link 暂存树的有界固定顺序退休。18 个真实子进程退出边界覆盖顶层
+不再执行 owner effect，只能恢复六个无 link 暂存树的有界固定顺序退休。21 个真实子进程退出边界覆盖顶层
 协议和每个退休边界。规范的 `attempt.json` 与完整 `activation.json` 构成精确绑定 installation 的终态
 收据。旧 backup 和 artifact reachability 只排除该收据；不完整、扩展、含 link 或被篡改的 evidence 都会
 fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/restore 接线和协调一致的权威切换仍未完成，
@@ -277,6 +279,8 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
 ### 1. 托管宿主 provider 组合 — 进行中
 
 - 宿主拥有的 `RuntimeSurfacePlanStore` 已完成规范、有界、no-clobber plan 发布验收；
+- Runtime plan payload 已注册为第五个 snapshot owner，接入 complete-set staging、六步
+  activation/checkpoint 与 installation artifact reachability，恢复顺序先于 Host projection；
   在启用生产 dispatcher 前，仍需把它绑定到 Control commit。
 - 用持久化 host source、重启安全 resolver 与原子 dispatcher cutover 组合生产
   Runtime Service 和 HTTP MCP/Gateway provider。

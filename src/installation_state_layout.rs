@@ -14,6 +14,7 @@ const STATE_DIRECTORIES: &[&str] = &[
     "operations",
     "package-enablement",
     "plugin-host-manager",
+    "runtime-plans",
 ];
 
 const DERIVED_STATE_DIRECTORIES: &[&str] = &["capability-index"];

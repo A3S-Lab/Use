@@ -48,7 +48,7 @@ async fn complete_snapshot_archive_round_trips_one_bound_owner_set() {
 
     manifest.validate(&registry).unwrap();
     assert_eq!(manifest.snapshot_set.binding, *session.binding());
-    assert_eq!(manifest.snapshot_set.receipts.len(), 4);
+    assert_eq!(manifest.snapshot_set.receipts.len(), 5);
     assert_eq!(
         manifest
             .snapshot_set
@@ -97,7 +97,7 @@ async fn complete_snapshot_archive_round_trips_one_bound_owner_set() {
 }
 
 #[tokio::test]
-async fn complete_snapshot_archive_represents_four_absent_payloads_without_files() {
+async fn complete_snapshot_archive_represents_five_absent_payloads_without_files() {
     let temporary = TempDir::new().unwrap();
     let paths = paths(&temporary);
     let store = ControlStore::from_extension_paths(&paths).unwrap();
@@ -134,6 +134,10 @@ async fn complete_snapshot_archive_represents_four_absent_payloads_without_files
     assert!(matches!(
         manifest.restore_coordinator.manifest.payload,
         ControlRestoreCoordinatorState::Absent
+    ));
+    assert!(matches!(
+        manifest.runtime_plans.manifest.payload,
+        ControlRuntimePlanPayloadState::Absent
     ));
 
     let verified = VerifiedControlInstallationSnapshot::verify_offline(registry, destination)
@@ -214,6 +218,9 @@ pub(in crate::control_store) fn registry() -> ControlPayloadOwnerRegistry {
                         }
                         ControlPayloadOwnerId::RestoreCoordinator => {
                             CONTROL_RESTORE_COORDINATOR_SNAPSHOT_SCHEMA
+                        }
+                        ControlPayloadOwnerId::RuntimePlanPayload => {
+                            CONTROL_RUNTIME_PLAN_PAYLOAD_SNAPSHOT_SCHEMA
                         }
                         ControlPayloadOwnerId::ArtifactStore => unreachable!(),
                     };

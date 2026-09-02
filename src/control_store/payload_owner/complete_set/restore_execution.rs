@@ -121,6 +121,13 @@ impl StagedControlInstallationRestore {
             .await
             .map_err(wrap_activation_error)?;
         prepared
+            .runtime_plans
+            .preflight_clean(&self.maintenance)
+            .await
+            .map_err(|error| {
+                wrap_activation_error(wrap_owner_error("Runtime plan payload preflight", error))
+            })?;
+        prepared
             .host_projection
             .preflight_clean(&self.maintenance)
             .await
@@ -159,6 +166,25 @@ impl StagedControlInstallationRestore {
         match component {
             RestoreComponent::ControlStore => {
                 self.activate_control_component(checkpoint).await?;
+            }
+            RestoreComponent::RuntimePlans => {
+                let result = prepared
+                    .runtime_plans
+                    .activate(&self.maintenance)
+                    .await
+                    .map_err(|error| {
+                        wrap_activation_error(wrap_owner_error(
+                            "Runtime plan payload activation",
+                            error,
+                        ))
+                    })?;
+                restore_activation::maybe_test_crash("runtime-plans-effect");
+                result
+                    .validate_for_registry(&prepared.control.registry)
+                    .map_err(wrap_activation_error)?;
+                if checkpoint {
+                    self.checkpoint(component, &result).await?;
+                }
             }
             RestoreComponent::HostProjection => {
                 let result = prepared
@@ -367,6 +393,11 @@ impl StagedControlInstallationRestore {
     #[cfg(test)]
     pub(in crate::control_store) fn host_projection_candidate_path(&self) -> Option<&Path> {
         self.prepared().ok()?.host_projection.candidate_path()
+    }
+
+    #[cfg(test)]
+    pub(in crate::control_store) fn runtime_plan_candidate_path(&self) -> Option<&Path> {
+        self.prepared().ok()?.runtime_plans.candidate_path()
     }
 
     #[cfg(test)]

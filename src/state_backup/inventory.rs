@@ -525,6 +525,7 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
             "knowledge" => Ok(StateBackupFamily::Knowledge),
             "package-enablement" => Ok(StateBackupFamily::Enablement),
             "plugin-host-manager" => Ok(StateBackupFamily::HostManager),
+            "runtime-plans" => Ok(StateBackupFamily::RuntimePlans),
             "capability-index" | "generation-leases" => Err(state_backup_invalid(
                 "The backup manifest must not contain derived indexes or generation lease files.",
             )),
