@@ -319,10 +319,12 @@ same-key deferral. The Runtime gate-3 owner is also qualified for release-backed
 Tool Task/Service and Streamable HTTP MCP. It verifies path-free release bytes
 and committed provider semantics, uses durable monotonic Service provisioning,
 reconciles final receipt overlap without reapply, and retires only exact
-receipt-owned bindings. Post-effect uncertainty is always unknown. Remaining
-gate-3 work is restart-safe reconstruction of the complete Runtime plan from
-committed semantics evidence, production dispatcher composition, and
-conversion into these reviewed owner inputs.
+receipt-owned bindings. Post-effect uncertainty is always unknown. The
+restart-safe plan payload and resolver contract are now qualified: hosts can
+persist canonical `RuntimeSurfacePlan` bytes and reconnect the exact provider
+from committed semantics evidence. Remaining gate-3 work is supplying the
+durable host source, composing it with the production dispatcher, and
+converting lifecycle inputs into these reviewed owner requests.
 
 Production activation is blocked until all gates below are true:
 

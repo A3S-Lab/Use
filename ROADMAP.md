@@ -658,11 +658,13 @@ Artifact access, the final-binding/provisioning overlap reconciles without a
 second Runtime apply, and retirement verifies receipt-owned provider evidence
 before Gateway drain and Runtime stop/remove. Pre-effect contention safely
 defers; authority or immutable-byte drift rejects; every ambiguity after a
-Runtime, Gateway, or receipt effect remains unknown. Production still needs a
-restart-safe resolver that reconstructs the full plan from its committed
-semantics digest plus atomic dispatcher composition; a process-local selection
-must never become production authority, and no adapter may read legacy
-authority or treat a path as authority.
+Runtime, Gateway, or receipt effect remains unknown. The Runtime boundary now
+provides a bounded canonical plan payload and a restart-safe resolver that
+reconstructs the full plan from its committed semantics digest and rechecks
+exact provider evidence. Production still needs the host-owned durable source
+and atomic dispatcher composition; a process-local selection must never become
+production authority, and no adapter may read legacy authority or treat a path
+as authority.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
@@ -1206,9 +1208,11 @@ Status: in progress
   Tool Task/Service and Streamable HTTP MCP payloads, monotonic Service
   provisioning, exact final-receipt replay, typed Gateway readiness, and
   receipt-owned retirement without exposing Artifact Store paths.
+- [x] Define the canonical Runtime plan payload and restart-safe resolver
+  boundary, with exact plan-time and provider-evidence validation.
 - [ ] Compose production Runtime Service providers in A3S Code and managed
-  hosts with a restart-safe committed-plan resolver and exact plan-time and
-  apply-time evidence.
+  hosts with a durable host source and atomic dispatcher cutover, preserving
+  exact plan-time and apply-time evidence.
 - [x] Consume the reviewed Runtime Task projection in Code CLI/TUI and agent
   tool discovery, then route invocation through the leased Use dispatcher. A3S
   CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7`

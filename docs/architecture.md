@@ -208,9 +208,12 @@ persists either a self-contained Task binding or monotonic Service provisioning
 through Runtime and typed Gateway readiness before final binding commit. Final
 receipt replay needs no Artifact access; retirement is generation- and
 receipt-owned; any ambiguity after an external or persistence effect remains
-unknown. Lifecycle conversion still must feed reviewed Grant evidence,
-reconstruct the complete Runtime plan after restart from committed digest
-authority, and compose the production dispatcher; all inputs must come only
+unknown. The Runtime boundary now exposes a bounded canonical
+`RuntimeSurfacePlan` payload and a `CommittedRuntimeSurfaceResolver`. A host can
+persist the payload beside its committed plan, reconstruct it after restart,
+and reconnect the exact provider while rechecking plan semantics and capability
+evidence. Lifecycle conversion still must feed reviewed Grant evidence and
+compose this resolver into one production dispatcher; all inputs must come only
 from committed Control authority and immutable artifacts.
 The inactive kernel now has a path-free external-payload registry/evidence
 contract: five fixed owner identities and ACL backup policies, explicit global

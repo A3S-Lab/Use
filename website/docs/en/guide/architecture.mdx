@@ -230,10 +230,13 @@ It consumes a path-free verified release payload on first prepare, binds the
 complete plan semantics to committed provider evidence, persists monotonic
 Runtime/Gateway recovery state, and replays or retires exact final receipts
 without Artifact paths. Any ambiguity after an external or persistence effect
-remains unknown. Runtime/Flow production composition must still reconstruct
-all inputs after restart only from committed Control authority and immutable
-artifacts; the process-local Runtime selection used for qualification is not
-production authority.
+remains unknown. Runtime now exposes a bounded canonical
+`RuntimeSurfacePlan` payload and `CommittedRuntimeSurfaceResolver`, so a host
+can reconstruct all inputs after restart and recheck exact provider evidence.
+Production composition must still supply the durable host source and atomic
+dispatcher from committed Control authority and immutable artifacts; the
+process-local Runtime selection used for qualification is not production
+authority.
 A private path-free registry also freezes the five external payload-owner IDs
 and exact ACL backup policies. Artifact Store exclusion is explicit; the four
 snapshotted owners must produce one complete, generation-bound canonical

@@ -182,10 +182,12 @@ Gateway readiness, and the final binding in monotonic order. Final receipts
 replay without Artifact access, terminal provisioning overlap reconciles
 without reapply, and retirement uses only exact receipt-owned evidence.
 Pre-effect contention defers, authority or byte drift rejects, and every
-post-effect ambiguity remains unknown. Production lifecycle still does not
-construct the dispatcher: it must reconstruct the complete Runtime plan after
-restart from committed semantics-digest authority rather than use the
-process-local selection retained by this qualification.
+post-effect ambiguity remains unknown. Runtime now exposes a bounded canonical
+plan payload and restart-safe resolver that reconstructs the complete plan from
+committed semantics-digest authority and rechecks exact provider evidence.
+Production lifecycle still does not construct the dispatcher: it must supply
+the durable host source and atomic composition rather than use the process-local
+selection retained by this qualification.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact
@@ -361,8 +363,8 @@ open; no A2 roadmap item is complete yet.
 
 ### 1. Managed-host provider composition — in progress
 
-- Add production Runtime Service and HTTP MCP/Gateway providers with a
-  restart-safe resolver for the full committed Runtime plan.
+- Compose production Runtime Service and HTTP MCP/Gateway providers with the
+  durable host source, restart-safe resolver, and atomic dispatcher cutover.
 - Complete managed Knowledge Workspace/session carriers and leased prior-
   generation query qualification. Standalone OKF quota/retention/GC is
   implemented, but managed composition is not.

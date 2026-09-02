@@ -118,8 +118,12 @@ Status: in progress
 - [x] Qualify the inactive committed-authority Runtime owner with path-free
   Tool/MCP release payloads, typed Gateway readiness, monotonic Service
   provisioning, exact receipt replay, and fail-closed retirement.
-- [ ] Complete production Runtime Service provider composition with a
-  restart-safe resolver for the full committed Runtime plan, without weakening
+- [x] Define a bounded canonical Runtime surface-plan payload and resolver
+  boundary that reconstructs the full plan from committed semantics and
+  reconnects exact provider evidence after restart. The qualification adapter
+  remains explicitly process-local and is not production authority.
+- [ ] Complete production Runtime Service provider composition with a durable
+  host source and the atomic dispatcher cutover, without weakening
   exact-generation drain and removal.
 - [x] Recover a confirmed same-generation provider resource loss by draining
   and removing only the stale Gateway route, retaining the Runtime unit,

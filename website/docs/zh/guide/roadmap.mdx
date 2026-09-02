@@ -144,8 +144,9 @@ workspace，并且只委托 `a3s-flow` 执行 Native TypeScript preflight。pack
 Service 则按单调顺序持久化 `requested`、精确 Runtime observation、类型化 Gateway readiness 与最终 binding。
 最终 receipt 可在不访问 Artifact 的情况下重放，终态 provisioning 重叠不会触发第二次 apply，退休只使用
 receipt-owned 精确证据。外部 effect 前的争用可安全 deferred，authority 或字节漂移会 rejected，任何 effect
-后的歧义都保持 unknown。生产 lifecycle 仍未构造 dispatcher；它必须在重启后从已提交的 semantics digest
-权威重建完整 Runtime plan，不能把本次验收使用的进程内 selection 当作生产权威。私有的无路径 payload
+后的歧义都保持 unknown。Runtime 现在提供有界规范 plan payload 与重启安全 resolver，可以从已提交
+semantics digest 重建完整计划并重新校验精确 provider evidence。生产 lifecycle 仍未构造 dispatcher；
+它必须提供持久化 host source 与原子的 composition，不能把本次验收使用的进程内 selection 当作生产权威。私有的无路径 payload
 契约现已冻结五个外部 owner ID
 及其 ACL backup policy；
 全局 Artifact Store 被明确排除，另外四个 owner 必须形成一组完整、规范、绑定精确 installation、
@@ -271,8 +272,8 @@ backup/restore 接线和协调一致的权威切换仍未完成，因此尚未�
 
 ### 1. 托管宿主 provider 组合 — 进行中
 
-- 增加生产 Runtime Service 与 HTTP MCP/Gateway provider，并提供可在重启后
-  重建完整已提交 Runtime plan 的 resolver。
+- 用持久化 host source、重启安全 resolver 与原子 dispatcher cutover 组合生产
+  Runtime Service 和 HTTP MCP/Gateway provider。
 - 完成托管 Knowledge Workspace/session carrier 和 UI sandbox 的 ownership、
   CSP、backend binding、drain、retention 与 garbage collection。
 - 证明 owner 或精确 readiness evidence 缺失时，required 表面始终不发布。
