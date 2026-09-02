@@ -62,6 +62,9 @@ mod ocr_builtin;
 #[cfg(feature = "mcp")]
 mod mcp;
 
+#[cfg(feature = "mcp")]
+pub mod capability_gateway;
+
 #[cfg(feature = "extensions")]
 mod extension_host;
 
