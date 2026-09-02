@@ -291,8 +291,8 @@ pub(in crate::control_store::aggregate) fn read_next_unfinished_effect(
 ) -> UseResult<Option<ControlEffectRecord>> {
     let effects = read_effects_from(connection, installation, operation_id)?;
     Ok(effects.into_iter().find(|effect| {
-        effect.status != ControlEffectStatus::Applied
-            && !(effect.status == ControlEffectStatus::Rejected && !effect.intent.required)
+        (effect.intent.required || effect.status != ControlEffectStatus::Rejected)
+            && effect.status != ControlEffectStatus::Applied
     }))
 }
 

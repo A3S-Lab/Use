@@ -936,8 +936,8 @@ pub(super) fn complete_operation(
     }
     let effects = read_effects_from(&transaction, installation, operation_id)?;
     if effects.iter().any(|effect| {
-        effect.status != ControlEffectStatus::Applied
-            && !(effect.status == ControlEffectStatus::Rejected && !effect.intent.required)
+        (effect.intent.required || effect.status != ControlEffectStatus::Rejected)
+            && effect.status != ControlEffectStatus::Applied
     }) {
         return Err(conflict_error(
             "The Control Store operation still has unfinished or rejected required effects.",
