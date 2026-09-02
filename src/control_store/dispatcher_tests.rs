@@ -883,6 +883,7 @@ fn routed_authority(intent: &ControlEffectIntent) -> ControlEffectAuthority {
                 },
                 selection_digest: selection_digest.clone(),
             },
+            grant_proposal_digest: None,
         }),
         ControlEffectOwner::FlowHost => ControlEffectAuthority::FlowHost(package_authority),
         ControlEffectOwner::KnowledgeHost => {

@@ -29,6 +29,12 @@ pub(in crate::control_store) struct ControlPackageEffectAuthority {
 pub(in crate::control_store) struct ControlRuntimeEffectAuthority {
     pub(in crate::control_store) package: ControlPackageEffectAuthority,
     pub(in crate::control_store) provider_selection: ControlProviderSelection,
+    /// Digest of the canonical pre-confirmation Grant proposal that produced
+    /// the Runtime semantics.  A finalized Grant also carries confirmation
+    /// evidence and timestamps that are deliberately excluded from Runtime
+    /// semantics; binding the full finalized Grant here would create a
+    /// plan-digest/confirmation-digest cycle for `Ask` authorization.
+    pub(in crate::control_store) grant_proposal_digest: Option<String>,
 }
 
 /// Terminal preparation state used to materialize one target capability.

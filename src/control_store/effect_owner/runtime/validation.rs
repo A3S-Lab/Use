@@ -17,11 +17,11 @@ pub(super) fn validate_plan_identity(
     let plan = selected.plan();
     plan.validate()?;
     let context = plan.context();
-    let grant_matches = authority
-        .package
-        .grant
-        .as_ref()
-        .is_none_or(|grant| context.grant_digest() == grant.grant_digest.as_str());
+    // Runtime planning binds the stable pre-confirmation Grant proposal.  The
+    // committed Grant itself also contains confirmation/timing evidence; its
+    // full descriptor digest must not be used here because that would make an
+    // `Ask` plan depend cyclically on its own confirmation-bound plan digest.
+    let grant_matches = authority.grant_proposal_digest.as_deref() == Some(context.grant_digest());
     if context.package_id() != request.package_id
         || context.package_digest() != request.package_digest
         || context.scope() != &request.identity.installation

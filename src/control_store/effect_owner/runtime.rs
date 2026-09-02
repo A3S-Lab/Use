@@ -229,7 +229,7 @@ impl ControlRuntimeEffectPort {
             request.surface.identity.installation.clone(),
             committed.qualified_surface().clone(),
             request.surface.lifecycle_generation,
-            committed_grant_digest(request),
+            request.authority.grant_proposal_digest.clone(),
             committed.evidence.semantics_profile_digest.clone(),
             request.provider_id.clone(),
             request.selection_digest.clone(),
@@ -799,15 +799,6 @@ fn validate_pending_plan(
         return Err(authority_error());
     }
     Ok(())
-}
-
-fn committed_grant_digest(request: &ControlRuntimeEffectRequest) -> Option<String> {
-    request
-        .authority
-        .package
-        .grant
-        .as_ref()
-        .map(|selection| selection.grant_digest.clone())
 }
 
 #[async_trait]
