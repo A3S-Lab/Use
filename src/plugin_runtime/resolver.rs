@@ -15,6 +15,9 @@ use a3s_use_core::{
     UseResult,
 };
 use async_trait::async_trait;
+use olpc_cjson::CanonicalFormatter;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use super::client::{
     runtime_capabilities_digest, validate_capabilities_for_plan, PluginRuntimeClient,
@@ -27,6 +30,8 @@ const PLAN_SOURCE_UNAVAILABLE: &str = "use.plugin.runtime.plan_source_unavailabl
 const PLAN_NOT_FOUND: &str = "use.plugin.runtime.plan_not_found";
 const PROVIDER_EVIDENCE_CHANGED: &str = "use.plugin.runtime.provider_evidence_changed";
 const MAX_PROVIDER_ID_BYTES: usize = 64;
+const MAX_PLAN_KEY_BYTES: usize = 16 * 1024;
+const RUNTIME_PLAN_KEY_DOMAIN: &[u8] = b"a3s.use.runtime-surface-plan-key.v1\0";
 
 /// Exact identity used to look up a committed Runtime plan after restart.
 ///
@@ -129,12 +134,41 @@ impl RuntimeSurfacePlanKey {
             && self.scope == *plan.context().scope()
             && self.surface == plan.surface()
             && self.generation == plan.context().generation()
-            && self
-                .grant_digest
-                .as_deref()
-                .is_none_or(|digest| digest == plan.context().grant_digest())
+            // An omitted Grant digest is not a wildcard.  Runtime plans are
+            // authorization-bound; accepting a key without the exact digest
+            // would let a source substitute a plan from another Grant.
+            && self.grant_digest.as_deref() == Some(plan.context().grant_digest())
             && plan.spec().semantics_profile_digest.as_deref()
                 == Some(self.semantics_profile_digest.as_str())
+    }
+
+    /// Return the stable digest used to address a durable plan record.
+    ///
+    /// The domain prefix keeps storage identities distinct from the plan and
+    /// package digests that may appear inside the key.  Only validated,
+    /// canonical bytes are accepted so path derivation never depends on a
+    /// caller's JSON formatting.
+    pub fn descriptor_digest(&self) -> UseResult<String> {
+        self.validate()?;
+        let mut bytes = Vec::new();
+        let mut serializer =
+            serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
+        self.serialize(&mut serializer).map_err(|error| {
+            UseError::new(
+                PLAN_RESOLVER_ERROR,
+                format!("Failed to encode the Runtime plan key: {error}"),
+            )
+        })?;
+        if bytes.is_empty() || bytes.len() > MAX_PLAN_KEY_BYTES {
+            return Err(UseError::new(
+                PLAN_RESOLVER_ERROR,
+                "The Runtime plan key exceeds its size bound.",
+            ));
+        }
+        let mut digest = Sha256::new();
+        digest.update(RUNTIME_PLAN_KEY_DOMAIN);
+        digest.update(bytes);
+        Ok(format!("sha256:{:x}", digest.finalize()))
     }
 }
 
@@ -320,16 +354,25 @@ fn validate_evidence(
 }
 
 fn normalize_source_error(error: UseError) -> UseError {
-    if error.code == PLAN_SOURCE_UNAVAILABLE || error.code == PLAN_NOT_FOUND {
+    if error.code == PLAN_SOURCE_UNAVAILABLE
+        || error.code == PLAN_NOT_FOUND
+        || error.code == "use.plugin.runtime.plan_store_io"
+    {
+        if error.code == "use.plugin.runtime.plan_store_io" {
+            return UseError::new(
+                PLAN_SOURCE_UNAVAILABLE,
+                format!(
+                    "The committed Runtime plan source could not be read: {}",
+                    error.message
+                ),
+            );
+        }
         error
     } else {
-        UseError::new(
-            PLAN_SOURCE_UNAVAILABLE,
-            format!(
-                "The committed Runtime plan source could not be read: {}",
-                error.message
-            ),
-        )
+        // Corruption, identity drift, and malformed source records are
+        // deterministic failures.  Retrying them as "unavailable" would
+        // hide a broken authority indefinitely and could mask tampering.
+        error
     }
 }
 

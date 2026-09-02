@@ -8,6 +8,9 @@ mod bundle_planner;
 mod client;
 mod lifecycle;
 mod model;
+mod plan_store;
+#[cfg(test)]
+mod plan_store_tests;
 mod planner;
 mod provider_selector;
 mod provisioning;
@@ -35,6 +38,10 @@ pub use model::{
     RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeWorkloadPolicy,
     MAX_RUNTIME_SURFACE_PLAN_BYTES, RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_SURFACE_PLAN_SCHEMA,
     RUNTIME_TASK_BINDING_SCHEMA,
+};
+pub use plan_store::{
+    RuntimeSurfacePlanStore, MAX_RUNTIME_SURFACE_PLAN_RECORDS,
+    MAX_RUNTIME_SURFACE_PLAN_RECORD_BYTES, RUNTIME_SURFACE_PLAN_STORE_SCHEMA,
 };
 pub use planner::{plan_mcp_service_release, plan_tool_service_release, plan_tool_task_release};
 pub use provider_selector::{

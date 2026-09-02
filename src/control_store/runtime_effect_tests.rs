@@ -574,7 +574,7 @@ async fn runtime_owner_fixture(surface_kind: FixtureSurface) -> RuntimeOwnerFixt
         authority: ControlRuntimeEffectAuthority {
             package: package_authority,
             provider_selection,
-            grant_proposal_digest: Some(grant_proposal_digest),
+            grant_proposal_digest: Some(grant_proposal_digest.into_boxed_str()),
         },
         surface,
         _temporary: temporary,

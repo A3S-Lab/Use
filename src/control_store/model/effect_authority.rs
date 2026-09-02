@@ -34,7 +34,7 @@ pub(in crate::control_store) struct ControlRuntimeEffectAuthority {
     /// evidence and timestamps that are deliberately excluded from Runtime
     /// semantics; binding the full finalized Grant here would create a
     /// plan-digest/confirmation-digest cycle for `Ask` authorization.
-    pub(in crate::control_store) grant_proposal_digest: Option<String>,
+    pub(in crate::control_store) grant_proposal_digest: Option<Box<str>>,
 }
 
 /// Terminal preparation state used to materialize one target capability.

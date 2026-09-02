@@ -229,7 +229,11 @@ impl ControlRuntimeEffectPort {
             request.surface.identity.installation.clone(),
             committed.qualified_surface().clone(),
             request.surface.lifecycle_generation,
-            request.authority.grant_proposal_digest.clone(),
+            request
+                .authority
+                .grant_proposal_digest
+                .as_deref()
+                .map(str::to_owned),
             committed.evidence.semantics_profile_digest.clone(),
             request.provider_id.clone(),
             request.selection_digest.clone(),

@@ -96,7 +96,7 @@ pub(super) fn derive_claim_authority(
                 ControlRuntimeEffectAuthority {
                     package,
                     provider_selection: selection,
-                    grant_proposal_digest,
+                    grant_proposal_digest: grant_proposal_digest.map(String::into_boxed_str),
                 },
             ))
         }
