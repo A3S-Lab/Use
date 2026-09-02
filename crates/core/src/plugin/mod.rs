@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{UseError, UseResult};
 
+mod capability_gateway;
 mod catalog;
 mod catalog_plan;
 mod catalog_selection;
@@ -37,6 +38,11 @@ mod planning_bundle;
 mod resolved_grant_changes;
 pub(crate) mod validation;
 
+pub use capability_gateway::{
+    ArtifactRef, CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
+    CapabilityMcpTransport, CapabilityPublicationEvidence, CapabilityToolAnnotations, EndpointRef,
+    InvocationRef, CAPABILITY_DESCRIPTOR_SCHEMA_V1, CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1,
+};
 pub use catalog::{
     CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,
     CatalogPlanningTarget, CatalogSurface, PluginCatalogRecord, PluginReleaseChannel,
