@@ -621,6 +621,10 @@ fn release_builds_remove_nondeterministic_native_metadata() {
 
     for (name, job) in [("primary", binaries_job), ("independent", rebuild_job)] {
         assert!(
+            job.contains("CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1"),
+            "{name} release build must use one codegen unit for byte reproducibility"
+        );
+        assert!(
             job.contains("CARGO_PROFILE_RELEASE_STRIP: symbols"),
             "{name} release build must remove nondeterministic native symbol tables"
         );

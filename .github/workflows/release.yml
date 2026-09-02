@@ -180,6 +180,11 @@ jobs:
       id-token: write
     env:
       CARGO_INCREMENTAL: 0
+      # Rust's default parallel codegen units can produce different symbol
+      # ordering across clean macOS builds. A single release codegen unit keeps
+      # the primary and independent artifacts byte-identical while retaining
+      # the normal release optimization profile.
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
       CARGO_PROFILE_RELEASE_STRIP: symbols
       RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=.
       SOURCE_DATE_EPOCH: ${{ needs.validate.outputs.source_date_epoch }}
@@ -550,6 +555,9 @@ jobs:
       id-token: write
     env:
       CARGO_INCREMENTAL: 0
+      # Keep the independent build on exactly the same deterministic compiler
+      # profile as the primary release build.
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
       CARGO_PROFILE_RELEASE_STRIP: symbols
       RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=.
       SOURCE_DATE_EPOCH: ${{ needs.validate.outputs.source_date_epoch }}
