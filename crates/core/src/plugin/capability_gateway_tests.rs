@@ -117,6 +117,27 @@ fn descriptor_rejects_executable_only_and_external_schema_authority() {
         annotations: CapabilityToolAnnotations::new(true, false, true, false),
     };
     assert!(descriptor.validate().is_err());
+
+    for reference_keyword in ["$dynamicRef", "$recursiveRef", "$id"] {
+        let mut descriptor = tool();
+        let mut input_schema = serde_json::Map::new();
+        input_schema.insert("type".to_owned(), Value::String("object".to_owned()));
+        input_schema.insert("additionalProperties".to_owned(), Value::Bool(false));
+        input_schema.insert(
+            reference_keyword.to_owned(),
+            Value::String("https://example.invalid/schema".to_owned()),
+        );
+        descriptor.capability = CapabilityDescriptorKind::Tool {
+            name: "search".to_owned(),
+            input_schema: Value::Object(input_schema),
+            output_schema: schema(),
+            annotations: CapabilityToolAnnotations::new(true, false, true, false),
+        };
+        assert!(
+            descriptor.validate().is_err(),
+            "{reference_keyword} escaped"
+        );
+    }
 }
 
 #[test]

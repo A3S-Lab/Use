@@ -831,10 +831,14 @@ fn validate_schema_value(value: &Value, depth: usize) -> UseResult<()> {
                 if key.is_empty()
                     || key.len() > 128
                     || key.chars().any(char::is_control)
-                    || (key == "$ref"
+                    || ((matches!(key.as_str(), "$ref" | "$dynamicRef" | "$recursiveRef"))
                         && !value
                             .as_str()
                             .is_some_and(|reference| reference.starts_with('#')))
+                    || (key == "$id"
+                        && !value
+                            .as_str()
+                            .is_some_and(|identifier| identifier.starts_with('#')))
                 {
                     return Err(capability_error(
                         "An agent JSON schema contains an unsafe property or external reference.",
