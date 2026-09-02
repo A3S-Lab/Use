@@ -24,8 +24,10 @@ leaf into exactly one of four ownership classes:
    coordination that cannot or should not be stored in the control aggregate.
    It must register a typed snapshot/verification boundary and may never choose
    desired state.
-3. **Operational state** coordinates live processes. Locks, leases, and active
-   restore markers are excluded from backup and are not recovery authority.
+3. **Operational state** coordinates live processes or caches projections that
+   are fully derivable from Control evidence. Locks, leases, derived indexes,
+   and active restore markers are excluded from backup and are not recovery
+   authority.
 4. **Cutover consumer** reads or mutates one or more of the above facts. Every
    listed consumer must switch in the same production change, with no legacy
    fallback.
@@ -299,9 +301,17 @@ committed claim through SQLite/FTS5 materialization and a durable Control
 application observation while the dispatcher maintenance fence remains held.
 Artifact-only package admission creates no lifecycle authority and its global
 reference-admission guard is retained through the separate Control reference
-commit. Runtime, Flow, Capability Index, invocation-lease adapters, production
-dispatcher composition, and conversion into the reviewed inputs used by the
-inactive kernel remain gate 3 work.
+commit. Capability Index and invocation leases now share one concrete
+Capability Plane adapter. It writes only immutable content-addressed Index
+documents; Control's applied observation is the sole mutable publication
+cursor. Cursor double-read plus exact shared package-incarnation locks makes
+admission stale on a racing cutover, while exclusive drain safely defers for an
+active call. Index and lease paths reject links, Index publication cannot
+replace an existing receipt, and exact staging replay is crash-safe. Both
+families are derived operational state excluded from backup; restore must
+rebuild the Index from verified Control evidence. Runtime and Flow adapters,
+production dispatcher composition, and conversion into the reviewed inputs
+used by the inactive kernel remain gate 3 work.
 
 Production activation is blocked until all gates below are true:
 

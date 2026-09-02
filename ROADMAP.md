@@ -628,10 +628,21 @@ dispatcher coordinator, Knowledge materialization, and durable Control
 observation together. Artifact-only admission is now distinct from legacy
 lifecycle publication: it is idempotent, revalidates prepared bytes, creates no
 installation receipt, and requires its reference-admission guard to span the
-separate authority commit. This remains inactive ADR-003 step-3 qualification:
-Runtime, Flow, Capability Index, invocation-lease, and production dispatcher
-composition must follow the same boundary, and no adapter may read legacy
-authority or treat a path as authority.
+separate authority commit. The third real post-commit adapter now implements
+Capability Index and invocation leases as one Capability Plane boundary. It
+materializes a canonical content-addressed Index document from the committed
+candidate and exact terminal surface evidence, while Control's applied cutover
+observation remains the only mutable publication cursor. Admission reads that
+cursor before and after acquiring shared locks for every exact package
+lifecycle incarnation; drain requires an unpublished prior incarnation and an
+exclusive lock, safely deferring until accepted calls release it. Immutable
+publication is no-follow, no-replace, and crash-replayable. The Index and lease
+files are derived operational state excluded from backup; restore must rebuild
+the Index from verified Control evidence. A real composition test joins
+Knowledge, Skill, publication, stale admission, and same-key drain retry. This
+remains inactive ADR-003 step-3 qualification: Runtime, Flow, and production
+dispatcher composition must follow the same boundary, and no adapter may read
+legacy authority or treat a path as authority.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
@@ -784,8 +795,7 @@ retirement boundary. The surviving canonical `attempt.json` and complete
 `activation.json` are the exact installation-bound terminal receipt. Legacy
 backup and artifact reachability exclude only that receipt; incomplete,
 extended, linked, or tampered evidence fails closed. Production Grant conversion,
-remaining Runtime, Flow, Capability Index, and invocation-lease adapters and
-dispatcher composition, production
+remaining Runtime and Flow adapters, dispatcher composition, production
 backup/restore wiring, indivisible consumer cutover, and deletion of legacy
 mutable stores remain open; no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every

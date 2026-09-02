@@ -1,4 +1,5 @@
 use a3s_use_core::{InstallationPackageSelection, PluginPackageLockHost};
+use serde::{Deserialize, Serialize};
 
 use super::{
     ControlAppliedEffect, ControlEffectIntent, ControlGeneration, ControlGrantSelection,
@@ -34,7 +35,13 @@ pub(in crate::control_store) struct ControlRuntimeEffectAuthority {
 ///
 /// A degraded state is representable only for an explicitly optional effect;
 /// required rejections never allow the Capability Index effect to be claimed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "state",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub(in crate::control_store) enum ControlCapabilitySurfaceState {
     Prepared {
         application: ControlAppliedEffect,
@@ -48,7 +55,8 @@ pub(in crate::control_store) enum ControlCapabilitySurfaceState {
 }
 
 /// Latest terminal preparation for one surface in the target generation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(in crate::control_store) struct ControlCapabilitySurfaceAuthority {
     pub(in crate::control_store) intent: ControlEffectIntent,
     pub(in crate::control_store) state: ControlCapabilitySurfaceState,
@@ -56,7 +64,8 @@ pub(in crate::control_store) struct ControlCapabilitySurfaceAuthority {
 
 /// Complete desired generation plus the exact terminal surface observations
 /// needed by the Capability Index owner.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(in crate::control_store) struct ControlCapabilityEffectAuthority {
     pub(in crate::control_store) generation: ControlGeneration,
     pub(in crate::control_store) materializations: Vec<ControlCapabilitySurfaceAuthority>,

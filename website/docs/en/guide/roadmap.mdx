@@ -159,9 +159,18 @@ unknown classification for every ambiguous external or post-effect write
 boundary. A real SQLite composition test covers committed claim through durable
 Control observation. Artifact-only admission is idempotent, revalidates the
 prepared source, creates no lifecycle receipt, and retains reference admission
-through the separate Control commit. Production lifecycle still does not
-construct the dispatcher; Runtime, Flow, Capability Index, invocation-lease
-adapters, and composition must use the same committed Control boundary.
+through the separate Control commit. Capability Index and invocation leases now
+share a third concrete Capability Plane adapter. It writes canonical
+content-addressed Index documents while the applied Control observation remains
+the sole publication cursor. A Control cursor double-read around shared locks
+for every exact package incarnation makes racing admission stale; exclusive
+drain safely defers while an accepted call is active. Publication is no-follow,
+no-replace, and crash-replayable. Index and lease files are derived operational
+state excluded from backup and the Index must be rebuilt from restored Control
+evidence. A real composition test covers Knowledge, Skill, cutover, stale
+admission, and same-key drain retry. Production lifecycle still does not
+construct the dispatcher; Runtime, Flow, and composition must use the same
+committed Control boundary.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact
@@ -259,8 +268,7 @@ including every retirement boundary. The canonical `attempt.json` and complete
 `activation.json` then form the exact installation-bound terminal receipt.
 Legacy backup and artifact reachability exclude only that receipt; incomplete,
 extended, linked, or tampered evidence fails closed. Production Grant
-conversion, remaining Runtime, Flow, Capability Index, and invocation-lease
-adapters and dispatcher composition,
+conversion, remaining Runtime and Flow adapters, dispatcher composition,
 backup/restore wiring, and coordinated authority cutover remain open; no A2
 roadmap item is complete yet.
 

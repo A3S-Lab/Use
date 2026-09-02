@@ -330,10 +330,23 @@ claim, owner effect, and Control observation under the dispatcher fence.
 Immutable package admission has also been separated from lifecycle authority:
 it revalidates and idempotently materializes prepared bytes without creating an
 installation receipt, while the caller retains global reference admission
-through the distinct Control commit. Runtime, Flow, Capability Index, and
-invocation-lease ports are not production adapters yet, and production
-composition must reconstruct their inputs from exact committed generations,
-reviewed evidence, and immutable artifacts, never from legacy mutable files.
+through the distinct Control commit. The third concrete adapter implements the
+Capability Index and invocation-lease ports as one consistency boundary. It
+materializes a canonical content-addressed document from the committed
+candidate generation and exact terminal surface observations, but creates no
+second mutable publication store: the applied Control cutover observation is
+the only current cursor. Admission reads that cursor before and after acquiring
+shared locks for every exact package lifecycle incarnation. Drain requires the
+old incarnation to be absent from the current cursor and then acquires its
+exclusive lock, safely deferring under an active call. Immutable Index files
+publish with no-replace/no-follow semantics and exact crash staging replay.
+They and the lease files are derived operational state excluded from backup;
+restore must rebuild the Index from verified Control evidence before consumer
+cutover. A real composition fixture covers Knowledge and Skill preparation,
+Index publication, stale admission, and same-key drain retry. Runtime and Flow
+ports are not production adapters yet, and production composition must
+reconstruct their inputs from exact committed generations, reviewed evidence,
+and immutable artifacts, never from legacy mutable files.
 
 The kernel uses WAL with full synchronous durability and foreign-key
 enforcement, rejects unknown schema or filesystem state, and serializes

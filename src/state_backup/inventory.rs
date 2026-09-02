@@ -194,6 +194,9 @@ fn scan_root(
                 ));
             }
             validate_layout(kind, &relative, metadata.is_dir())?;
+            if excluded_derived_root(kind, &relative, &metadata) {
+                continue;
+            }
             if is_nonterminal(kind, &relative, &absolute, &metadata)? {
                 return Err(state_backup_nonterminal(
                     "Use-owned state contains temporary, partial, active, or artifact-staging evidence.",
@@ -385,6 +388,20 @@ fn excluded_lock(root: StateBackupRoot, relative: &Path) -> bool {
     name.ends_with(".lock")
 }
 
+fn excluded_derived_root(
+    root: StateBackupRoot,
+    relative: &Path,
+    metadata: &std::fs::Metadata,
+) -> bool {
+    root == StateBackupRoot::State
+        && metadata.is_dir()
+        && relative.components().count() == 1
+        && relative
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(installation_state_layout::excluded_derived_root)
+}
+
 fn is_nonterminal(
     root: StateBackupRoot,
     relative: &Path,
@@ -508,8 +525,8 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
             "knowledge" => Ok(StateBackupFamily::Knowledge),
             "package-enablement" => Ok(StateBackupFamily::Enablement),
             "plugin-host-manager" => Ok(StateBackupFamily::HostManager),
-            "generation-leases" => Err(state_backup_invalid(
-                "The backup manifest must not contain generation lease files.",
+            "capability-index" | "generation-leases" => Err(state_backup_invalid(
+                "The backup manifest must not contain derived indexes or generation lease files.",
             )),
             _ => Err(state_backup_layout_unsupported(
                 "The backup manifest contains an unknown state family.",

@@ -178,10 +178,23 @@ real SQLite/FTS5 adapter, retained binding, and durable Control observation.
 The Artifact Store now also admits a prepared package independently of legacy
 lifecycle publication: admission is idempotent, revalidates the source, creates
 no installation receipt, and its global reference guard must span the separate
-Control reference commit. Lifecycle conversion still must feed reviewed Grant
-evidence and qualify Runtime, Flow, Capability Index, and invocation-lease
-owners; all inputs must come only from committed Control authority and
-immutable artifacts.
+Control reference commit. The Capability Plane is the third concrete
+post-commit adapter and implements both Capability Index and invocation-lease
+ports. Cutover writes one canonical content-addressed Index document from the
+committed candidate generation and its exact terminal surface observations;
+it deliberately has no second database or mutable current pointer. Control's
+applied cutover observation is the only publication transaction. Admission
+checks that Control cursor before and after taking shared locks for every exact
+package lifecycle incarnation, so a racing cutover either sees the lease during
+drain or makes admission return stale. Drain proves the prior incarnation is
+not published and takes its exclusive lock; active calls produce a safe
+same-key deferral. No-follow, no-replace publication and exact staging replay
+protect the immutable Index. Because the Index is fully derived from Control
+evidence, backup excludes both it and lease files; restore must reconstruct it
+before readers switch. A real composition test covers Knowledge, Skill,
+cutover, stale admission, and drain together. Lifecycle conversion still must
+feed reviewed Grant evidence and qualify Runtime and Flow owners; all inputs
+must come only from committed Control authority and immutable artifacts.
 The inactive kernel now has a path-free external-payload registry/evidence
 contract: five fixed owner identities and ACL backup policies, explicit global
 Artifact Store exclusion, and one exact canonical receipt set for the four

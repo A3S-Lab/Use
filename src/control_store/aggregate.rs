@@ -5,7 +5,9 @@ use a3s_use_core::{
     PlannedProviderEvidence, PluginSurfaceRef, PluginWorkspaceGrant, UseError, UseResult,
 };
 use olpc_cjson::CanonicalFormatter;
-use rusqlite::{params, Connection, ErrorCode, Row, Transaction, TransactionBehavior};
+use rusqlite::{
+    params, Connection, ErrorCode, OptionalExtension, Row, Transaction, TransactionBehavior,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -15,11 +17,12 @@ use super::model::{
     parse_enforcement_profile, parse_operation_action, parse_surface_kind, surface_kind_name,
     valid_error_code, valid_machine_id, valid_sha256, validate_grant_selections,
     validate_provider_selections, ClaimedControlEffect, ControlAppliedEffect,
-    ControlAuthorizationEvidence, ControlCapabilitySelection, ControlCapabilityStatus,
-    ControlEffectClaim, ControlEffectIntent, ControlEffectKind, ControlEffectObservation,
-    ControlEffectOutcome, ControlEffectRecord, ControlEffectStatus, ControlEffectSubject,
-    ControlGeneration, ControlGrantSelection, ControlOperationRecord, ControlOperationStatus,
-    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderSelection,
+    ControlAppliedEffectEvidence, ControlAuthorizationEvidence, ControlCapabilitySelection,
+    ControlCapabilityStatus, ControlEffectClaim, ControlEffectIntent, ControlEffectKind,
+    ControlEffectObservation, ControlEffectOutcome, ControlEffectOwner, ControlEffectRecord,
+    ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
+    ControlOperationRecord, ControlOperationStatus, ControlPackageLifecycle,
+    ControlProjectionHistory, ControlProviderSelection, ControlPublishedCapabilityCursor,
     ControlStoreAuthority, ControlTransition, ReviewedControlOperation,
     MAX_CONTROL_HISTORY_PACKAGES,
 };
@@ -298,6 +301,109 @@ pub(super) fn current_generation(
         return Ok(None);
     }
     read_generation_from(&connection, installation, generation)
+}
+
+pub(super) fn published_capability(
+    path: &Path,
+    installation: &InstallationId,
+) -> UseResult<Option<ControlPublishedCapabilityCursor>> {
+    let connection = schema::open_verified_read(path, installation)?;
+    let transaction = connection.unchecked_transaction().map_err(|error| {
+        schema::sqlite_error(
+            "begin consistent published Control capability snapshot",
+            error,
+        )
+    })?;
+    let cursor = read_published_capability_from(&transaction, installation)?;
+    transaction.commit().map_err(|error| {
+        schema::sqlite_error("finish published Control capability snapshot", error)
+    })?;
+    Ok(cursor)
+}
+
+fn read_published_capability_from(
+    connection: &Connection,
+    installation: &InstallationId,
+) -> UseResult<Option<ControlPublishedCapabilityCursor>> {
+    let (_, capability_generation) = read_cursors(connection)?;
+    if capability_generation == 0 {
+        return Ok(None);
+    }
+    let installation_generation: i64 = connection
+        .query_row(
+            "SELECT installation_generation FROM capability_generation
+             WHERE capability_generation = ?1 AND publication_state = 'published'",
+            [to_i64(capability_generation)?],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| {
+            schema::sqlite_error("read published Control capability generation", error)
+        })?
+        .ok_or_else(|| {
+            corruption_error("The published Control capability cursor has no generation row.")
+        })?;
+    let generation =
+        read_generation_from(connection, installation, from_i64(installation_generation)?)?
+            .ok_or_else(|| {
+                corruption_error("The published Control capability has no installation generation.")
+            })?;
+    if generation.capability.generation != capability_generation
+        || generation.capability_status != ControlCapabilityStatus::Published
+    {
+        return Err(corruption_error(
+            "The published Control capability cursor disagrees with its generation.",
+        ));
+    }
+
+    let mut receipt = None;
+    for effect in read_effects_from(connection, installation, &generation.operation_id)? {
+        if !matches!(effect.intent.owner, ControlEffectOwner::CapabilityIndex) {
+            continue;
+        }
+        let ControlEffectSubject::Installation {
+            capability_generation: effect_generation,
+            descriptor_digest,
+            ..
+        } = &effect.intent.subject
+        else {
+            return Err(corruption_error(
+                "A published Capability Index effect has no installation subject.",
+            ));
+        };
+        if *effect_generation != capability_generation
+            || descriptor_digest != &generation.capability.descriptor_digest
+            || effect.status != ControlEffectStatus::Applied
+        {
+            return Err(corruption_error(
+                "The published Capability Index effect does not match its generation.",
+            ));
+        }
+        let application = effect.application.as_ref().ok_or_else(|| {
+            corruption_error("A published Capability Index effect has no application evidence.")
+        })?;
+        application.validate_for(&effect.intent).map_err(|_| {
+            corruption_error("Published Capability Index application evidence is invalid.")
+        })?;
+        let ControlAppliedEffectEvidence::CapabilityIndex { receipt_digest, .. } =
+            &application.evidence
+        else {
+            return Err(corruption_error(
+                "A published Capability Index effect has another owner's evidence.",
+            ));
+        };
+        if receipt.replace(receipt_digest.clone()).is_some() {
+            return Err(corruption_error(
+                "A published Control capability has more than one Index receipt.",
+            ));
+        }
+    }
+    let receipt = receipt.ok_or_else(|| {
+        corruption_error("The published Control capability has no applied Index receipt.")
+    })?;
+    ControlPublishedCapabilityCursor::from_generation(&generation, receipt)
+        .map(Some)
+        .map_err(|_| corruption_error("The published Control capability cursor is invalid."))
 }
 
 pub(super) fn effects(

@@ -30,6 +30,7 @@ const CONSUMER_IDS: &[&str] = &[
 ];
 
 const OPERATIONAL_STATE_IDS: &[&str] = &[
+    "capability-index",
     "complete-restore-attempt",
     "generation-leases",
     "legacy-package-graph-lock",
@@ -66,6 +67,7 @@ const OPERATIONAL_STATE_PATHS: &[&str] = &[
     ".maintenance.lock",
     ".maintenance.restore.json",
     ".package-graph.lock",
+    "capability-index",
     "generation-leases",
 ];
 
@@ -217,6 +219,7 @@ fn cutover_manifest_references_real_code_and_forbids_partial_activation() {
             "delete"
                 | "retain"
                 | "retain-outside-database"
+                | "rebuild-from-control-generation"
                 | "rebind-to-control-generation"
                 | "retire-staging-retain-terminal"
         ));
