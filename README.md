@@ -251,17 +251,20 @@ all shipped native executables and must byte-match the primary archive before
 deterministic `.reproducibility.json` evidence can be attested, checksummed,
 signed, and published beside the archive.
 
-The `v0.3.6` Rust compatibility release keeps the post-`v0.3.3` atomic
-snapshot-lease, shared manager, and Runtime service rebinding contracts while
-adding the standalone manager endpoint over standard MCP. Complete snapshots
-carry bounded, canonical Runtime plan archives through clean-target staging,
-activation, and crash replay; artifact reachability retains blobs referenced by
-committed plans. It aligns the facade's exact `a3s-flow 1.1.0` registry
-dependency with `a3s-code-core 8.0.3` and publishes `a3s-use-core 0.2.5`,
-`a3s-use-extension 0.3.6`, and `a3s-use 0.3.6`. The facade continues to use the
+The `v0.3.7` Rust compatibility release keeps the post-`v0.3.3`
+atomic-snapshot-lease, shared manager, Runtime service rebinding, and standard
+MCP manager contracts while carrying the path-free Capability Gateway
+descriptor/catalog adapter. Complete snapshots carry bounded, canonical
+Runtime plan archives through clean-target staging, activation, and crash
+replay; artifact reachability retains blobs referenced by committed plans. It
+aligns the facade's exact `a3s-flow 1.1.0` registry dependency with
+`a3s-code-core 8.0.3` and publishes `a3s-use-core 0.2.6`,
+`a3s-use-extension 0.3.7`, and `a3s-use 0.3.7`. The facade continues to use the
 same released Browser 0.3.2 provider as A3S Search, so a packaged consumer can
 resolve one nominal Browser/Core/Flow capability graph. This is a compatibility
-release and does not change the development-preview status.
+release and does not change the development-preview status. The Gateway
+adapter remains a contract-level increment until lifecycle lease/drain,
+authentication, CLI wiring, and independent-client qualification are complete.
 
 The tagged `v0.3.2` workflow exposed native linker metadata drift on four of
 five targets and therefore did not create a GitHub Release. The non-publishing
@@ -278,6 +281,13 @@ tag `v0.3.6` from exact `main` commit
 five-target jobs, and published the development-preview
 [v0.3.6 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6) with the
 `a3s-use-core 0.2.5`, `a3s-use-extension 0.3.6`, and `a3s-use 0.3.6` packages.
+Release workflow
+[33687297386](https://github.com/A3S-Lab/Use/actions/runs/33687297386) then built
+tag `v0.3.7` from exact `main` commit
+`48a0b76f8a4a87a11d16627c7bd7567920852508`, passed all primary and independent
+five-target jobs, and published the development-preview
+[v0.3.7 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.7) with the
+`a3s-use-core 0.2.6`, `a3s-use-extension 0.3.7`, and `a3s-use 0.3.7` packages.
 An externally operated full-archive witness, evidence retention outside GitHub
 Release, and the remaining product gates are still open, so this does not
 change the preview status above. Operators can additionally verify successful
@@ -1744,7 +1754,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Coordinated whole-installation backup, retention, and reviewed restore | Backup and retention are implemented under the exclusive maintenance fence with deterministic path-free manifests, exact Registry/receipt authority digests, allowlisted control-state families, explicit global Artifact Store exclusion, scan/copy/rescan consistency, full payload verification, exact-plan retention, and two-generation preservation. Same-version/OS/architecture restore now requires exact independently retained Registry, Artifact, and Grant authority, an explicit verified rollback archive, path-free digest confirmation, link/reparse-safe candidate staging, seven durable journal phases, 15 subprocess-exit recovery boundaries, terminal replay, read-only status, and bounded crash-recoverable history. Missing-authority and clean-machine recovery plus cross-platform operational disaster-recovery drills remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |
 | A3S Code CLI/TUI integration | Reviewed Runtime Task install, offline restart disable/re-enable, apply-time build drift rejection, watcher hot-plug, Host status-revision resumption across killed-process offline recovery with one effect and path-free history, scoped Code Exec agent discovery/invocation with frozen Task-catalog evidence, context review, and TUI `/packages` review are tested. The shared Host Manager now also qualifies signed six-surface Tool/MCP/Flow/Skill/UI/OKF install, invocation evidence, exact-generation upgrade, uninstall, replay, and User/Workspace scope fences; six-surface Code product-host E2E and release qualification remain open |
-| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and pinned Actions/tools are implemented. Qualification run [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660) passed isolated archive execution and cache-free byte-for-byte rebuilds on all five targets from exact `main` commit `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd`; the stale-core `v0.3.5` publication attempt created no Release. Release workflow [33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) passed all 13 jobs for tag `v0.3.6` at exact `main` commit `54758910f2f4ad9498137410e0a2207d412e99a1` and published the verified archives, typed crates (`a3s-use-core 0.2.5`, `a3s-use-extension 0.3.6`, `a3s-use 0.3.6`), SBOMs, attestations, and installers. An externally operated full-archive witness and off-Release evidence retention remain open |
+| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and pinned Actions/tools are implemented. Qualification run [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660) passed isolated archive execution and cache-free byte-for-byte rebuilds on all five targets from exact `main` commit `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd`; the stale-core `v0.3.5` publication attempt created no Release. Release workflow [33687297386](https://github.com/A3S-Lab/Use/actions/runs/33687297386) passed all 13 jobs for tag `v0.3.7` at exact `main` commit `48a0b76f8a4a87a11d16627c7bd7567920852508` and published the verified archives, typed crates (`a3s-use-core 0.2.6`, `a3s-use-extension 0.3.7`, `a3s-use 0.3.7`), SBOMs, attestations, and installers. The prior `v0.3.6` release remains historical evidence; an externally operated full-archive witness and off-Release evidence retention remain open |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
 | Public Registry operations, external full-archive reproducibility witness, off-Release evidence retention, support runbooks | Release blocker |
 
