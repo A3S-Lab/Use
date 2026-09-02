@@ -8,12 +8,18 @@ mod bundle_planner;
 mod client;
 mod lifecycle;
 mod model;
+mod plan_store;
+#[cfg(test)]
+mod plan_store_tests;
 mod planner;
 mod provider_selector;
 mod provisioning;
 #[cfg(test)]
 pub(crate) mod provisioning_fault_matrix;
 mod receipt;
+mod resolver;
+#[cfg(test)]
+mod resolver_tests;
 mod store;
 mod surface_observer;
 mod task;
@@ -30,9 +36,16 @@ pub use model::{
     RuntimeResourcePolicy, RuntimeServiceActivation, RuntimeServiceBindingReceipt,
     RuntimeServiceReadinessEvidence, RuntimeSurfaceContext, RuntimeSurfaceContract,
     RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeWorkloadPolicy,
-    RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_TASK_BINDING_SCHEMA,
+    MAX_RUNTIME_SURFACE_PLAN_BYTES, RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_SURFACE_PLAN_SCHEMA,
+    RUNTIME_TASK_BINDING_SCHEMA,
+};
+pub use plan_store::{
+    RuntimeSurfacePlanPublication, RuntimeSurfacePlanPublishResult, RuntimeSurfacePlanStore,
+    MAX_RUNTIME_SURFACE_PLAN_BATCH_BYTES, MAX_RUNTIME_SURFACE_PLAN_RECORDS,
+    MAX_RUNTIME_SURFACE_PLAN_RECORD_BYTES, RUNTIME_SURFACE_PLAN_STORE_SCHEMA,
 };
 pub use planner::{plan_mcp_service_release, plan_tool_service_release, plan_tool_task_release};
+pub(crate) use provider_selector::provider_selection_digest;
 pub use provider_selector::{
     RuntimeProviderAssignment, RuntimeProviderSelection, RuntimeProviderSelector,
     SelectedRuntimeSurface,
@@ -42,6 +55,10 @@ pub use provisioning::{
     RUNTIME_SERVICE_PROVISIONING_SCHEMA,
 };
 pub use receipt::{RuntimeBindingReadiness, RuntimeBindingReceipt};
+pub use resolver::{
+    CommittedRuntimeSurfaceResolver, RuntimeProviderSelectionResolver, RuntimeSurfacePlanKey,
+    RuntimeSurfacePlanSource, RuntimeSurfaceResolver,
+};
 pub use store::{RuntimeBindingStore, MAX_RUNTIME_BINDING_GENERATIONS};
 pub use surface_observer::{
     RuntimeSurfaceObservation, RuntimeSurfaceObservationSnapshot, RuntimeSurfaceObservedState,

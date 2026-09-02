@@ -527,9 +527,13 @@ generation, provider build/capabilities/enforcement, and complete semantics
 digest before any provider effect. A retained final binding is sufficient for
 path-independent replay and retirement. Artifact contention before effects may
 defer; invalid authority or content rejects; any uncertainty after Runtime,
-Gateway, or receipt mutation is unknown. Production composition still requires
-a restart-safe committed-plan resolver and does not treat the process-local
-selection used by qualification tests as authority.
+Gateway, or receipt mutation is unknown. Production composition now has a
+qualified installation-scoped, host-owned `RuntimeSurfacePlanStore` and
+restart-safe committed-plan resolver. The store is a bounded immutable payload
+source, not authority; lifecycle conversion must publish exact plan records
+before the corresponding Control commit. The process-local selection used by
+qualification tests remains non-authoritative and must not be used by
+production.
 
 The lifecycle diagnostic is a read-only JSON projection, not a mutable disk
 record or recovery input. It reports latest/previous operation identity,

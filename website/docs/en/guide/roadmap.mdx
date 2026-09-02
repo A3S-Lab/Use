@@ -182,10 +182,17 @@ Gateway readiness, and the final binding in monotonic order. Final receipts
 replay without Artifact access, terminal provisioning overlap reconciles
 without reapply, and retirement uses only exact receipt-owned evidence.
 Pre-effect contention defers, authority or byte drift rejects, and every
-post-effect ambiguity remains unknown. Production lifecycle still does not
-construct the dispatcher: it must reconstruct the complete Runtime plan after
-restart from committed semantics-digest authority rather than use the
-process-local selection retained by this qualification.
+post-effect ambiguity remains unknown. Runtime now exposes a bounded canonical
+plan payload and restart-safe resolver that reconstructs the complete plan from
+committed semantics-digest authority and rechecks exact provider evidence.
+The installation-scoped, host-owned `RuntimeSurfacePlanStore` is now qualified
+as the durable source, with canonical digest addressing, bounded batch
+publication, no-clobber writes, restart-safe reads, and fail-closed tamper
+checks. It owns payload bytes rather than desired state, so lifecycle
+conversion must publish exact new records before the corresponding Control
+commit. Production lifecycle still does not construct the dispatcher: it must
+bind this source and atomic composition to committed authority rather than use
+the process-local selection retained by this qualification.
 The private path-free payload contract now freezes five external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other four owners, bound to an exact
@@ -283,9 +290,8 @@ including every retirement boundary. The canonical `attempt.json` and complete
 `activation.json` then form the exact installation-bound terminal receipt.
 Legacy backup and artifact reachability exclude only that receipt; incomplete,
 extended, linked, or tampered evidence fails closed. Production Grant
-conversion, restart-safe Runtime plan reconstruction, Runtime/Flow dispatcher
-composition, backup/restore wiring, and coordinated authority cutover remain
-open; no A2 roadmap item is complete yet.
+conversion, Runtime/Flow dispatcher composition, backup/restore wiring, and
+coordinated authority cutover remain open; no A2 roadmap item is complete yet.
 
 ## Implemented baseline
 
@@ -361,8 +367,11 @@ open; no A2 roadmap item is complete yet.
 
 ### 1. Managed-host provider composition — in progress
 
-- Add production Runtime Service and HTTP MCP/Gateway providers with a
-  restart-safe resolver for the full committed Runtime plan.
+- The host-owned `RuntimeSurfacePlanStore` is qualified for canonical,
+  bounded, no-clobber plan publication; bind it to the Control commit before
+  activating the production dispatcher.
+- Compose production Runtime Service and HTTP MCP/Gateway providers with the
+  durable host source, restart-safe resolver, and atomic dispatcher cutover.
 - Complete managed Knowledge Workspace/session carriers and leased prior-
   generation query qualification. Standalone OKF quota/retention/GC is
   implemented, but managed composition is not.

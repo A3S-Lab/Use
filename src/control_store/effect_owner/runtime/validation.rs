@@ -15,15 +15,19 @@ pub(super) fn validate_plan_identity(
     selected: &SelectedRuntimeSurface,
 ) -> UseResult<()> {
     let plan = selected.plan();
-    plan.spec()
-        .validate()
-        .map_err(|message| runtime_error(RUNTIME_PLAN_ERROR, message))?;
+    plan.validate()?;
     let context = plan.context();
+    // Runtime planning binds the stable pre-confirmation Grant proposal.  The
+    // committed Grant itself also contains confirmation/timing evidence; its
+    // full descriptor digest must not be used here because that would make an
+    // `Ask` plan depend cyclically on its own confirmation-bound plan digest.
+    let grant_matches = authority.grant_proposal_digest.as_deref() == Some(context.grant_digest());
     if context.package_id() != request.package_id
         || context.package_digest() != request.package_digest
         || context.scope() != &request.identity.installation
         || context.surface() != &request.surface
         || context.generation() != request.lifecycle_generation
+        || !grant_matches
         || authority.provider_selection.evidence.surface != plan.surface()
         || selected.provider().semantics_profile_digest
             != plan

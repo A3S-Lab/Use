@@ -1441,9 +1441,12 @@ provisioning record reconciles without another Runtime apply; stop/remove use
 only receipt-owned provider, Gateway, and generation evidence. Pre-effect
 contention is deferred, invalid authority or immutable bytes are rejected, and
 all persistence or protocol ambiguity after a Runtime/Gateway effect remains
-unknown. This owner is still qualification-only: production composition must
-reconstruct the complete Runtime plan after restart from committed
-semantics-digest authority rather than retain a process-local selection.
+unknown. The Runtime package now also exposes a bounded canonical
+`RuntimeSurfacePlan` payload and `CommittedRuntimeSurfaceResolver`, which
+reconstruct the full plan after restart and recheck provider evidence. This
+owner is still qualification-only: production composition must supply the
+durable host source and atomic dispatcher rather than retain a process-local
+selection as authority.
 The kernel now
 also qualifies the path-free
 external-payload registration and

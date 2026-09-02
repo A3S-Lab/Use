@@ -194,9 +194,13 @@ incarnation 取得排他锁，并在 accepted call 仍活跃时安全 deferred�
 同一 key 的 drain 重试。非激活 Runtime owner 现在已完成 release-backed Tool Task/Service 与 Streamable
 HTTP MCP 验收。首次 prepare 只消费无路径、已验证的 release payload，把完整 plan semantics 绑定到已提交
 provider evidence，持久化单调 Runtime/Gateway recovery state，并在不依赖 Artifact 路径的情况下重放或退休
-精确最终 receipt。外部或持久化 effect 后的任何歧义都保持 unknown。Runtime/Flow 生产 composition 仍必须
-在重启后只从已提交 Control authority 与 immutable artifact 重建全部输入；验收使用的进程内 Runtime
-selection 不是生产权威。
+精确最终 receipt。外部或持久化 effect 后的任何歧义都保持 unknown。Runtime 现在提供有界、规范化的
+`RuntimeSurfacePlan` payload 与重启安全 resolver，可以从已提交 semantics digest 重建完整计划并重新校验
+精确 provider evidence。安装级、宿主拥有的 `RuntimeSurfacePlanStore` 现已作为该 payload 的验收来源：
+它使用规范 digest 寻址、有界批量发布、no-clobber 写入、可重启读取，并在篡改时 fail closed。
+它只拥有 payload 字节，不拥有 desired state；生命周期转换必须先发布精确的新 plan，再提交引用这些 plan
+的 Control effect。Runtime/Flow 生产 composition 仍必须把该 source 与原子的 dispatcher 绑定到 committed
+Control authority；验收使用的进程内 Runtime selection 不是生产权威。
 私有的无路径 registry 还冻结了五个外部 payload owner ID 与精确
 ACL backup policy：全局 Artifact Store 被明确排除，另外四个 owner 必须生成完整、绑定 generation、
 且具有 schema、digest 与计数上限的规范 receipt 集。私有 snapshot session 现在会在同一个排他

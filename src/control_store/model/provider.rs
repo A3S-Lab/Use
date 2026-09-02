@@ -4,15 +4,12 @@ use a3s_use_core::{
     InstallationSnapshot, PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlannedProviderEvidence,
     PluginSurfaceKind, PluginSurfaceRef, UseResult,
 };
-use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use super::{corruption_error, input_error, valid_machine_id, valid_sha256};
+use crate::plugin_runtime::provider_selection_digest;
 
 pub(in crate::control_store) const MAX_CONTROL_PROVIDER_SELECTIONS: usize = 4096;
-const MAX_CONTROL_PROVIDER_SELECTION_BYTES: usize = 16 * 1024;
-const CONTROL_PROVIDER_SELECTION_SCHEMA: &str = "a3s.use.control-provider-selection.v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -135,30 +132,10 @@ pub(in crate::control_store) fn parse_enforcement_profile(
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ControlProviderSelectionDescriptor<'a> {
-    schema: &'static str,
-    evidence: &'a PlannedProviderEvidence,
-}
-
 fn provider_evidence_digest(evidence: &PlannedProviderEvidence) -> UseResult<String> {
-    let descriptor = ControlProviderSelectionDescriptor {
-        schema: CONTROL_PROVIDER_SELECTION_SCHEMA,
-        evidence,
-    };
-    let mut bytes = Vec::new();
-    let mut serializer =
-        serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
-    descriptor.serialize(&mut serializer).map_err(|error| {
+    provider_selection_digest(evidence).map_err(|error| {
         input_error(format!(
-            "Failed to encode canonical Control Store provider selection: {error}"
+            "The canonical Control Store provider selection is invalid: {error}"
         ))
-    })?;
-    if bytes.is_empty() || bytes.len() > MAX_CONTROL_PROVIDER_SELECTION_BYTES {
-        return Err(input_error(
-            "The canonical Control Store provider selection exceeds its size bound.",
-        ));
-    }
-    Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
+    })
 }

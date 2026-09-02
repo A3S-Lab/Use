@@ -144,8 +144,12 @@ workspace，并且只委托 `a3s-flow` 执行 Native TypeScript preflight。pack
 Service 则按单调顺序持久化 `requested`、精确 Runtime observation、类型化 Gateway readiness 与最终 binding。
 最终 receipt 可在不访问 Artifact 的情况下重放，终态 provisioning 重叠不会触发第二次 apply，退休只使用
 receipt-owned 精确证据。外部 effect 前的争用可安全 deferred，authority 或字节漂移会 rejected，任何 effect
-后的歧义都保持 unknown。生产 lifecycle 仍未构造 dispatcher；它必须在重启后从已提交的 semantics digest
-权威重建完整 Runtime plan，不能把本次验收使用的进程内 selection 当作生产权威。私有的无路径 payload
+后的歧义都保持 unknown。Runtime 现在提供有界规范 plan payload 与重启安全 resolver，可以从已提交
+semantics digest 重建完整计划并重新校验精确 provider evidence。安装级、宿主拥有的
+`RuntimeSurfacePlanStore` 现已作为持久化 source 完成验收，支持规范 digest 寻址、有界批量发布、no-clobber
+写入、可重启读取和篡改 fail closed。它只拥有 payload 字节而不拥有 desired state，因此生命周期转换必须先
+发布精确的新记录，再提交对应的 Control effect。生产 lifecycle 仍未构造 dispatcher；它必须把该 source
+与原子的 composition 绑定到 committed authority，不能把本次验收使用的进程内 selection 当作生产权威。私有的无路径 payload
 契约现已冻结五个外部 owner ID
 及其 ACL backup policy；
 全局 Artifact Store 被明确排除，另外四个 owner 必须形成一组完整、规范、绑定精确 installation、
@@ -205,8 +209,8 @@ marker 缺失；乱序 live root、含糊 marker、link、重绑定和 evidence 
 不再执行 owner effect，只能恢复五个无 link 暂存树的有界固定顺序退休。18 个真实子进程退出边界覆盖顶层
 协议和每个退休边界。规范的 `attempt.json` 与完整 `activation.json` 构成精确绑定 installation 的终态
 收据。旧 backup 和 artifact reachability 只排除该收据；不完整、扩展、含 link 或被篡改的 evidence 都会
-fail closed。生产 Grant 转换、可重启的 Runtime plan 重建、Runtime/Flow dispatcher 组合、
-backup/restore 接线和协调一致的权威切换仍未完成，因此尚未完成任何 A2 roadmap 项。
+fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/restore 接线和协调一致的权威切换仍未完成，
+因此尚未完成任何 A2 roadmap 项。
 
 ## 已实现基线
 
@@ -271,8 +275,10 @@ backup/restore 接线和协调一致的权威切换仍未完成，因此尚未�
 
 ### 1. 托管宿主 provider 组合 — 进行中
 
-- 增加生产 Runtime Service 与 HTTP MCP/Gateway provider，并提供可在重启后
-  重建完整已提交 Runtime plan 的 resolver。
+- 宿主拥有的 `RuntimeSurfacePlanStore` 已完成规范、有界、no-clobber plan 发布验收；
+  在启用生产 dispatcher 前，仍需把它绑定到 Control commit。
+- 用持久化 host source、重启安全 resolver 与原子 dispatcher cutover 组合生产
+  Runtime Service 和 HTTP MCP/Gateway provider。
 - 完成托管 Knowledge Workspace/session carrier 和 UI sandbox 的 ownership、
   CSP、backend binding、drain、retention 与 garbage collection。
 - 证明 owner 或精确 readiness evidence 缺失时，required 表面始终不发布。

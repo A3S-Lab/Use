@@ -15,10 +15,13 @@ use super::super::effect_port::{
 use super::super::model::ControlEffectOwner;
 use crate::plugin_runtime::{
     RuntimeBindingReceipt, RuntimeBindingStore, RuntimeEndpointRef, RuntimeMcpInitializeEvidence,
-    RuntimeProviderSelection, RuntimeServiceBindingReceipt, RuntimeServiceProvisioningPhase,
+    RuntimeServiceBindingReceipt, RuntimeServiceProvisioningPhase,
     RuntimeServiceProvisioningReceipt, RuntimeServiceReadinessEvidence, RuntimeSurfaceContract,
-    RuntimeSurfacePlan, SelectedRuntimeSurface,
+    RuntimeSurfacePlan, RuntimeSurfacePlanKey, RuntimeSurfaceResolver, SelectedRuntimeSurface,
 };
+
+#[cfg(test)]
+use crate::plugin_runtime::{RuntimeProviderSelection, RuntimeProviderSelectionResolver};
 
 mod evidence;
 mod validation;
@@ -96,31 +99,49 @@ pub(in crate::control_store) trait ControlRuntimeServiceReadinessPort:
 
 /// Committed-authority Runtime owner for managed Tool and MCP surfaces.
 ///
-/// The owner is intentionally usable before production cutover: its plan
-/// selection is injected as a typed `RuntimeProviderSelection`, while the
-/// committed Control request remains the sole desired-state authority. It
+/// The owner is intentionally usable before production cutover. The
+/// qualification constructor accepts a process-local selection, while the
+/// production constructor requires a restart-safe `RuntimeSurfaceResolver`.
+/// The committed Control request remains the sole desired-state authority. It
 /// never resolves a provider from a package path or from a legacy lifecycle
 /// record. Durable Runtime receipts and Service provisioning records are used
 /// for exact-generation replay and crash recovery.
 #[derive(Clone)]
 pub(in crate::control_store) struct ControlRuntimeEffectPort {
     artifact_store: ArtifactStore,
-    selection: RuntimeProviderSelection,
+    resolver: Arc<dyn RuntimeSurfaceResolver>,
     bindings: RuntimeBindingStore,
     readiness: Arc<dyn ControlRuntimeServiceReadinessPort>,
     deadline_at_ms: Option<u64>,
 }
 
 impl ControlRuntimeEffectPort {
+    #[cfg(test)]
     pub(in crate::control_store) fn new(
         artifact_store: ArtifactStore,
         selection: RuntimeProviderSelection,
         bindings: RuntimeBindingStore,
         readiness: Arc<dyn ControlRuntimeServiceReadinessPort>,
     ) -> Self {
+        Self::with_resolver(
+            artifact_store,
+            Arc::new(RuntimeProviderSelectionResolver::new(selection)),
+            bindings,
+            readiness,
+        )
+    }
+
+    /// Build the owner with a host-owned, restart-safe plan resolver. This is
+    /// the only constructor intended for production dispatcher composition.
+    pub(in crate::control_store) fn with_resolver(
+        artifact_store: ArtifactStore,
+        resolver: Arc<dyn RuntimeSurfaceResolver>,
+        bindings: RuntimeBindingStore,
+        readiness: Arc<dyn ControlRuntimeServiceReadinessPort>,
+    ) -> Self {
         Self {
             artifact_store,
-            selection,
+            resolver,
             bindings,
             readiness,
             deadline_at_ms: None,
@@ -145,8 +166,14 @@ impl ControlRuntimeEffectPort {
         &self,
         request: &ControlRuntimeEffectRequest,
     ) -> ControlEffectPortOutcome<ControlRuntimeApplication> {
-        let selected = match self.validate_request(request) {
+        let selected = match self.validate_request(request).await {
             Ok(selected) => selected,
+            Err(error) if error.code == "use.plugin.runtime.plan_source_unavailable" => {
+                return before_effect_failure(request, "plan-resolve", error)
+            }
+            Err(error) if error.code == "use.plugin.runtime.provider_unavailable" => {
+                return before_effect_failure(request, "plan-resolve", error)
+            }
             Err(error) => return rejected(request, error.code),
         };
         match request.surface.action {
@@ -156,7 +183,7 @@ impl ControlRuntimeEffectPort {
         }
     }
 
-    fn validate_request(
+    async fn validate_request(
         &self,
         request: &ControlRuntimeEffectRequest,
     ) -> UseResult<SelectedRuntimeSurface> {
@@ -196,24 +223,22 @@ impl ControlRuntimeEffectPort {
         {
             return Err(authority_error());
         }
-        let selected = self
-            .selection
-            .surfaces()
-            .iter()
-            .find(|candidate| candidate.plan().surface() == *committed.qualified_surface())
-            .cloned()
-            .ok_or_else(|| {
-                runtime_error(
-                    RUNTIME_PLAN_ERROR,
-                    "The injected Runtime selection has no exact committed surface.",
-                )
-            })?;
-        if selected.provider() != &committed.evidence {
-            return Err(runtime_error(
-                RUNTIME_AUTHORITY_ERROR,
-                "The injected Runtime provider evidence differs from committed authority.",
-            ));
-        }
+        let key = RuntimeSurfacePlanKey::new(
+            request.surface.package_id.clone(),
+            request.surface.package_digest.clone(),
+            request.surface.identity.installation.clone(),
+            committed.qualified_surface().clone(),
+            request.surface.lifecycle_generation,
+            request
+                .authority
+                .grant_proposal_digest
+                .as_deref()
+                .map(str::to_owned),
+            committed.evidence.semantics_profile_digest.clone(),
+            request.provider_id.clone(),
+            request.selection_digest.clone(),
+        )?;
+        let selected = self.resolver.resolve(&key, &committed.evidence).await?;
         validate_plan_identity(&request.surface, &request.authority, &selected)?;
         Ok(selected)
     }

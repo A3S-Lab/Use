@@ -545,6 +545,11 @@ async fn runtime_owner_fixture(surface_kind: FixtureSurface) -> RuntimeOwnerFixt
     let provider_selection =
         ControlProviderSelection::from_evidence(selection.surfaces()[0].provider().clone())
             .unwrap();
+    let grant_proposal_digest = selection.surfaces()[0]
+        .plan()
+        .context()
+        .grant_digest()
+        .to_owned();
     let package_authority = ControlPackageEffectAuthority {
         generation_operation_id: "operation:runtime-owner".to_string(),
         installation_generation: 1,
@@ -569,6 +574,7 @@ async fn runtime_owner_fixture(surface_kind: FixtureSurface) -> RuntimeOwnerFixt
         authority: ControlRuntimeEffectAuthority {
             package: package_authority,
             provider_selection,
+            grant_proposal_digest: Some(grant_proposal_digest.into_boxed_str()),
         },
         surface,
         _temporary: temporary,

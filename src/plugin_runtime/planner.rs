@@ -399,7 +399,7 @@ pub(super) fn runtime_unit_id(
     Ok(format!("use:{class}:{:x}", Sha256::digest(bytes)))
 }
 
-pub(super) fn runtime_semantics_profile_digest(
+pub(crate) fn runtime_semantics_profile_digest(
     context: &RuntimeSurfaceContext,
     descriptor_digest: &str,
     spec: &RuntimeUnitSpec,

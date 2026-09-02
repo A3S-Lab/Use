@@ -396,8 +396,31 @@ async fn runtime_claim_carries_the_exact_grant_and_reviewed_provider_selection()
         .iter()
         .find(|grant| grant.package_id() == authority.package.package.package_id())
         .unwrap();
+    let expected_proposal_digest = reviewed
+        .authorization
+        .grant_transition
+        .as_ref()
+        .and_then(|transition| {
+            transition
+                .change_set
+                .changes
+                .iter()
+                .find(|change| change.package_id == expected_grant.package_id())
+                .and_then(|change| change.after.as_ref())
+        })
+        .unwrap()
+        .descriptor_digest()
+        .unwrap();
     assert_eq!(authority.provider_selection, *expected_provider);
     assert_eq!(authority.package.grant.as_ref(), Some(expected_grant));
+    assert_eq!(
+        authority.grant_proposal_digest.as_deref(),
+        Some(expected_proposal_digest.as_str())
+    );
+    assert_ne!(
+        authority.grant_proposal_digest.as_deref(),
+        Some(expected_grant.grant_digest.as_str())
+    );
 }
 
 #[tokio::test]

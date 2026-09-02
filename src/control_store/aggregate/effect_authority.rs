@@ -85,10 +85,18 @@ pub(super) fn derive_claim_authority(
                     "A Runtime effect owner differs from its committed provider selection.",
                 ));
             }
+            let grant_proposal_digest = runtime_grant_proposal_digest(
+                connection,
+                installation,
+                &generation,
+                package.package.package_id(),
+                package.grant.as_ref(),
+            )?;
             Ok(ControlEffectAuthority::RuntimeProvider(
                 ControlRuntimeEffectAuthority {
                     package,
                     provider_selection: selection,
+                    grant_proposal_digest: grant_proposal_digest.map(String::into_boxed_str),
                 },
             ))
         }
@@ -108,6 +116,79 @@ pub(super) fn derive_claim_authority(
             &effect.intent,
         )?)),
     }
+}
+
+/// Find the exact stable Grant proposal digest that authorized a committed
+/// package incarnation.  Runtime semantics are planned from this proposal,
+/// while the committed Grant additionally contains confirmation and timing
+/// evidence.  Walking the committed generation history is required for a
+/// retained package whose current operation did not change its Grant.
+fn runtime_grant_proposal_digest(
+    connection: &Connection,
+    installation: &InstallationId,
+    generation: &ControlGeneration,
+    package_id: &str,
+    grant: Option<&ControlGrantSelection>,
+) -> UseResult<Option<String>> {
+    let Some(grant) = grant else {
+        return Ok(None);
+    };
+
+    let generation_ids = connection
+        .prepare(
+            "SELECT generation FROM control_generation
+             WHERE generation <= ?1 ORDER BY generation DESC",
+        )
+        .map_err(|error| schema::sqlite_error("prepare Runtime Grant history", error))?
+        .query_map([to_i64(generation.snapshot.generation)?], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|error| schema::sqlite_error("query Runtime Grant history", error))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| schema::sqlite_error("read Runtime Grant history", error))?;
+
+    for generation_id in generation_ids {
+        let generation_id = from_i64(generation_id)?;
+        let Some(candidate) = read_generation_from(connection, installation, generation_id)? else {
+            return Err(corruption_error(
+                "A Runtime Grant history generation disappeared during authority derivation.",
+            ));
+        };
+        let has_grant = candidate.grants.iter().any(|selection| {
+            selection.package_id() == package_id
+                && selection.grant_digest == grant.grant_digest
+                && selection.grant.package_digest == grant.grant.package_digest
+        });
+        if !has_grant {
+            continue;
+        }
+        let operation = read_operation_from(connection, installation, &candidate.operation_id)?
+            .ok_or_else(|| {
+                corruption_error(
+                    "A Runtime Grant history generation has no reviewed operation evidence.",
+                )
+            })?;
+        if let Some(transition) = operation.reviewed.authorization.grant_transition.as_ref() {
+            for change in &transition.change_set.changes {
+                let Some(proposal) = change.after.as_ref() else {
+                    continue;
+                };
+                if proposal.package_id == package_id
+                    && proposal.package_digest == grant.grant.package_digest
+                {
+                    return proposal.descriptor_digest().map(Some).map_err(|_| {
+                        corruption_error(
+                            "A committed Runtime Grant proposal is not canonically encodable.",
+                        )
+                    });
+                }
+            }
+        }
+    }
+
+    Err(corruption_error(
+        "A committed Runtime Grant has no originating reviewed proposal.",
+    ))
 }
 
 fn package_authority(

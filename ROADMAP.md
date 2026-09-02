@@ -658,11 +658,17 @@ Artifact access, the final-binding/provisioning overlap reconciles without a
 second Runtime apply, and retirement verifies receipt-owned provider evidence
 before Gateway drain and Runtime stop/remove. Pre-effect contention safely
 defers; authority or immutable-byte drift rejects; every ambiguity after a
-Runtime, Gateway, or receipt effect remains unknown. Production still needs a
-restart-safe resolver that reconstructs the full plan from its committed
-semantics digest plus atomic dispatcher composition; a process-local selection
-must never become production authority, and no adapter may read legacy
-authority or treat a path as authority.
+Runtime, Gateway, or receipt effect remains unknown. The Runtime boundary now
+provides a bounded canonical plan payload and a restart-safe resolver that
+reconstructs the full plan from its committed semantics digest and rechecks
+exact provider evidence. The installation-scoped, host-owned
+`RuntimeSurfacePlanStore` is also qualified as a canonical digest-addressed
+payload source with bounded batch publication, no-clobber writes, restart-safe
+reads, and fail-closed tamper checks. Production still needs to bind
+write-before-commit plan publication to lifecycle conversion and complete the
+atomic dispatcher composition; a process-local selection must never become
+production authority, and no adapter may read legacy authority or treat a path
+as authority.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
@@ -815,10 +821,9 @@ retirement boundary. The surviving canonical `attempt.json` and complete
 `activation.json` are the exact installation-bound terminal receipt. Legacy
 backup and artifact reachability exclude only that receipt; incomplete,
 extended, linked, or tampered evidence fails closed. Production Grant
-conversion, restart-safe Runtime plan reconstruction, Runtime/Flow dispatcher
-composition, production backup/restore wiring, indivisible consumer cutover,
-and deletion of legacy mutable stores remain open; no A2 checkbox is complete
-yet.
+conversion, Runtime/Flow dispatcher composition, production backup/restore
+wiring, indivisible consumer cutover, and deletion of legacy mutable stores
+remain open; no A2 checkbox is complete yet.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions
@@ -1206,9 +1211,14 @@ Status: in progress
   Tool Task/Service and Streamable HTTP MCP payloads, monotonic Service
   provisioning, exact final-receipt replay, typed Gateway readiness, and
   receipt-owned retirement without exposing Artifact Store paths.
+- [x] Define the canonical Runtime plan payload and restart-safe resolver
+  boundary, with exact plan-time and provider-evidence validation.
+- [x] Qualify the installation-scoped host-owned Runtime plan store with
+  canonical digest addressing, bounded batch publication, restart-safe reads,
+  no-clobber immutability, and fail-closed tamper detection.
 - [ ] Compose production Runtime Service providers in A3S Code and managed
-  hosts with a restart-safe committed-plan resolver and exact plan-time and
-  apply-time evidence.
+  hosts with a durable host source and atomic dispatcher cutover, preserving
+  exact plan-time and apply-time evidence.
 - [x] Consume the reviewed Runtime Task projection in Code CLI/TUI and agent
   tool discovery, then route invocation through the leased Use dispatcher. A3S
   CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7`
