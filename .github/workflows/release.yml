@@ -228,7 +228,14 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: echo "RUSTFLAGS=${RUSTFLAGS} -C link-arg=-Wl,--build-id=none" >> "${GITHUB_ENV}"
+      # Release binaries must be compiled from a clean target directory. A
+      # restored target cache can contain objects produced with an older
+      # RUSTFLAGS/SOURCE_DATE_EPOCH pair and make the primary archive differ
+      # from the independent rebuild. Keep the Cargo registry cache, but never
+      # reuse compiled workspace artifacts for this trust boundary.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          cache-targets: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: a3s-use-ocr-assets

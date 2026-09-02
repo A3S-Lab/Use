@@ -81,6 +81,18 @@ fn release_publishes_only_use_owned_crates_in_dependency_order() {
 }
 
 #[test]
+fn release_binary_jobs_do_not_restore_compiled_targets() {
+    let workflow = include_str!("../.github/workflows/release.yml").replace("\r\n", "\n");
+    let binaries = &workflow
+        [position(&workflow, "\n  binaries:")..position(&workflow, "\n  reproducibility:")];
+
+    assert!(
+        binaries.contains("cache-targets: false"),
+        "release binaries must retain only the Cargo registry cache"
+    );
+}
+
+#[test]
 fn release_waits_for_independent_crates_before_validating_the_facade() {
     let workflow = include_str!("../.github/workflows/release.yml");
     let manifest = include_str!("../Cargo.toml");
@@ -651,11 +663,11 @@ fn release_builds_remove_nondeterministic_native_metadata() {
 
 #[test]
 fn installed_release_smoke_is_checkout_independent() {
-    let workflow = include_str!("../.github/workflows/release.yml");
-    let unix = &workflow[position(workflow, "- name: Verify installed Unix release")
-        ..position(workflow, "- name: Verify installed Windows release")];
-    let windows = &workflow[position(workflow, "- name: Verify installed Windows release")
-        ..position(workflow, "- name: Generate SPDX SBOM")];
+    let workflow = include_str!("../.github/workflows/release.yml").replace("\r\n", "\n");
+    let unix = &workflow[position(&workflow, "- name: Verify installed Unix release")
+        ..position(&workflow, "- name: Verify installed Windows release")];
+    let windows = &workflow[position(&workflow, "- name: Verify installed Windows release")
+        ..position(&workflow, "- name: Generate SPDX SBOM")];
 
     assert!(unix.contains("scripts/verify-release-portability.py"));
     assert!(unix.contains("--release-root \"${install_root}\""));
