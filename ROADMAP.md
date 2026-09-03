@@ -846,10 +846,12 @@ between graph siblings before their effects enter one installation outbox.
 
 ### A3 - Deliver the arbitrary-agent capability plane
 
-- [ ] Ship two standard MCP service entry points: a privileged Package Manager
+- [x] Ship two standard MCP service entry points: a privileged Package Manager
   endpoint and a lower-authority Capability Gateway endpoint. Do not introduce
-  a private Use JSON-RPC protocol.
-- [ ] Define portable `CapabilityDescriptor` contracts with opaque
+  a private Use JSON-RPC protocol. The Gateway embedding also exposes standard
+  Streamable HTTP at `/mcp` with host-owned bearer, Origin, and bounded
+  admission configuration.
+- [x] Define portable `CapabilityDescriptor` contracts with opaque
   `InvocationRef`, `ArtifactRef`, and `EndpointRef` values. Remove executable
   paths, package roots, provider release paths, and secrets from external JSON.
 - [ ] Let the Use Host resolve an invocation reference and retain the exact
@@ -866,7 +868,10 @@ between graph siblings before their effects enter one installation outbox.
   rescans and repeated asset hashing from the normal watch path.
 - [ ] Add CLI/service wiring, fail-closed trusted confirmation for management
   apply, bounded authentication, authorization, rate limits, and secret-free
-  diagnostics for both endpoints.
+  diagnostics for both endpoints. Gateway HTTP bearer authentication,
+  optional exact Origin policy, duplicate-header rejection, bounded in-flight
+  and rolling-window admission, and sanitized HTTP errors are implemented;
+  live per-consumer authorization and product CLI wiring remain.
 - [ ] Prove one-endpoint discovery and invocation from independent Rust,
   TypeScript, and Python clients, including a container or remote client with
   no shared package filesystem. Cover install, live upgrade, prior-generation
@@ -884,19 +889,27 @@ clock error in the catalog contract: catalog `generation` is the immutable
 publication generation, while each descriptor `generation` is its owning
 package lifecycle generation. A single publication may therefore contain
 independently upgraded packages, but it cannot contain two lifecycle
-incarnations of one package/surface identity. These are contract and embedding
-increments only; the A3 exit gate remains open until live-host reference
-resolution, authentication, authorization, rate limits, CLI wiring, and the
-independent client/recovery matrix are implemented.
+incarnations of one package/surface identity. PR
+[#202](https://github.com/A3S-Lab/Use/pull/202) adds shared host-configured
+in-flight and rolling-window admission to Gateway calls and Streamable HTTP.
+PR [#203](https://github.com/A3S-Lab/Use/pull/203) adds duplicate-header
+rejection, native-client Origin compatibility, standard HTTP challenge/backoff
+headers, and a real independent Rust client test. These are contract and
+embedding increments only; the A3 exit gate remains open until live-host
+reference resolution, authorization, CLI wiring, and the independent
+client/recovery matrix are implemented. The HTTP transport remains
+caller-TLS/loopback only; authentication and rate limiting are endpoint
+safeguards, not a substitute for live reference authorization.
 
 Implementation note (2026-09-03): PR [#197](https://github.com/A3S-Lab/Use/pull/197)
 added a secret-free error projection at the Package Manager MCP boundary. The
 adapter retains only validated `use.*` contract codes and a bounded public
 message; paths, URLs, suggestions, details, provider-owned identifiers, and
 package-authored diagnostics are omitted or collapsed to a generic code. This
-is defense-in-depth for the existing adapter, not an A3 exit-gate claim: live
-host reference resolution, authentication, authorization, rate limits, and
-independent-client recovery remain open.
+is defense-in-depth for the existing adapter, not an A3 exit-gate claim. The
+Gateway HTTP edge now adds endpoint bearer authentication and bounded
+admission; live host reference resolution, per-consumer authorization,
+product wiring, and independent-client recovery remain open.
 
 Exit gate: an arbitrary MCP-capable coding agent can discover and invoke an
 authorized package without an A3S SDK, local package path, or duplicated

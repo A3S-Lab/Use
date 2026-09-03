@@ -41,9 +41,15 @@ provider 私有标识及 package 自带诊断会被移除，或收敛为通用 c
 期间持续持有该 lease。PR [#200](https://github.com/A3S-Lab/Use/pull/200) 将
 catalog 的 publication generation 与 descriptor 所属 package lifecycle
 generation 分离，使同一个 immutable publication 可以安全包含独立升级的
-package，同时禁止同一 surface 的两个 lifecycle incarnation。live-host
-reference resolution、endpoint authentication/authorization、rate limit、CLI
-接线及独立 client/recovery 矩阵仍未完成。
+package，同时禁止同一 surface 的两个 lifecycle incarnation。PR
+[#202](https://github.com/A3S-Lab/Use/pull/202) 为 Gateway call 和标准
+Streamable HTTP `/mcp` 增加由宿主配置的有界 admission。PR
+[#203](https://github.com/A3S-Lab/Use/pull/203) 又增加 constant-time bearer
+credential、重复 header 拒绝、可选的精确 Origin 检查（原生 client 可以省略
+Origin）、`WWW-Authenticate`/`Retry-After` 响应，以及真正的 `rmcp` 独立
+client discovery/invocation 测试。HTTP transport 不负责 TLS；宿主必须绑定
+loopback 或放在可信 TLS reverse proxy 后。live-host reference resolution、
+per-consumer authorization、CLI 接线及独立 client/recovery 矩阵仍未完成。
 
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、TUI 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 

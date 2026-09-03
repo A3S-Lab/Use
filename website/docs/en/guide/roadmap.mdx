@@ -344,10 +344,15 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   tools from the frozen contract and obtains confirmation only from an injected
   trusted host provider.
 - The path-free `CapabilityDescriptor` and catalog contracts, opaque reference
-  types, and embedding `CapabilityGatewayMcpServer` are implemented and
-  contract-tested. The adapter publishes only catalog-authorized Tools over
-  standard MCP through an injected provider; live-generation lease resolution,
-  auth/rate limits, CLI wiring, and production-host recovery remain open.
+  types, exact snapshot lease/generation binding, and embedding
+  `CapabilityGatewayMcpServer` are implemented and contract-tested. The
+  adapter publishes only catalog-authorized Tools over standard MCP through an
+  injected provider. Host-owned bounded in-flight and rolling-window
+  admission, plus Streamable HTTP `/mcp` bearer/Origin enforcement, duplicate
+  header rejection, sanitized HTTP errors, and an independent Rust client
+  discovery/invocation check are also implemented. Live reference resolution,
+  per-consumer authorization, CLI wiring, TLS termination, and production-host
+  recovery remain open.
 - The standalone `plugin` CLI maps those same ten operations to the service.
   Planning is non-mutating; exact apply requires the durable operation ID, plan
   digest, and explicit `--yes`, while cached apply and replay are zero-network.
@@ -411,10 +416,16 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
 ### 2a. Arbitrary-agent Capability Gateway — in progress
 
 - PR [#192](https://github.com/A3S-Lab/Use/pull/192) freezes the portable
-  descriptor/catalog schemas and adds an embedding standard-MCP adapter.
-- Complete server-side invocation-reference resolution, exact-generation
-  leases across calls and streams, drain/retirement, bounded authentication and
-  rate limits, and CLI/service wiring.
+  descriptor/catalog schemas and adds an embedding standard-MCP adapter. PRs
+  [#199](https://github.com/A3S-Lab/Use/pull/199) and
+  [#200](https://github.com/A3S-Lab/Use/pull/200) add exact snapshot leases and
+  separate publication and package lifecycle generations. PR
+  [#202](https://github.com/A3S-Lab/Use/pull/202) adds shared bounded admission
+  and Streamable HTTP `/mcp`; PR
+  [#203](https://github.com/A3S-Lab/Use/pull/203) adds duplicate-header
+  rejection and a real independent Rust client check.
+- Complete live server-side invocation-reference resolution, per-consumer
+  authorization, CLI/service wiring, TLS deployment, and production recovery.
 - Qualify discovery and invocation from independent Rust, TypeScript, and
   Python clients without a shared package filesystem, including upgrade,
   restart, uninstall, and denied cross-scope access.
