@@ -148,7 +148,9 @@ the complete package/surface/generation identity, apply the principal and
 Grant policy, and retain its generation guard until the invocation returns.
 `CapabilityGatewayResolvedProvider` keeps resolution and authorization in one
 call boundary; it never sends the lease, path, or provider details to the
-agent. The production host still supplies the receipt and Runtime binding.
+agent. HTTP hosts may bind a bounded immutable token-to-principal registry;
+authentication scans all configured credentials and rejects duplicate tokens.
+The production host still supplies the receipt, Runtime, and Grant binding.
 
 A package permission declaration is a ceiling, not authority. Host ACL policy and workspace grants may only narrow it:
 

@@ -255,8 +255,9 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   in-flight/rolling-window admission、sanitized challenge/backoff 响应，以及
   独立 Rust client discovery/invocation 检查；live reference resolution、
   provider 现在还提供显式的 pre-invocation authorization hook，会 fail closed
-  并清理拒绝结果；多 principal consumer wiring、CLI wiring、TLS 部署与
-  production-host recovery 仍未完成。
+  并清理拒绝结果；HTTP 已支持有界的多 principal consumer mapping。生产
+  receipt/Runtime/Grant 组合、CLI wiring、TLS 部署与 production-host recovery
+  仍未完成。
 - standalone `plugin` CLI 已把同样 10 个 operation 映射到该 service。planning
   不产生 mutation；精确 apply 必须提供持久 operation ID、plan digest 与显式
   `--yes`，cached apply 和 replay 均保持零网络。
@@ -321,15 +322,14 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   Streamable HTTP `/mcp`；PR
   [#203](https://github.com/A3S-Lab/Use/pull/203) 增加重复 header 拒绝和真正的
   独立 Rust client 检查。
-- 仍需完成 live server-side invocation-reference 解析、多 principal
-  authorization wiring、CLI/service wiring、TLS 部署与 production recovery。
+- 仍需完成生产 receipt/Runtime/Grant 组合、CLI/service wiring、TLS 部署与
+  production recovery。HTTP embedding 已支持最多 64 项不可变的
+  token→principal registry，会完整扫描 credential 并拒绝重复 token；
   Embedding API 已提供 `CapabilityGatewayInvocationResolver` 与
   `CapabilityGatewayResolvedProvider`：一个 opaque reference 会被解析为私有
   lease，与 catalog identity 校验后只授权一次，并在 invocation 结束前保持；
-  生产 receipt/Runtime/Grant 组合与多 principal registry 仍未完成。
-  当前 embedding 已把 HTTP bearer authentication 显式配置的 principal 传给
-  provider authorization 与 invocation；它还不是 multi-principal registry
-  或 live resolver。
+  当前 embedding 已把 HTTP bearer authentication 选中的 principal 传给
+  provider authorization 与 invocation；生产宿主仍需完成 live authority 接线。
 - 需要用不共享 package filesystem 的独立 Rust、TypeScript、Python client
   验证 discovery/invocation，并覆盖 upgrade、restart、uninstall 与跨 scope
   拒绝。

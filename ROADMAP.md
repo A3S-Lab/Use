@@ -872,8 +872,9 @@ between graph siblings before their effects enter one installation outbox.
   optional exact Origin policy, duplicate-header rejection, bounded in-flight
   and rolling-window admission, sanitized HTTP errors, an explicit
   pre-invocation provider authorization hook, and typed propagation of the
-  host-authenticated transport/principal context are implemented; live
-  multi-principal authorization and product CLI wiring remain.
+  host-authenticated transport/principal context are implemented; bounded
+  HTTP token-to-principal mapping is now also available. Production
+  receipt/Runtime/Grant authorization and product CLI wiring remain.
 - [ ] Prove one-endpoint discovery and invocation from independent Rust,
   TypeScript, and Python clients, including a container or remote client with
   no shared package filesystem. Cover install, live upgrade, prior-generation
@@ -915,18 +916,23 @@ package-authored diagnostics are omitted or collapsed to a generic code. This
 is defense-in-depth for the existing adapter, not an A3 exit-gate claim. The
 Gateway HTTP edge now adds endpoint bearer authentication and bounded
 admission, and the injected provider exposes a sanitized pre-invocation
-authorization seam; the HTTP `for_principal` configuration now carries the
-verified principal into both provider hooks without exposing it to agents.
-Live host reference resolution, multi-principal authorization, product wiring,
-and independent-client recovery remain open.
+authorization seam; the HTTP `for_principal`/`for_principals` configuration now
+carries the selected verified principal into both provider hooks without
+exposing it to agents. PR [#208](https://github.com/A3S-Lab/Use/pull/208) adds
+the lease-scoped resolver and bounded multi-principal mapping. Production host
+receipt/Runtime/Grant composition, product wiring, and independent-client
+recovery remain open.
 
-The embedding seam is now explicit: `CapabilityGatewayInvocationResolver`
-returns a private `CapabilityGatewayInvocationLease`, and
-`CapabilityGatewayResolvedProvider` performs one resolution and authorization
-for each call before invoking the lease. The handle implementation owns the
-exact package-generation guard and must retain it until the invocation returns;
-the resolver still has to be composed with the production Use receipt and
-Runtime authorities before the A3 exit gate can be checked.
+The embedding seam is now explicit: PR [#208](https://github.com/A3S-Lab/Use/pull/208)
+adds `CapabilityGatewayInvocationResolver` and
+`CapabilityGatewayResolvedProvider`, which perform one resolution and
+authorization for each call before invoking a private lease. The handle
+implementation owns the exact package-generation guard and must retain it
+until the invocation returns. The same PR adds a bounded 64-entry immutable
+HTTP token-to-principal registry with duplicate-token rejection and complete
+credential scans. These are host embedding contracts; they still have to be
+composed with the production Use receipt, Runtime, and Grant authorities before
+the A3 exit gate can be checked.
 
 Exit gate: an arbitrary MCP-capable coding agent can discover and invoke an
 authorized package without an A3S SDK, local package path, or duplicated
