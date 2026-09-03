@@ -870,8 +870,9 @@ between graph siblings before their effects enter one installation outbox.
   apply, bounded authentication, authorization, rate limits, and secret-free
   diagnostics for both endpoints. Gateway HTTP bearer authentication,
   optional exact Origin policy, duplicate-header rejection, bounded in-flight
-  and rolling-window admission, and sanitized HTTP errors are implemented;
-  live per-consumer authorization and product CLI wiring remain.
+  and rolling-window admission, sanitized HTTP errors, and an explicit
+  pre-invocation provider authorization hook are implemented; live
+  multi-principal authorization and product CLI wiring remain.
 - [ ] Prove one-endpoint discovery and invocation from independent Rust,
   TypeScript, and Python clients, including a container or remote client with
   no shared package filesystem. Cover install, live upgrade, prior-generation
@@ -899,7 +900,11 @@ embedding increments only; the A3 exit gate remains open until live-host
 reference resolution, authorization, CLI wiring, and the independent
 client/recovery matrix are implemented. The HTTP transport remains
 caller-TLS/loopback only; authentication and rate limiting are endpoint
-safeguards, not a substitute for live reference authorization.
+safeguards, not a substitute for live reference authorization. The provider
+boundary now requires a pre-invocation `authorize` hook; denials are sanitized
+to `use.plugin.capability_gateway_forbidden` and never reach `invoke`, with no
+implicit allow implementation. A host must bind its principal and policy
+explicitly.
 
 Implementation note (2026-09-03): PR [#197](https://github.com/A3S-Lab/Use/pull/197)
 added a secret-free error projection at the Package Manager MCP boundary. The
@@ -908,8 +913,9 @@ message; paths, URLs, suggestions, details, provider-owned identifiers, and
 package-authored diagnostics are omitted or collapsed to a generic code. This
 is defense-in-depth for the existing adapter, not an A3 exit-gate claim. The
 Gateway HTTP edge now adds endpoint bearer authentication and bounded
-admission; live host reference resolution, per-consumer authorization,
-product wiring, and independent-client recovery remain open.
+admission, and the injected provider exposes a sanitized pre-invocation
+authorization seam; live host reference resolution, multi-principal
+authorization, product wiring, and independent-client recovery remain open.
 
 Exit gate: an arbitrary MCP-capable coding agent can discover and invoke an
 authorized package without an A3S SDK, local package path, or duplicated

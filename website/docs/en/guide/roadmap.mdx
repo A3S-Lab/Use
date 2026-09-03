@@ -350,9 +350,10 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   injected provider. Host-owned bounded in-flight and rolling-window
   admission, plus Streamable HTTP `/mcp` bearer/Origin enforcement, duplicate
   header rejection, sanitized HTTP errors, and an independent Rust client
-  discovery/invocation check are also implemented. Live reference resolution,
-  per-consumer authorization, CLI wiring, TLS termination, and production-host
-  recovery remain open.
+  discovery/invocation check are also implemented. The provider now exposes an
+  explicit pre-invocation authorization hook that fails closed and sanitizes
+  denial results. Live reference resolution, multi-principal consumer wiring,
+  CLI wiring, TLS termination, and production-host recovery remain open.
 - The standalone `plugin` CLI maps those same ten operations to the service.
   Planning is non-mutating; exact apply requires the durable operation ID, plan
   digest, and explicit `--yes`, while cached apply and replay are zero-network.
@@ -424,8 +425,9 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   and Streamable HTTP `/mcp`; PR
   [#203](https://github.com/A3S-Lab/Use/pull/203) adds duplicate-header
   rejection and a real independent Rust client check.
-- Complete live server-side invocation-reference resolution, per-consumer
-  authorization, CLI/service wiring, TLS deployment, and production recovery.
+- Complete live server-side invocation-reference resolution, multi-principal
+  authorization wiring, CLI/service wiring, TLS deployment, and production
+  recovery.
 - Qualify discovery and invocation from independent Rust, TypeScript, and
   Python clients without a shared package filesystem, including upgrade,
   restart, uninstall, and denied cross-scope access.
