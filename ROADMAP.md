@@ -872,13 +872,22 @@ between graph siblings before their effects enter one installation outbox.
   no shared package filesystem. Cover install, live upgrade, prior-generation
   drain, uninstall, restart, and denied cross-scope access.
 
-Implementation note (2026-09-03): PR [#192](https://github.com/A3S-Lab/Use/pull/192)
+Implementation notes (2026-09-03): PR [#192](https://github.com/A3S-Lab/Use/pull/192)
 landed the portable descriptor and catalog contracts plus an embedding
 `CapabilityGatewayMcpServer` that speaks standard MCP and dispatches through an
-injected provider. This is a contract-level increment only; the A3 exit gate
-remains open until server-side lifecycle lease/drain integration, authentication
-and rate limits, CLI wiring, and the independent client/recovery matrix are
-implemented.
+injected provider. PR [#199](https://github.com/A3S-Lab/Use/pull/199) then added
+an exact `CapabilitySnapshotLease` constructor path: the host acquires all
+callable package-generation leases in canonical order, rechecks the cursor, and
+retains the non-clone lease through Gateway clones and calls. PR
+[#200](https://github.com/A3S-Lab/Use/pull/200) corrected a first-principles
+clock error in the catalog contract: catalog `generation` is the immutable
+publication generation, while each descriptor `generation` is its owning
+package lifecycle generation. A single publication may therefore contain
+independently upgraded packages, but it cannot contain two lifecycle
+incarnations of one package/surface identity. These are contract and embedding
+increments only; the A3 exit gate remains open until live-host reference
+resolution, authentication, authorization, rate limits, CLI wiring, and the
+independent client/recovery matrix are implemented.
 
 Implementation note (2026-09-03): PR [#197](https://github.com/A3S-Lab/Use/pull/197)
 added a secret-free error projection at the Package Manager MCP boundary. The

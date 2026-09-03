@@ -35,9 +35,15 @@ operation identity 和 confirmation 边界。
 manager MCP adapter 还会在边界处把内部 `UseError` 投影为不含 secret 的公开
 错误契约（PR [#197](https://github.com/A3S-Lab/Use/pull/197)）。跨边界只保留
 经过校验的 `use.*` code 与有界公开 message；路径、URL、suggestion、details、
-provider 私有标识及 package 自带诊断会被移除，或收敛为通用 code。这是对
-presentation boundary 的加固，但不等于已完成 live-host reference resolution、
-authentication、authorization、rate limit 或 lifecycle lease。
+provider 私有标识及 package 自带诊断会被移除，或收敛为通用 code。PR
+[#199](https://github.com/A3S-Lab/Use/pull/199) 增加了 embedding Gateway
+路径：它会获取精确的 `CapabilitySnapshotLease`，并在 server clone 与 call
+期间持续持有该 lease。PR [#200](https://github.com/A3S-Lab/Use/pull/200) 将
+catalog 的 publication generation 与 descriptor 所属 package lifecycle
+generation 分离，使同一个 immutable publication 可以安全包含独立升级的
+package，同时禁止同一 surface 的两个 lifecycle incarnation。live-host
+reference resolution、endpoint authentication/authorization、rate limit、CLI
+接线及独立 client/recovery 矩阵仍未完成。
 
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、TUI 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
@@ -288,7 +294,7 @@ backup/restore 接线与所有消费者的协调权威切换完成前，该内�
 
 ## 运行时可见性
 
-Surface Reconciler 观察 desired state、generation receipt、grant、binding、Runtime/Gateway health、A3S Flow observation，以及 Skill/UI/OKF projection。OKF 使用独立的 Knowledge-host owner：缺失为 pending，staged 不发布，只有精确 promoted evidence 才是 healthy。只有完整 evidence 对同一 generation 一致时，Capability Registry 才发布新 snapshot。常驻宿主可通过 generation + revision long-poll watch 热更新，无需重启。
+Surface Reconciler 观察 desired state、generation receipt、grant、binding、Runtime/Gateway health、A3S Flow observation，以及 Skill/UI/OKF projection。OKF 使用独立的 Knowledge-host owner：缺失为 pending，staged 不发布，只有精确 promoted evidence 才是 healthy。只有完整 evidence 对同一 publication generation 一致时，Capability Registry 才发布新 snapshot。常驻宿主可通过 publication generation + revision long-poll watch 热更新，无需重启；每个 descriptor 仍携带其所属 package lifecycle generation。
 
 Flow 只有一个引擎身份。Native TypeScript 是执行适配器，`flow.json` 是可视化设计/部署文档，Code 是本地宿主，OS 是远程目标。这些路径不能创建并行 package receipt 或 lifecycle journal。
 
