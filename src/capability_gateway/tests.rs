@@ -8,6 +8,9 @@ use a3s_use_core::{
     CAPABILITY_DESCRIPTOR_SCHEMA_V1,
 };
 use rmcp::model::CallToolRequestParam;
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+};
 use rmcp::{ClientHandler, ServiceExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
@@ -213,12 +216,24 @@ async fn streamable_http_requires_explicit_auth_origin_and_limits_requests() {
 
     let unauthorized = raw_gateway_http_response(port, "").await;
     assert!(unauthorized.starts_with("HTTP/1.1 401"));
+    let duplicate_authorization = raw_gateway_http_response(
+        port,
+        "Authorization: Bearer secret-token\r\nAuthorization: Bearer secret-token\r\n",
+    )
+    .await;
+    assert!(duplicate_authorization.starts_with("HTTP/1.1 401"));
     let untrusted_origin = raw_gateway_http_response(
         port,
         "Authorization: Bearer secret-token\r\nOrigin: https://attacker.example\r\n",
     )
     .await;
     assert!(untrusted_origin.starts_with("HTTP/1.1 403"));
+    let duplicate_origin = raw_gateway_http_response(
+        port,
+        "Authorization: Bearer secret-token\r\nOrigin: https://agent.example\r\nOrigin: https://agent.example\r\n",
+    )
+    .await;
+    assert!(duplicate_origin.starts_with("HTTP/1.1 403"));
 
     let authorized = raw_gateway_http_response(
         port,
@@ -235,6 +250,49 @@ async fn streamable_http_requires_explicit_auth_origin_and_limits_requests() {
     .await;
     assert!(limited.starts_with("HTTP/1.1 429"));
 
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn streamable_http_accepts_a_standard_rust_client_without_shared_filesystem() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let provider = Arc::new(RecordingProvider::default());
+    let server =
+        CapabilityGatewayMcpServer::new(test_catalog(test_descriptor()), provider.clone()).unwrap();
+    let server_handle = tokio::spawn(server.serve_streamable_http(
+        listener,
+        CapabilityGatewayHttpConfig::new("secret-token").unwrap(),
+        shutdown.clone(),
+    ));
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    let transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("secret-token"),
+    );
+    let client = TestClient.serve(transport).await.unwrap();
+    let tools = client.list_all_tools().await.unwrap();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].name, "search");
+    let result = client
+        .call_tool(CallToolRequestParam {
+            name: "search".into(),
+            arguments: Some(
+                serde_json::json!({ "query": "remote" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.is_error, Some(false));
+    assert_eq!(provider.calls.lock().unwrap().len(), 1);
+
+    client.cancel().await.unwrap();
     shutdown.cancel();
     server_handle.await.unwrap().unwrap();
 }

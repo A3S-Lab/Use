@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Request, State};
-use axum::http::header::{AUTHORIZATION, ORIGIN};
+use axum::http::header::{AUTHORIZATION, ORIGIN, RETRY_AFTER, WWW_AUTHENTICATE};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -50,9 +50,9 @@ impl CapabilityGatewayHttpConfig {
         })
     }
 
-    /// Require this exact browser Origin. Without an allowed origin, requests
-    /// carrying any Origin header are rejected; non-browser clients may omit
-    /// Origin.
+    /// Allow this exact browser Origin when one is present. Without an allowed
+    /// origin, requests carrying any Origin header are rejected; native
+    /// clients may omit Origin in either mode.
     pub fn with_allowed_origin(mut self, origin: impl Into<String>) -> UseResult<Self> {
         let origin = origin.into();
         validate_http_origin(&origin)?;
@@ -93,7 +93,9 @@ impl CapabilityGatewayMcpServer {
     ///
     /// The caller owns the listener, bearer credential, Origin policy, and
     /// shutdown token. The route is fixed at `/mcp`; no package or filesystem
-    /// details are inferred from HTTP input.
+    /// details are inferred from HTTP input. This method does not provide TLS:
+    /// use a loopback listener or terminate TLS in a trusted reverse proxy
+    /// before exposing the endpoint to another host.
     pub async fn serve_streamable_http(
         self,
         listener: tokio::net::TcpListener,
@@ -128,24 +130,39 @@ async fn authorize_http_request(
     request: Request,
     next: Next,
 ) -> Response {
-    let authorized = request
-        .headers()
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| constant_time_eq(value.as_bytes(), guard.authorization.as_bytes()));
+    let authorization = request.headers().get_all(AUTHORIZATION);
+    let authorized = authorization.iter().count() == 1
+        && authorization
+            .iter()
+            .next()
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| {
+                constant_time_eq(value.as_bytes(), guard.authorization.as_bytes())
+            });
     if !authorized {
-        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            [(WWW_AUTHENTICATE, "Bearer")],
+            "Unauthorized",
+        )
+            .into_response();
     }
 
-    let origin = request
-        .headers()
-        .get(ORIGIN)
-        .and_then(|value| value.to_str().ok());
-    let origin_allowed = match (&guard.allowed_origin, origin) {
-        (Some(expected), Some(actual)) => constant_time_eq(actual.as_bytes(), expected.as_bytes()),
-        (None, None) => true,
-        _ => false,
-    };
+    let origins = request.headers().get_all(ORIGIN);
+    let origin_values = origins.iter().collect::<Vec<_>>();
+    let origin = origin_values.first().and_then(|value| value.to_str().ok());
+    let origin_allowed = origin_values.len() <= 1
+        && (origin_values
+            .first()
+            .is_none_or(|value| value.to_str().is_ok()))
+        && match (&guard.allowed_origin, origin) {
+            (Some(expected), Some(actual)) => {
+                constant_time_eq(actual.as_bytes(), expected.as_bytes())
+            }
+            (Some(_), None) => true,
+            (None, None) => true,
+            _ => false,
+        };
     if !origin_allowed {
         return (StatusCode::FORBIDDEN, "Untrusted Origin").into_response();
     }
@@ -153,7 +170,12 @@ async fn authorize_http_request(
     let _permit = match guard.admission.try_acquire() {
         Ok(permit) => permit,
         Err(AdmissionFailure::InFlight | AdmissionFailure::RateLimited) => {
-            return (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response();
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(RETRY_AFTER, "1")],
+                "Rate limit exceeded",
+            )
+                .into_response();
         }
         Err(AdmissionFailure::StatePoisoned) => {
             return (StatusCode::SERVICE_UNAVAILABLE, "Admission unavailable").into_response();
@@ -165,6 +187,7 @@ async fn authorize_http_request(
 fn validate_http_token(token: &str) -> UseResult<()> {
     if token.is_empty()
         || token.len() > MAX_HTTP_TOKEN_BYTES
+        || !token.is_ascii()
         || token
             .bytes()
             .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
@@ -179,6 +202,7 @@ fn validate_http_token(token: &str) -> UseResult<()> {
 fn validate_http_origin(origin: &str) -> UseResult<()> {
     if origin.is_empty()
         || origin.len() > MAX_HTTP_ORIGIN_BYTES
+        || !origin.is_ascii()
         || origin
             .bytes()
             .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
