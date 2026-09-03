@@ -174,11 +174,15 @@ Acceptance:
 - [x] Provide an embedding `CapabilityGatewayMcpServer` that exposes only
   catalog-authorized Tool descriptors over standard MCP and delegates calls to
   an injected `CapabilityGatewayInvocationProvider`.
-- [ ] Resolve references from the live Use host, hold exact package-generation
-  leases through calls/streams, and integrate drain and retirement.
-- [ ] Add CLI/service wiring, bounded authentication and rate limits, provider
-  composition, and the independent Rust/TypeScript/Python client recovery
-  matrix.
+- [ ] Resolve opaque references from the live Use host, integrate receipt-owned
+  provider composition, and complete per-consumer authorization across exact
+  package-generation leases, drain, and retirement. The embedding path already
+  acquires an exact snapshot lease for server clones and calls.
+- [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
+  client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
+  authentication, optional exact Origin checking, duplicate-header rejection,
+  bounded in-flight/rolling-window admission, and sanitized challenge/backoff
+  responses; the helper remains TLS-by-caller.
 
 PR [#192](https://github.com/A3S-Lab/Use/pull/192) records the contract and
 adapter boundary. The checked items are not an A3 exit-gate claim; lifecycle,
@@ -189,8 +193,11 @@ error boundary. Internal `UseError` messages, suggestions, details, paths,
 URLs, provider-owned identifiers, and package-authored diagnostics never cross
 the adapter; validated `use.*` codes are retained only with bounded public
 messages, while malformed or provider-owned codes use a generic code. This
-does not replace the pending live-host authentication, authorization, rate
-limit, and lifecycle-lease work.
+does not replace the pending live-host reference authorization, provider
+composition, CLI wiring, and cross-client recovery work. PRs
+[#202](https://github.com/A3S-Lab/Use/pull/202) and
+[#203](https://github.com/A3S-Lab/Use/pull/203) cover the bounded HTTP edge and
+an independent Rust client check.
 
 ### A3 Managed Knowledge
 

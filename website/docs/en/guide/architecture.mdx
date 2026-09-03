@@ -50,8 +50,17 @@ clones and calls. PR [#200](https://github.com/A3S-Lab/Use/pull/200) separates
 the catalog publication generation from each descriptor's package lifecycle
 generation, so one immutable publication can safely contain independently
 upgraded packages without admitting two incarnations of one surface. Live-host
-reference resolution, endpoint authentication/authorization, rate limits, CLI
-wiring, and the independent client/recovery matrix remain open.
+reference resolution, per-consumer authorization, CLI wiring, and the
+independent client/recovery matrix remain open. PR
+[#202](https://github.com/A3S-Lab/Use/pull/202) adds host-owned bounded
+admission to Gateway calls and a standard Streamable HTTP `/mcp` endpoint.
+PR [#203](https://github.com/A3S-Lab/Use/pull/203) hardens that edge with a
+constant-time bearer credential, duplicate-header rejection, optional exact
+Origin checking (native clients may omit Origin), `WWW-Authenticate` and
+`Retry-After` responses, and a real `rmcp` client discovery/invocation test.
+The transport does not terminate TLS; hosts must use loopback or a trusted TLS
+reverse proxy. Authentication and admission are endpoint safeguards, not live
+reference authorization.
 
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 

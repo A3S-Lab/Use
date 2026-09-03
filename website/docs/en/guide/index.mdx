@@ -173,9 +173,14 @@ when that embedding API is enabled.
 Embedders can use `CapabilityGatewayMcpServer` with an injected
 `CapabilityGatewayInvocationProvider`. The server accepts an immutable,
 path-free catalog, publishes only its Tool descriptors, and dispatches through
-standard MCP; opaque invocation references stay server-side. Resolving those
-references from live package generations, holding leases across streams,
-authentication, rate limits, and CLI wiring are still roadmap work.
+standard MCP; opaque invocation references stay server-side. The host may call
+`serve_streamable_http` to expose the same server at `/mcp`, with an explicit
+bearer token, optional exact browser Origin, and bounded in-flight plus rolling
+window admission. Native clients can omit Origin; a configured Origin is
+checked only when a browser Origin is supplied. The HTTP helper does not
+provide TLS, so bind to loopback or place it behind a trusted TLS terminator.
+Live reference resolution, per-consumer authorization, and CLI wiring remain
+roadmap work.
 
 The standalone CLI first persists the host-selected Registry trust boundary,
 then resolves a signed package and its complete SemVer dependency closure from

@@ -505,6 +505,19 @@ publication cut separate from package lifecycle retirement (PRs
 [#199](https://github.com/A3S-Lab/Use/pull/199) and
 [#200](https://github.com/A3S-Lab/Use/pull/200)).
 
+PR [#202](https://github.com/A3S-Lab/Use/pull/202) adds host-owned bounded
+admission at both the Gateway invocation boundary and the standard Streamable
+HTTP `/mcp` boundary. A shared in-flight semaphore and rolling call window
+return bounded 429/503 outcomes instead of creating an unbounded queue. PR
+[#203](https://github.com/A3S-Lab/Use/pull/203) hardens the HTTP edge with one
+constant-time bearer credential, duplicate-header rejection, optional exact
+Origin checking (native clients may omit Origin), `WWW-Authenticate` and
+`Retry-After` responses, and a real `rmcp` client discovery/invocation test.
+The HTTP method deliberately does not provide TLS: a host must use loopback or
+a trusted TLS-terminating reverse proxy. These controls authenticate and bound
+the endpoint, but do not yet resolve opaque references from a live host
+authority or define per-consumer authorization policy.
+
 The steady-state watch path reads immutable publications without acquiring the
 Registry writer lock. A watcher may take that lock once to repair a verified
 receipt/publication mismatch after a crash. Lifecycle mutations absorb this

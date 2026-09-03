@@ -158,6 +158,16 @@ a3s-use mcp serve manager \
 该 endpoint 属于高权限管理平面；任意 agent 只有在启用独立的 Capability
 Gateway embedding API 后，才能获得被授权的能力。
 
+Embedding host 可以使用注入 `CapabilityGatewayInvocationProvider` 的
+`CapabilityGatewayMcpServer`。它接收 immutable、无路径的 catalog，只发布
+catalog 授权的 Tool，并通过标准 MCP dispatch；opaque invocation reference
+始终留在 server 侧。宿主还可以调用 `serve_streamable_http` 在 `/mcp` 暴露
+同一个 server，并显式配置 bearer token、可选的精确 browser Origin，以及
+有界的 in-flight 和 rolling-window admission。原生 client 可以省略 Origin；
+配置了 allowed Origin 时，仅在请求带有 Origin 才进行匹配。该 HTTP helper
+不提供 TLS，应绑定 loopback 或置于可信 TLS terminator 后。live reference
+resolution、per-consumer authorization 与 CLI 接线仍在路线图中。
+
 standalone CLI 会先持久化由宿主选择的 Registry 信任边界，再从同一组 enabled
 source 解析签名包及其完整 SemVer 依赖闭包：
 

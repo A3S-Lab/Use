@@ -249,8 +249,13 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   提供。
 - 无路径的 `CapabilityDescriptor` 与 catalog 合约、opaque reference 类型以及
   embedding `CapabilityGatewayMcpServer` 已实现并通过 contract test。adapter
-  只通过注入 provider，以标准 MCP 发布 catalog 授权的 Tool；实时 generation
-  lease 解析、auth/rate limit、CLI wiring 与 production-host recovery 仍未完成。
+  只通过注入 provider，以标准 MCP 发布 catalog 授权的 Tool；精确 snapshot
+  lease 与 publication/package lifecycle generation 绑定也已完成。Gateway
+  HTTP `/mcp` 现在具备宿主配置的 bearer/Origin 检查、重复 header 拒绝、有界
+  in-flight/rolling-window admission、sanitized challenge/backoff 响应，以及
+  独立 Rust client discovery/invocation 检查；live reference resolution、
+  per-consumer authorization、CLI wiring、TLS 部署与 production-host recovery
+  仍未完成。
 - standalone `plugin` CLI 已把同样 10 个 operation 映射到该 service。planning
   不产生 mutation；精确 apply 必须提供持久 operation ID、plan digest 与显式
   `--yes`，cached apply 和 replay 均保持零网络。
@@ -307,10 +312,16 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
 ### 2a. 任意 agent 的 Capability Gateway — 进行中
 
 - PR [#192](https://github.com/A3S-Lab/Use/pull/192) 已冻结 portable
-  descriptor/catalog schema，并增加 embedding 标准 MCP adapter。
-- 仍需完成 server-side invocation-reference 解析、跨 call/stream 的精确
-  generation lease、drain/retirement、有界 authentication/rate limit 与
-  CLI/service wiring。
+  descriptor/catalog schema，并增加 embedding 标准 MCP adapter。PR
+  [#199](https://github.com/A3S-Lab/Use/pull/199) 和
+  [#200](https://github.com/A3S-Lab/Use/pull/200) 增加精确 snapshot lease，
+  并分离 publication 与 package lifecycle generation。PR
+  [#202](https://github.com/A3S-Lab/Use/pull/202) 增加共享的有界 admission 与
+  Streamable HTTP `/mcp`；PR
+  [#203](https://github.com/A3S-Lab/Use/pull/203) 增加重复 header 拒绝和真正的
+  独立 Rust client 检查。
+- 仍需完成 live server-side invocation-reference 解析、per-consumer
+  authorization、CLI/service wiring、TLS 部署与 production recovery。
 - 需要用不共享 package filesystem 的独立 Rust、TypeScript、Python client
   验证 discovery/invocation，并覆盖 upgrade、restart、uninstall 与跨 scope
   拒绝。
