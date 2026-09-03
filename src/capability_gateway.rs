@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use a3s_use_core::{
-    CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
-    CapabilityToolAnnotations, UseError, UseResult,
+    CapabilityDescriptionProof, CapabilityDescriptor, CapabilityDescriptorKind,
+    CapabilityGatewayCatalog, CapabilityToolAnnotations, UseError, UseResult,
 };
 use async_trait::async_trait;
 use jsonschema::{Draft, Validator};
@@ -356,6 +356,24 @@ impl CapabilityGatewayMcpServer {
     ) -> UseResult<Option<Self>> {
         let snapshot = registry.snapshot().await?;
         let catalog = snapshot.capability_gateway_catalog(descriptors)?;
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        Self::with_snapshot_lease(catalog, provider, lease).map(Some)
+    }
+
+    /// Build and bind a Gateway from descriptions that a host has verified
+    /// against its signed Registry publication.  This is the preferred
+    /// production constructor; the descriptor-only variant remains useful
+    /// for embedding hosts that perform an equivalent verification in a
+    /// private type boundary.
+    pub async fn from_verified_registry_snapshot(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        proofs: Vec<CapabilityDescriptionProof>,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+    ) -> UseResult<Option<Self>> {
+        let snapshot = registry.snapshot().await?;
+        let catalog = snapshot.capability_gateway_catalog_from_verified_descriptions(proofs)?;
         let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
             return Ok(None);
         };
