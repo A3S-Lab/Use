@@ -357,6 +357,12 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   rejection) and a lease-scoped `CapabilityGatewayInvocationResolver`.
   Production receipt/Runtime/Grant composition, CLI wiring, TLS termination,
   and production-host recovery remain open.
+- A host can now project a consumer-specific Gateway catalog from one
+  immutable `CapabilityRegistrySnapshot`. The projection rechecks exact
+  package/manifest identity, reviewed publication evidence, selected surfaces,
+  and ready bindings before `CapabilityGatewayMcpServer::from_registry_snapshot`
+  acquires its RAII lease; signature verification and opaque-reference
+  resolution remain host-owned.
 - The standalone `plugin` CLI maps those same ten operations to the service.
   Planning is non-mutating; exact apply requires the durable operation ID, plan
   digest, and explicit `--yes`, while cached apply and replay are zero-network.
@@ -437,6 +443,11 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   private lease, checked against the catalog identity, authorized once, and
   held through invocation. Production receipt/Runtime/Grant composition
   remains open.
+- `CapabilityRegistrySnapshot::capability_gateway_catalog` and
+  `CapabilityGatewayMcpServer::from_registry_snapshot` close the
+  snapshot-to-catalog composition gap with a bounded, fail-closed projection;
+  this is an embedding primitive, not the live resolver or production
+  multi-principal registry.
 - Qualify discovery and invocation from independent Rust, TypeScript, and
   Python clients without a shared package filesystem, including upgrade,
   restart, uninstall, and denied cross-scope access.

@@ -908,6 +908,20 @@ to `use.plugin.capability_gateway_forbidden` and never reach `invoke`, with no
 implicit allow implementation. A host must bind its principal and policy
 explicitly.
 
+The host can derive a Gateway catalog from one immutable
+`CapabilityRegistrySnapshot` through
+`CapabilityRegistrySnapshot::capability_gateway_catalog`. The bounded
+projection rechecks the snapshot cursor and public projection revision,
+package and manifest digests, reviewed publication-record evidence, selected
+surfaces, and ready/enabled package binding before constructing the canonical
+catalog. It accepts a consumer subset, but does not verify signatures or
+resolve opaque references on behalf of the host.
+`CapabilityGatewayMcpServer::from_registry_snapshot` acquires the
+matching RAII snapshot lease only after that projection and returns no server
+when the publication changes or is already draining. This closes the
+snapshot-to-catalog composition gap without claiming the remaining live
+resolver, receipt-owned provider, or multi-principal production wiring.
+
 Implementation note (2026-09-03): PR [#197](https://github.com/A3S-Lab/Use/pull/197)
 added a secret-free error projection at the Package Manager MCP boundary. The
 adapter retains only validated `use.*` contract codes and a bounded public

@@ -196,6 +196,13 @@ retains that lease through invocation. HTTP also supports a bounded immutable
 complete credential scan. Production receipt/Runtime/Grant composition and CLI
 wiring remain roadmap work.
 
+An embedding host can build that catalog from one immutable
+`CapabilityRegistrySnapshot` with
+`CapabilityRegistrySnapshot::capability_gateway_catalog`; exact package,
+publication, selected-surface, and readiness evidence is checked before
+`CapabilityGatewayMcpServer::from_registry_snapshot` retains its RAII lease.
+The host still owns signature verification and opaque-reference resolution.
+
 The standalone CLI first persists the host-selected Registry trust boundary,
 then resolves a signed package and its complete SemVer dependency closure from
 the same enabled source set:

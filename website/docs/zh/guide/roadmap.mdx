@@ -258,6 +258,12 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   并清理拒绝结果；HTTP 已支持有界的多 principal consumer mapping。生产
   receipt/Runtime/Grant 组合、CLI wiring、TLS 部署与 production-host recovery
   仍未完成。
+- 宿主现在可以从一个 immutable `CapabilityRegistrySnapshot` 投影面向消费者的
+  Gateway catalog。该 projection 在
+  `CapabilityGatewayMcpServer::from_registry_snapshot` 获取 RAII lease 前，重新校验
+  精确 package/manifest identity、已审核 publication evidence、selected surface 与
+  ready binding；签名验证和 opaque reference 解析仍由宿主负责。这是 embedding
+  primitive，不代表 live resolver 或 production multi-principal registry 已完成。
 - standalone `plugin` CLI 已把同样 10 个 operation 映射到该 service。planning
   不产生 mutation；精确 apply 必须提供持久 operation ID、plan digest 与显式
   `--yes`，cached apply 和 replay 均保持零网络。
@@ -330,6 +336,9 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   lease，与 catalog identity 校验后只授权一次，并在 invocation 结束前保持；
   当前 embedding 已把 HTTP bearer authentication 选中的 principal 传给
   provider authorization 与 invocation；生产宿主仍需完成 live authority 接线。
+- `CapabilityRegistrySnapshot::capability_gateway_catalog` 与
+  `CapabilityGatewayMcpServer::from_registry_snapshot` 已补齐 snapshot 到 catalog
+  的有界、fail-closed 组合间隙；签名验证与 opaque reference 解析仍由宿主负责。
 - 需要用不共享 package filesystem 的独立 Rust、TypeScript、Python client
   验证 discovery/invocation，并覆盖 upgrade、restart、uninstall 与跨 scope
   拒绝。

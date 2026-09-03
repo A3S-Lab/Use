@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use a3s_use_core::{
-    InstallationId, InstalledPluginPlanEvidence, OkfCapabilityProjection, PlanScope,
-    PluginSurfaceRef, Readiness, UseError, UseResult,
+    CapabilityDescriptor, CapabilityGatewayCatalog, InstallationId, InstalledPluginPlanEvidence,
+    OkfCapabilityProjection, PlanScope, PluginSurfaceRef, Readiness, UseError, UseResult,
 };
 #[cfg(feature = "extensions")]
 use a3s_use_core::{
@@ -214,6 +214,113 @@ impl CapabilityRegistrySnapshot {
         &self.cursor
     }
 
+    /// Materialize the agent-facing Capability Gateway catalog from this
+    /// already stable Use publication.
+    ///
+    /// Descriptors are supplied by the managed host because only that host
+    /// can verify a package's signed description and bind it to a concrete
+    /// provider. This method performs the common publication checks before a
+    /// catalog can be handed to the Gateway: every descriptor must belong to
+    /// an enabled, ready, plan-qualified package in this exact snapshot,
+    /// carry the package lifecycle identity from the snapshot cursor, and
+    /// reference the same verified catalog record as the package evidence.
+    /// A subset of the published surfaces is allowed; hosts may intentionally
+    /// expose only the capabilities authorized for a particular consumer.
+    pub fn capability_gateway_catalog(
+        &self,
+        descriptors: Vec<CapabilityDescriptor>,
+    ) -> UseResult<CapabilityGatewayCatalog> {
+        self.cursor.validate()?;
+        if self.schema_version != CAPABILITY_REGISTRY_SCHEMA_VERSION
+            || self.cursor.installation != self.installation
+            || self.cursor.installation_generation != self.installation_generation
+            || self.cursor.installation_snapshot_digest != self.installation_snapshot_digest
+            || self.cursor.generation != self.generation
+            || self.cursor.revision != self.revision
+        {
+            return Err(gateway_catalog_projection_error(
+                "The capability snapshot cursor does not match its public snapshot identity.",
+            ));
+        }
+        let expected_revision = revision(
+            &self.installation,
+            self.installation_generation,
+            self.installation_snapshot_digest.as_deref(),
+            &self.capabilities,
+        )?;
+        if expected_revision != self.revision {
+            return Err(gateway_catalog_projection_error(
+                "The capability snapshot projection does not match its immutable revision.",
+            ));
+        }
+
+        for descriptor in &descriptors {
+            descriptor.validate()?;
+            let package_id = descriptor.package_id.to_string();
+            let package = self
+                .cursor
+                .packages
+                .iter()
+                .find(|package| package.package_id == package_id)
+                .ok_or_else(|| {
+                    gateway_catalog_projection_error(
+                        "A Gateway descriptor belongs to a package outside the exact Use snapshot.",
+                    )
+                })?;
+            if package.lifecycle_generation != descriptor.generation
+                || package.package_digest != descriptor.package_digest
+                || package.manifest_digest != descriptor.manifest_digest
+            {
+                return Err(gateway_catalog_projection_error(
+                    "A Gateway descriptor does not match its package lifecycle identity.",
+                ));
+            }
+
+            let evidence = self
+                .capabilities
+                .iter()
+                .filter_map(|binding| binding.planner_evidence.as_ref())
+                .find(|evidence| evidence.package_id == package_id)
+                .ok_or_else(|| {
+                    gateway_catalog_projection_error(
+                        "A Gateway descriptor lacks reviewed package publication evidence.",
+                    )
+                })?;
+            if evidence.package_sha256 != descriptor.package_digest
+                || evidence.manifest_sha256 != descriptor.manifest_digest
+                || !evidence.desired_enabled
+                || evidence.catalog_record_digest != descriptor.publication.catalog_record_digest
+                || !evidence.selected_surfaces.contains(&descriptor.surface)
+            {
+                return Err(gateway_catalog_projection_error(
+                    "A Gateway descriptor is not bound to the reviewed, enabled package surface.",
+                ));
+            }
+
+            let binding = self
+                .capabilities
+                .iter()
+                .find(|binding| {
+                    binding
+                        .planner_evidence
+                        .as_ref()
+                        .is_some_and(|candidate| candidate.package_id == package_id)
+                })
+                .ok_or_else(|| {
+                    gateway_catalog_projection_error(
+                        "A Gateway descriptor package projection is missing.",
+                    )
+                })?;
+            if !binding.enabled || binding.readiness != Readiness::Ready {
+                return Err(gateway_catalog_projection_error(
+                    "A Gateway descriptor package is not ready for publication.",
+                ));
+            }
+        }
+
+        CapabilityGatewayCatalog::new(self.installation.clone(), self.generation, descriptors)
+    }
+
     #[cfg(feature = "extensions")]
     pub(crate) fn knowledge_projections(&self) -> Vec<OkfCapabilityProjection> {
         let mut projections = self
@@ -228,6 +335,10 @@ impl CapabilityRegistrySnapshot {
         });
         projections
     }
+}
+
+fn gateway_catalog_projection_error(message: impl Into<String>) -> UseError {
+    UseError::new("use.capability.gateway_catalog_projection_invalid", message)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -2562,5 +2673,230 @@ extension "acme/workflow" {
         .await
         .unwrap();
         assert!(changed.is_none());
+    }
+
+    fn gateway_projection_descriptor(
+        package_id: &str,
+        generation: u64,
+        package_digest: &str,
+        manifest_digest: &str,
+        catalog_record_digest: &str,
+    ) -> CapabilityDescriptor {
+        let package_id = a3s_use_core::PluginPackageId::parse(package_id).unwrap();
+        let surface = PluginSurfaceRef {
+            kind: a3s_use_core::PluginSurfaceKind::Tool,
+            id: "search".to_owned(),
+        };
+        let input_schema = serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "query": { "type": "string" } },
+            "required": ["query"]
+        });
+        let output_schema = serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "ok": { "type": "boolean" } },
+            "required": ["ok"]
+        });
+        CapabilityDescriptor {
+            schema: a3s_use_core::CAPABILITY_DESCRIPTOR_SCHEMA_V1.to_owned(),
+            package_id: package_id.clone(),
+            surface: surface.clone(),
+            generation,
+            package_digest: package_digest.to_owned(),
+            manifest_digest: manifest_digest.to_owned(),
+            title: "Search".to_owned(),
+            description: "Search verified data.".to_owned(),
+            invocation_ref: a3s_use_core::InvocationRef::derive(
+                &package_id,
+                &surface,
+                generation,
+                &format!("sha256:{}", "c".repeat(64)),
+            )
+            .unwrap(),
+            artifact_ref: None,
+            endpoint_ref: None,
+            dependencies: Vec::new(),
+            publication: a3s_use_core::CapabilityPublicationEvidence {
+                catalog_record_digest: catalog_record_digest.to_owned(),
+                signature_digest: format!("sha256:{}", "d".repeat(64)),
+            },
+            capability: a3s_use_core::CapabilityDescriptorKind::Tool {
+                name: "search".to_owned(),
+                input_schema,
+                output_schema,
+                annotations: a3s_use_core::CapabilityToolAnnotations::new(true, false, true, false),
+            },
+        }
+    }
+
+    fn gateway_projection_snapshot(
+        descriptor: &CapabilityDescriptor,
+        ready: bool,
+        selected: bool,
+    ) -> CapabilityRegistrySnapshot {
+        let installation = crate::test_installation();
+        let package_id = descriptor.package_id.to_string();
+        let mut cursor = CapabilitySnapshotCursor {
+            schema: CAPABILITY_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+            installation: installation.clone(),
+            installation_generation: None,
+            installation_snapshot_digest: None,
+            generation: 9,
+            revision: "a".repeat(64),
+            registry_revision: format!("sha256:{}", "b".repeat(64)),
+            packages: vec![CapabilityPackageGeneration {
+                package_id: package_id.clone(),
+                lifecycle_generation: descriptor.generation,
+                package_digest: descriptor.package_digest.clone(),
+                manifest_digest: descriptor.manifest_digest.clone(),
+            }],
+            unleasable_packages: Vec::new(),
+        };
+        let surface = descriptor.surface.clone();
+        let evidence = PluginPlannerEvidence {
+            schema_version: 1,
+            package_id: package_id.clone(),
+            package_sha256: descriptor.package_digest.clone(),
+            manifest_sha256: descriptor.manifest_digest.clone(),
+            receipt_digest: format!("sha256:{}", "e".repeat(64)),
+            catalog_record_digest: descriptor.publication.catalog_record_digest.clone(),
+            desired_enabled: true,
+            selected_surfaces: selected.then_some(vec![surface]).unwrap_or_default(),
+        };
+        let binding = CapabilityBinding {
+            id: format!("use/{package_id}"),
+            alias: None,
+            version: "1.0.0".to_owned(),
+            origin: CapabilityOrigin::Extension,
+            enabled: ready,
+            readiness: if ready {
+                Readiness::Ready
+            } else {
+                Readiness::Unknown
+            },
+            #[cfg(feature = "extensions")]
+            reconciliation: None,
+            planner_evidence: Some(evidence),
+            package_root: None,
+            lifecycle_generation: Some(descriptor.generation),
+            requires_use: None,
+            repository: None,
+            surfaces: vec!["tool".to_owned()],
+            mcp: None,
+            mcp_servers: Vec::new(),
+            skills: Vec::new(),
+            flows: Vec::new(),
+            knowledge: Vec::new(),
+            activity_bar: Vec::new(),
+            tool_tasks: Vec::new(),
+        };
+        let capabilities = vec![binding];
+        let snapshot_revision = revision(&installation, None, None, &capabilities).unwrap();
+        cursor.revision.clone_from(&snapshot_revision);
+        CapabilityRegistrySnapshot {
+            schema_version: CAPABILITY_REGISTRY_SCHEMA_VERSION,
+            installation,
+            installation_generation: None,
+            installation_snapshot_digest: None,
+            generation: 9,
+            revision: snapshot_revision,
+            capabilities,
+            cursor,
+        }
+    }
+
+    #[test]
+    fn gateway_catalog_projection_binds_exact_reviewed_snapshot() {
+        let descriptor = gateway_projection_descriptor(
+            "acme/assistant",
+            7,
+            &format!("sha256:{}", "a".repeat(64)),
+            &format!("sha256:{}", "b".repeat(64)),
+            &format!("sha256:{}", "c".repeat(64)),
+        );
+        let snapshot = gateway_projection_snapshot(&descriptor, true, true);
+        let catalog = snapshot
+            .capability_gateway_catalog(vec![descriptor.clone()])
+            .unwrap();
+        assert_eq!(catalog.installation(), &snapshot.installation);
+        assert_eq!(catalog.generation(), snapshot.generation);
+        assert_eq!(catalog.descriptors(), &[descriptor]);
+    }
+
+    #[test]
+    fn gateway_catalog_projection_rejects_unreviewed_or_unready_surfaces() {
+        let descriptor = gateway_projection_descriptor(
+            "acme/assistant",
+            7,
+            &format!("sha256:{}", "a".repeat(64)),
+            &format!("sha256:{}", "b".repeat(64)),
+            &format!("sha256:{}", "c".repeat(64)),
+        );
+        let unselected = gateway_projection_snapshot(&descriptor, true, false);
+        assert_eq!(
+            unselected
+                .capability_gateway_catalog(vec![descriptor.clone()])
+                .unwrap_err()
+                .code,
+            "use.capability.gateway_catalog_projection_invalid"
+        );
+
+        let unready = gateway_projection_snapshot(&descriptor, false, true);
+        assert_eq!(
+            unready
+                .capability_gateway_catalog(vec![descriptor])
+                .unwrap_err()
+                .code,
+            "use.capability.gateway_catalog_projection_invalid"
+        );
+    }
+
+    #[test]
+    fn gateway_catalog_projection_rejects_a_stale_package_identity() {
+        let descriptor = gateway_projection_descriptor(
+            "acme/assistant",
+            7,
+            &format!("sha256:{}", "a".repeat(64)),
+            &format!("sha256:{}", "b".repeat(64)),
+            &format!("sha256:{}", "c".repeat(64)),
+        );
+        let snapshot = gateway_projection_snapshot(&descriptor, true, true);
+        let stale = gateway_projection_descriptor(
+            "acme/other",
+            7,
+            &format!("sha256:{}", "a".repeat(64)),
+            &format!("sha256:{}", "b".repeat(64)),
+            &format!("sha256:{}", "c".repeat(64)),
+        );
+        assert_eq!(
+            snapshot
+                .capability_gateway_catalog(vec![stale])
+                .unwrap_err()
+                .code,
+            "use.capability.gateway_catalog_projection_invalid"
+        );
+    }
+
+    #[test]
+    fn gateway_catalog_projection_rejects_a_mutated_public_snapshot() {
+        let descriptor = gateway_projection_descriptor(
+            "acme/assistant",
+            7,
+            &format!("sha256:{}", "a".repeat(64)),
+            &format!("sha256:{}", "b".repeat(64)),
+            &format!("sha256:{}", "c".repeat(64)),
+        );
+        let mut snapshot = gateway_projection_snapshot(&descriptor, true, true);
+        snapshot.capabilities[0].version = "2.0.0".to_owned();
+
+        assert_eq!(
+            snapshot
+                .capability_gateway_catalog(vec![descriptor])
+                .unwrap_err()
+                .code,
+            "use.capability.gateway_catalog_projection_invalid"
+        );
     }
 }

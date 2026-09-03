@@ -546,6 +546,20 @@ production host must still implement the resolver against its receipt,
 Runtime, Grant, and scope authorities; a generic resolver cannot authorize a
 binding by itself.
 
+The host can now derive the Gateway catalog boundary directly from one
+`CapabilityRegistrySnapshot` with
+`CapabilityRegistrySnapshot::capability_gateway_catalog`. The projection
+revalidates each host-supplied, schema-checked descriptor against the snapshot
+cursor, public projection revision, package and manifest digests, reviewed
+publication-record evidence, selected surfaces, and ready/enabled binding
+before constructing the canonical catalog. It may expose a bounded subset for
+a consumer, but it cannot invent a
+package or surface outside the reviewed publication. The helper deliberately
+does not verify signatures or resolve opaque references: those authorities stay
+with the host, and `CapabilityGatewayMcpServer::from_registry_snapshot` acquires
+the exact RAII lease only after the projection succeeds. A publication change
+or a draining package returns no server rather than serving a mixed snapshot.
+
 The steady-state watch path reads immutable publications without acquiring the
 Registry writer lock. A watcher may take that lock once to repair a verified
 receipt/publication mismatch after a crash. Lifecycle mutations absorb this

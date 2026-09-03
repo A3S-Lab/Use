@@ -189,6 +189,11 @@ Acceptance:
   catalog `InvocationRef`, and retains the handle through invocation; the
   production receipt/Runtime/Grant composition remains the unchecked part of
   the surrounding item.
+  A bounded `CapabilityRegistrySnapshot::capability_gateway_catalog` projection
+  also checks host-supplied descriptors against the exact reviewed package,
+  publication, and ready-binding evidence before lease acquisition; live
+  opaque-reference resolution and receipt-owned provider composition remain host
+  responsibilities.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,

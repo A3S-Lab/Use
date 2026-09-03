@@ -68,6 +68,15 @@ catalog descriptor 映射为私有 `CapabilityGatewayInvocationLease`，而
 调用期间保留该 handle。生产宿主仍需组合 receipt、Runtime、Grant 与多 principal
 authority；这个 seam 本身不会授予访问权限。
 
+Embedding host 现在可以通过一个 immutable `CapabilityRegistrySnapshot` 生成
+Gateway catalog，使用 `CapabilityRegistrySnapshot::capability_gateway_catalog`
+在组装前重新校验 snapshot cursor、package/manifest digest、已审核的 publication
+evidence、selected surface 以及 ready/enabled binding。宿主可以针对每个消费者只暴露
+获授权的 subset，但该辅助方法不会凭空创建不在已审核 publication 中的 package 或
+surface。签名验证和 opaque reference 解析仍由宿主负责；对应的
+`CapabilityGatewayMcpServer::from_registry_snapshot` 只在 projection 成功后获取匹配的
+RAII lease，如果 publication 已变化或 package 正在 draining 则不提供 server。
+
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、TUI 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
 ```text
