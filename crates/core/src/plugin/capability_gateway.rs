@@ -200,7 +200,8 @@ pub struct CapabilityPublicationEvidence {
     pub signature_digest: String,
 }
 
-/// One path-free, generation-bound capability advertised to an agent.
+/// One path-free capability advertised to an agent, bound to its owning
+/// package lifecycle generation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CapabilityDescriptor {
@@ -370,8 +371,12 @@ fn decode_capability_descriptor(value: Value) -> Result<CapabilityDescriptor, St
     })
 }
 
-/// Immutable capability index for one installation and one lifecycle
-/// generation.
+/// Immutable capability index for one installation and one capability
+/// publication generation.
+///
+/// `generation` identifies the publication as a whole. Each descriptor keeps
+/// the lifecycle generation of its owning package, and those values may differ
+/// when one publication contains several independently upgraded packages.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CapabilityGatewayCatalog {
@@ -514,8 +519,10 @@ impl CapabilityPublicationEvidence {
 }
 
 impl CapabilityGatewayCatalog {
-    /// Build a canonical immutable catalog.  Input descriptors are sorted by
-    /// package, surface, and generation before the revision is allocated.
+    /// Build a canonical immutable catalog. Input descriptors are sorted by
+    /// package, surface, and package lifecycle generation before the revision
+    /// is allocated. `generation` is the publication generation, not a package
+    /// lifecycle generation.
     pub fn new(
         installation: InstallationId,
         generation: u64,
@@ -562,14 +569,14 @@ impl CapabilityGatewayCatalog {
         let mut previous = None;
         for descriptor in &self.descriptors {
             descriptor.validate()?;
-            if descriptor.generation != self.generation
-                || previous
-                    .as_ref()
-                    .is_some_and(|value| *value >= descriptor_order_key(descriptor))
-                || !identities.insert(descriptor_order_key(descriptor))
+            let identity = descriptor_identity_key(descriptor);
+            if previous
+                .as_ref()
+                .is_some_and(|value| *value >= descriptor_order_key(descriptor))
+                || !identities.insert(identity)
             {
                 return Err(capability_error(
-                    "Capability descriptors must be sorted, unique, and bound to the catalog generation.",
+                    "Capability descriptors must be sorted and unique within one publication.",
                 ));
             }
             if let Some(name) = descriptor.tool_name() {
@@ -646,6 +653,16 @@ fn descriptor_order_key(
         descriptor.surface.kind,
         descriptor.surface.id.clone(),
         descriptor.generation,
+    )
+}
+
+fn descriptor_identity_key(
+    descriptor: &CapabilityDescriptor,
+) -> (String, PluginSurfaceKind, String) {
+    (
+        descriptor.package_id.to_string(),
+        descriptor.surface.kind,
+        descriptor.surface.id.clone(),
     )
 }
 

@@ -302,6 +302,7 @@ fn validate_snapshot_binding_identity(
     if catalog.installation() != &installation
         || cursor.installation != installation
         || cursor.generation != generation
+        || catalog.generation() != generation
         || !cursor.is_fully_leasable()
     {
         return Err(mcp_error(
@@ -835,9 +836,15 @@ mod tests {
     #[test]
     fn snapshot_binding_requires_exact_package_generation_evidence() {
         let descriptor = test_descriptor();
-        let catalog = test_catalog(descriptor.clone());
-        let installation = catalog.installation().clone();
+        let installation =
+            InstallationId::new(InstallationKind::User, "user/gateway-tests").unwrap();
         let cursor = test_cursor(&descriptor, installation.clone());
+        let catalog = CapabilityGatewayCatalog::new(
+            installation.clone(),
+            cursor.generation,
+            vec![descriptor.clone()],
+        )
+        .unwrap();
 
         validate_snapshot_binding_identity(
             &catalog,
@@ -846,6 +853,24 @@ mod tests {
             &cursor,
         )
         .unwrap();
+
+        let lifecycle_bound_catalog = CapabilityGatewayCatalog::new(
+            installation.clone(),
+            descriptor.generation,
+            vec![descriptor.clone()],
+        )
+        .unwrap();
+        assert_eq!(
+            validate_snapshot_binding_identity(
+                &lifecycle_bound_catalog,
+                installation.clone(),
+                cursor.generation,
+                &cursor,
+            )
+            .unwrap_err()
+            .code,
+            MCP_ERROR
+        );
 
         let mut wrong_generation = cursor.clone();
         wrong_generation.generation += 1;
@@ -996,7 +1021,7 @@ mod tests {
             .unwrap(),
         );
         let catalog =
-            CapabilityGatewayCatalog::new(installation, descriptor.generation, vec![descriptor])
+            CapabilityGatewayCatalog::new(installation, snapshot.generation, vec![descriptor])
                 .unwrap();
         let server = CapabilityGatewayMcpServer::from_registry(
             &capability_registry,
@@ -1015,7 +1040,7 @@ mod tests {
     fn test_catalog(descriptor: CapabilityDescriptor) -> CapabilityGatewayCatalog {
         CapabilityGatewayCatalog::new(
             InstallationId::new(InstallationKind::User, "user/gateway-tests").unwrap(),
-            descriptor.generation,
+            9,
             vec![descriptor],
         )
         .unwrap()

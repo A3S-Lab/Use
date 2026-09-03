@@ -141,7 +141,7 @@ fn descriptor_rejects_executable_only_and_external_schema_authority() {
 }
 
 #[test]
-fn catalog_is_immutable_generation_bound_and_revision_checked() {
+fn catalog_is_immutable_publication_and_revision_checked() {
     let installation =
         InstallationId::new(super::super::InstallationKind::User, "user/current").unwrap();
     let first = tool();
@@ -173,6 +173,67 @@ fn catalog_is_immutable_generation_bound_and_revision_checked() {
     )
     .unwrap();
     assert!(foreign.validate().is_err());
+}
+
+#[test]
+fn catalog_publication_generation_is_independent_from_package_lifecycle_generation() {
+    let installation =
+        InstallationId::new(super::super::InstallationKind::User, "user/current").unwrap();
+    let first = tool();
+    let mut second = tool();
+    second.package_id = super::super::PluginPackageId::parse("acme/second").unwrap();
+    second.surface = surface(PluginSurfaceKind::Tool, "convert");
+    second.generation = 11;
+    second.invocation_ref = InvocationRef::derive(
+        &second.package_id,
+        &second.surface,
+        second.generation,
+        &digest('a'),
+    )
+    .unwrap();
+    second.artifact_ref = Some(
+        ArtifactRef::derive(
+            &second.package_id,
+            &second.surface,
+            second.generation,
+            &digest('b'),
+        )
+        .unwrap(),
+    );
+    second.endpoint_ref = Some(
+        EndpointRef::derive(
+            &second.package_id,
+            &second.surface,
+            second.generation,
+            &digest('c'),
+        )
+        .unwrap(),
+    );
+    if let CapabilityDescriptorKind::Tool { name, .. } = &mut second.capability {
+        *name = "convert".to_owned();
+    }
+
+    let catalog = CapabilityGatewayCatalog::new(installation, 42, vec![second, first]).unwrap();
+    assert_eq!(catalog.generation(), 42);
+    assert_eq!(catalog.descriptors()[0].generation, 7);
+    assert_eq!(catalog.descriptors()[1].generation, 11);
+}
+
+#[test]
+fn catalog_rejects_two_lifecycle_generations_of_one_surface() {
+    let installation =
+        InstallationId::new(super::super::InstallationKind::User, "user/current").unwrap();
+    let first = tool();
+    let mut second = first.clone();
+    second.generation = 8;
+    second.invocation_ref = InvocationRef::derive(
+        &second.package_id,
+        &second.surface,
+        second.generation,
+        &digest('a'),
+    )
+    .unwrap();
+    assert!(CapabilityGatewayCatalog::new(installation, 42, vec![first, second]).is_err());
 }
 
 #[test]
