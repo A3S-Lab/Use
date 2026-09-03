@@ -26,6 +26,30 @@ use crate::plugin_runtime::{
     RuntimeSurfacePlanPublication, RuntimeTaskInvocation,
 };
 
+fn cognitive_authorization(
+    reviewed: &super::model::ReviewedControlOperation,
+) -> crate::cognitive_package::CognitivePackageAuthorizationEvidence {
+    crate::cognitive_package::CognitivePackageAuthorizationEvidence {
+        operation_confirmation: reviewed.authorization.operation_confirmation.clone(),
+        grant_confirmations: reviewed.authorization.grant_confirmations.clone(),
+    }
+}
+
+fn planned_grants(
+    reviewed: &super::model::ReviewedControlOperation,
+) -> crate::cognitive_package::PlannedWorkspaceGrantOperation {
+    let transition = reviewed
+        .authorization
+        .grant_transition
+        .as_ref()
+        .expect("the fixture must carry reviewed Grant evidence");
+    crate::cognitive_package::PlannedWorkspaceGrantOperation {
+        snapshot: transition.snapshot.clone(),
+        change_set: transition.change_set.clone(),
+        ceilings: Vec::new(),
+    }
+}
+
 struct RejectingFlow;
 
 #[async_trait]
@@ -327,14 +351,12 @@ async fn composition_initializes_one_root_and_commits_without_runtime_payloads()
     );
 
     let reviewed = super::aggregate_tests::fixtures::operation("operation:composition");
-    composition
-        .store()
-        .register_operation(reviewed.clone())
-        .await
-        .unwrap();
     let generation = composition
-        .commit_reviewed_operation_with_runtime_plans(
-            reviewed.operation_id(),
+        .admit_and_commit_cognitive_package_operation_with_runtime_plans(
+            &reviewed.envelope,
+            &cognitive_authorization(&reviewed),
+            None,
+            reviewed.reviewed_at_ms,
             reviewed.reviewed_at_ms + 10,
             &[],
         )
@@ -347,6 +369,124 @@ async fn composition_initializes_one_root_and_commits_without_runtime_payloads()
         .await
         .unwrap()
         .is_empty());
+
+    let stale = super::aggregate_tests::fixtures::operation("operation:composition-stale");
+    let error = composition
+        .register_cognitive_package_operation(
+            &stale.envelope,
+            &cognitive_authorization(&stale),
+            None,
+            stale.reviewed_at_ms,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.control_store.generation_changed");
+}
+
+#[tokio::test]
+async fn lifecycle_admission_checks_global_reference_fence_before_registering() {
+    let temporary = tempfile::tempdir().unwrap();
+    let installation = control_installation();
+    let paths = ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        installation,
+    )
+    .unwrap();
+    let composition = ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        ControlEffectCompositionDependencies {
+            runtime_registry: std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: std::sync::Arc::new(RejectingReadiness),
+            flow: std::sync::Arc::new(RejectingFlow),
+            clock: std::sync::Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+    let reviewed = super::aggregate_tests::fixtures::operation("operation:admission-order");
+    let collection = paths.artifact_store().acquire_collection().await.unwrap();
+
+    let error = composition
+        .admit_and_commit_cognitive_package_operation_with_runtime_plans(
+            &reviewed.envelope,
+            &cognitive_authorization(&reviewed),
+            None,
+            reviewed.reviewed_at_ms,
+            reviewed.reviewed_at_ms + 10,
+            &[],
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.artifact_store.busy");
+    assert!(composition
+        .store()
+        .operation(reviewed.operation_id())
+        .await
+        .unwrap()
+        .is_none());
+    drop(collection);
+}
+
+#[tokio::test]
+async fn lifecycle_admission_retains_reviewed_operation_when_runtime_payloads_are_missing() {
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        control_installation(),
+    )
+    .unwrap();
+    let composition = ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        ControlEffectCompositionDependencies {
+            runtime_registry: std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: std::sync::Arc::new(RejectingReadiness),
+            flow: std::sync::Arc::new(RejectingFlow),
+            clock: std::sync::Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+    let reviewed = super::aggregate_tests::grant_fixtures::reviewed_grant_operation(
+        "operation:admission-runtime-payload-required",
+        PluginOperationAction::Install,
+        None,
+        None,
+    );
+    let grants = planned_grants(&reviewed);
+
+    let error = composition
+        .admit_and_commit_cognitive_package_operation_with_runtime_plans(
+            &reviewed.envelope,
+            &cognitive_authorization(&reviewed),
+            Some(&grants),
+            reviewed.reviewed_at_ms,
+            reviewed.reviewed_at_ms + 10,
+            &[],
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.control_store.runtime_plan_publication_invalid"
+    );
+    let operation = composition
+        .store()
+        .operation(reviewed.operation_id())
+        .await
+        .unwrap()
+        .expect("failed publication must leave a reviewed operation for retry");
+    assert_eq!(
+        operation.status,
+        super::model::ControlOperationStatus::Reviewed
+    );
+    assert!(composition
+        .store()
+        .current_generation()
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]

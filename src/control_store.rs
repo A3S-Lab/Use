@@ -19,6 +19,7 @@ mod executor;
 mod export;
 mod filesystem;
 mod model;
+mod operation_admission;
 mod payload_owner;
 mod schema;
 
@@ -176,6 +177,16 @@ impl ControlStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        self.register_operation_under_maintenance(reviewed).await
+    }
+
+    /// Register an operation while the caller retains the installation-wide
+    /// shared maintenance guard. The SQLite transaction still ends before
+    /// any external payload or provider I/O begins.
+    async fn register_operation_under_maintenance(
+        &self,
+        reviewed: ReviewedControlOperation,
+    ) -> UseResult<ControlOperationRecord> {
         filesystem::require_initialized(&self.state_root, &self.database_path).await?;
         let database_path =
             filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
@@ -444,6 +455,8 @@ mod knowledge_dispatch_tests;
 mod knowledge_effect_test_support;
 #[cfg(test)]
 mod knowledge_effect_tests;
+#[cfg(test)]
+mod operation_admission_tests;
 #[cfg(test)]
 mod payload_control_restore_activation_security_tests;
 #[cfg(test)]

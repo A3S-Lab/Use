@@ -127,6 +127,10 @@ Status: in progress
 - [ ] Complete production Runtime Service provider composition with a durable
   host source and the atomic dispatcher cutover, without weakening
   exact-generation drain and removal.
+- [x] Qualify the inactive lifecycle admission seam that derives Control
+  cursors from the canonical reviewed Plan and orders registration, Runtime
+  plan publication, and Control commit under one installation fence. Production
+  lifecycle routing and dispatcher composition remain open.
 - [x] Recover a confirmed same-generation provider resource loss by draining
   and removing only the stale Gateway route, retaining the Runtime unit,
   replaying apply with a new exact request key, and publishing a fresh binding

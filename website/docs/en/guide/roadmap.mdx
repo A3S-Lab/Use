@@ -190,17 +190,20 @@ committed semantics-digest authority and rechecks exact provider evidence.
 The installation-scoped, host-owned `RuntimeSurfacePlanStore` is now qualified
 as the durable source, with canonical digest addressing, bounded batch
 publication, no-clobber writes, restart-safe reads, and fail-closed tamper
-checks. It owns payload bytes rather than desired state, so lifecycle
-conversion must publish exact new records before the corresponding Control
-commit. Production lifecycle still does not construct the dispatcher: it must
-bind this source and atomic composition to committed authority rather than use
-the process-local selection retained by this qualification.
-The internal qualification composition now derives the complete Control
-transition from a registered reviewed operation, verifies exact Runtime
-prepare coverage and reviewed Grant proposal digests, and orders immutable plan
-publication before the projected generation commit under one shared
-installation fence. This narrows the cutover boundary but does not activate the
-private kernel or accept caller-selected transition fields.
+checks. It owns payload bytes rather than desired state, so exact new records
+must publish before the corresponding Control commit. The inactive lifecycle
+admission seam accepts the canonical cognitive-package Plan, authorization
+evidence, and optional planned Grant transition, derives both prior Control
+cursors from the immutable Plan, and accepts no caller-selected generation. The
+combined qualification entry point retains one shared fence while registering
+the exact reviewed operation, deriving the complete Control transition,
+verifying exact Runtime prepare coverage and reviewed Grant proposal digests,
+and ordering immutable plan publication before the projected generation commit.
+Production lifecycle still must route through this seam and construct the
+dispatcher from committed authority rather
+than use the process-local selection retained by this qualification. This
+narrows the cutover boundary but does not activate the private kernel or accept
+caller-selected transition fields.
 The private path-free payload contract now freezes six external owner IDs and
 their ACL backup policies. It excludes the global Artifact Store and requires
 one complete canonical receipt set for the other five owners, bound to an exact
