@@ -21,7 +21,8 @@ use super::*;
 
 #[derive(Debug, Default)]
 struct RecordingProvider {
-    calls: Mutex<Vec<(InvocationRef, Value)>>,
+    authorizations: Mutex<Vec<CapabilityGatewayRequestContext>>,
+    calls: Mutex<Vec<(InvocationRef, Value, CapabilityGatewayRequestContext)>>,
 }
 
 #[async_trait]
@@ -30,7 +31,12 @@ impl CapabilityGatewayInvocationProvider for RecordingProvider {
         &self,
         _descriptor: &CapabilityDescriptor,
         _arguments: &Value,
+        context: &CapabilityGatewayRequestContext,
     ) -> UseResult<()> {
+        self.authorizations
+            .lock()
+            .map_err(|_| UseError::new("test.provider_poisoned", "Provider lock poisoned."))?
+            .push(context.clone());
         Ok(())
     }
 
@@ -38,11 +44,16 @@ impl CapabilityGatewayInvocationProvider for RecordingProvider {
         &self,
         descriptor: &CapabilityDescriptor,
         arguments: Value,
+        context: &CapabilityGatewayRequestContext,
     ) -> UseResult<Value> {
         self.calls
             .lock()
             .map_err(|_| UseError::new("test.provider_poisoned", "Provider lock poisoned."))?
-            .push((descriptor.invocation_ref.clone(), arguments.clone()));
+            .push((
+                descriptor.invocation_ref.clone(),
+                arguments.clone(),
+                context.clone(),
+            ));
         Ok(serde_json::json!({ "ok": true, "arguments": arguments }))
     }
 }
@@ -56,6 +67,7 @@ impl CapabilityGatewayInvocationProvider for InvalidOutputProvider {
         &self,
         _descriptor: &CapabilityDescriptor,
         _arguments: &Value,
+        _context: &CapabilityGatewayRequestContext,
     ) -> UseResult<()> {
         Ok(())
     }
@@ -64,6 +76,7 @@ impl CapabilityGatewayInvocationProvider for InvalidOutputProvider {
         &self,
         _descriptor: &CapabilityDescriptor,
         _arguments: Value,
+        _context: &CapabilityGatewayRequestContext,
     ) -> UseResult<Value> {
         Ok(serde_json::json!({
             "ok": "not-a-boolean",
@@ -81,6 +94,7 @@ impl CapabilityGatewayInvocationProvider for FailingProvider {
         &self,
         _descriptor: &CapabilityDescriptor,
         _arguments: &Value,
+        _context: &CapabilityGatewayRequestContext,
     ) -> UseResult<()> {
         Ok(())
     }
@@ -89,6 +103,7 @@ impl CapabilityGatewayInvocationProvider for FailingProvider {
         &self,
         _descriptor: &CapabilityDescriptor,
         _arguments: Value,
+        _context: &CapabilityGatewayRequestContext,
     ) -> UseResult<Value> {
         Err(UseError::new(
             "provider.internal_secret",
@@ -110,6 +125,7 @@ impl CapabilityGatewayInvocationProvider for DenyingProvider {
         &self,
         _descriptor: &CapabilityDescriptor,
         _arguments: &Value,
+        _context: &CapabilityGatewayRequestContext,
     ) -> UseResult<()> {
         Err(UseError::new(
             "host.private_authorization_reason",
@@ -121,11 +137,49 @@ impl CapabilityGatewayInvocationProvider for DenyingProvider {
         &self,
         descriptor: &CapabilityDescriptor,
         _arguments: Value,
+        _context: &CapabilityGatewayRequestContext,
     ) -> UseResult<Value> {
         self.calls
             .lock()
             .map_err(|_| UseError::new("test.provider_poisoned", "Provider lock poisoned."))?
             .push(descriptor.invocation_ref.clone());
+        Ok(serde_json::json!({ "ok": true }))
+    }
+}
+
+#[derive(Debug, Default)]
+struct PrincipalPolicyProvider {
+    calls: Mutex<Vec<CapabilityGatewayRequestContext>>,
+}
+
+#[async_trait]
+impl CapabilityGatewayInvocationProvider for PrincipalPolicyProvider {
+    async fn authorize(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: &Value,
+        context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<()> {
+        if context.principal().map(CapabilityGatewayPrincipal::as_str) == Some("agent/allowed") {
+            Ok(())
+        } else {
+            Err(UseError::new(
+                "host.principal_not_allowed",
+                "The authenticated principal is not allowed for this capability.",
+            ))
+        }
+    }
+
+    async fn invoke(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: Value,
+        context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<Value> {
+        self.calls
+            .lock()
+            .map_err(|_| UseError::new("test.provider_poisoned", "Provider lock poisoned."))?
+            .push(context.clone());
         Ok(serde_json::json!({ "ok": true }))
     }
 }
@@ -160,13 +214,17 @@ fn gateway_limits_and_http_credentials_fail_closed() {
     assert!(CapabilityGatewayLimits::new(1, 1, Duration::from_secs(60 * 60 + 1)).is_err());
     assert!(CapabilityGatewayHttpConfig::new("bad token").is_err());
     assert!(CapabilityGatewayHttpConfig::new("bad\n-token").is_err());
+    assert!(CapabilityGatewayPrincipal::parse("").is_err());
+    assert!(CapabilityGatewayPrincipal::parse("agent principal").is_err());
 
-    let config = CapabilityGatewayHttpConfig::new("secret-token")
-        .unwrap()
-        .with_allowed_origin("https://agent.example")
-        .unwrap();
+    let config =
+        CapabilityGatewayHttpConfig::for_principal("secret-token", "agent/codex@workspace-01")
+            .unwrap()
+            .with_allowed_origin("https://agent.example")
+            .unwrap();
     let debug = format!("{config:?}");
     assert!(debug.contains("[redacted]"));
+    assert!(debug.contains("agent/codex@workspace-01"));
     assert!(!debug.contains("secret-token"));
     assert!(CapabilityGatewayHttpConfig::new("secret-token")
         .unwrap()
@@ -242,6 +300,17 @@ async fn adapter_uses_standard_mcp_initialization_list_and_call() {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, invocation_ref);
         assert_eq!(calls[0].1["query"], "mcp");
+        assert_eq!(calls[0].2.transport(), CapabilityGatewayTransport::Stdio);
+        assert!(calls[0].2.principal().is_none());
+    }
+    {
+        let authorizations = provider.authorizations.lock().unwrap();
+        assert_eq!(authorizations.len(), 1);
+        assert_eq!(
+            authorizations[0].transport(),
+            CapabilityGatewayTransport::Stdio
+        );
+        assert!(authorizations[0].principal().is_none());
     }
 
     client.cancel().await.unwrap();
@@ -319,7 +388,7 @@ async fn streamable_http_accepts_a_standard_rust_client_without_shared_filesyste
         CapabilityGatewayMcpServer::new(test_catalog(test_descriptor()), provider.clone()).unwrap();
     let server_handle = tokio::spawn(server.serve_streamable_http(
         listener,
-        CapabilityGatewayHttpConfig::new("secret-token").unwrap(),
+        CapabilityGatewayHttpConfig::for_principal("secret-token", "agent/remote-client").unwrap(),
         shutdown.clone(),
     ));
     tokio::time::sleep(Duration::from_millis(20)).await;
@@ -345,7 +414,75 @@ async fn streamable_http_accepts_a_standard_rust_client_without_shared_filesyste
         .await
         .unwrap();
     assert_eq!(result.is_error, Some(false));
-    assert_eq!(provider.calls.lock().unwrap().len(), 1);
+    {
+        let calls = provider.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].2.transport(),
+            CapabilityGatewayTransport::StreamableHttp
+        );
+        assert_eq!(
+            calls[0]
+                .2
+                .principal()
+                .map(CapabilityGatewayPrincipal::as_str),
+            Some("agent/remote-client")
+        );
+    }
+    {
+        let authorizations = provider.authorizations.lock().unwrap();
+        assert_eq!(authorizations.len(), 1);
+        assert_eq!(
+            authorizations[0]
+                .principal()
+                .map(CapabilityGatewayPrincipal::as_str),
+            Some("agent/remote-client")
+        );
+    }
+
+    client.cancel().await.unwrap();
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn http_principal_reaches_policy_before_invocation() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let provider = Arc::new(PrincipalPolicyProvider::default());
+    let server =
+        CapabilityGatewayMcpServer::new(test_catalog(test_descriptor()), provider.clone()).unwrap();
+    let server_handle = tokio::spawn(server.serve_streamable_http(
+        listener,
+        CapabilityGatewayHttpConfig::for_principal("secret-token", "agent/denied").unwrap(),
+        shutdown.clone(),
+    ));
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    let transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("secret-token"),
+    );
+    let client = TestClient.serve(transport).await.unwrap();
+    let result = client
+        .call_tool(CallToolRequestParam {
+            name: "search".into(),
+            arguments: Some(
+                serde_json::json!({ "query": "policy" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.is_error, Some(true));
+    assert_eq!(
+        result.structured_content.as_ref().unwrap()["code"],
+        MCP_AUTHORIZATION_ERROR
+    );
+    assert!(provider.calls.lock().unwrap().is_empty());
 
     client.cancel().await.unwrap();
     shutdown.cancel();

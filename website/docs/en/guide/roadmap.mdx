@@ -427,7 +427,9 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   rejection and a real independent Rust client check.
 - Complete live server-side invocation-reference resolution, multi-principal
   authorization wiring, CLI/service wiring, TLS deployment, and production
-  recovery.
+  recovery. The current embedding propagates an explicitly configured
+  principal from HTTP bearer authentication into provider authorization and
+  invocation; it is not yet a multi-principal registry or live resolver.
 - Qualify discovery and invocation from independent Rust, TypeScript, and
   Python clients without a shared package filesystem, including upgrade,
   restart, uninstall, and denied cross-scope access.

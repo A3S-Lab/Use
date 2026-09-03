@@ -48,8 +48,11 @@ Streamable HTTP `/mcp` 增加由宿主配置的有界 admission。PR
 credential、重复 header 拒绝、可选的精确 Origin 检查（原生 client 可以省略
 Origin）、`WWW-Authenticate`/`Retry-After` 响应，以及真正的 `rmcp` 独立
 client discovery/invocation 测试。HTTP transport 不负责 TLS；宿主必须绑定
-loopback 或放在可信 TLS reverse proxy 后。live-host reference resolution、
-per-consumer authorization、CLI 接线及独立 client/recovery 矩阵仍未完成。
+loopback 或放在可信 TLS reverse proxy 后。`CapabilityGatewayHttpConfig::for_principal`
+现在把一个宿主配置的 principal 绑定到已验证 bearer credential，并把类型化
+transport/principal context 传给两个 provider hook；该值不会序列化到 MCP
+discovery 或 result。live-host reference resolution、multi-principal
+authorization、CLI 接线及独立 client/recovery 矩阵仍未完成。
 
 注入的 invocation provider 同时也是 authorization seam。它的必需
 `authorize` hook 会在已校验发布的 input schema 之后、任何 provider effect

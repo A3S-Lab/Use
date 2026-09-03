@@ -41,6 +41,86 @@ const MCP_RATE_LIMIT_ERROR: &str = "use.plugin.capability_gateway_rate_limited";
 const MAX_CAPABILITY_VALUE_BYTES: usize = 256 * 1024;
 const MAX_CAPABILITY_VALUE_DEPTH: usize = 32;
 const MAX_CAPABILITY_VALUE_ELEMENTS: usize = 4_096;
+const MAX_CAPABILITY_PRINCIPAL_BYTES: usize = 256;
+
+/// Host-authenticated identity supplied to a Capability Gateway provider.
+///
+/// A principal is created from host configuration after the HTTP bearer
+/// credential has been verified. It is never decoded from an MCP argument or
+/// accepted from an agent-visible descriptor.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CapabilityGatewayPrincipal(String);
+
+impl CapabilityGatewayPrincipal {
+    /// Parse a bounded, portable principal identity.
+    pub fn parse(value: impl Into<String>) -> UseResult<Self> {
+        let value = value.into();
+        if value.is_empty()
+            || value.len() > MAX_CAPABILITY_PRINCIPAL_BYTES
+            || !value.is_ascii()
+            || !value
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            || !value.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric()
+                    || matches!(byte, b'-' | b'_' | b'.' | b':' | b'/' | b'@')
+            })
+        {
+            return Err(mcp_error(
+                "The Capability Gateway principal identity is empty or invalid.",
+            ));
+        }
+        Ok(Self(value))
+    }
+
+    /// Return the stable host-configured identity.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Transport context visible only to the host authorization and invocation
+/// provider. The value is never serialized into MCP discovery or results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapabilityGatewayTransport {
+    Stdio,
+    StreamableHttp,
+}
+
+/// Trusted request context assembled by the Gateway boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityGatewayRequestContext {
+    transport: CapabilityGatewayTransport,
+    principal: Option<CapabilityGatewayPrincipal>,
+}
+
+impl CapabilityGatewayRequestContext {
+    pub fn transport(&self) -> CapabilityGatewayTransport {
+        self.transport
+    }
+
+    /// Return the authenticated principal, when the embedding host configured
+    /// one for this endpoint. An absent principal is intentionally distinct
+    /// from an anonymous string and should normally be denied by policy.
+    pub fn principal(&self) -> Option<&CapabilityGatewayPrincipal> {
+        self.principal.as_ref()
+    }
+
+    pub(crate) fn stdio() -> Self {
+        Self {
+            transport: CapabilityGatewayTransport::Stdio,
+            principal: None,
+        }
+    }
+
+    pub(crate) fn streamable_http(principal: Option<CapabilityGatewayPrincipal>) -> Self {
+        Self {
+            transport: CapabilityGatewayTransport::StreamableHttp,
+            principal,
+        }
+    }
+}
 
 #[derive(Clone)]
 struct CompiledCapabilitySchema {
@@ -125,10 +205,15 @@ pub trait CapabilityGatewayInvocationProvider: Send + Sync {
         &self,
         _descriptor: &CapabilityDescriptor,
         _arguments: &Value,
+        _context: &CapabilityGatewayRequestContext,
     ) -> UseResult<()>;
 
-    async fn invoke(&self, descriptor: &CapabilityDescriptor, arguments: Value)
-        -> UseResult<Value>;
+    async fn invoke(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        arguments: Value,
+        context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<Value>;
 }
 
 /// Standard MCP server backed by an immutable Capability Gateway catalog.
@@ -139,6 +224,7 @@ pub struct CapabilityGatewayMcpServer {
     tools: Arc<BTreeMap<String, CapabilityGatewayTool>>,
     tool_router: ToolRouter<Self>,
     admission: Arc<GatewayAdmission>,
+    transport: CapabilityGatewayTransport,
     /// When present, this RAII lease pins every callable package generation
     /// for the lifetime of the MCP service (including cloned session handles).
     snapshot_lease: Option<Arc<CapabilitySnapshotLease>>,
@@ -150,6 +236,7 @@ impl std::fmt::Debug for CapabilityGatewayMcpServer {
             .debug_struct("CapabilityGatewayMcpServer")
             .field("catalog", &self.catalog)
             .field("has_snapshot_lease", &self.snapshot_lease.is_some())
+            .field("transport", &self.transport)
             .finish_non_exhaustive()
     }
 }
@@ -237,6 +324,7 @@ impl CapabilityGatewayMcpServer {
             tools,
             tool_router,
             admission,
+            transport: CapabilityGatewayTransport::Stdio,
             snapshot_lease,
         })
     }
@@ -268,10 +356,36 @@ impl CapabilityGatewayMcpServer {
         Ok(())
     }
 
+    fn request_context(
+        &self,
+        request_context: &rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<CapabilityGatewayRequestContext, rmcp::ErrorData> {
+        match self.transport {
+            CapabilityGatewayTransport::Stdio => Ok(CapabilityGatewayRequestContext::stdio()),
+            CapabilityGatewayTransport::StreamableHttp => request_context
+                .extensions
+                .get::<axum::http::request::Parts>()
+                .and_then(|parts| parts.extensions.get::<CapabilityGatewayRequestContext>())
+                .cloned()
+                .ok_or_else(|| {
+                    rmcp::ErrorData::internal_error(
+                        "Capability Gateway HTTP request context is missing.",
+                        None,
+                    )
+                }),
+        }
+    }
+
+    pub(crate) fn with_transport(mut self, transport: CapabilityGatewayTransport) -> Self {
+        self.transport = transport;
+        self
+    }
+
     async fn dispatch(
         &self,
         name: &str,
         arguments: Option<JsonObject>,
+        context: &CapabilityGatewayRequestContext,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let tool = self.tools.get(name).ok_or_else(|| {
             rmcp::ErrorData::invalid_params(
@@ -313,7 +427,7 @@ impl CapabilityGatewayMcpServer {
         })?;
         if self
             .provider
-            .authorize(descriptor, &arguments)
+            .authorize(descriptor, &arguments, context)
             .await
             .is_err()
         {
@@ -322,7 +436,7 @@ impl CapabilityGatewayMcpServer {
                 "The Capability Gateway denied this invocation.",
             ));
         }
-        let result = self.provider.invoke(descriptor, arguments).await;
+        let result = self.provider.invoke(descriptor, arguments, context).await;
         Ok(tool_result(result, &tool.output_schema))
     }
 }
@@ -436,9 +550,11 @@ fn frozen_tool_router(
             >| {
                 let route_name = route_name.clone();
                 Box::pin(async move {
+                    let gateway_context =
+                        context.service.request_context(&context.request_context)?;
                     context
                         .service
-                        .dispatch(&route_name, context.arguments)
+                        .dispatch(&route_name, context.arguments, &gateway_context)
                         .await
                 })
             },
