@@ -179,13 +179,23 @@ Acceptance:
   package-generation leases, drain, and retirement. The embedding path already
   acquires an exact snapshot lease for server clones and calls, every provider
   must now supply an explicit fail-closed `authorize` hook before invocation,
-  and HTTP `for_principal` configuration passes a typed authenticated principal
-  context into both provider hooks.
+  and HTTP `for_principal`/`for_principals` configuration passes a typed
+  authenticated principal context into both provider hooks. The multi-
+  principal mapping is bounded to 64 immutable credentials, rejects duplicate
+  tokens, and scans the complete set without an early match exit.
+- [x] Provide a host-owned resolver seam that returns a private,
+  generation-fenced `CapabilityGatewayInvocationLease`. The resolved provider
+  performs one resolution and authorization per call, verifies the exact
+  catalog `InvocationRef`, and retains the handle through invocation; the
+  production receipt/Runtime/Grant composition remains the unchecked part of
+  the surrounding item.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,
   bounded in-flight/rolling-window admission, and sanitized challenge/backoff
-  responses; the helper remains TLS-by-caller.
+  responses; the helper remains TLS-by-caller. The remaining work is Gateway
+  CLI/service composition and the independent Rust/TypeScript/Python recovery
+  matrix.
 
 PR [#192](https://github.com/A3S-Lab/Use/pull/192) records the contract and
 adapter boundary. The checked items are not an A3 exit-gate claim; lifecycle,

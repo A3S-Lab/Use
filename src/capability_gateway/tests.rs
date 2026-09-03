@@ -1,4 +1,5 @@
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a3s_use_core::{
@@ -15,7 +16,10 @@ use rmcp::{ClientHandler, ServiceExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
-use crate::capability_registry::{CapabilityPackageGeneration, CAPABILITY_SNAPSHOT_CURSOR_SCHEMA};
+use crate::capability_registry::{
+    CapabilityPackageGeneration, CapabilityRegistry, CapabilitySnapshotLease,
+    CAPABILITY_SNAPSHOT_CURSOR_SCHEMA,
+};
 
 use super::*;
 
@@ -152,6 +156,84 @@ struct PrincipalPolicyProvider {
     calls: Mutex<Vec<CapabilityGatewayRequestContext>>,
 }
 
+#[derive(Debug)]
+struct LeaseProbeResolver {
+    expected: InvocationRef,
+    resolves: AtomicUsize,
+    active: Arc<AtomicUsize>,
+    completed: Arc<AtomicUsize>,
+}
+
+struct LeaseProbe {
+    active: Arc<AtomicUsize>,
+    completed: Arc<AtomicUsize>,
+}
+
+#[derive(Debug, Default)]
+struct NoopFactory;
+
+#[async_trait]
+impl CapabilityGatewayInvocationFactory for NoopFactory {
+    async fn open(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _context: &CapabilityGatewayRequestContext,
+        _snapshot: &CapabilitySnapshotLease,
+    ) -> UseResult<Box<dyn CapabilityGatewayInvocation>> {
+        Err(UseError::new(
+            "test.factory_not_called",
+            "The test factory must not be called.",
+        ))
+    }
+}
+
+impl Drop for LeaseProbe {
+    fn drop(&mut self) {
+        self.active.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[async_trait]
+impl CapabilityGatewayInvocation for LeaseProbe {
+    async fn authorize(
+        &self,
+        _arguments: &Value,
+        context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<()> {
+        assert_eq!(context.transport(), CapabilityGatewayTransport::Stdio);
+        Ok(())
+    }
+
+    async fn invoke(
+        &self,
+        arguments: Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<Value> {
+        assert_eq!(self.active.load(Ordering::SeqCst), 1);
+        self.completed.fetch_add(1, Ordering::SeqCst);
+        Ok(arguments)
+    }
+}
+
+#[async_trait]
+impl CapabilityGatewayInvocationResolver for LeaseProbeResolver {
+    async fn resolve(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<CapabilityGatewayInvocationLease> {
+        self.resolves.fetch_add(1, Ordering::SeqCst);
+        self.active.fetch_add(1, Ordering::SeqCst);
+        Ok(CapabilityGatewayInvocationLease::new(
+            self.expected.clone(),
+            Box::new(LeaseProbe {
+                active: Arc::clone(&self.active),
+                completed: Arc::clone(&self.completed),
+            }),
+        ))
+    }
+}
+
 #[async_trait]
 impl CapabilityGatewayInvocationProvider for PrincipalPolicyProvider {
     async fn authorize(
@@ -230,6 +312,115 @@ fn gateway_limits_and_http_credentials_fail_closed() {
         .unwrap()
         .with_allowed_origin("https://agent example")
         .is_err());
+
+    assert!(CapabilityGatewayHttpConfig::for_principals(Vec::<(String, String)>::new()).is_err());
+    assert!(CapabilityGatewayHttpConfig::for_principals(vec![
+        ("duplicate-token", "agent/one"),
+        ("duplicate-token", "agent/two"),
+    ])
+    .is_err());
+    assert!(
+        CapabilityGatewayHttpConfig::for_principals(vec![("bad token", "agent/invalid",)]).is_err()
+    );
+    let too_many = (0..65)
+        .map(|index| (format!("token-{index}"), format!("agent/{index}")))
+        .collect::<Vec<_>>();
+    assert!(CapabilityGatewayHttpConfig::for_principals(too_many).is_err());
+    assert!(CapabilityGatewayHttpConfig::for_principals(vec![
+        ("one-token", "agent/one"),
+        ("two-token", "agent/two"),
+    ])
+    .unwrap()
+    .with_principal("agent/ambiguous")
+    .is_err());
+
+    let multi_debug = format!(
+        "{:?}",
+        CapabilityGatewayHttpConfig::for_principals(vec![
+            ("first-secret", "agent/one"),
+            ("second-secret", "agent/two"),
+        ])
+        .unwrap()
+    );
+    assert!(multi_debug.contains("[redacted]"));
+    assert!(multi_debug.contains("agent/one"));
+    assert!(multi_debug.contains("agent/two"));
+    assert!(!multi_debug.contains("first-secret"));
+    assert!(!multi_debug.contains("second-secret"));
+}
+
+#[test]
+fn registry_resolver_rejects_a_foreign_cursor_before_opening_provider_state() {
+    let descriptor = test_descriptor();
+    let registry_installation =
+        InstallationId::new(InstallationKind::User, "user/resolver-tests").unwrap();
+    let registry = CapabilityRegistry::from_env(registry_installation).unwrap();
+    let foreign_installation =
+        InstallationId::new(InstallationKind::Workspace, "workspace/resolver-tests").unwrap();
+    let cursor = test_cursor(&descriptor, foreign_installation);
+    let error = CapabilityGatewayRegistryResolver::new(registry, cursor, Arc::new(NoopFactory))
+        .expect_err("a resolver must be installation-bound");
+    assert_eq!(error.code, "use.capability.snapshot_scope_mismatch");
+}
+
+#[tokio::test]
+async fn resolved_provider_holds_one_generation_lease_through_invocation() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<CapabilityGatewayInvocationLease>();
+    assert_send_sync::<CapabilityGatewayResolvedProvider>();
+
+    let descriptor = test_descriptor();
+    let expected = descriptor.invocation_ref.clone();
+    let active = Arc::new(AtomicUsize::new(0));
+    let completed = Arc::new(AtomicUsize::new(0));
+    let resolver = Arc::new(LeaseProbeResolver {
+        expected,
+        resolves: AtomicUsize::new(0),
+        active: Arc::clone(&active),
+        completed: Arc::clone(&completed),
+    });
+    let provider = CapabilityGatewayResolvedProvider::new(resolver.clone());
+    let context = CapabilityGatewayRequestContext::stdio();
+
+    let result = provider
+        .authorize_and_invoke(&descriptor, serde_json::json!({"query": "lease"}), &context)
+        .await
+        .expect("the resolved invocation should succeed");
+    assert_eq!(result["query"], "lease");
+    assert_eq!(resolver.resolves.load(Ordering::SeqCst), 1);
+    assert_eq!(completed.load(Ordering::SeqCst), 1);
+    assert_eq!(active.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn resolved_provider_rejects_a_handle_for_a_different_reference() {
+    let descriptor = test_descriptor();
+    let other = InvocationRef::derive(
+        &descriptor.package_id,
+        &descriptor.surface,
+        descriptor.generation,
+        &format!("sha256:{}", "9".repeat(64)),
+    )
+    .unwrap();
+    let resolver = Arc::new(LeaseProbeResolver {
+        expected: other,
+        resolves: AtomicUsize::new(0),
+        active: Arc::new(AtomicUsize::new(0)),
+        completed: Arc::new(AtomicUsize::new(0)),
+    });
+    let provider = CapabilityGatewayResolvedProvider::new(resolver);
+    let error = provider
+        .invoke(
+            &descriptor,
+            serde_json::json!({"query": "mismatch"}),
+            &CapabilityGatewayRequestContext::stdio(),
+        )
+        .await
+        .expect_err("a resolver must not return a mismatched opaque handle");
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_resolution_mismatch"
+    );
 }
 
 #[tokio::test]
@@ -441,6 +632,85 @@ async fn streamable_http_accepts_a_standard_rust_client_without_shared_filesyste
     }
 
     client.cancel().await.unwrap();
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn streamable_http_maps_each_bearer_credential_to_its_principal() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let provider = Arc::new(RecordingProvider::default());
+    let config = CapabilityGatewayHttpConfig::for_principals(vec![
+        ("alpha-secret", "agent/alpha"),
+        ("beta-secret", "agent/beta"),
+    ])
+    .unwrap();
+    let server =
+        CapabilityGatewayMcpServer::new(test_catalog(test_descriptor()), provider.clone()).unwrap();
+    let server_handle =
+        tokio::spawn(server.serve_streamable_http(listener, config, shutdown.clone()));
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    let alpha_transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("alpha-secret"),
+    );
+    let alpha = TestClient.serve(alpha_transport).await.unwrap();
+    alpha
+        .call_tool(CallToolRequestParam {
+            name: "search".into(),
+            arguments: Some(
+                serde_json::json!({ "query": "alpha" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .unwrap();
+    alpha.cancel().await.unwrap();
+
+    let beta_transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("beta-secret"),
+    );
+    let beta = TestClient.serve(beta_transport).await.unwrap();
+    beta.call_tool(CallToolRequestParam {
+        name: "search".into(),
+        arguments: Some(
+            serde_json::json!({ "query": "beta" })
+                .as_object()
+                .unwrap()
+                .clone(),
+        ),
+    })
+    .await
+    .unwrap();
+    beta.cancel().await.unwrap();
+
+    {
+        let calls = provider.calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].1["query"], "alpha");
+        assert_eq!(
+            calls[0]
+                .2
+                .principal()
+                .map(CapabilityGatewayPrincipal::as_str),
+            Some("agent/alpha")
+        );
+        assert_eq!(calls[1].1["query"], "beta");
+        assert_eq!(
+            calls[1]
+                .2
+                .principal()
+                .map(CapabilityGatewayPrincipal::as_str),
+            Some("agent/beta")
+        );
+    }
+
     shutdown.cancel();
     server_handle.await.unwrap().unwrap();
 }

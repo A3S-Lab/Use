@@ -352,8 +352,11 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   header rejection, sanitized HTTP errors, and an independent Rust client
   discovery/invocation check are also implemented. The provider now exposes an
   explicit pre-invocation authorization hook that fails closed and sanitizes
-  denial results. Live reference resolution, multi-principal consumer wiring,
-  CLI wiring, TLS termination, and production-host recovery remain open.
+  denial results. The embedding now includes a bounded immutable 64-entry
+  token-to-principal registry (complete credential scan, duplicate-token
+  rejection) and a lease-scoped `CapabilityGatewayInvocationResolver`.
+  Production receipt/Runtime/Grant composition, CLI wiring, TLS termination,
+  and production-host recovery remain open.
 - The standalone `plugin` CLI maps those same ten operations to the service.
   Planning is non-mutating; exact apply requires the durable operation ID, plan
   digest, and explicit `--yes`, while cached apply and replay are zero-network.
@@ -424,12 +427,16 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   [#202](https://github.com/A3S-Lab/Use/pull/202) adds shared bounded admission
   and Streamable HTTP `/mcp`; PR
   [#203](https://github.com/A3S-Lab/Use/pull/203) adds duplicate-header
-  rejection and a real independent Rust client check.
-- Complete live server-side invocation-reference resolution, multi-principal
-  authorization wiring, CLI/service wiring, TLS deployment, and production
-  recovery. The current embedding propagates an explicitly configured
-  principal from HTTP bearer authentication into provider authorization and
-  invocation; it is not yet a multi-principal registry or live resolver.
+  rejection and a real independent Rust client check. The HTTP embedding now
+  also supports a bounded 64-entry token-to-principal registry with complete
+  credential scans and duplicate-token rejection.
+- Complete live server-side invocation-reference resolution, CLI/service
+  wiring, TLS deployment, and production recovery. The embedding now exposes
+  `CapabilityGatewayInvocationResolver` and
+  `CapabilityGatewayResolvedProvider`: one opaque reference is resolved to a
+  private lease, checked against the catalog identity, authorized once, and
+  held through invocation. Production receipt/Runtime/Grant composition
+  remains open.
 - Qualify discovery and invocation from independent Rust, TypeScript, and
   Python clients without a shared package filesystem, including upgrade,
   restart, uninstall, and denied cross-scope access.

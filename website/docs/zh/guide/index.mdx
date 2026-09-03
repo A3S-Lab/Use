@@ -173,8 +173,13 @@ catalog 授权的 Tool，并通过标准 MCP dispatch；opaque invocation refere
 同一个 server，并显式配置 bearer token、可选的精确 browser Origin，以及
 有界的 in-flight 和 rolling-window admission。原生 client 可以省略 Origin；
 配置了 allowed Origin 时，仅在请求带有 Origin 才进行匹配。该 HTTP helper
-不提供 TLS，应绑定 loopback 或置于可信 TLS terminator 后。live reference
-resolution、per-consumer authorization 与 CLI 接线仍在路线图中。
+不提供 TLS，应绑定 loopback 或置于可信 TLS terminator 后。Embedding API
+现在还提供 `CapabilityGatewayInvocationResolver` 与
+`CapabilityGatewayResolvedProvider`：宿主将一个 opaque reference 解析为私有
+lease，校验精确 descriptor identity，只授权一次，并在整个 invocation 期间保留
+该 lease。HTTP 还支持最多 64 项、不可变的 token→principal registry，拒绝重复
+token 并完整扫描 credential。生产 receipt/Runtime/Grant 组合与 CLI 接线仍在
+路线图中。
 
 standalone CLI 会先持久化由宿主选择的 Registry 信任边界，再从同一组 enabled
 source 解析签名包及其完整 SemVer 依赖闭包：

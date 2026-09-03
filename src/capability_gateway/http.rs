@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,24 +21,52 @@ use a3s_use_core::UseResult;
 
 const MAX_HTTP_TOKEN_BYTES: usize = 4 * 1024;
 const MAX_HTTP_ORIGIN_BYTES: usize = 2 * 1024;
+const MAX_HTTP_CREDENTIALS: usize = 64;
+
+#[derive(Clone)]
+struct CapabilityGatewayHttpCredential {
+    authorization: Arc<str>,
+    principal: Option<CapabilityGatewayPrincipal>,
+}
+
+impl CapabilityGatewayHttpCredential {
+    fn new(
+        token: impl Into<String>,
+        principal: Option<CapabilityGatewayPrincipal>,
+    ) -> UseResult<Self> {
+        let token = token.into();
+        validate_http_token(&token)?;
+        Ok(Self {
+            authorization: format!("Bearer {token}").into(),
+            principal,
+        })
+    }
+}
 
 /// Explicit credentials and bounded request admission for a Gateway HTTP
-/// endpoint. The token is never included in `Debug` output or responses.
+/// endpoint. Tokens are never included in `Debug` output or responses.
 #[derive(Clone)]
 pub struct CapabilityGatewayHttpConfig {
-    pub(super) bearer_token: Arc<str>,
-    pub(super) allowed_origin: Option<Arc<str>>,
-    pub(super) principal: Option<CapabilityGatewayPrincipal>,
-    pub(super) limits: super::admission::CapabilityGatewayLimits,
+    credentials: Arc<[CapabilityGatewayHttpCredential]>,
+    allowed_origin: Option<Arc<str>>,
+    limits: super::admission::CapabilityGatewayLimits,
 }
 
 impl std::fmt::Debug for CapabilityGatewayHttpConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("CapabilityGatewayHttpConfig")
-            .field("bearer_token", &"[redacted]")
+            .field("credentials", &"[redacted]")
+            .field("credential_count", &self.credentials.len())
+            .field(
+                "principals",
+                &self
+                    .credentials
+                    .iter()
+                    .map(|credential| credential.principal.as_ref())
+                    .collect::<Vec<_>>(),
+            )
             .field("allowed_origin", &self.allowed_origin)
-            .field("principal", &self.principal)
             .field("limits", &self.limits)
             .finish()
     }
@@ -50,14 +79,7 @@ impl CapabilityGatewayHttpConfig {
     /// assigning a principal. Providers that make per-consumer decisions
     /// should use [`Self::for_principal`] or [`Self::with_principal`].
     pub fn new(token: impl Into<String>) -> UseResult<Self> {
-        let token = token.into();
-        validate_http_token(&token)?;
-        Ok(Self {
-            bearer_token: format!("Bearer {token}").into(),
-            allowed_origin: None,
-            principal: None,
-            limits: Default::default(),
-        })
+        Self::from_credentials(std::iter::once((token.into(), None::<String>)))
     }
 
     /// Create an endpoint with an explicit host-authenticated principal.
@@ -68,12 +90,47 @@ impl CapabilityGatewayHttpConfig {
         token: impl Into<String>,
         principal: impl Into<String>,
     ) -> UseResult<Self> {
-        Self::new(token)?.with_principal(principal)
+        Self::from_credentials(std::iter::once((token.into(), Some(principal.into()))))
+    }
+
+    /// Create an endpoint with a bounded bearer-token to principal mapping.
+    ///
+    /// Every tuple is `(token, principal)`. Tokens must be unique, and the
+    /// mapping is frozen when the endpoint starts. A bounded mapping makes
+    /// the authenticated consumer explicit without putting identity in an
+    /// MCP argument or trusting a client-supplied header. Use [`Self::new`]
+    /// for a compatibility endpoint without a principal.
+    pub fn for_principals<I, T, P>(credentials: I) -> UseResult<Self>
+    where
+        I: IntoIterator<Item = (T, P)>,
+        T: Into<String>,
+        P: Into<String>,
+    {
+        Self::from_credentials(
+            credentials
+                .into_iter()
+                .map(|(token, principal)| (token.into(), Some(principal.into()))),
+        )
     }
 
     /// Associate an explicit principal with this endpoint's bearer token.
     pub fn with_principal(mut self, principal: impl Into<String>) -> UseResult<Self> {
-        self.principal = Some(CapabilityGatewayPrincipal::parse(principal)?);
+        if self.credentials.len() != 1 {
+            return Err(mcp_error(
+                "A principal can only be attached to a single-credential endpoint.",
+            ));
+        }
+        let principal = CapabilityGatewayPrincipal::parse(principal)?;
+        let Some(credential) = self.credentials.first() else {
+            return Err(mcp_error(
+                "The Capability Gateway HTTP credential mapping cannot be empty.",
+            ));
+        };
+        self.credentials = vec![CapabilityGatewayHttpCredential {
+            authorization: Arc::clone(&credential.authorization),
+            principal: Some(principal),
+        }]
+        .into();
         Ok(self)
     }
 
@@ -96,22 +153,54 @@ impl CapabilityGatewayHttpConfig {
         self.limits = limits;
         Ok(self)
     }
+
+    fn from_credentials<I>(entries: I) -> UseResult<Self>
+    where
+        I: IntoIterator<Item = (String, Option<String>)>,
+    {
+        let mut credentials = Vec::new();
+        let mut tokens = BTreeSet::new();
+        for (token, principal) in entries {
+            if credentials.len() >= MAX_HTTP_CREDENTIALS {
+                return Err(mcp_error(
+                    "The Capability Gateway HTTP credential mapping is too large.",
+                ));
+            }
+            if !tokens.insert(token.clone()) {
+                return Err(mcp_error(
+                    "The Capability Gateway HTTP credential mapping contains duplicate tokens.",
+                ));
+            }
+            let principal = principal
+                .map(CapabilityGatewayPrincipal::parse)
+                .transpose()?;
+            credentials.push(CapabilityGatewayHttpCredential::new(token, principal)?);
+        }
+        if credentials.is_empty() {
+            return Err(mcp_error(
+                "The Capability Gateway HTTP credential mapping cannot be empty.",
+            ));
+        }
+        Ok(Self {
+            credentials: credentials.into(),
+            allowed_origin: None,
+            limits: Default::default(),
+        })
+    }
 }
 
 #[derive(Clone)]
 struct CapabilityGatewayHttpGuard {
-    authorization: Arc<str>,
+    credentials: Arc<[CapabilityGatewayHttpCredential]>,
     allowed_origin: Option<Arc<str>>,
-    principal: Option<CapabilityGatewayPrincipal>,
     admission: Arc<GatewayAdmission>,
 }
 
 impl CapabilityGatewayHttpGuard {
     fn new(config: CapabilityGatewayHttpConfig) -> UseResult<Self> {
         Ok(Self {
-            authorization: config.bearer_token,
+            credentials: config.credentials,
             allowed_origin: config.allowed_origin,
-            principal: config.principal,
             admission: Arc::new(GatewayAdmission::new(config.limits)?),
         })
     }
@@ -161,22 +250,31 @@ async fn authorize_http_request(
     next: Next,
 ) -> Response {
     let authorization = request.headers().get_all(AUTHORIZATION);
-    let authorized = authorization.iter().count() == 1
-        && authorization
-            .iter()
-            .next()
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| {
-                constant_time_eq(value.as_bytes(), guard.authorization.as_bytes())
-            });
-    if !authorized {
+    let presented = (authorization.iter().count() == 1)
+        .then(|| authorization.iter().next())
+        .flatten()
+        .and_then(|value| value.to_str().ok());
+    // Scan every configured credential even after a match. Besides keeping
+    // the endpoint bounded, this avoids making the credential's position a
+    // timing oracle for clients that can measure rejected requests.
+    let mut matched_index = None;
+    if let Some(presented) = presented {
+        for (index, credential) in guard.credentials.iter().enumerate() {
+            if constant_time_eq(presented.as_bytes(), credential.authorization.as_bytes())
+                && matched_index.is_none()
+            {
+                matched_index = Some(index);
+            }
+        }
+    }
+    let Some(matched_index) = matched_index else {
         return (
             StatusCode::UNAUTHORIZED,
             [(WWW_AUTHENTICATE, "Bearer")],
             "Unauthorized",
         )
             .into_response();
-    }
+    };
 
     let origins = request.headers().get_all(ORIGIN);
     let origin_values = origins.iter().collect::<Vec<_>>();
@@ -200,7 +298,7 @@ async fn authorize_http_request(
     request
         .extensions_mut()
         .insert(CapabilityGatewayRequestContext::streamable_http(
-            guard.principal.clone(),
+            guard.credentials[matched_index].principal.clone(),
         ));
 
     let _permit = match guard.admission.try_acquire() {

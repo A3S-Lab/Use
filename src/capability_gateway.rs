@@ -28,10 +28,16 @@ use crate::capability_registry::{CapabilitySnapshotCursor, CapabilitySnapshotLea
 
 mod admission;
 mod http;
+mod resolver;
 
 pub use admission::CapabilityGatewayLimits;
 use admission::{AdmissionFailure, GatewayAdmission};
 pub use http::CapabilityGatewayHttpConfig;
+pub use resolver::{
+    CapabilityGatewayInvocation, CapabilityGatewayInvocationFactory,
+    CapabilityGatewayInvocationLease, CapabilityGatewayInvocationResolver,
+    CapabilityGatewayRegistryResolver, CapabilityGatewayResolvedProvider,
+};
 
 const MCP_ERROR: &str = "use.plugin.capability_gateway_mcp_invalid";
 const MCP_SCHEMA_ERROR: &str = "use.plugin.capability_gateway_schema_violation";
@@ -214,6 +220,34 @@ pub trait CapabilityGatewayInvocationProvider: Send + Sync {
         arguments: Value,
         context: &CapabilityGatewayRequestContext,
     ) -> UseResult<Value>;
+
+    /// Authorize and invoke one call as one provider operation.
+    ///
+    /// The default preserves the two-hook compatibility contract. Providers
+    /// that resolve a generation-fenced invocation should override this method
+    /// so the authorization decision and the leased invocation use the same
+    /// resolved binding without a second lookup.
+    async fn authorize_and_invoke(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        arguments: Value,
+        context: &CapabilityGatewayRequestContext,
+    ) -> Result<Value, CapabilityGatewayInvocationFailure> {
+        self.authorize(descriptor, &arguments, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Authorization)?;
+        self.invoke(descriptor, arguments, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Invocation)
+    }
+}
+
+/// Internal classification used to keep authorization failures separate from
+/// invocation failures while both remain secret-free at the MCP boundary.
+#[derive(Debug)]
+pub enum CapabilityGatewayInvocationFailure {
+    Authorization(UseError),
+    Invocation(UseError),
 }
 
 /// Standard MCP server backed by an immutable Capability Gateway catalog.
@@ -425,18 +459,20 @@ impl CapabilityGatewayMcpServer {
                 None,
             )
         })?;
-        if self
+        let result = match self
             .provider
-            .authorize(descriptor, &arguments, context)
+            .authorize_and_invoke(descriptor, arguments, context)
             .await
-            .is_err()
         {
-            return Ok(structured_error(
-                MCP_AUTHORIZATION_ERROR,
-                "The Capability Gateway denied this invocation.",
-            ));
-        }
-        let result = self.provider.invoke(descriptor, arguments, context).await;
+            Ok(value) => Ok(value),
+            Err(CapabilityGatewayInvocationFailure::Authorization(_)) => {
+                return Ok(structured_error(
+                    MCP_AUTHORIZATION_ERROR,
+                    "The Capability Gateway denied this invocation.",
+                ));
+            }
+            Err(CapabilityGatewayInvocationFailure::Invocation(error)) => Err(error),
+        };
         Ok(tool_result(result, &tool.output_schema))
     }
 }
