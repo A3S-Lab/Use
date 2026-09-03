@@ -1619,6 +1619,17 @@ Status: in progress
   `a3s-use-core 0.2.7`, `a3s-use-extension 0.3.8`, and `a3s-use 0.3.8`.
   The prior `v0.3.6` and `v0.3.7` releases remain historical evidence. This
   does not close the external-witness or product-readiness gates.
+- [x] Publish the development-preview `v0.3.9` GitHub Release after the exact
+  tagged source, five verified platform archives, deterministic
+  SBOM/reproducibility evidence, installers, and Use-owned typed crates passed
+  the release workflow. Release workflow run
+  [33756618837](https://github.com/A3S-Lab/Use/actions/runs/33756618837) passed
+  all 13 jobs for exact `main` commit
+  `a5f3cc40bfb0a1021ca150d2ce4295409b74d220`; the release publishes 19 assets,
+  `a3s-use-core 0.2.7`, `a3s-use-extension 0.3.9`, and `a3s-use 0.3.9`.
+  The prior `v0.3.6`, `v0.3.7`, and `v0.3.8` releases remain historical
+  evidence. This does not close the external-witness or product-readiness
+  gates.
 - [ ] Add an externally operated witness for the complete staged tree and final
   archive digest, and retain verification evidence outside the Release asset
   trust boundary.

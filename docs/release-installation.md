@@ -138,6 +138,15 @@ all five targets, and published the current development-preview
 [GitHub Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.8), including
 `a3s-use-core 0.2.7`, `a3s-use-extension 0.3.8`, and `a3s-use 0.3.8`.
 
+Release workflow
+[33756618837](https://github.com/A3S-Lab/Use/actions/runs/33756618837) then built
+tag `v0.3.9` from exact `main` commit
+`a5f3cc40bfb0a1021ca150d2ce4295409b74d220`, passed the independent evidence on
+all five targets, and published the current development-preview
+[GitHub Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.9), including
+19 release assets and `a3s-use-core 0.2.7`, `a3s-use-extension 0.3.9`, and
+`a3s-use 0.3.9`.
+
 ## Additional independent verification
 
 The installer already performs the Cosign verification below. GitHub CLI can
@@ -145,7 +154,7 @@ add an independent attestation check, or the same commands can be used before
 running a reviewed installer:
 
 ```bash
-version=0.3.8
+version=0.3.9
 tag="v${version}"
 archive="a3s-use-${version}-darwin-arm64.tar.gz"
 rebuild="a3s-use-${version}-darwin-arm64.reproducibility.json"
