@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "a3s-acl",
  "a3s-flow",
@@ -123,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-extension"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "a3s-acl",
  "a3s-use-core",
