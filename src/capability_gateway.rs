@@ -24,6 +24,8 @@ use rmcp::model::{
 use rmcp::{tool_handler, ServerHandler, ServiceExt};
 use serde_json::Value;
 
+use crate::capability_registry::{CapabilitySnapshotCursor, CapabilitySnapshotLease};
+
 const MCP_ERROR: &str = "use.plugin.capability_gateway_mcp_invalid";
 const MCP_SCHEMA_ERROR: &str = "use.plugin.capability_gateway_schema_violation";
 const MCP_INVOCATION_ERROR: &str = "use.plugin.capability_gateway_invocation_failed";
@@ -115,6 +117,9 @@ pub struct CapabilityGatewayMcpServer {
     provider: Arc<dyn CapabilityGatewayInvocationProvider>,
     tools: Arc<BTreeMap<String, CapabilityGatewayTool>>,
     tool_router: ToolRouter<Self>,
+    /// When present, this RAII lease pins every callable package generation
+    /// for the lifetime of the MCP service (including cloned session handles).
+    snapshot_lease: Option<Arc<CapabilitySnapshotLease>>,
 }
 
 impl std::fmt::Debug for CapabilityGatewayMcpServer {
@@ -122,6 +127,7 @@ impl std::fmt::Debug for CapabilityGatewayMcpServer {
         formatter
             .debug_struct("CapabilityGatewayMcpServer")
             .field("catalog", &self.catalog)
+            .field("has_snapshot_lease", &self.snapshot_lease.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -132,6 +138,46 @@ impl CapabilityGatewayMcpServer {
         catalog: CapabilityGatewayCatalog,
         provider: Arc<dyn CapabilityGatewayInvocationProvider>,
     ) -> UseResult<Self> {
+        Self::build(catalog, provider, None)
+    }
+
+    /// Compose a Gateway over an exact Use capability snapshot lease.
+    ///
+    /// The lease is retained by every clone of the server and is released only
+    /// after the MCP service (and all of its sessions) stop. Construction fails
+    /// closed when the immutable catalog is not bound to the same installation
+    /// and package-generation identities as the lease. Reference resolution
+    /// remains host-owned by the injected provider.
+    pub fn with_snapshot_lease(
+        catalog: CapabilityGatewayCatalog,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        lease: CapabilitySnapshotLease,
+    ) -> UseResult<Self> {
+        validate_snapshot_binding(&catalog, &lease)?;
+        Self::build(catalog, provider, Some(Arc::new(lease)))
+    }
+
+    /// Bind a catalog to the current Use publication and acquire its exact
+    /// generation lease. `None` means the publication changed or a required
+    /// generation is already draining; callers should refresh the catalog and
+    /// retry instead of serving a mixed snapshot.
+    pub async fn from_registry(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        catalog: CapabilityGatewayCatalog,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+    ) -> UseResult<Option<Self>> {
+        let snapshot = registry.snapshot().await?;
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        Self::with_snapshot_lease(catalog, provider, lease).map(Some)
+    }
+
+    fn build(
+        catalog: CapabilityGatewayCatalog,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        snapshot_lease: Option<Arc<CapabilitySnapshotLease>>,
+    ) -> UseResult<Self> {
         catalog.validate()?;
         let catalog = Arc::new(catalog);
         let tools = Arc::new(compile_tools(&catalog)?);
@@ -141,12 +187,21 @@ impl CapabilityGatewayMcpServer {
             provider,
             tools,
             tool_router,
+            snapshot_lease,
         })
     }
 
     /// Return the exact immutable catalog used by this server.
     pub fn catalog(&self) -> &CapabilityGatewayCatalog {
         &self.catalog
+    }
+
+    /// Return the exact lease cursor when this server is bound to a live Use
+    /// snapshot. A contract-only server returns `None`.
+    pub fn snapshot_cursor(&self) -> Option<&CapabilitySnapshotCursor> {
+        self.snapshot_lease
+            .as_deref()
+            .map(CapabilitySnapshotLease::cursor)
     }
 
     /// Serve standard MCP framing over stdin/stdout until the peer
@@ -215,6 +270,66 @@ impl ServerHandler for CapabilityGatewayMcpServer {
             ..Default::default()
         }
     }
+}
+
+fn validate_snapshot_binding(
+    catalog: &CapabilityGatewayCatalog,
+    lease: &CapabilitySnapshotLease,
+) -> UseResult<()> {
+    let snapshot = lease.snapshot();
+    if snapshot.cursor() != lease.cursor() {
+        return Err(mcp_error(
+            "The Capability Gateway snapshot lease contains inconsistent cursor evidence.",
+        ));
+    }
+    validate_snapshot_binding_identity(
+        catalog,
+        snapshot.installation.clone(),
+        snapshot.generation,
+        lease.cursor(),
+    )
+}
+
+fn validate_snapshot_binding_identity(
+    catalog: &CapabilityGatewayCatalog,
+    installation: a3s_use_core::InstallationId,
+    generation: u64,
+    cursor: &CapabilitySnapshotCursor,
+) -> UseResult<()> {
+    cursor
+        .validate()
+        .map_err(|_| mcp_error("The Capability Gateway snapshot lease cursor is invalid."))?;
+    if catalog.installation() != &installation
+        || cursor.installation != installation
+        || cursor.generation != generation
+        || !cursor.is_fully_leasable()
+    {
+        return Err(mcp_error(
+            "The Capability Gateway catalog is not bound to the exact Use snapshot lease.",
+        ));
+    }
+
+    for descriptor in catalog.descriptors() {
+        let package_id = descriptor.package_id.to_string();
+        let Some(package) = cursor
+            .packages
+            .iter()
+            .find(|package| package.package_id == package_id)
+        else {
+            return Err(mcp_error(
+                "The Capability Gateway catalog contains a package outside the Use snapshot lease.",
+            ));
+        };
+        if package.lifecycle_generation != descriptor.generation
+            || package.package_digest != descriptor.package_digest
+            || package.manifest_digest != descriptor.manifest_digest
+        {
+            return Err(mcp_error(
+                "The Capability Gateway descriptor does not match the Use snapshot lease.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn frozen_tool_router(
@@ -412,6 +527,10 @@ mod tests {
     };
     use rmcp::model::CallToolRequestParam;
     use rmcp::{ClientHandler, ServiceExt};
+
+    use crate::capability_registry::{
+        CapabilityPackageGeneration, CAPABILITY_SNAPSHOT_CURSOR_SCHEMA,
+    };
 
     use super::*;
 
@@ -710,6 +829,187 @@ mod tests {
         let server = CapabilityGatewayMcpServer::new(catalog, provider).unwrap();
         assert_eq!(server.catalog().descriptors().len(), 1);
         assert_eq!(server.tool_router.list_all().len(), 1);
+        assert!(server.snapshot_cursor().is_none());
+    }
+
+    #[test]
+    fn snapshot_binding_requires_exact_package_generation_evidence() {
+        let descriptor = test_descriptor();
+        let catalog = test_catalog(descriptor.clone());
+        let installation = catalog.installation().clone();
+        let cursor = test_cursor(&descriptor, installation.clone());
+
+        validate_snapshot_binding_identity(
+            &catalog,
+            installation.clone(),
+            cursor.generation,
+            &cursor,
+        )
+        .unwrap();
+
+        let mut wrong_generation = cursor.clone();
+        wrong_generation.generation += 1;
+        assert_eq!(
+            validate_snapshot_binding_identity(
+                &catalog,
+                installation.clone(),
+                cursor.generation,
+                &wrong_generation,
+            )
+            .unwrap_err()
+            .code,
+            MCP_ERROR
+        );
+
+        let mut wrong_digest = cursor.clone();
+        wrong_digest.packages[0].package_digest = format!("sha256:{}", "f".repeat(64));
+        assert_eq!(
+            validate_snapshot_binding_identity(
+                &catalog,
+                installation.clone(),
+                cursor.generation,
+                &wrong_digest,
+            )
+            .unwrap_err()
+            .code,
+            MCP_ERROR
+        );
+
+        let mut missing_package = cursor.clone();
+        missing_package.packages.clear();
+        assert_eq!(
+            validate_snapshot_binding_identity(
+                &catalog,
+                installation,
+                cursor.generation,
+                &missing_package,
+            )
+            .unwrap_err()
+            .code,
+            MCP_ERROR
+        );
+    }
+
+    #[test]
+    fn snapshot_binding_rejects_unleasable_packages() {
+        let descriptor = test_descriptor();
+        let catalog = test_catalog(descriptor.clone());
+        let installation = catalog.installation().clone();
+        let mut cursor = test_cursor(&descriptor, installation.clone());
+        cursor.unleasable_packages = vec!["acme/other".to_owned()];
+        assert_eq!(
+            validate_snapshot_binding_identity(&catalog, installation, cursor.generation, &cursor,)
+                .unwrap_err()
+                .code,
+            MCP_ERROR
+        );
+    }
+
+    #[cfg(feature = "extensions")]
+    #[test]
+    fn leased_server_retains_the_exact_snapshot_across_clones() {
+        std::thread::Builder::new()
+            .name("capability-gateway-lease".to_owned())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(leased_server_snapshot_lifetime());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[cfg(feature = "extensions")]
+    async fn leased_server_snapshot_lifetime() {
+        let temporary = tempfile::tempdir().unwrap();
+        let installation =
+            InstallationId::new(InstallationKind::Workspace, "gateway-lease-tests").unwrap();
+        let registry = a3s_use_extension::ExtensionRegistry::new(
+            a3s_use_extension::ExtensionPaths::new(
+                temporary.path().join("data"),
+                temporary.path().join("state"),
+                installation.clone(),
+            )
+            .unwrap(),
+        );
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("crates/extension/fixtures/packages/plugin-v3-cognitive/package");
+        let package = a3s_use_extension::ExtensionLifecyclePackage::prepare_local(
+            "acme/cognitive",
+            &fixture,
+            true,
+        )
+        .await
+        .unwrap();
+        let identity = a3s_use_extension::ExtensionLifecycleIdentity::new(
+            package.package_id(),
+            package.package_digest(),
+            package.manifest_digest(),
+            1,
+        )
+        .unwrap();
+        registry
+            .commit_lifecycle_package(&identity, &package)
+            .await
+            .unwrap();
+        registry.publish_lifecycle_package(&identity).await.unwrap();
+
+        let capability_registry = crate::capability_registry::CapabilityRegistry::new(registry);
+        let snapshot = capability_registry.snapshot().await.unwrap();
+        let package = &snapshot.cursor().packages[0];
+        let package_id = package.package_id.clone();
+        let lifecycle_generation = package.lifecycle_generation;
+        let package_digest = package.package_digest.clone();
+        let manifest_digest = package.manifest_digest.clone();
+        let mut descriptor = test_descriptor();
+        descriptor.package_id = PluginPackageId::parse(package_id).unwrap();
+        descriptor.generation = lifecycle_generation;
+        descriptor.package_digest = package_digest;
+        descriptor.manifest_digest = manifest_digest;
+        descriptor.invocation_ref = InvocationRef::derive(
+            &descriptor.package_id,
+            &descriptor.surface,
+            descriptor.generation,
+            &format!("sha256:{}", "1".repeat(64)),
+        )
+        .unwrap();
+        descriptor.artifact_ref = Some(
+            ArtifactRef::derive(
+                &descriptor.package_id,
+                &descriptor.surface,
+                descriptor.generation,
+                &format!("sha256:{}", "2".repeat(64)),
+            )
+            .unwrap(),
+        );
+        descriptor.endpoint_ref = Some(
+            EndpointRef::derive(
+                &descriptor.package_id,
+                &descriptor.surface,
+                descriptor.generation,
+                &format!("sha256:{}", "3".repeat(64)),
+            )
+            .unwrap(),
+        );
+        let catalog =
+            CapabilityGatewayCatalog::new(installation, descriptor.generation, vec![descriptor])
+                .unwrap();
+        let server = CapabilityGatewayMcpServer::from_registry(
+            &capability_registry,
+            catalog,
+            Arc::new(RecordingProvider::default()),
+        )
+        .await
+        .unwrap()
+        .expect("published package must be leasable");
+        let cursor = server.snapshot_cursor().cloned().unwrap();
+        let clone = server.clone();
+        drop(server);
+        assert_eq!(clone.snapshot_cursor(), Some(&cursor));
     }
 
     fn test_catalog(descriptor: CapabilityDescriptor) -> CapabilityGatewayCatalog {
@@ -719,6 +1019,30 @@ mod tests {
             vec![descriptor],
         )
         .unwrap()
+    }
+
+    fn test_cursor(
+        descriptor: &CapabilityDescriptor,
+        installation: InstallationId,
+    ) -> CapabilitySnapshotCursor {
+        CapabilitySnapshotCursor {
+            schema: CAPABILITY_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+            installation,
+            installation_generation: None,
+            installation_snapshot_digest: None,
+            // The Registry publication generation is independent from the
+            // package lifecycle generation carried by each descriptor.
+            generation: 9,
+            revision: "a".repeat(64),
+            registry_revision: format!("sha256:{}", "b".repeat(64)),
+            packages: vec![CapabilityPackageGeneration {
+                package_id: descriptor.package_id.to_string(),
+                lifecycle_generation: descriptor.generation,
+                package_digest: descriptor.package_digest.clone(),
+                manifest_digest: descriptor.manifest_digest.clone(),
+            }],
+            unleasable_packages: Vec::new(),
+        }
     }
 
     fn test_descriptor() -> CapabilityDescriptor {
