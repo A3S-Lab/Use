@@ -75,6 +75,13 @@ implicit allow implementation; even a contract-only provider must state its
 policy explicitly. The hook does not replace live reference resolution or a
 multi-principal token registry.
 
+The live resolver seam is explicit: `CapabilityGatewayInvocationResolver` maps
+one catalog descriptor to a private `CapabilityGatewayInvocationLease`, and
+`CapabilityGatewayResolvedProvider` verifies the exact opaque reference,
+authorizes once, and retains the handle through the call. The production host
+still has to compose receipt, Runtime, Grant, and multi-principal authorities;
+the seam itself does not grant access.
+
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
 ```text

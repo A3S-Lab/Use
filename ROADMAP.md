@@ -920,6 +920,14 @@ verified principal into both provider hooks without exposing it to agents.
 Live host reference resolution, multi-principal authorization, product wiring,
 and independent-client recovery remain open.
 
+The embedding seam is now explicit: `CapabilityGatewayInvocationResolver`
+returns a private `CapabilityGatewayInvocationLease`, and
+`CapabilityGatewayResolvedProvider` performs one resolution and authorization
+for each call before invoking the lease. The handle implementation owns the
+exact package-generation guard and must retain it until the invocation returns;
+the resolver still has to be composed with the production Use receipt and
+Runtime authorities before the A3 exit gate can be checked.
+
 Exit gate: an arbitrary MCP-capable coding agent can discover and invoke an
 authorized package without an A3S SDK, local package path, or duplicated
 lifecycle implementation.

@@ -63,6 +63,12 @@ provider 实例绑定到已认证 principal，并把 principal、Grant 和 scope
 必须显式声明策略。该 hook 不替代 live reference resolution 或多 principal
 token registry。
 
+live resolver seam 现在是显式的：`CapabilityGatewayInvocationResolver` 将一个
+catalog descriptor 映射为私有 `CapabilityGatewayInvocationLease`，而
+`CapabilityGatewayResolvedProvider` 校验精确 opaque reference，只授权一次，并在
+调用期间保留该 handle。生产宿主仍需组合 receipt、Runtime、Grant 与多 principal
+authority；这个 seam 本身不会授予访问权限。
+
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、TUI 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
 ```text

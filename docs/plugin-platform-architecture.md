@@ -531,6 +531,17 @@ implicit allow implementation: a contract-only provider must still state its
 policy explicitly. This hook is a policy boundary, not a replacement for the
 still-pending live reference resolver or multi-principal HTTP token registry.
 
+The live resolver boundary is now represented by
+`CapabilityGatewayInvocationResolver`. It resolves one catalog descriptor to a
+`CapabilityGatewayInvocationLease`; the lease's private handle owns the exact
+package-generation guard and remains alive until the call completes.
+`CapabilityGatewayResolvedProvider` performs resolution and authorization once
+for a call, verifies that the returned lease carries the descriptor's exact
+opaque `InvocationRef`, and exposes only the provider result to MCP. The
+production host must still implement the resolver against its receipt,
+Runtime, Grant, and scope authorities; a generic resolver cannot authorize a
+binding by itself.
+
 The steady-state watch path reads immutable publications without acquiring the
 Registry writer lock. A watcher may take that lock once to repair a verified
 receipt/publication mismatch after a crash. Lifecycle mutations absorb this

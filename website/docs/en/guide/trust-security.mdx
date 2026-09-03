@@ -142,6 +142,14 @@ state through a path-free error.
 
 Agent lifecycle operations default to `ask`, not `allow`. Safe metadata search, inspect, list, and plan operations may be pre-authorized. Adding a trust root, installing an unsigned package, granting a secret, and purging data remain user-only.
 
+For Gateway calls, the host-owned `CapabilityGatewayInvocationResolver` maps
+the catalog's opaque `InvocationRef` to a private lease. The lease must bind
+the complete package/surface/generation identity, apply the principal and
+Grant policy, and retain its generation guard until the invocation returns.
+`CapabilityGatewayResolvedProvider` keeps resolution and authorization in one
+call boundary; it never sends the lease, path, or provider details to the
+agent. The production host still supplies the receipt and Runtime binding.
+
 A package permission declaration is a ceiling, not authority. Host ACL policy and workspace grants may only narrow it:
 
 ```acl

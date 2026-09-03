@@ -125,6 +125,13 @@ operation ID。查询不联网、只读、在 uninstall 后仍有效；未知字
 
 Agent lifecycle 操作默认是 `ask`，不是 `allow`。安全的 metadata search、inspect、list 和 plan 可以预授权；增加信任根、安装 unsigned package、授予 secret 和 purge data 只能由用户执行。
 
+Gateway 调用由宿主拥有的 `CapabilityGatewayInvocationResolver` 将 catalog 中的
+opaque `InvocationRef` 映射为私有 lease。该 lease 必须绑定完整的
+package/surface/generation identity，执行 principal 与 Grant policy，并一直保留
+generation guard 直到 invocation 返回。`CapabilityGatewayResolvedProvider` 将解析
+与授权放在同一个调用边界内；lease、路径和 provider 细节不会发送给 agent。生产
+宿主仍需提供 receipt 与 Runtime binding。
+
 包声明的权限是上限，不是授权。宿主 ACL policy 和 workspace grant 只能进一步收紧：
 
 ```acl

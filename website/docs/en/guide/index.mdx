@@ -188,8 +188,11 @@ bearer token, optional exact browser Origin, and bounded in-flight plus rolling
 window admission. Native clients can omit Origin; a configured Origin is
 checked only when a browser Origin is supplied. The HTTP helper does not
 provide TLS, so bind to loopback or place it behind a trusted TLS terminator.
-Live reference resolution, per-consumer authorization, and CLI wiring remain
-roadmap work.
+The embedding API now includes `CapabilityGatewayInvocationResolver` and
+`CapabilityGatewayResolvedProvider`: a host resolves one opaque reference to a
+private lease, verifies the exact descriptor identity, authorizes once, and
+retains that lease through invocation. Production receipt/Runtime/Grant
+composition, per-consumer registries, and CLI wiring remain roadmap work.
 
 The standalone CLI first persists the host-selected Registry trust boundary,
 then resolves a signed package and its complete SemVer dependency closure from

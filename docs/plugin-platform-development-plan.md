@@ -181,6 +181,12 @@ Acceptance:
   must now supply an explicit fail-closed `authorize` hook before invocation,
   and HTTP `for_principal` configuration passes a typed authenticated principal
   context into both provider hooks.
+- [x] Provide a host-owned resolver seam that returns a private,
+  generation-fenced `CapabilityGatewayInvocationLease`. The resolved provider
+  performs one resolution and authorization per call, verifies the exact
+  catalog `InvocationRef`, and retains the handle through invocation; the
+  production receipt/Runtime/Grant composition remains the unchecked part of
+  the surrounding item.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,
