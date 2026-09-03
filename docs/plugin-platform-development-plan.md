@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Development Plan
 
 Status: active
-Last updated: 2026-08-23
+Last updated: 2026-09-03
 
 ## Objective
 
@@ -74,6 +74,8 @@ Completed in the Use repository:
 - bounded per-scope/package terminal operation history with validated outcome,
   replay-safe `(operationId, planDigest)` identity, and zero-network CLI
   observation after package removal;
+- secret-free Package Manager MCP diagnostics that retain only validated
+  contract error codes and bounded public messages (PR #197);
 - CLI diagnostics, package graph commands, Knowledge search/usage, and watchers;
 - current-schema fixtures, digest goldens, remote Registry tests, recovery
   tests, and GitHub Pages site.
@@ -181,6 +183,14 @@ Acceptance:
 PR [#192](https://github.com/A3S-Lab/Use/pull/192) records the contract and
 adapter boundary. The checked items are not an A3 exit-gate claim; lifecycle,
 authorization, and production-host integration remain explicit follow-up work.
+
+PR [#197](https://github.com/A3S-Lab/Use/pull/197) hardens the manager MCP
+error boundary. Internal `UseError` messages, suggestions, details, paths,
+URLs, provider-owned identifiers, and package-authored diagnostics never cross
+the adapter; validated `use.*` codes are retained only with bounded public
+messages, while malformed or provider-owned codes use a generic code. This
+does not replace the pending live-host authentication, authorization, rate
+limit, and lifecycle-lease work.
 
 ### A3 Managed Knowledge
 

@@ -28,8 +28,16 @@ install、upgrade 与 uninstall 已改用该 service，并在保留现有 JSON �
 返回精确 Host plan/apply result。standalone `plugin` CLI 已把 10 个 manager
 operation 全部映射到同一 service，直接返回精确 typed result，planning 保持
 只读，apply 必须同时提供持久 operation ID、plan digest 与显式 `--yes`。普通
-CLI 或 Agent 调用不会隐含 confirmation。TUI 迁移及 Code 侧 manager MCP 组合
-仍未完成。
+CLI 或 Agent 调用不会隐含 confirmation。A3S Code TUI 与 Code 侧 manager MCP
+组合现已复用同一个 service，因此 CLI、TUI 与 manager endpoint 共享同一套
+operation identity 和 confirmation 边界。
+
+manager MCP adapter 还会在边界处把内部 `UseError` 投影为不含 secret 的公开
+错误契约（PR [#197](https://github.com/A3S-Lab/Use/pull/197)）。跨边界只保留
+经过校验的 `use.*` code 与有界公开 message；路径、URL、suggestion、details、
+provider 私有标识及 package 自带诊断会被移除，或收敛为通用 code。这是对
+presentation boundary 的加固，但不等于已完成 live-host reference resolution、
+authentication、authorization、rate limit 或 lifecycle lease。
 
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、TUI 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
@@ -76,8 +84,9 @@ CLI 或 Agent 调用不会隐含 confirmation。TUI 迁移及 Code 侧 manager M
 - `src/surface_reconciler` + `src/capability_registry`：依赖 readiness 和 capability publication；
 - `src/plugin_manager`：production Host Manager 之上的共享类型化 application
   service 与标准 manager MCP adapter；standalone Registry compatibility
-  mutation 与完整 10-operation `plugin` CLI 已使用该 service，TUI 与 Code MCP
-  组合仍待完成。
+  mutation、完整 10-operation `plugin` CLI、A3S Code TUI 与 Code 侧 manager
+  MCP 组合均使用该 service。adapter 只投影有界且不含 secret 的 manager 错误
+  契约；host lifecycle lease 与 endpoint authorization 仍保持独立。
 
 不得新增第二个 manager、grant store、Runtime selector、capability registry 或 generic execution protocol。
 
