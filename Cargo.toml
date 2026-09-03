@@ -7,7 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.7"
+version = "0.2.8"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/A3S-Lab/Use"
@@ -50,7 +50,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [package]
 name = "a3s-use"
-version = "0.3.9"
+version = "0.3.10"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -98,10 +98,10 @@ mcp = [
 lightpanda = ["browser", "a3s-use-browser/lightpanda"]
 
 [dependencies]
-a3s-use-core = { version = "0.2.7", path = "crates/core" }
+a3s-use-core = { version = "0.2.8", path = "crates/core" }
 a3s-use-browser = { version = "=0.3.2", git = "https://github.com/A3S-Lab/Browser", rev = "a4a270f9ca335ceee60c5d9e086ae05005fb7abf", optional = true }
 a3s-use-ocr = { version = "=0.3.2", git = "https://github.com/A3S-Lab/OCR", rev = "206552a74f87e39ff9c3735fe5018036b88fcab7", optional = true }
-a3s-use-extension = { version = "0.3.9", path = "crates/extension", optional = true }
+a3s-use-extension = { version = "0.3.10", path = "crates/extension", optional = true }
 a3s-runtime = { version = "=0.3.0", git = "https://github.com/A3S-Lab/Runtime", rev = "6a5546145a74c9f380a0d86c2490a144a22883f8", optional = true }
 a3s-flow = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }

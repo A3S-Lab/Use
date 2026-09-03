@@ -10,7 +10,7 @@ publish = false
 description = "Headless Streamable HTTP MCP release conformance fixture"
 
 [dependencies]
-a3s-use-core = { version = "0.2.7", path = "../core" }
+a3s-use-core = { version = "0.2.8", path = "../core" }
 anyhow.workspace = true
 axum.workspace = true
 rmcp.workspace = true
