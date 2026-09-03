@@ -1731,6 +1731,15 @@ migrated. Delete the unsupported state and reinstall with the current build.
 
 ## Implementation status
 
+Gateway embedding hosts can derive a consumer-specific catalog from one
+`CapabilityRegistrySnapshot` through
+`CapabilityRegistrySnapshot::capability_gateway_catalog`; the helper verifies
+the public projection revision plus exact package/publication/readiness evidence
+before
+`CapabilityGatewayMcpServer::from_registry_snapshot` acquires its RAII lease.
+Signature verification and opaque-reference resolution remain host-owned, and
+the live multi-principal resolver and product wiring are still open.
+
 | Area | Status |
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |

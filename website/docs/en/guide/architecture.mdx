@@ -83,6 +83,19 @@ authorizes once, and retains the handle through the call. The production host
 still has to compose receipt, Runtime, Grant, and multi-principal authorities;
 the seam itself does not grant access.
 
+Embedding hosts can derive the Gateway catalog from one immutable
+`CapabilityRegistrySnapshot` with
+`CapabilityRegistrySnapshot::capability_gateway_catalog`. This bounded
+projection rechecks each host-supplied, schema-checked descriptor against the
+snapshot cursor, exact package/manifest digests, reviewed publication evidence,
+selected surfaces, and ready/enabled bindings before constructing the canonical
+catalog. A host may expose a consumer-specific subset, but the helper cannot
+invent a package or surface outside the reviewed publication. Signature
+verification and opaque-reference resolution remain host authorities. The
+companion `CapabilityGatewayMcpServer::from_registry_snapshot` acquires the
+matching RAII lease only after projection and returns no server when the
+publication changes or is draining.
+
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
 ```text

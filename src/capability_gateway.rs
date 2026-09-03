@@ -341,6 +341,27 @@ impl CapabilityGatewayMcpServer {
         Self::with_snapshot_lease(catalog, provider, lease).map(Some)
     }
 
+    /// Build and bind a Gateway catalog from one stable Use snapshot.
+    ///
+    /// The descriptor source remains host-owned: callers must obtain signed,
+    /// schema-checked descriptions from their package authority and pass only
+    /// the descriptors intended for this consumer. The snapshot helper checks
+    /// their package and publication evidence before this method acquires the
+    /// exact RAII lease. `None` means the publication changed or became
+    /// unleaseable while the binding was being established.
+    pub async fn from_registry_snapshot(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        descriptors: Vec<CapabilityDescriptor>,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+    ) -> UseResult<Option<Self>> {
+        let snapshot = registry.snapshot().await?;
+        let catalog = snapshot.capability_gateway_catalog(descriptors)?;
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        Self::with_snapshot_lease(catalog, provider, lease).map(Some)
+    }
+
     fn build(
         catalog: CapabilityGatewayCatalog,
         provider: Arc<dyn CapabilityGatewayInvocationProvider>,

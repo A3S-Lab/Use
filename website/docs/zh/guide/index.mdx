@@ -181,6 +181,12 @@ lease，校验精确 descriptor identity，只授权一次，并在整个 invoca
 token 并完整扫描 credential。生产 receipt/Runtime/Grant 组合与 CLI 接线仍在
 路线图中。
 
+Embedding host 也可以从一个 immutable `CapabilityRegistrySnapshot` 构建该
+catalog，使用 `CapabilityRegistrySnapshot::capability_gateway_catalog` 在
+`CapabilityGatewayMcpServer::from_registry_snapshot` 保留 RAII lease 前检查精确的
+package、publication、selected surface 与 readiness evidence。签名验证和
+opaque reference 解析仍由宿主负责。
+
 standalone CLI 会先持久化由宿主选择的 Registry 信任边界，再从同一组 enabled
 source 解析签名包及其完整 SemVer 依赖闭包：
 
