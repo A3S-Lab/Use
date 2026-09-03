@@ -43,9 +43,15 @@ The manager MCP adapter also projects internal `UseError` values into a
 secret-free public error contract (PR [#197](https://github.com/A3S-Lab/Use/pull/197)).
 Only validated `use.*` codes and bounded public messages cross the boundary;
 paths, URLs, suggestions, details, provider-owned identifiers, and
-package-authored diagnostics are omitted or collapsed to a generic code. This
-protects the presentation boundary but does not complete live-host reference
-resolution, authentication, authorization, rate limits, or lifecycle leases.
+package-authored diagnostics are omitted or collapsed to a generic code. PR
+[#199](https://github.com/A3S-Lab/Use/pull/199) adds an embedding Gateway path
+that acquires and retains an exact `CapabilitySnapshotLease` through server
+clones and calls. PR [#200](https://github.com/A3S-Lab/Use/pull/200) separates
+the catalog publication generation from each descriptor's package lifecycle
+generation, so one immutable publication can safely contain independently
+upgraded packages without admitting two incarnations of one surface. Live-host
+reference resolution, endpoint authentication/authorization, rate limits, CLI
+wiring, and the independent client/recovery matrix remain open.
 
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
@@ -378,7 +384,7 @@ disabled until every consumer can switch together.
 
 ## Runtime visibility
 
-The Surface Reconciler observes desired state, generation receipt, grants, bindings, Runtime/Gateway health, A3S Flow observation, and Skill/UI/OKF projection. OKF has a distinct Knowledge-host owner: missing is pending, staged is unpublished, and only exact promoted evidence is healthy. The Capability Registry publishes a new snapshot only when complete evidence agrees on one generation. Resident hosts can watch generation plus revision and hot-refresh without restarting.
+The Surface Reconciler observes desired state, generation receipt, grants, bindings, Runtime/Gateway health, A3S Flow observation, and Skill/UI/OKF projection. OKF has a distinct Knowledge-host owner: missing is pending, staged is unpublished, and only exact promoted evidence is healthy. The Capability Registry publishes a new snapshot only when complete evidence agrees on one publication generation. Resident hosts can watch publication generation plus revision and hot-refresh without restarting; each advertised descriptor still carries its owning package lifecycle generation.
 
 Flow has one engine identity. Native TypeScript is an execution adapter, `flow.json` is a visual design/deployment document, Code is a local host, and OS is a remote target. These paths must never create parallel package receipts or lifecycle journals.
 

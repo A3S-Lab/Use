@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Architecture
 
 Status: development preview
-Last updated: 2026-08-24
+Last updated: 2026-09-03
 
 ## Executive decision
 
@@ -492,6 +492,18 @@ non-clone `CapabilitySnapshotLease` is `Send + Sync`; Code may own it for a Run
 without receiving package mutation authority. Rust `Drop` releases only the
 synchronous locks, while Use keeps asynchronous drain and retirement in its
 explicit lifecycle coordinator.
+
+The Gateway catalog has two deliberately different clocks. Its top-level
+`generation` is the immutable capability-publication generation and must match
+the leased snapshot cursor. A descriptor's `generation` is the lifecycle
+generation of its owning package; those values may differ when one publication
+contains several independently upgraded packages. The catalog rejects a
+duplicate `(package, surface kind, surface ID)` identity even when the proposed
+descriptors carry different lifecycle generations. This prevents a stale
+publication from being mistaken for a package incarnation and keeps the
+publication cut separate from package lifecycle retirement (PRs
+[#199](https://github.com/A3S-Lab/Use/pull/199) and
+[#200](https://github.com/A3S-Lab/Use/pull/200)).
 
 The steady-state watch path reads immutable publications without acquiring the
 Registry writer lock. A watcher may take that lock once to repair a verified
