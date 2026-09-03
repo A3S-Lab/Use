@@ -880,6 +880,15 @@ remains open until server-side lifecycle lease/drain integration, authentication
 and rate limits, CLI wiring, and the independent client/recovery matrix are
 implemented.
 
+Implementation note (2026-09-03): PR [#197](https://github.com/A3S-Lab/Use/pull/197)
+added a secret-free error projection at the Package Manager MCP boundary. The
+adapter retains only validated `use.*` contract codes and a bounded public
+message; paths, URLs, suggestions, details, provider-owned identifiers, and
+package-authored diagnostics are omitted or collapsed to a generic code. This
+is defense-in-depth for the existing adapter, not an A3 exit-gate claim: live
+host reference resolution, authentication, authorization, rate limits, and
+independent-client recovery remain open.
+
 Exit gate: an arbitrary MCP-capable coding agent can discover and invoke an
 authorized package without an A3S SDK, local package path, or duplicated
 lifecycle implementation.

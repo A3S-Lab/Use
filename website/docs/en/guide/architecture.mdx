@@ -35,7 +35,17 @@ preserving existing fields. The standalone `plugin` CLI maps all ten manager
 operations to the same service, returns the exact typed result, keeps planning
 read-only, and requires the exact durable operation ID, plan digest, and
 explicit `--yes` for apply. A normal CLI or agent call does not imply
-confirmation. TUI migration and Code-side manager MCP composition remain open.
+confirmation. The A3S Code TUI and Code-side manager MCP composition now reuse
+this same service, so the CLI, TUI, and manager endpoint share one operation
+identity and confirmation boundary.
+
+The manager MCP adapter also projects internal `UseError` values into a
+secret-free public error contract (PR [#197](https://github.com/A3S-Lab/Use/pull/197)).
+Only validated `use.*` codes and bounded public messages cross the boundary;
+paths, URLs, suggestions, details, provider-owned identifiers, and
+package-authored diagnostics are omitted or collapsed to a generic code. This
+protects the presentation boundary but does not complete live-host reference
+resolution, authentication, authorization, rate limits, or lifecycle leases.
 
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
@@ -83,7 +93,9 @@ The current implementation reuses these existing mechanisms:
 - `src/plugin_manager`: the shared typed application service and standard
   manager MCP adapter over the production Host Manager. Standalone
   Registry-backed compatibility mutations and the complete ten-operation
-  `plugin` CLI use this service; TUI and Code MCP composition are still pending.
+  `plugin` CLI, A3S Code TUI, and Code-side manager MCP composition use this
+  service. The adapter projects only the bounded, secret-free manager error
+  contract; host lifecycle leases and endpoint authorization remain separate.
 
 Do not add another manager, grant store, Runtime selector, capability registry, or generic execution protocol.
 
