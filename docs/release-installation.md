@@ -130,6 +130,14 @@ The non-publishing qualification run
 historical evidence from the prior source commit; it never publishes crates or
 release assets.
 
+Release workflow
+[33720485826](https://github.com/A3S-Lab/Use/actions/runs/33720485826) then built
+tag `v0.3.8` from exact `main` commit
+`6d3a7baf32ce998a2e487c40fbf78b4a6cda2579`, passed the independent evidence on
+all five targets, and published the current development-preview
+[GitHub Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.8), including
+`a3s-use-core 0.2.7`, `a3s-use-extension 0.3.8`, and `a3s-use 0.3.8`.
+
 ## Additional independent verification
 
 The installer already performs the Cosign verification below. GitHub CLI can
@@ -137,7 +145,7 @@ add an independent attestation check, or the same commands can be used before
 running a reviewed installer:
 
 ```bash
-version=0.3.7
+version=0.3.8
 tag="v${version}"
 archive="a3s-use-${version}-darwin-arm64.tar.gz"
 rebuild="a3s-use-${version}-darwin-arm64.reproducibility.json"
