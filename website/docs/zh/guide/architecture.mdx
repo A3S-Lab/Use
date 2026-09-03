@@ -51,6 +51,15 @@ client discovery/invocation 测试。HTTP transport 不负责 TLS；宿主必须
 loopback 或放在可信 TLS reverse proxy 后。live-host reference resolution、
 per-consumer authorization、CLI 接线及独立 client/recovery 矩阵仍未完成。
 
+注入的 invocation provider 同时也是 authorization seam。它的必需
+`authorize` hook 会在已校验发布的 input schema 之后、任何 provider effect
+之前运行；拒绝时只返回有界的
+`use.plugin.capability_gateway_forbidden`，不会调用 `invoke`。宿主应将一个
+provider 实例绑定到已认证 principal，并把 principal、Grant 和 scope policy
+保留在 provider 内部。不存在隐式 allow；即使是 contract-only provider 也
+必须显式声明策略。该 hook 不替代 live reference resolution 或多 principal
+token registry。
+
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、TUI 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
 ```text

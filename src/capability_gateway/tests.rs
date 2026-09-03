@@ -26,6 +26,14 @@ struct RecordingProvider {
 
 #[async_trait]
 impl CapabilityGatewayInvocationProvider for RecordingProvider {
+    async fn authorize(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: &Value,
+    ) -> UseResult<()> {
+        Ok(())
+    }
+
     async fn invoke(
         &self,
         descriptor: &CapabilityDescriptor,
@@ -44,6 +52,14 @@ struct InvalidOutputProvider;
 
 #[async_trait]
 impl CapabilityGatewayInvocationProvider for InvalidOutputProvider {
+    async fn authorize(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: &Value,
+    ) -> UseResult<()> {
+        Ok(())
+    }
+
     async fn invoke(
         &self,
         _descriptor: &CapabilityDescriptor,
@@ -61,6 +77,14 @@ struct FailingProvider;
 
 #[async_trait]
 impl CapabilityGatewayInvocationProvider for FailingProvider {
+    async fn authorize(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: &Value,
+    ) -> UseResult<()> {
+        Ok(())
+    }
+
     async fn invoke(
         &self,
         _descriptor: &CapabilityDescriptor,
@@ -72,6 +96,37 @@ impl CapabilityGatewayInvocationProvider for FailingProvider {
         )
         .with_suggestion("read /srv/a3s/secrets/token")
         .with_detail("path", "/srv/a3s/secrets/token"))
+    }
+}
+
+#[derive(Debug, Default)]
+struct DenyingProvider {
+    calls: Mutex<Vec<InvocationRef>>,
+}
+
+#[async_trait]
+impl CapabilityGatewayInvocationProvider for DenyingProvider {
+    async fn authorize(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: &Value,
+    ) -> UseResult<()> {
+        Err(UseError::new(
+            "host.private_authorization_reason",
+            "private policy details must not cross the Gateway boundary",
+        ))
+    }
+
+    async fn invoke(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        _arguments: Value,
+    ) -> UseResult<Value> {
+        self.calls
+            .lock()
+            .map_err(|_| UseError::new("test.provider_poisoned", "Provider lock poisoned."))?
+            .push(descriptor.invocation_ref.clone());
+        Ok(serde_json::json!({ "ok": true }))
     }
 }
 
@@ -422,6 +477,47 @@ async fn adapter_sanitizes_provider_errors_at_the_agent_boundary() {
     assert!(!serialized.contains("private token"));
     assert!(!serialized.contains("/srv/a3s/secrets"));
     assert!(!serialized.contains("provider.internal_secret"));
+
+    client.cancel().await.unwrap();
+    server_handle.await.unwrap();
+}
+
+#[tokio::test]
+async fn adapter_denies_unauthorized_calls_before_provider_dispatch() {
+    let provider = Arc::new(DenyingProvider::default());
+    let server =
+        CapabilityGatewayMcpServer::new(test_catalog(test_descriptor()), provider.clone()).unwrap();
+    let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
+    let server_handle = tokio::spawn(async move {
+        server
+            .serve(server_transport)
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let client = TestClient.serve(client_transport).await.unwrap();
+
+    let result = client
+        .call_tool(CallToolRequestParam {
+            name: "search".into(),
+            arguments: Some(
+                serde_json::json!({ "query": "secret" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.is_error, Some(true));
+    let error = result
+        .structured_content
+        .expect("structured authorization error");
+    assert_eq!(error["code"], MCP_AUTHORIZATION_ERROR);
+    assert!(!error.to_string().contains("private policy"));
+    assert!(provider.calls.lock().unwrap().is_empty());
 
     client.cancel().await.unwrap();
     server_handle.await.unwrap();

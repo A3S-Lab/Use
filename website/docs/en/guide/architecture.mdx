@@ -62,6 +62,16 @@ The transport does not terminate TLS; hosts must use loopback or a trusted TLS
 reverse proxy. Authentication and admission are endpoint safeguards, not live
 reference authorization.
 
+The injected invocation provider is also the authorization seam. Its required
+`authorize` hook runs after the published input schema is validated and before
+any provider effect; a denial returns the bounded
+`use.plugin.capability_gateway_forbidden` result and never calls `invoke`.
+Hosts should bind a provider instance to their authenticated principal and
+keep principal, Grant, and scope policy private to that provider. There is no
+implicit allow implementation; even a contract-only provider must state its
+policy explicitly. The hook does not replace live reference resolution or a
+multi-principal token registry.
+
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
 ```text

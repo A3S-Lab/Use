@@ -35,6 +35,7 @@ pub use http::CapabilityGatewayHttpConfig;
 
 const MCP_ERROR: &str = "use.plugin.capability_gateway_mcp_invalid";
 const MCP_SCHEMA_ERROR: &str = "use.plugin.capability_gateway_schema_violation";
+const MCP_AUTHORIZATION_ERROR: &str = "use.plugin.capability_gateway_forbidden";
 const MCP_INVOCATION_ERROR: &str = "use.plugin.capability_gateway_invocation_failed";
 const MCP_RATE_LIMIT_ERROR: &str = "use.plugin.capability_gateway_rate_limited";
 const MAX_CAPABILITY_VALUE_BYTES: usize = 256 * 1024;
@@ -114,6 +115,18 @@ struct CapabilityGatewayTool {
 /// reference supplied by the client.
 #[async_trait]
 pub trait CapabilityGatewayInvocationProvider: Send + Sync {
+    /// Authorize one already schema-validated call against the host's private
+    /// policy and principal context. Implementations must make the policy
+    /// explicit, fail closed, and must not return package-controlled
+    /// diagnostics to the caller. There is intentionally no default
+    /// implementation: a provider cannot accidentally turn an absent policy
+    /// into an allow-all Gateway.
+    async fn authorize(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: &Value,
+    ) -> UseResult<()>;
+
     async fn invoke(&self, descriptor: &CapabilityDescriptor, arguments: Value)
         -> UseResult<Value>;
 }
@@ -298,6 +311,17 @@ impl CapabilityGatewayMcpServer {
                 None,
             )
         })?;
+        if self
+            .provider
+            .authorize(descriptor, &arguments)
+            .await
+            .is_err()
+        {
+            return Ok(structured_error(
+                MCP_AUTHORIZATION_ERROR,
+                "The Capability Gateway denied this invocation.",
+            ));
+        }
         let result = self.provider.invoke(descriptor, arguments).await;
         Ok(tool_result(result, &tool.output_schema))
     }
