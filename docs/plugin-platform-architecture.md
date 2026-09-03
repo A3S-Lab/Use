@@ -516,7 +516,7 @@ Origin checking (native clients may omit Origin), `WWW-Authenticate` and
 The HTTP method deliberately does not provide TLS: a host must use loopback or
 a trusted TLS-terminating reverse proxy. These controls authenticate and bound
 the endpoint, but do not yet resolve opaque references from a live host
-authority or define per-consumer authorization policy.
+authority or define a multi-principal authorization registry.
 
 The invocation provider is also the authorization seam. Its required
 `authorize` hook runs after the published input schema is validated and before
@@ -524,10 +524,12 @@ the provider can perform any effect; a denial is projected as the bounded
 `use.plugin.capability_gateway_forbidden` result and the invocation is not
 called. Hosts should bind one provider instance to their authenticated
 principal and keep principal, Grant, and scope policy private to that provider.
-There is no implicit allow implementation: a contract-only provider must still
-state its policy explicitly. This hook is a policy boundary, not a replacement
-for the still-pending live reference resolver or multi-principal HTTP token
-registry.
+The HTTP embedding offers `CapabilityGatewayHttpConfig::for_principal`, and the
+boundary passes its typed principal/transport context to both hooks; the
+principal is never serialized into MCP discovery or results. There is no
+implicit allow implementation: a contract-only provider must still state its
+policy explicitly. This hook is a policy boundary, not a replacement for the
+still-pending live reference resolver or multi-principal HTTP token registry.
 
 The steady-state watch path reads immutable publications without acquiring the
 Registry writer lock. A watcher may take that lock once to repair a verified

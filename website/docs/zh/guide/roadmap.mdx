@@ -323,6 +323,9 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   独立 Rust client 检查。
 - 仍需完成 live server-side invocation-reference 解析、多 principal
   authorization wiring、CLI/service wiring、TLS 部署与 production recovery。
+  当前 embedding 已把 HTTP bearer authentication 显式配置的 principal 传给
+  provider authorization 与 invocation；它还不是 multi-principal registry
+  或 live resolver。
 - 需要用不共享 package filesystem 的独立 Rust、TypeScript、Python client
   验证 discovery/invocation，并覆盖 upgrade、restart、uninstall 与跨 scope
   拒绝。

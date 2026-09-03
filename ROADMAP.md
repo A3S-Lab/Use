@@ -870,8 +870,9 @@ between graph siblings before their effects enter one installation outbox.
   apply, bounded authentication, authorization, rate limits, and secret-free
   diagnostics for both endpoints. Gateway HTTP bearer authentication,
   optional exact Origin policy, duplicate-header rejection, bounded in-flight
-  and rolling-window admission, sanitized HTTP errors, and an explicit
-  pre-invocation provider authorization hook are implemented; live
+  and rolling-window admission, sanitized HTTP errors, an explicit
+  pre-invocation provider authorization hook, and typed propagation of the
+  host-authenticated transport/principal context are implemented; live
   multi-principal authorization and product CLI wiring remain.
 - [ ] Prove one-endpoint discovery and invocation from independent Rust,
   TypeScript, and Python clients, including a container or remote client with
@@ -914,8 +915,10 @@ package-authored diagnostics are omitted or collapsed to a generic code. This
 is defense-in-depth for the existing adapter, not an A3 exit-gate claim. The
 Gateway HTTP edge now adds endpoint bearer authentication and bounded
 admission, and the injected provider exposes a sanitized pre-invocation
-authorization seam; live host reference resolution, multi-principal
-authorization, product wiring, and independent-client recovery remain open.
+authorization seam; the HTTP `for_principal` configuration now carries the
+verified principal into both provider hooks without exposing it to agents.
+Live host reference resolution, multi-principal authorization, product wiring,
+and independent-client recovery remain open.
 
 Exit gate: an arbitrary MCP-capable coding agent can discover and invoke an
 authorized package without an A3S SDK, local package path, or duplicated

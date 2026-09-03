@@ -177,9 +177,10 @@ Acceptance:
 - [ ] Resolve opaque references from the live Use host, integrate receipt-owned
   provider composition, and complete per-consumer authorization across exact
   package-generation leases, drain, and retirement. The embedding path already
-  acquires an exact snapshot lease for server clones and calls, and every
-  provider must now supply an explicit fail-closed `authorize` hook before
-  invocation.
+  acquires an exact snapshot lease for server clones and calls, every provider
+  must now supply an explicit fail-closed `authorize` hook before invocation,
+  and HTTP `for_principal` configuration passes a typed authenticated principal
+  context into both provider hooks.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,

@@ -12,7 +12,10 @@ use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use tokio_util::sync::CancellationToken;
 
 use super::admission::{AdmissionFailure, GatewayAdmission};
-use super::{mcp_error, CapabilityGatewayMcpServer};
+use super::{
+    mcp_error, CapabilityGatewayMcpServer, CapabilityGatewayPrincipal,
+    CapabilityGatewayRequestContext, CapabilityGatewayTransport,
+};
 use a3s_use_core::UseResult;
 
 const MAX_HTTP_TOKEN_BYTES: usize = 4 * 1024;
@@ -24,6 +27,7 @@ const MAX_HTTP_ORIGIN_BYTES: usize = 2 * 1024;
 pub struct CapabilityGatewayHttpConfig {
     pub(super) bearer_token: Arc<str>,
     pub(super) allowed_origin: Option<Arc<str>>,
+    pub(super) principal: Option<CapabilityGatewayPrincipal>,
     pub(super) limits: super::admission::CapabilityGatewayLimits,
 }
 
@@ -33,6 +37,7 @@ impl std::fmt::Debug for CapabilityGatewayHttpConfig {
             .debug_struct("CapabilityGatewayHttpConfig")
             .field("bearer_token", &"[redacted]")
             .field("allowed_origin", &self.allowed_origin)
+            .field("principal", &self.principal)
             .field("limits", &self.limits)
             .finish()
     }
@@ -40,14 +45,36 @@ impl std::fmt::Debug for CapabilityGatewayHttpConfig {
 
 impl CapabilityGatewayHttpConfig {
     /// Create an endpoint configuration from a raw bearer token.
+    ///
+    /// This compatibility constructor authenticates the endpoint without
+    /// assigning a principal. Providers that make per-consumer decisions
+    /// should use [`Self::for_principal`] or [`Self::with_principal`].
     pub fn new(token: impl Into<String>) -> UseResult<Self> {
         let token = token.into();
         validate_http_token(&token)?;
         Ok(Self {
             bearer_token: format!("Bearer {token}").into(),
             allowed_origin: None,
+            principal: None,
             limits: Default::default(),
         })
+    }
+
+    /// Create an endpoint with an explicit host-authenticated principal.
+    ///
+    /// The principal is associated with the validated bearer credential by
+    /// the host; it is never read from an MCP request body.
+    pub fn for_principal(
+        token: impl Into<String>,
+        principal: impl Into<String>,
+    ) -> UseResult<Self> {
+        Self::new(token)?.with_principal(principal)
+    }
+
+    /// Associate an explicit principal with this endpoint's bearer token.
+    pub fn with_principal(mut self, principal: impl Into<String>) -> UseResult<Self> {
+        self.principal = Some(CapabilityGatewayPrincipal::parse(principal)?);
+        Ok(self)
     }
 
     /// Allow this exact browser Origin when one is present. Without an allowed
@@ -75,6 +102,7 @@ impl CapabilityGatewayHttpConfig {
 struct CapabilityGatewayHttpGuard {
     authorization: Arc<str>,
     allowed_origin: Option<Arc<str>>,
+    principal: Option<CapabilityGatewayPrincipal>,
     admission: Arc<GatewayAdmission>,
 }
 
@@ -83,6 +111,7 @@ impl CapabilityGatewayHttpGuard {
         Ok(Self {
             authorization: config.bearer_token,
             allowed_origin: config.allowed_origin,
+            principal: config.principal,
             admission: Arc::new(GatewayAdmission::new(config.limits)?),
         })
     }
@@ -102,8 +131,9 @@ impl CapabilityGatewayMcpServer {
         config: CapabilityGatewayHttpConfig,
         shutdown: CancellationToken,
     ) -> UseResult<()> {
+        let server = self.with_transport(CapabilityGatewayTransport::StreamableHttp);
         let service: StreamableHttpService<Self, LocalSessionManager> = StreamableHttpService::new(
-            move || Ok(self.clone()),
+            move || Ok(server.clone()),
             Arc::new(LocalSessionManager::default()),
             StreamableHttpServerConfig {
                 stateful_mode: true,
@@ -127,7 +157,7 @@ impl CapabilityGatewayMcpServer {
 
 async fn authorize_http_request(
     State(guard): State<CapabilityGatewayHttpGuard>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Response {
     let authorization = request.headers().get_all(AUTHORIZATION);
@@ -166,6 +196,12 @@ async fn authorize_http_request(
     if !origin_allowed {
         return (StatusCode::FORBIDDEN, "Untrusted Origin").into_response();
     }
+
+    request
+        .extensions_mut()
+        .insert(CapabilityGatewayRequestContext::streamable_http(
+            guard.principal.clone(),
+        ));
 
     let _permit = match guard.admission.try_acquire() {
         Ok(permit) => permit,
