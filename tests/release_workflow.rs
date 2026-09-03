@@ -43,9 +43,9 @@ fn crate_recovery_publication_is_source_bound_ordered_and_idempotent() {
 fn published_facade_uses_the_registry_flow_release_required_by_code_core() {
     let manifest = include_str!("../Cargo.toml");
     assert!(manifest.contains("a3s-flow = \"=1.1.0\""));
-    assert!(manifest.contains("version = \"0.3.9\""));
-    assert!(manifest.contains("a3s-use-core = { version = \"0.2.7\""));
-    assert!(manifest.contains("a3s-use-extension = { version = \"0.3.9\""));
+    assert!(manifest.contains("version = \"0.3.10\""));
+    assert!(manifest.contains("a3s-use-core = { version = \"0.2.8\""));
+    assert!(manifest.contains("a3s-use-extension = { version = \"0.3.10\""));
     assert!(!manifest.contains("a3s-flow = { version = \"=1.0.0\", git ="));
 }
 
