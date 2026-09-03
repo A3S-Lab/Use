@@ -48,11 +48,11 @@ Streamable HTTP `/mcp` 增加由宿主配置的有界 admission。PR
 credential、重复 header 拒绝、可选的精确 Origin 检查（原生 client 可以省略
 Origin）、`WWW-Authenticate`/`Retry-After` 响应，以及真正的 `rmcp` 独立
 client discovery/invocation 测试。HTTP transport 不负责 TLS；宿主必须绑定
-loopback 或放在可信 TLS reverse proxy 后。`CapabilityGatewayHttpConfig::for_principal`
-现在把一个宿主配置的 principal 绑定到已验证 bearer credential，并把类型化
-transport/principal context 传给两个 provider hook；该值不会序列化到 MCP
-discovery 或 result。live-host reference resolution、multi-principal
-authorization、CLI 接线及独立 client/recovery 矩阵仍未完成。
+loopback 或放在可信 TLS reverse proxy 后。`CapabilityGatewayHttpConfig::for_principals`
+现在支持最多 64 项、不可变的 token→principal 映射；认证会扫描完整集合而不提前
+退出，拒绝重复 token，只把选中的类型化 principal 传给 provider hook。该值不会
+序列化到 MCP discovery 或 result。live-host reference resolution、CLI 接线及独立
+client/recovery 矩阵仍未完成。
 
 注入的 invocation provider 同时也是 authorization seam。它的必需
 `authorize` hook 会在已校验发布的 input schema 之后、任何 provider effect
@@ -60,8 +60,7 @@ authorization、CLI 接线及独立 client/recovery 矩阵仍未完成。
 `use.plugin.capability_gateway_forbidden`，不会调用 `invoke`。宿主应将一个
 provider 实例绑定到已认证 principal，并把 principal、Grant 和 scope policy
 保留在 provider 内部。不存在隐式 allow；即使是 contract-only provider 也
-必须显式声明策略。该 hook 不替代 live reference resolution 或多 principal
-token registry。
+必须显式声明策略。该 hook 不替代生产 receipt/Runtime/Grant 组合。
 
 live resolver seam 现在是显式的：`CapabilityGatewayInvocationResolver` 将一个
 catalog descriptor 映射为私有 `CapabilityGatewayInvocationLease`，而

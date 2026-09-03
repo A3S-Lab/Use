@@ -424,14 +424,16 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   [#202](https://github.com/A3S-Lab/Use/pull/202) adds shared bounded admission
   and Streamable HTTP `/mcp`; PR
   [#203](https://github.com/A3S-Lab/Use/pull/203) adds duplicate-header
-  rejection and a real independent Rust client check.
-- Complete live server-side invocation-reference resolution, multi-principal
-  authorization wiring, CLI/service wiring, TLS deployment, and production
-  recovery. The embedding now exposes `CapabilityGatewayInvocationResolver`
-  and `CapabilityGatewayResolvedProvider`: one opaque reference is resolved to
-  a private lease, checked against the catalog identity, authorized once, and
-  held through invocation. Production receipt/Runtime/Grant composition and a
-  multi-principal registry remain open.
+  rejection and a real independent Rust client check. The HTTP embedding now
+  also supports a bounded 64-entry token-to-principal registry with complete
+  credential scans and duplicate-token rejection.
+- Complete live server-side invocation-reference resolution, CLI/service
+  wiring, TLS deployment, and production recovery. The embedding now exposes
+  `CapabilityGatewayInvocationResolver` and
+  `CapabilityGatewayResolvedProvider`: one opaque reference is resolved to a
+  private lease, checked against the catalog identity, authorized once, and
+  held through invocation. Production receipt/Runtime/Grant composition
+  remains open.
 - Qualify discovery and invocation from independent Rust, TypeScript, and
   Python clients without a shared package filesystem, including upgrade,
   restart, uninstall, and denied cross-scope access.
