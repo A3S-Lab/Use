@@ -39,9 +39,10 @@ mod resolved_grant_changes;
 pub(crate) mod validation;
 
 pub use capability_gateway::{
-    ArtifactRef, CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
-    CapabilityMcpTransport, CapabilityPublicationEvidence, CapabilityToolAnnotations, EndpointRef,
-    InvocationRef, CAPABILITY_DESCRIPTOR_SCHEMA_V1, CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1,
+    ArtifactRef, CapabilityDescriptionProof, CapabilityDescriptor, CapabilityDescriptorKind,
+    CapabilityGatewayCatalog, CapabilityMcpTransport, CapabilityPublicationEvidence,
+    CapabilityToolAnnotations, EndpointRef, InvocationRef, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1,
+    CAPABILITY_DESCRIPTOR_SCHEMA_V1, CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1,
 };
 pub use catalog::{
     CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,

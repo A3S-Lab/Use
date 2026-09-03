@@ -237,11 +237,48 @@ fn catalog_rejects_two_lifecycle_generations_of_one_surface() {
 }
 
 #[test]
+fn description_proof_binds_the_exact_agent_visible_descriptor() {
+    let proof = CapabilityDescriptionProof::from_verified(tool(), "registry/official").unwrap();
+    proof.validate().unwrap();
+    let encoded = serde_json::to_vec(&proof).unwrap();
+    let decoded = CapabilityDescriptionProof::from_json(&encoded).unwrap();
+    assert_eq!(decoded, proof);
+
+    let mut tampered = proof.clone();
+    tampered.descriptor.title = "Different title".to_owned();
+    assert!(tampered.validate().is_err());
+
+    let mut tampered = proof;
+    tampered.signer_id = "../untrusted".to_owned();
+    assert!(tampered.validate().is_err());
+}
+
+#[test]
+fn verified_descriptions_are_the_only_inputs_to_the_proof_catalog_constructor() {
+    let installation =
+        InstallationId::new(super::super::InstallationKind::User, "user/current").unwrap();
+    let proof = CapabilityDescriptionProof::from_verified(tool(), "registry/official").unwrap();
+    let catalog =
+        CapabilityGatewayCatalog::from_verified_descriptions(installation.clone(), 7, vec![proof])
+            .unwrap();
+    assert_eq!(catalog.descriptors().len(), 1);
+
+    let mut invalid =
+        CapabilityDescriptionProof::from_verified(tool(), "registry/official").unwrap();
+    invalid.descriptor_digest = digest('e');
+    assert!(
+        CapabilityGatewayCatalog::from_verified_descriptions(installation, 7, vec![invalid])
+            .is_err()
+    );
+}
+
+#[test]
 fn public_gateway_contracts_are_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<InvocationRef>();
     assert_send_sync::<ArtifactRef>();
     assert_send_sync::<EndpointRef>();
+    assert_send_sync::<CapabilityDescriptionProof>();
     assert_send_sync::<CapabilityDescriptor>();
     assert_send_sync::<CapabilityGatewayCatalog>();
 }

@@ -27,6 +27,8 @@ use super::{
 pub const CAPABILITY_DESCRIPTOR_SCHEMA_V1: &str = "a3s.use.capability-descriptor.v1";
 /// Current immutable index exchanged with a Capability Gateway host.
 pub const CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1: &str = "a3s.use.capability-gateway-catalog.v1";
+mod description_proof;
+pub use description_proof::{CapabilityDescriptionProof, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1};
 
 const CAPABILITY_ERROR: &str = "use.plugin.capability_gateway_invalid";
 const CAPABILITY_REF_DOMAIN: &[u8] = b"a3s.use.capability-ref.v1\0";
@@ -540,6 +542,23 @@ impl CapabilityGatewayCatalog {
         };
         catalog.validate()?;
         Ok(catalog)
+    }
+
+    /// Build a catalog only from descriptions that have crossed the host's
+    /// signed-publication verification boundary.
+    pub fn from_verified_descriptions(
+        installation: InstallationId,
+        generation: u64,
+        proofs: Vec<CapabilityDescriptionProof>,
+    ) -> UseResult<Self> {
+        let descriptors = proofs
+            .into_iter()
+            .map(|proof| {
+                proof.validate()?;
+                Ok(proof.into_descriptor())
+            })
+            .collect::<UseResult<Vec<_>>>()?;
+        Self::new(installation, generation, descriptors)
     }
 
     pub fn from_json(input: &[u8]) -> UseResult<Self> {

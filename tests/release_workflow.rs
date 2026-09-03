@@ -50,6 +50,19 @@ fn published_facade_uses_the_registry_flow_release_required_by_code_core() {
 }
 
 #[test]
+fn facade_and_extension_package_versions_cannot_drift() {
+    let facade = package_version(include_str!("../Cargo.toml"), "a3s-use");
+    let extension = package_version(
+        include_str!("../crates/extension/Cargo.toml"),
+        "a3s-use-extension",
+    );
+    assert_eq!(
+        facade, extension,
+        "the facade and extension must advance together because the extension embeds the host version"
+    );
+}
+
+#[test]
 fn release_publishes_only_use_owned_crates_in_dependency_order() {
     let workflow = include_str!("../.github/workflows/release.yml").replace("\r\n", "\n");
     let workflow = workflow.as_str();
@@ -819,4 +832,28 @@ fn value_after<'a>(text: &'a str, prefix: &str) -> &'a str {
     text.lines()
         .find_map(|line| line.trim().strip_prefix(prefix))
         .unwrap_or_else(|| panic!("release workflow omitted `{prefix}`"))
+}
+
+fn package_version(manifest: &str, expected_name: &str) -> String {
+    let mut in_package = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_package = trimmed == "[package]";
+            continue;
+        }
+        if in_package {
+            if let Some(value) = trimmed.strip_prefix("name = \"") {
+                assert_eq!(
+                    value.strip_suffix('\"').unwrap_or(value),
+                    expected_name,
+                    "manifest package name changed unexpectedly"
+                );
+            }
+            if let Some(value) = trimmed.strip_prefix("version = \"") {
+                return value.strip_suffix('\"').unwrap_or(value).to_owned();
+            }
+        }
+    }
+    panic!("manifest omitted package version for {expected_name}");
 }

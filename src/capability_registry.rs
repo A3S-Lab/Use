@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use a3s_use_core::{
-    CapabilityDescriptor, CapabilityGatewayCatalog, InstallationId, InstalledPluginPlanEvidence,
-    OkfCapabilityProjection, PlanScope, PluginSurfaceRef, Readiness, UseError, UseResult,
+    CapabilityDescriptionProof, CapabilityDescriptor, CapabilityGatewayCatalog, InstallationId,
+    InstalledPluginPlanEvidence, OkfCapabilityProjection, PlanScope, PluginSurfaceRef, Readiness,
+    UseError, UseResult,
 };
 #[cfg(feature = "extensions")]
 use a3s_use_core::{
@@ -319,6 +320,24 @@ impl CapabilityRegistrySnapshot {
         }
 
         CapabilityGatewayCatalog::new(self.installation.clone(), self.generation, descriptors)
+    }
+
+    /// Materialize a Gateway catalog from host-verified descriptions.  The
+    /// proof envelope is consumed before the ordinary snapshot projection so
+    /// a caller cannot accidentally bypass the signed-description hand-off
+    /// when composing a production Gateway.
+    pub fn capability_gateway_catalog_from_verified_descriptions(
+        &self,
+        proofs: Vec<CapabilityDescriptionProof>,
+    ) -> UseResult<CapabilityGatewayCatalog> {
+        let descriptors = proofs
+            .into_iter()
+            .map(|proof| {
+                proof.validate()?;
+                Ok(proof.into_descriptor())
+            })
+            .collect::<UseResult<Vec<_>>>()?;
+        self.capability_gateway_catalog(descriptors)
     }
 
     #[cfg(feature = "extensions")]
@@ -2822,6 +2841,27 @@ extension "acme/workflow" {
             .unwrap();
         assert_eq!(catalog.installation(), &snapshot.installation);
         assert_eq!(catalog.generation(), snapshot.generation);
+        assert_eq!(catalog.descriptors(), &[descriptor]);
+    }
+
+    #[test]
+    fn gateway_catalog_projection_accepts_only_a_host_verified_description() {
+        let descriptor = gateway_projection_descriptor(
+            "acme/assistant",
+            7,
+            &format!("sha256:{}", "a".repeat(64)),
+            &format!("sha256:{}", "b".repeat(64)),
+            &format!("sha256:{}", "c".repeat(64)),
+        );
+        let snapshot = gateway_projection_snapshot(&descriptor, true, true);
+        let proof = a3s_use_core::CapabilityDescriptionProof::from_verified(
+            descriptor.clone(),
+            "registry/official",
+        )
+        .unwrap();
+        let catalog = snapshot
+            .capability_gateway_catalog_from_verified_descriptions(vec![proof])
+            .unwrap();
         assert_eq!(catalog.descriptors(), &[descriptor]);
     }
 
