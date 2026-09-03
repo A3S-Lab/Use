@@ -103,6 +103,7 @@ pub use enablement_plan::{
 };
 #[cfg(test)]
 pub(crate) use grant::reconstruct_planned_workspace_grants;
+pub(crate) use grant::PlannedWorkspaceGrantOperation;
 pub use grant::{
     bind_cognitive_package_grant_impacts, bind_cognitive_package_grants,
     reconstruct_cognitive_package_grants, CognitivePackageAuthorizationEvidence,

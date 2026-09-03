@@ -667,17 +667,19 @@ reconstructs the full plan from its committed semantics digest and rechecks
 exact provider evidence. The installation-scoped, host-owned
 `RuntimeSurfacePlanStore` is also qualified as a canonical digest-addressed
 payload source with bounded batch publication, no-clobber writes, restart-safe
-reads, and fail-closed tamper checks. Production still needs to bind
-write-before-commit plan publication to lifecycle conversion and complete the
-atomic dispatcher composition; a process-local selection must never become
-production authority, and no adapter may read legacy authority or treat a path
-as authority.
-An internal qualification composition now derives the complete Control
-transition from a registered reviewed operation, validates exact Runtime
-prepare coverage and reviewed Grant proposal digests, and publishes immutable
-plan bytes before the projected generation under one shared installation
-maintenance fence. This narrows the production cutover boundary without
-activating the private kernel or accepting caller-selected transition fields.
+reads, and fail-closed tamper checks. An inactive lifecycle admission seam now
+accepts the canonical cognitive-package Plan envelope, authorization evidence,
+and optional planned Grant transition. It derives both prior Control cursors
+from the immutable Plan and accepts no caller-selected generation. Its combined
+qualification entry point retains one installation-wide maintenance fence while
+registering the exact reviewed operation, deriving the complete Control
+transition, validating exact Runtime prepare coverage and reviewed Grant
+proposal digests, publishing immutable plan bytes, and committing the projected
+generation. Production still needs to route the live lifecycle through this
+seam and complete the atomic dispatcher composition; a
+process-local selection must never become production authority, and no adapter
+may read legacy authority or treat a path as authority. This narrows the
+production cutover boundary without activating the private kernel.
 
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do

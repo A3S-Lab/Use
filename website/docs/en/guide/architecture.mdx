@@ -301,15 +301,19 @@ dispatcher to committed Control authority and immutable artifacts. The
 installation-scoped, host-owned `RuntimeSurfacePlanStore` is now the qualified
 source: it uses canonical digest addressing, bounded batch publication,
 no-clobber writes, restart-safe reads, and fail-closed tamper checks. It owns
-payload bytes, not desired state, so lifecycle conversion must publish exact
-new records before the corresponding Control commit. The process-local Runtime
-selection used for qualification is not production authority.
-The qualification composition now has one reviewed-operation-only entry point.
-Control projects graph, Grant, provider, capability, and effect fields from the
-durable operation, checks exact Runtime prepare coverage and reviewed Grant
-proposal digests, then publishes immutable plan bytes before committing the
-projected generation under one shared installation fence. This is an internal
-cutover proof, not a public API or production lifecycle wiring.
+payload bytes, not desired state, so exact new records must publish before the
+corresponding Control commit. The process-local Runtime selection used for
+qualification is not production authority. The inactive lifecycle admission
+seam accepts the canonical cognitive-package Plan, authorization evidence, and
+optional planned Grant transition. It derives both prior Control cursors from
+the immutable Plan and accepts no caller-selected generation. The combined
+qualification entry point retains one installation-wide fence while registering
+the exact reviewed operation, projecting graph, Grant, provider, capability,
+and effect fields, checking exact Runtime prepare coverage and reviewed Grant
+proposal digests, publishing immutable plan bytes, and committing the projected
+generation. Production still must route the live lifecycle through this seam.
+This is an internal cutover proof, not a
+public API or production lifecycle wiring.
 A private path-free registry also freezes the six external payload-owner IDs
 and exact ACL backup policies. Artifact Store exclusion is explicit; the five
 snapshotted owners must produce one complete, generation-bound canonical

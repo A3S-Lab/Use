@@ -351,18 +351,20 @@ Runtime/Gateway recovery evidence, replays final receipts without Artifact
 access, and treats every post-effect ambiguity as unknown. These ports are not
 production-composed yet. The qualified host-owned
 `RuntimeSurfacePlanStore` now gives production a bounded, canonical,
-no-clobber payload source, but lifecycle conversion must publish the exact
-records before committing their Control effects. Production must reconstruct
-the complete Runtime plan after restart from that source plus exact committed
-semantics evidence and immutable artifacts, then cut over the dispatcher
-without any legacy mutable-file authority.
-The qualification composition now exercises the intended ordering through one
-internal reviewed-operation entry point. It projects every mutable transition
-field from the durable operation, validates exact Runtime prepare coverage and
-reviewed Grant proposal digests, publishes the immutable plan records, and
-commits the projected generation while one shared installation maintenance
-guard remains held. This is a cutover proof, not production wiring; the
-production lifecycle still does not construct the kernel.
+no-clobber payload source. The inactive lifecycle admission seam accepts the
+canonical cognitive-package Plan envelope, authorization evidence, and optional
+planned Grant transition, derives both prior Control cursors from that immutable
+Plan, and accepts no caller-selected generation. Its combined qualification
+entry point retains one shared installation guard while registering the exact
+reviewed operation, projecting every mutable transition field from the durable
+operation, validating exact Runtime prepare coverage and reviewed Grant proposal
+digests, publishing the immutable plan records, and committing the projected
+generation. Production must route the live lifecycle
+through this seam, reconstruct Runtime plans after restart from the durable
+source plus committed semantics evidence and immutable artifacts, and cut over
+the dispatcher without any legacy mutable-file authority. This is a cutover
+proof, not production wiring; the production lifecycle still does not construct
+the kernel.
 
 The kernel uses WAL with full synchronous durability and foreign-key
 enforcement, rejects unknown schema or filesystem state, and serializes
@@ -533,8 +535,8 @@ real-child-process matrix covers 21 top-level durable exits, including every
 retirement boundary. The canonical `attempt.json` and complete `activation.json`
 then remain as the exact installation-bound terminal receipt. Legacy backup and
 artifact reachability exclude only that receipt; incomplete, extended, linked,
-or tampered evidence fails closed. Production lifecycle conversion and
-dispatch, backup/restore wiring, indivisible reader/writer cutover, and deletion
+or tampered evidence fails closed. Production lifecycle routing and dispatch,
+backup/restore wiring, indivisible reader/writer cutover, and deletion
 of legacy mutable stores remain open; activating or mirroring the kernel before
 that coordinated change would violate this decision.
 

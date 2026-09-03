@@ -1466,8 +1466,15 @@ no-follow, crash-replayable, and path-free. The Index is derived operational
 state excluded from backup and must be rebuilt from restored Control evidence;
 lease files are excluded as well. A real composition test joins Knowledge,
 Skill, Capability Index, Control publication, stale admission, and drain.
-Production lifecycle conversion still must feed authorization-v2 Grant
-evidence and compose the dispatcher. The inactive kernel now also has a
+The inactive composition now accepts the canonical cognitive-package Plan
+envelope, authorization evidence, and optional planned Grant transition at one
+lifecycle admission seam. It derives the prior installation and capability
+cursors from the immutable Plan instead of accepting caller-selected values.
+Its combined composition entry point retains one installation-wide fence while
+it registers the exact reviewed operation, publishes Runtime plan payloads,
+and commits the projected generation before any provider effect. Production
+still must route the live lifecycle through this seam and compose the
+dispatcher. The inactive kernel now also has a
 committed-authority Flow owner: it reads a bounded Flow
 source as a path-free verified Artifact Store payload, publishes a durable
 no-clobber content-addressed copy in an owner-controlled workspace, and invokes
@@ -1495,12 +1502,12 @@ reconstruct the full plan after restart and recheck provider evidence. This
 owner is still qualification-only: production composition must supply the
 durable host source and atomic dispatcher rather than retain a process-local
 selection as authority.
-The inactive Control composition proof now accepts only a reviewed operation
-identity and host-produced immutable plan payloads. It projects all mutable
-transition fields inside Control, validates exact Runtime publication and Grant
-authority, and orders plan publication before the generation commit under one
-shared installation fence. This narrows the cutover boundary without making
-the private kernel or legacy consumers production-active.
+The inactive Control composition proof then accepts only the registered
+operation identity and host-produced immutable plan payloads. It projects all
+mutable transition fields inside Control, validates exact Runtime publication
+and Grant authority, and orders plan publication before the generation commit
+under one shared installation fence. This narrows the cutover boundary without
+making the private kernel or legacy consumers production-active.
 The kernel now
 also qualifies the path-free
 external-payload registration and

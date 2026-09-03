@@ -13,8 +13,10 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use a3s_runtime::RuntimeClientRegistry;
-use a3s_use_core::{PluginSurfaceRef, UseError, UseResult};
-use a3s_use_extension::{ArtifactStore, ExtensionPaths, StateMaintenanceLock};
+use a3s_use_core::{PluginOperationPlanEnvelope, PluginSurfaceRef, UseError, UseResult};
+use a3s_use_extension::{
+    ArtifactStore, ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock,
+};
 
 use super::dispatcher::{
     ControlEffectClock, ControlEffectDispatchRequest, ControlEffectDispatchResult,
@@ -27,9 +29,13 @@ use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
 use super::effect_port::ControlFlowEffectPort;
 use super::model::{
     ControlEffectKind, ControlEffectOwner, ControlEffectSubject, ControlGeneration,
-    ControlTransition, ReviewedControlOperation,
+    ControlOperationRecord, ControlTransition, ReviewedControlOperation,
 };
+use super::operation_admission::reviewed_cognitive_package_operation;
 use super::{ControlStore, ControlStoreMetadata};
+use crate::cognitive_package::{
+    CognitivePackageAuthorizationEvidence, PlannedWorkspaceGrantOperation,
+};
 use crate::okf_knowledge::{
     OkfKnowledgeBindingStore, OkfKnowledgeClient, SqliteOkfKnowledgeAdapter,
 };
@@ -61,7 +67,9 @@ pub(in crate::control_store) struct ControlEffectCompositionDependencies {
 /// Runtime plan publication and the following Control commit are performed
 /// with [`Self::commit_reviewed_operation_with_runtime_plans`], which retains
 /// one installation-wide shared maintenance fence across both local
-/// boundaries.
+/// boundaries. The lifecycle-facing
+/// [`Self::admit_and_commit_cognitive_package_operation_with_runtime_plans`]
+/// entry point adds reviewed Plan admission to that same fenced sequence.
 #[derive(Clone)]
 pub(in crate::control_store) struct ControlStoreRuntimeComposition {
     store: ControlStore,
@@ -150,6 +158,64 @@ impl ControlStoreRuntimeComposition {
         self.store.initialize().await
     }
 
+    /// Persist one exact reviewed cognitive-package operation before any
+    /// external effect or immutable Runtime plan publication.
+    ///
+    /// The Plan owns the intended target state and capability cursors. This
+    /// boundary derives their prior values instead of accepting caller-selected
+    /// generations, then delegates the compare-and-set to the Control Store.
+    pub(in crate::control_store) async fn register_cognitive_package_operation(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        authorization: &CognitivePackageAuthorizationEvidence,
+        grants: Option<&PlannedWorkspaceGrantOperation>,
+        reviewed_at_ms: u64,
+    ) -> UseResult<ControlOperationRecord> {
+        let reviewed =
+            reviewed_cognitive_package_operation(envelope, authorization, grants, reviewed_at_ms)?;
+        self.store.register_operation(reviewed).await
+    }
+
+    /// Admit and commit one cognitive-package lifecycle operation with its
+    /// Runtime plan payloads under one installation-wide shared fence.
+    ///
+    /// The reviewed Plan and authorization evidence are converted first. The
+    /// held fence then orders the durable boundaries as: Control registration,
+    /// transition projection, immutable Runtime publication, and Control
+    /// commit. No SQLite transaction is held across Runtime plan I/O, and a
+    /// failed publication leaves the reviewed operation available for an exact
+    /// retry or explicit cancellation.
+    pub(in crate::control_store) async fn admit_and_commit_cognitive_package_operation_with_runtime_plans(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        authorization: &CognitivePackageAuthorizationEvidence,
+        grants: Option<&PlannedWorkspaceGrantOperation>,
+        reviewed_at_ms: u64,
+        committed_at_ms: u64,
+        publications: &[RuntimeSurfacePlanPublication],
+    ) -> UseResult<ControlGeneration> {
+        let reviewed =
+            reviewed_cognitive_package_operation(envelope, authorization, grants, reviewed_at_ms)?;
+        let operation_id = reviewed.operation_id().to_string();
+        // Reference admission must cover registration as well as publication:
+        // the reviewed transition may retain package/artifact references while
+        // the external plan bytes are being published.
+        let _artifact_admission = self.artifact_store.acquire_reference_admission().await?;
+        let maintenance = StateMaintenanceLock::new(&self.store.state_root)
+            .acquire_shared()
+            .await?;
+        self.store
+            .register_operation_under_maintenance(reviewed)
+            .await?;
+        self.commit_registered_operation_under_maintenance(
+            &maintenance,
+            &operation_id,
+            committed_at_ms,
+            publications,
+        )
+        .await
+    }
+
     pub(in crate::control_store) async fn dispatch_next(
         &self,
         request: ControlEffectDispatchRequest,
@@ -200,6 +266,22 @@ impl ControlStoreRuntimeComposition {
         let _maintenance = StateMaintenanceLock::new(&self.store.state_root)
             .acquire_shared()
             .await?;
+        self.commit_registered_operation_under_maintenance(
+            &_maintenance,
+            operation_id,
+            committed_at_ms,
+            publications,
+        )
+        .await
+    }
+
+    async fn commit_registered_operation_under_maintenance(
+        &self,
+        _maintenance: &StateMaintenanceGuard,
+        operation_id: &str,
+        committed_at_ms: u64,
+        publications: &[RuntimeSurfacePlanPublication],
+    ) -> UseResult<ControlGeneration> {
         let (reviewed, transition) = self
             .store
             .project_transition_under_maintenance(operation_id, committed_at_ms)
@@ -207,7 +289,7 @@ impl ControlStoreRuntimeComposition {
         validate_runtime_publications(&transition, publications)?;
         validate_runtime_publication_authority(&reviewed, publications)?;
         self.plan_store
-            .publish_under_maintenance(&_maintenance, publications)
+            .publish_under_maintenance(_maintenance, publications)
             .await?;
         self.store
             .commit_transition_under_maintenance(transition)

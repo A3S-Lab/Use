@@ -530,16 +530,18 @@ defer; invalid authority or content rejects; any uncertainty after Runtime,
 Gateway, or receipt mutation is unknown. Production composition now has a
 qualified installation-scoped, host-owned `RuntimeSurfacePlanStore` and
 restart-safe committed-plan resolver. The store is a bounded immutable payload
-source, not authority; lifecycle conversion must publish exact plan records
-before the corresponding Control commit. The process-local selection used by
-qualification tests remains non-authoritative and must not be used by
-production.
-The inactive composition proof uses a reviewed-operation-only entry point. It
-derives the complete transition inside Control, verifies one publication for
-each Runtime prepare and the exact reviewed Grant proposal digest, then
-publishes the immutable records before the generation commit while retaining
-one installation-wide shared maintenance guard. This internal proof does not
-make the private kernel or its legacy consumers production-active.
+source, not authority; exact plan records must publish before the corresponding
+Control commit. The process-local selection used by qualification tests remains
+non-authoritative and must not be used by production. The inactive lifecycle
+admission seam accepts the canonical cognitive-package Plan, authorization
+evidence, and optional planned Grant transition, derives both prior Control
+cursors from the immutable Plan, and accepts no caller-selected generation.
+The combined composition proof retains one installation-wide shared maintenance
+guard while registering the exact reviewed operation, deriving the complete
+transition inside Control, verifying one publication for each Runtime prepare
+and the exact reviewed Grant proposal digest, and publishing the immutable
+records before the generation commit. This internal proof does not make
+the private kernel or its legacy consumers production-active.
 
 The lifecycle diagnostic is a read-only JSON projection, not a mutable disk
 record or recovery input. It reports latest/previous operation identity,

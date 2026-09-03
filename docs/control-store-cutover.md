@@ -330,17 +330,18 @@ installation-scoped, host-owned `RuntimeSurfacePlanStore` supplies canonical
 digest-addressed records with bounded batch publication, no-clobber writes,
 restart-safe reads, and fail-closed tamper detection. It owns payload bytes,
 not desired state; a production transition must publish its exact new records
-before the Control commit references them. Remaining gate-3 work is binding
-that publication to lifecycle conversion, composing the resolver with the
-production dispatcher, and converting lifecycle inputs into these reviewed
-owner requests.
-An internal qualification composition now derives a transition directly from
-the registered reviewed operation instead of accepting caller-selected graph,
-Grant, provider, capability, or effect fields. It validates the exact Runtime
-prepare inventory and proposal digests, publishes plan payloads first, and
-commits the derived generation under the same shared maintenance guard. The
-entry point remains private and inactive until the complete lifecycle cutover
-and legacy-authority deletion gates pass.
+before the Control commit references them. The inactive lifecycle admission
+seam now converts the canonical cognitive-package Plan, authorization evidence,
+and optional planned Grant transition into one reviewed Control operation. It
+derives the prior installation and capability cursors from the immutable Plan
+and accepts no caller-selected generation. Its combined qualification entry
+point retains the same shared maintenance guard while registering the operation,
+deriving a transition directly from that durable operation, validating the exact
+Runtime prepare inventory and proposal digests, publishing plan payloads first,
+and committing the derived generation. Remaining gate-3
+work is routing the live lifecycle through this seam and composing the resolver
+with the production dispatcher. The entry point remains private and inactive
+until the complete lifecycle cutover and legacy-authority deletion gates pass.
 
 Production activation is blocked until all gates below are true:
 

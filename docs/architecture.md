@@ -216,18 +216,19 @@ no-clobber writes, restart-safe reads, and fail-closed tamper checks. It is a
 payload owner rather than a second authority: a production transition must
 publish every new plan before its Control commit can reference the effect. A
 host can then reconstruct the plan after restart and reconnect the exact
-provider while rechecking plan semantics and capability evidence. Lifecycle
-conversion still must feed reviewed Grant evidence and compose this resolver
-into one production dispatcher; all inputs must come only from committed
-Control authority and immutable artifacts.
-The inactive qualification composition now provides one internal
-reviewed-operation entry point: the Control Store projects graph, Grant,
-provider, capability, and effect fields from the durable operation, checks the
-exact Runtime prepare inventory and reviewed Grant proposal digests, then
-publishes immutable plan bytes before committing the projected generation under
-one shared installation fence. This proves the ordering and authority
-boundary, but it is not a public API and production lifecycle code still does
-not construct it.
+provider while rechecking plan semantics and capability evidence. The inactive
+lifecycle admission seam now accepts the canonical cognitive-package Plan,
+authorization evidence, and optional planned Grant transition, and derives both
+prior Control cursors from the immutable Plan. Its combined qualification entry
+point retains one installation-wide fence while registering the exact reviewed
+operation, projecting graph, Grant, provider, capability, and effect fields,
+checking the exact Runtime prepare inventory and reviewed Grant proposal
+digests, publishing immutable plan bytes, and committing the projected
+generation. Production still must route the live lifecycle through this seam and
+compose the committed resolver into one dispatcher using only Control authority
+and immutable artifacts. This
+proves the ordering and authority boundary, but it is not a public API and
+production lifecycle code still does not construct it.
 The inactive kernel now has a path-free external-payload registry/evidence
 contract: six fixed owner identities and ACL backup policies, explicit global
 Artifact Store exclusion, and one exact canonical receipt set for the five
