@@ -312,6 +312,41 @@ fn gateway_limits_and_http_credentials_fail_closed() {
         .unwrap()
         .with_allowed_origin("https://agent example")
         .is_err());
+
+    assert!(CapabilityGatewayHttpConfig::for_principals(Vec::<(String, String)>::new()).is_err());
+    assert!(CapabilityGatewayHttpConfig::for_principals(vec![
+        ("duplicate-token", "agent/one"),
+        ("duplicate-token", "agent/two"),
+    ])
+    .is_err());
+    assert!(
+        CapabilityGatewayHttpConfig::for_principals(vec![("bad token", "agent/invalid",)]).is_err()
+    );
+    let too_many = (0..65)
+        .map(|index| (format!("token-{index}"), format!("agent/{index}")))
+        .collect::<Vec<_>>();
+    assert!(CapabilityGatewayHttpConfig::for_principals(too_many).is_err());
+    assert!(CapabilityGatewayHttpConfig::for_principals(vec![
+        ("one-token", "agent/one"),
+        ("two-token", "agent/two"),
+    ])
+    .unwrap()
+    .with_principal("agent/ambiguous")
+    .is_err());
+
+    let multi_debug = format!(
+        "{:?}",
+        CapabilityGatewayHttpConfig::for_principals(vec![
+            ("first-secret", "agent/one"),
+            ("second-secret", "agent/two"),
+        ])
+        .unwrap()
+    );
+    assert!(multi_debug.contains("[redacted]"));
+    assert!(multi_debug.contains("agent/one"));
+    assert!(multi_debug.contains("agent/two"));
+    assert!(!multi_debug.contains("first-secret"));
+    assert!(!multi_debug.contains("second-secret"));
 }
 
 #[test]
@@ -597,6 +632,85 @@ async fn streamable_http_accepts_a_standard_rust_client_without_shared_filesyste
     }
 
     client.cancel().await.unwrap();
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn streamable_http_maps_each_bearer_credential_to_its_principal() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let provider = Arc::new(RecordingProvider::default());
+    let config = CapabilityGatewayHttpConfig::for_principals(vec![
+        ("alpha-secret", "agent/alpha"),
+        ("beta-secret", "agent/beta"),
+    ])
+    .unwrap();
+    let server =
+        CapabilityGatewayMcpServer::new(test_catalog(test_descriptor()), provider.clone()).unwrap();
+    let server_handle =
+        tokio::spawn(server.serve_streamable_http(listener, config, shutdown.clone()));
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    let alpha_transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("alpha-secret"),
+    );
+    let alpha = TestClient.serve(alpha_transport).await.unwrap();
+    alpha
+        .call_tool(CallToolRequestParam {
+            name: "search".into(),
+            arguments: Some(
+                serde_json::json!({ "query": "alpha" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .unwrap();
+    alpha.cancel().await.unwrap();
+
+    let beta_transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("beta-secret"),
+    );
+    let beta = TestClient.serve(beta_transport).await.unwrap();
+    beta.call_tool(CallToolRequestParam {
+        name: "search".into(),
+        arguments: Some(
+            serde_json::json!({ "query": "beta" })
+                .as_object()
+                .unwrap()
+                .clone(),
+        ),
+    })
+    .await
+    .unwrap();
+    beta.cancel().await.unwrap();
+
+    {
+        let calls = provider.calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].1["query"], "alpha");
+        assert_eq!(
+            calls[0]
+                .2
+                .principal()
+                .map(CapabilityGatewayPrincipal::as_str),
+            Some("agent/alpha")
+        );
+        assert_eq!(calls[1].1["query"], "beta");
+        assert_eq!(
+            calls[1]
+                .2
+                .principal()
+                .map(CapabilityGatewayPrincipal::as_str),
+            Some("agent/beta")
+        );
+    }
+
     shutdown.cancel();
     server_handle.await.unwrap().unwrap();
 }
