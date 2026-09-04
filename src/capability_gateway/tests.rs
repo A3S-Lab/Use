@@ -678,6 +678,49 @@ async fn catalog_store_publishes_canonical_content_addressed_records() {
     assert_eq!(inventory, vec![publication]);
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn catalog_store_resolves_an_ancestor_alias_before_no_follow_io() {
+    use std::os::unix::fs::symlink;
+
+    let logical_parent = tempfile::tempdir().unwrap();
+    let physical_parent = tempfile::tempdir().unwrap();
+    let alias = logical_parent.path().join("state-alias");
+    symlink(physical_parent.path(), &alias).unwrap();
+    let catalog = test_catalog(test_descriptor());
+    let state_root = alias.join("installation");
+    let store =
+        CapabilityGatewayCatalogStore::new(&state_root, catalog.installation().clone()).unwrap();
+
+    let publication = store.publish(&catalog).await.unwrap();
+
+    assert_eq!(store.get(&publication.digest).await.unwrap(), Some(catalog));
+    assert!(physical_parent
+        .path()
+        .join("installation/capability-gateway/catalogs")
+        .is_dir());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn catalog_store_rejects_a_linked_state_root() {
+    use std::os::unix::fs::symlink;
+
+    let logical_parent = tempfile::tempdir().unwrap();
+    let physical_parent = tempfile::tempdir().unwrap();
+    let state_root = logical_parent.path().join("state");
+    symlink(physical_parent.path(), &state_root).unwrap();
+    let catalog = test_catalog(test_descriptor());
+    let store =
+        CapabilityGatewayCatalogStore::new(&state_root, catalog.installation().clone()).unwrap();
+
+    let error = store.publish(&catalog).await.unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_catalog_store_invalid"
+    );
+}
+
 #[tokio::test]
 async fn catalog_store_rejects_scope_drift_and_tampered_records() {
     let temporary = tempfile::tempdir().unwrap();
