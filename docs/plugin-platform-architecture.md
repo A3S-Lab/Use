@@ -621,6 +621,14 @@ durably publish the replacement catalog, route new sessions to it, and keep
 the old lease through drain. The Control lifecycle still has to persist the
 complete agent-facing descriptor catalog and connect its cutover to this hub.
 
+The payload-owner side is now explicit: `CapabilityGatewayCatalogStore` stores
+the canonical catalog bytes under an installation-scoped, bounded SHA-256
+layout. It uses deterministic crash staging, no-follow path checks, and
+create-if-absent hard-link publication, then permits exact digest plus
+generation/revision reads after restart. This store is intentionally not a
+Control cursor or a latest pointer; lifecycle cutover, session retirement, and
+catalog retention remain higher-level authorities.
+
 ## Storage model
 
 Use separates global immutable/derivable inputs from installation authority.
