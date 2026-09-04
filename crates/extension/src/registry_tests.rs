@@ -80,6 +80,122 @@ async fn receipt_writer_rejects_an_oversized_record_before_publication() {
             .starts_with(".receipt-")));
 }
 
+#[tokio::test]
+async fn published_snapshot_rejects_an_oversized_file_before_reading_it() {
+    let temporary = tempfile::tempdir().unwrap();
+    let registry = registry(temporary.path());
+    let parent = registry.paths().installation_state_root();
+    tokio::fs::create_dir_all(&parent).await.unwrap();
+    let path = registry.paths().registry_snapshot_path();
+    tokio::fs::write(
+        &path,
+        vec![b'{'; crate::registry_io::MAX_EXTENSION_REGISTRY_SNAPSHOT_BYTES as usize + 1],
+    )
+    .await
+    .unwrap();
+
+    let error = registry.published_snapshot().await.unwrap_err();
+
+    assert_eq!(error.code, "use.extension.registry_invalid");
+    assert!(error.message.contains("bounded owned regular file"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn published_snapshot_rejects_a_symlinked_target() {
+    use std::os::unix::fs::symlink;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let registry = registry(temporary.path());
+    let parent = registry.paths().installation_state_root();
+    tokio::fs::create_dir_all(&parent).await.unwrap();
+    let external = temporary.path().join("external-registry.json");
+    let snapshot = ExtensionRegistrySnapshot::empty(registry.installation().clone()).unwrap();
+    tokio::fs::write(&external, serde_json::to_vec(&snapshot).unwrap())
+        .await
+        .unwrap();
+    symlink(&external, registry.paths().registry_snapshot_path()).unwrap();
+
+    let error = registry.published_snapshot().await.unwrap_err();
+
+    assert_eq!(error.code, "use.extension.registry_invalid");
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test]
+async fn published_snapshot_rejects_a_linked_state_directory_without_following_it() {
+    let temporary = tempfile::tempdir().unwrap();
+    let registry = registry(temporary.path());
+    let state_root = registry.paths().use_paths().state_root().to_path_buf();
+    let external = temporary.path().join("external-state");
+    tokio::fs::create_dir_all(&external).await.unwrap();
+    tokio::fs::create_dir_all(&state_root).await.unwrap();
+    let installations = state_root.join("installations");
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(external, &installations).unwrap();
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&installations)
+            .arg(&external)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "mklink /J failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let error = registry.published_snapshot().await.unwrap_err();
+
+    assert_eq!(error.code, "use.extension.registry_invalid");
+    assert!(!registry.paths().registry_snapshot_path().exists());
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test]
+async fn registry_writer_rejects_a_linked_state_directory_without_external_write() {
+    let temporary = tempfile::tempdir().unwrap();
+    let registry = registry(temporary.path());
+    let state_root = registry.paths().use_paths().state_root().to_path_buf();
+    let external = temporary.path().join("external-state");
+    tokio::fs::create_dir_all(&external).await.unwrap();
+    tokio::fs::create_dir_all(&state_root).await.unwrap();
+    let installations = state_root.join("installations");
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&external, &installations).unwrap();
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&installations)
+            .arg(&external)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "mklink /J failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let snapshot = ExtensionRegistrySnapshot::empty(registry.installation().clone()).unwrap();
+    let error = crate::registry_io::write_registry_snapshot(registry.paths(), &snapshot)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.extension.registry_invalid");
+    assert!(std::fs::read_dir(external).unwrap().next().is_none());
+}
+
 fn registry(root: &Path) -> ExtensionRegistry {
     ExtensionRegistry::new(
         ExtensionPaths::new(

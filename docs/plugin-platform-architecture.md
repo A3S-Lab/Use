@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Architecture
 
 Status: development preview
-Last updated: 2026-09-03
+Last updated: 2026-09-05
 
 ## Executive decision
 
@@ -590,6 +590,16 @@ receipt/publication mismatch after a crash. Lifecycle mutations absorb this
 short reconciliation window with a bounded asynchronous wait, while a real
 concurrent writer still returns `use.extension.busy`. The wait never turns a
 read into an unbounded mutation queue.
+
+The authoritative `registry.json` file is itself treated as a hostile mutable
+boundary. Its complete configured state-directory chain must be an owned,
+non-link directory; the final file is opened with no-follow/reparse protection,
+is limited to 4 MiB before allocation and JSON decoding, and is revalidated for
+file identity and length after the read. Publication creates missing directories
+one component at a time inside the configured state root, flushes and syncs a
+bounded temporary file, and atomically replaces the target. A linked,
+oversized, redirected, or concurrently replaced snapshot fails closed rather
+than becoming lifecycle or capability authority.
 
 ## Storage model
 
