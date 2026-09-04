@@ -258,8 +258,11 @@ Acceptance:
   canonical bytes, uses bounded SHA-256 content addressing, no-follow path
   checks, deterministic crash staging, and create-if-absent hard-link
   publication, and supports exact digest/generation/revision reads after
-  restart. The store intentionally has no mutable current pointer; Control
-  cutover binding, session replacement/drain, and retention/GC remain open.
+ restart. The store intentionally has no mutable current pointer; Control
+ cutover binding, session replacement/drain, and retention/GC remain open.
+The store is exposed through the standalone `capability-catalog` Cargo feature
+and included by both `mcp` and `extensions`, so a headless manager can own the
+durable payload before composing an MCP endpoint.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,

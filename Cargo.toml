@@ -76,7 +76,7 @@ extensions = [
     "dep:a3s-use-extension",
     "dep:a3s-runtime",
     "dep:async-trait",
-    "dep:fs2",
+    "capability-catalog",
     "dep:libc",
     "dep:olpc-cjson",
     "dep:pulldown-cmark",
@@ -84,11 +84,12 @@ extensions = [
     "dep:semver",
     "dep:tempfile",
 ]
+capability-catalog = ["dep:fs2"]
 mcp = [
     "dep:axum",
     "dep:async-trait",
     "dep:base64",
-    "dep:fs2",
+    "capability-catalog",
     "dep:getrandom",
     "dep:jsonschema",
     "dep:libc",
