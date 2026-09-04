@@ -214,6 +214,44 @@ struct PrincipalPolicyProvider {
     calls: Mutex<Vec<CapabilityGatewayRequestContext>>,
 }
 
+#[derive(Debug, Default)]
+struct PrincipalDiscoveryPolicy {
+    evaluations: AtomicUsize,
+}
+
+#[async_trait]
+impl CapabilityGatewayDiscoveryPolicy for PrincipalDiscoveryPolicy {
+    async fn is_visible(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<bool> {
+        self.evaluations.fetch_add(1, Ordering::SeqCst);
+        let is_private = descriptor.title == "Private";
+        Ok(!is_private
+            || context
+                .principal()
+                .is_some_and(|principal| principal.as_str() == "agent/allowed"))
+    }
+}
+
+#[derive(Debug, Default)]
+struct FailingDiscoveryPolicy;
+
+#[async_trait]
+impl CapabilityGatewayDiscoveryPolicy for FailingDiscoveryPolicy {
+    async fn is_visible(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<bool> {
+        Err(UseError::new(
+            "host.private_discovery_failure",
+            "private policy backend credentials must not cross the Gateway boundary",
+        ))
+    }
+}
+
 #[derive(Debug)]
 struct LeaseProbeResolver {
     expected: InvocationRef,
@@ -344,6 +382,58 @@ fn gateway_admission_is_bounded_and_shared() {
     assert_eq!(
         admission.try_acquire().unwrap_err(),
         AdmissionFailure::RateLimited
+    );
+}
+
+#[tokio::test]
+async fn discovery_policy_errors_are_sanitized_and_fail_closed() {
+    let server = CapabilityGatewayMcpServer::new(
+        test_catalog(test_descriptor()),
+        Arc::new(RecordingProvider::default()),
+    )
+    .unwrap()
+    .with_discovery_policy(Arc::new(FailingDiscoveryPolicy));
+    let error = server
+        .discovery_view(&CapabilityGatewayRequestContext::stdio())
+        .await
+        .expect_err("a discovery backend failure must not produce a view");
+    assert_eq!(error.code, rmcp::model::ErrorCode::INTERNAL_ERROR);
+    assert_eq!(
+        error.data.as_ref().and_then(|data| data["code"].as_str()),
+        Some(MCP_DISCOVERY_ERROR)
+    );
+    let serialized = serde_json::to_string(&error).unwrap();
+    assert!(!serialized.contains("private policy backend"));
+    assert!(!serialized.contains("host.private_discovery_failure"));
+}
+
+#[tokio::test]
+async fn discovery_context_cache_is_bounded() {
+    let server = CapabilityGatewayMcpServer::new(
+        test_catalog(test_descriptor()),
+        Arc::new(RecordingProvider::default()),
+    )
+    .unwrap();
+    for index in 0..64 {
+        let principal = CapabilityGatewayPrincipal::parse(format!("agent/{index}"))
+            .expect("test principal must be valid");
+        let context = CapabilityGatewayRequestContext::streamable_http(Some(principal));
+        server
+            .discovery_view(&context)
+            .await
+            .expect("the bounded context cache accepts its configured capacity");
+    }
+    let overflow = CapabilityGatewayRequestContext::streamable_http(Some(
+        CapabilityGatewayPrincipal::parse("agent/overflow").unwrap(),
+    ));
+    let error = server
+        .discovery_view(&overflow)
+        .await
+        .expect_err("an unbounded principal set must not grow the cache");
+    assert_eq!(error.code, rmcp::model::ErrorCode::INTERNAL_ERROR);
+    assert_eq!(
+        error.data.as_ref().and_then(|data| data["code"].as_str()),
+        Some(MCP_DISCOVERY_ERROR)
     );
 }
 
@@ -1178,6 +1268,221 @@ async fn http_principal_reaches_policy_before_invocation() {
     server_handle.await.unwrap().unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn http_principal_discovery_is_filtered_and_cached_per_context() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let provider = Arc::new(RecordingProvider::default());
+    let discovery = Arc::new(PrincipalDiscoveryPolicy::default());
+    let catalog = CapabilityGatewayCatalog::new(
+        InstallationId::new(InstallationKind::User, "user/gateway-tests").unwrap(),
+        9,
+        vec![
+            test_named_tool_descriptor("public-search", "Public", '1'),
+            test_named_tool_descriptor("private-search", "Private", '2'),
+            test_named_resource_descriptor("public-knowledge", "Public", '3'),
+            test_named_resource_descriptor("private-knowledge", "Private", '4'),
+            test_named_prompt_descriptor("public-research", "Public", '5'),
+            test_named_prompt_descriptor("private-research", "Private", '6'),
+        ],
+    )
+    .unwrap();
+    let server = CapabilityGatewayMcpServer::new(catalog, provider.clone())
+        .unwrap()
+        .with_discovery_policy(discovery.clone());
+    let server_handle = tokio::spawn(
+        server.serve_streamable_http(
+            listener,
+            CapabilityGatewayHttpConfig::for_principals(vec![
+                ("allowed-secret", "agent/allowed"),
+                ("denied-secret", "agent/denied"),
+            ])
+            .unwrap(),
+            shutdown.clone(),
+        ),
+    );
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    let allowed_transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("allowed-secret"),
+    );
+    let allowed = TestClient.serve(allowed_transport).await.unwrap();
+    let allowed_tools = allowed.list_all_tools().await.unwrap();
+    assert_eq!(
+        allowed_tools
+            .iter()
+            .map(|tool| {
+                let name: &str = tool.name.as_ref();
+                name
+            })
+            .collect::<Vec<_>>(),
+        vec!["private-search", "public-search"]
+    );
+    allowed
+        .call_tool(CallToolRequestParam {
+            name: "private-search".into(),
+            arguments: Some(
+                serde_json::json!({ "query": "allowed" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .unwrap();
+
+    let allowed_resources = allowed.list_all_resources().await.unwrap();
+    assert_eq!(allowed_resources.len(), 2);
+    assert!(allowed_resources
+        .iter()
+        .any(|resource| resource.name == "private-knowledge"));
+    let allowed_private_resource = allowed_resources
+        .iter()
+        .find(|resource| resource.name == "private-knowledge")
+        .expect("the allowed principal sees private resources");
+    allowed
+        .read_resource(ReadResourceRequestParam {
+            uri: allowed_private_resource.uri.clone(),
+        })
+        .await
+        .unwrap();
+    let allowed_prompts = allowed.list_all_prompts().await.unwrap();
+    assert_eq!(allowed_prompts.len(), 2);
+    allowed
+        .get_prompt(GetPromptRequestParam {
+            name: "private-research".to_owned(),
+            arguments: Some(
+                serde_json::json!({ "topic": "allowed" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .unwrap();
+
+    let denied_transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("denied-secret"),
+    );
+    let denied = TestClient.serve(denied_transport).await.unwrap();
+    let denied_tools = denied.list_all_tools().await.unwrap();
+    assert_eq!(denied_tools.len(), 1);
+    assert_eq!(denied_tools[0].name, "public-search");
+    let denied_resources = denied.list_all_resources().await.unwrap();
+    assert_eq!(denied_resources.len(), 1);
+    assert_eq!(denied_resources[0].name, "public-knowledge");
+    let hidden_resource = test_named_resource_descriptor("private-knowledge", "Private", '4')
+        .resource_uri()
+        .unwrap()
+        .as_str()
+        .to_owned();
+    assert!(denied
+        .read_resource(ReadResourceRequestParam {
+            uri: hidden_resource,
+        })
+        .await
+        .is_err());
+    let denied_prompts = denied.list_all_prompts().await.unwrap();
+    assert_eq!(denied_prompts.len(), 1);
+    assert_eq!(denied_prompts[0].name, "public-research");
+    assert!(denied
+        .get_prompt(GetPromptRequestParam {
+            name: "private-research".to_owned(),
+            arguments: Some(
+                serde_json::json!({ "topic": "denied" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .is_err());
+    let hidden_call = denied
+        .call_tool(CallToolRequestParam {
+            name: "private-search".into(),
+            arguments: Some(
+                serde_json::json!({ "query": "denied" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .expect_err("a hidden tool must behave like an unpublished route");
+    assert!(hidden_call
+        .to_string()
+        .contains("not part of the immutable catalog"));
+    denied
+        .call_tool(CallToolRequestParam {
+            name: "public-search".into(),
+            arguments: Some(
+                serde_json::json!({ "query": "public" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .unwrap();
+
+    // Each principal has one frozen view containing all descriptors. Later
+    // calls reuse it rather than re-evaluating policy and changing cursors.
+    assert_eq!(discovery.evaluations.load(Ordering::SeqCst), 12);
+    let calls = provider.calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(
+        calls
+            .iter()
+            .filter(
+                |call| call.2.principal().map(CapabilityGatewayPrincipal::as_str)
+                    == Some("agent/allowed")
+            )
+            .count(),
+        1
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(
+                |call| call.2.principal().map(CapabilityGatewayPrincipal::as_str)
+                    == Some("agent/denied")
+            )
+            .count(),
+        1
+    );
+    drop(calls);
+    let authorizations = provider.authorizations.lock().unwrap();
+    assert_eq!(authorizations.len(), 4);
+    assert_eq!(
+        authorizations
+            .iter()
+            .filter(
+                |context| context.principal().map(CapabilityGatewayPrincipal::as_str)
+                    == Some("agent/allowed")
+            )
+            .count(),
+        3
+    );
+    assert_eq!(
+        authorizations
+            .iter()
+            .filter(
+                |context| context.principal().map(CapabilityGatewayPrincipal::as_str)
+                    == Some("agent/denied")
+            )
+            .count(),
+        1
+    );
+
+    allowed.cancel().await.unwrap();
+    denied.cancel().await.unwrap();
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
 async fn raw_gateway_http_response(port: u16, headers: &str) -> String {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
@@ -1725,6 +2030,118 @@ fn test_descriptor() -> CapabilityDescriptor {
             annotations: CapabilityToolAnnotations::new(true, false, true, false),
         },
     }
+}
+
+fn test_named_tool_descriptor(
+    name: &str,
+    title: &str,
+    binding_letter: char,
+) -> CapabilityDescriptor {
+    let mut descriptor = test_descriptor();
+    let surface = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Tool,
+        id: format!("{name}-surface"),
+    };
+    let digest = |letter: char| format!("sha256:{}", letter.to_string().repeat(64));
+    descriptor.surface = surface.clone();
+    descriptor.title = title.to_owned();
+    descriptor.description = format!("{title} capability.");
+    descriptor.invocation_ref = InvocationRef::derive(
+        &descriptor.package_id,
+        &surface,
+        descriptor.generation,
+        &digest(binding_letter),
+    )
+    .unwrap();
+    descriptor.artifact_ref = Some(
+        ArtifactRef::derive(
+            &descriptor.package_id,
+            &surface,
+            descriptor.generation,
+            &digest('d'),
+        )
+        .unwrap(),
+    );
+    descriptor.endpoint_ref = Some(
+        EndpointRef::derive(
+            &descriptor.package_id,
+            &surface,
+            descriptor.generation,
+            &digest('e'),
+        )
+        .unwrap(),
+    );
+    if let CapabilityDescriptorKind::Tool {
+        name: tool_name, ..
+    } = &mut descriptor.capability
+    {
+        *tool_name = name.to_owned();
+    }
+    descriptor
+}
+
+fn test_named_resource_descriptor(
+    name: &str,
+    title: &str,
+    binding_letter: char,
+) -> CapabilityDescriptor {
+    let mut descriptor = test_resource_descriptor();
+    let surface = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Skill,
+        id: format!("{name}-surface"),
+    };
+    let digest = |letter: char| format!("sha256:{}", letter.to_string().repeat(64));
+    descriptor.surface = surface.clone();
+    descriptor.title = title.to_owned();
+    descriptor.description = format!("{title} resource.");
+    descriptor.invocation_ref = InvocationRef::derive(
+        &descriptor.package_id,
+        &surface,
+        descriptor.generation,
+        &digest(binding_letter),
+    )
+    .unwrap();
+    descriptor.capability = CapabilityDescriptorKind::Resource {
+        name: name.to_owned(),
+        uri: ResourceRef::derive(
+            &descriptor.package_id,
+            &surface,
+            descriptor.generation,
+            &digest(binding_letter),
+        )
+        .unwrap(),
+        mime_type: Some("text/plain".to_owned()),
+        size: Some(64),
+    };
+    descriptor
+}
+
+fn test_named_prompt_descriptor(
+    name: &str,
+    title: &str,
+    binding_letter: char,
+) -> CapabilityDescriptor {
+    let mut descriptor = test_prompt_descriptor();
+    let surface = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Skill,
+        id: format!("{name}-surface"),
+    };
+    let digest = |letter: char| format!("sha256:{}", letter.to_string().repeat(64));
+    descriptor.surface = surface.clone();
+    descriptor.title = title.to_owned();
+    descriptor.description = format!("{title} prompt.");
+    descriptor.invocation_ref = InvocationRef::derive(
+        &descriptor.package_id,
+        &surface,
+        descriptor.generation,
+        &digest(binding_letter),
+    )
+    .unwrap();
+    descriptor.capability = CapabilityDescriptorKind::Prompt {
+        name: name.to_owned(),
+        arguments: vec![CapabilityPromptArgument::new("topic", true)],
+    };
+    descriptor
 }
 
 fn test_resource_descriptor() -> CapabilityDescriptor {
