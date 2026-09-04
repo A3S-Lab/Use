@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ## Product status
 
@@ -870,6 +870,12 @@ between graph siblings before their effects enter one installation outbox.
   without weakening the lower-authority boundary. Principal-scoped discovery
   filtering is now available as a separate host policy seam; actual typed
   extension payload projection remains open.
+- [x] Propagate standard MCP request cancellation through the Capability
+  Gateway. rmcp `RequestContext.ct` now bounds Tool, Resource, and Prompt
+  provider operations; cancellation drops in-flight provider futures and
+  resolver/admission leases, with a typed secret-free boundary result when a
+  response is still deliverable. Detached downstream work remains a host
+  provider responsibility.
 - [ ] Require signed descriptions and JSON input/output schemas for every
   agent-visible Tool. Legacy executable-only Tool Tasks remain host-only until
   a schema-valid descriptor is bound to them.
@@ -991,6 +997,16 @@ policy errors are sanitized and fail closed, while the provider's per-call
 principal/Grant/generation authorization remains mandatory. Existing
 constructors retain an allow-all compatibility default, so production
 multi-principal hosts must opt in explicitly.
+
+Implementation note (2026-09-04): the standard MCP adapter now consumes rmcp's
+per-request cancellation token. Tool, Resource, and Prompt provider futures
+are selected against `RequestContext.ct`; a cancellation drops the in-flight
+future before the adapter can validate or publish a result, releasing the
+short-lived admission permit and any resolver-owned invocation lease. The
+adapter returns the bounded `use.plugin.capability_gateway_cancelled` result
+when a response remains deliverable, while the server-wide snapshot lease is
+left available to other requests. Integration tests exercise real rmcp
+`notifications/cancelled` traffic for all three operation classes.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning

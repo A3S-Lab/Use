@@ -206,6 +206,13 @@ Acceptance:
   lifetime so pagination cursors remain stable; policy failures are sanitized
   and fail closed. This information boundary remains separate from the
   provider's per-operation authorization.
+- [x] Propagate rmcp request cancellation through the standard Gateway adapter.
+  Tool, Resource, and Prompt provider futures are bounded by the request's
+  `RequestContext.ct`; cancellation drops the in-flight future and therefore
+  releases admission permits and resolver-owned invocation leases. The
+  boundary emits a typed, secret-free cancellation result when a response is
+  still deliverable, while host providers remain responsible for making any
+  detached downstream work cancellation-safe.
 - [ ] Resolve opaque references from the live Use host, integrate receipt-owned
   provider composition, and complete per-consumer authorization across exact
   package-generation leases, drain, and retirement. The embedding path already

@@ -1813,8 +1813,12 @@ denied routes disappear from discovery and direct access while the provider's
 per-operation authorization remains mandatory. Existing constructors retain
 an allow-all compatibility policy, so production multi-principal hosts must
 opt in explicitly. Flow/Knowledge/UI payload projection and production host
-composition remain separate gates. See [Capability consumer profiles](docs/capability-consumer-profiles.md)
-for the contract and its limits.
+composition remain separate gates. The adapter also consumes rmcp per-request
+cancellation: cancelling an in-flight Tool, Resource, or Prompt drops the
+provider future and its short-lived admission/resolver lease, with a typed
+secret-free cancellation result when the protocol can still deliver one. See
+[Capability consumer profiles](docs/capability-consumer-profiles.md) for the
+contract and its limits.
 
 | Area | Status |
 | --- | --- |
