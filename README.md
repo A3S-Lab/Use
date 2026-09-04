@@ -316,6 +316,16 @@ published 19 verified release assets in the
 archives, installers, checksums/Sigstore, SBOM and reproducibility evidence,
 and the `a3s-use-core 0.2.8`, `a3s-use-extension 0.3.10`, and `a3s-use 0.3.10`
 packages.
+Release workflow
+[33830280138](https://github.com/A3S-Lab/Use/actions/runs/33830280138) then built
+tag `v0.3.11` from exact `main` commit
+`c25028ae0245ba1d28f7e2837e2a87f7e9f6fe40`, passed validation, five-target
+primary builds, and five independent cache-free rebuilds, and published 19
+verified release assets in the
+[v0.3.11 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.11), including
+archives, installers, checksums/Sigstore, SBOM and reproducibility evidence,
+and the `a3s-use-core 0.2.9`, `a3s-use-extension 0.3.11`, and `a3s-use 0.3.11`
+packages.
 An externally operated full-archive witness, evidence retention outside GitHub
 Release, and the remaining product gates are still open, so this does not
 change the preview status above. Operators can additionally verify successful
