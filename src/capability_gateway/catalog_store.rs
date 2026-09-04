@@ -110,6 +110,57 @@ impl CapabilityGatewayCatalogStore {
         &self.root
     }
 
+    /// Resolve the configured logical state root to the physical directory
+    /// used by no-follow file operations.
+    ///
+    /// Operating systems are allowed to expose a configured root through an
+    /// ancestor alias (macOS commonly exposes temporary directories through
+    /// `/var`).  The final state-root component itself must still be a regular
+    /// directory; resolving it once lets the catalog store retain that alias
+    /// compatibility without asking `O_NOFOLLOW` to traverse it repeatedly.
+    async fn physical_paths(&self) -> UseResult<(PathBuf, PathBuf)> {
+        let metadata = fs::symlink_metadata(&self.state_root)
+            .await
+            .map_err(|error| path_error("inspect catalog state root", &self.state_root, error))?;
+        if metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
+            return Err(path_invalid());
+        }
+        let physical_state_root = fs::canonicalize(&self.state_root).await.map_err(|error| {
+            path_error(
+                "resolve physical catalog state root",
+                &self.state_root,
+                error,
+            )
+        })?;
+        let physical_metadata =
+            fs::symlink_metadata(&physical_state_root)
+                .await
+                .map_err(|error| {
+                    path_error(
+                        "inspect physical catalog state root",
+                        &physical_state_root,
+                        error,
+                    )
+                })?;
+        if metadata_is_link_or_reparse_point(&physical_metadata) || !physical_metadata.is_dir() {
+            return Err(path_invalid());
+        }
+        let root = physical_state_root.join(CATALOG_DIRECTORY);
+        Ok((physical_state_root, root))
+    }
+
+    async fn existing_physical_paths(&self) -> UseResult<Option<(PathBuf, PathBuf)>> {
+        match fs::symlink_metadata(&self.state_root).await {
+            Ok(_) => self.physical_paths().await.map(Some),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(path_error(
+                "inspect catalog state root",
+                &self.state_root,
+                error,
+            )),
+        }
+    }
+
     /// Publish one immutable catalog. Equal bytes at the addressed digest are
     /// idempotent; a different payload at that address fails closed. No
     /// mutable latest pointer is written.
@@ -123,24 +174,22 @@ impl CapabilityGatewayCatalogStore {
         if digest_for_bytes(&bytes)? != digest {
             return Err(catalog_conflict());
         }
-        let target = self.path_for_digest(&digest)?;
-
-        // Establish a link-free state-root chain before the optional shared
+        // Establish the configured state root before the optional shared
         // maintenance lock runs. The lock implementation is shared with
-        // legacy stores and may create its lock file when the root is absent;
-        // validating first prevents that helper from traversing an
-        // intermediate symlink.
+        // legacy stores and may create its lock file when the root is absent.
         ensure_directory_exists(&self.state_root).await?;
         #[cfg(feature = "extensions")]
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
-        let _mutation = self.acquire_mutation().await?;
+        let (state_root, root) = self.physical_paths().await?;
+        let target = path_for_digest(&root, &digest)?;
+        let _mutation = self.acquire_mutation(&state_root, &root).await?;
 
-        ensure_owned_directory_chain(&self.state_root, &self.root).await?;
-        validate_store_layout(&self.root).await?;
+        ensure_owned_directory_chain(&state_root, &root).await?;
+        validate_store_layout(&root).await?;
         let parent = target.parent().ok_or_else(path_invalid)?;
-        ensure_owned_directory_chain(&self.state_root, parent).await?;
+        ensure_owned_directory_chain(&state_root, parent).await?;
         let existing = read_catalog_at(&target, &digest).await?;
         if let Some((current, current_bytes)) = existing {
             if current != *catalog || current_bytes != bytes {
@@ -150,17 +199,17 @@ impl CapabilityGatewayCatalogStore {
             // retired. Otherwise a crash can lose the only stable directory
             // entry for an otherwise valid publication.
             sync_directory(parent).await?;
-            retire_staging(&self.root, &digest).await?;
+            retire_staging(&root, &digest).await?;
             return Ok(publication(catalog, digest));
         }
 
-        let records = self.scan_records().await?;
+        let records = self.scan_records(&root).await?;
         if records.len() >= MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS {
             return Err(store_invalid(
                 "The Capability Gateway catalog store reached its retained-record limit.",
             ));
         }
-        write_new_record(&self.root, &target, &bytes).await?;
+        write_new_record(&root, &target, &bytes).await?;
         Ok(publication(catalog, digest))
     }
 
@@ -176,15 +225,18 @@ impl CapabilityGatewayCatalogStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
-        if !validate_existing_directory_chain(&self.state_root, &self.root).await? {
+        let Some((state_root, root)) = self.existing_physical_paths().await? else {
+            return Ok(None);
+        };
+        if !validate_existing_directory_chain(&state_root, &root).await? {
             return Ok(None);
         }
-        validate_store_layout(&self.root).await?;
-        let target = self.path_for_digest(&digest)?;
+        validate_store_layout(&root).await?;
+        let target = path_for_digest(&root, &digest)?;
         let Some(parent) = target.parent() else {
             return Err(path_invalid());
         };
-        if !validate_existing_directory_chain(&self.state_root, parent).await? {
+        if !validate_existing_directory_chain(&state_root, parent).await? {
             return Ok(None);
         }
         let Some((catalog, _bytes)) = read_catalog_at(&target, &digest).await? else {
@@ -222,11 +274,14 @@ impl CapabilityGatewayCatalogStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
-        if !validate_existing_directory_chain(&self.state_root, &self.root).await? {
+        let Some((state_root, root)) = self.existing_physical_paths().await? else {
+            return Ok(Vec::new());
+        };
+        if !validate_existing_directory_chain(&state_root, &root).await? {
             return Ok(Vec::new());
         }
-        validate_store_layout(&self.root).await?;
-        self.scan_records()
+        validate_store_layout(&root).await?;
+        self.scan_records(&root)
             .await?
             .into_iter()
             .map(|(digest, catalog)| Ok(publication(&catalog, digest)))
@@ -250,19 +305,9 @@ impl CapabilityGatewayCatalogStore {
         Ok(())
     }
 
-    fn path_for_digest(&self, digest: &str) -> UseResult<PathBuf> {
-        let digest = validate_digest(digest)?;
-        let hex = digest.strip_prefix("sha256:").ok_or_else(path_invalid)?;
-        Ok(self
-            .root
-            .join("sha256")
-            .join(&hex[..2])
-            .join(format!("{hex}.json")))
-    }
-
-    async fn acquire_mutation(&self) -> UseResult<MutationGuard> {
-        ensure_owned_directory_chain(&self.state_root, &self.root).await?;
-        let path = self.root.join(CATALOG_LOCK);
+    async fn acquire_mutation(&self, state_root: &Path, root: &Path) -> UseResult<MutationGuard> {
+        ensure_owned_directory_chain(state_root, root).await?;
+        let path = root.join(CATALOG_LOCK);
         let error_path = path.clone();
         let file = tokio::task::spawn_blocking(move || acquire_lock_blocking(&path))
             .await
@@ -272,20 +317,68 @@ impl CapabilityGatewayCatalogStore {
         Ok(MutationGuard(file))
     }
 
-    async fn scan_records(&self) -> UseResult<Vec<(String, CapabilityGatewayCatalog)>> {
-        let sha_root = self.root.join("sha256");
-        if !validate_existing_directory(&sha_root).await? {
-            return Ok(Vec::new());
+    async fn scan_records(
+        &self,
+        root: &Path,
+    ) -> UseResult<Vec<(String, CapabilityGatewayCatalog)>> {
+        scan_records(self, root).await
+    }
+}
+
+fn path_for_digest(root: &Path, digest: &str) -> UseResult<PathBuf> {
+    let digest = validate_digest(digest)?;
+    let hex = digest.strip_prefix("sha256:").ok_or_else(path_invalid)?;
+    Ok(root
+        .join("sha256")
+        .join(&hex[..2])
+        .join(format!("{hex}.json")))
+}
+
+async fn scan_records(
+    store: &CapabilityGatewayCatalogStore,
+    root: &Path,
+) -> UseResult<Vec<(String, CapabilityGatewayCatalog)>> {
+    let sha_root = root.join("sha256");
+    if !validate_existing_directory(&sha_root).await? {
+        return Ok(Vec::new());
+    }
+    let mut entries = fs::read_dir(&sha_root)
+        .await
+        .map_err(|error| path_error("read catalog shards", &sha_root, error))?;
+    let mut count = 0_usize;
+    let mut records = Vec::new();
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| path_error("read catalog shard", &sha_root, error))?
+    {
+        count = count.saturating_add(1);
+        if count > MAX_DIRECTORY_ENTRIES {
+            return Err(store_invalid(
+                "The catalog store inventory exceeds its bound.",
+            ));
         }
-        let mut entries = fs::read_dir(&sha_root)
+        let name = entry
+            .file_name()
+            .to_str()
+            .ok_or_else(|| store_invalid("A catalog shard name is not UTF-8."))?
+            .to_owned();
+        if name.len() != 2
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        {
+            return Err(path_invalid());
+        }
+        let shard = entry.path();
+        validate_directory(&shard).await?;
+        let mut files = fs::read_dir(&shard)
             .await
-            .map_err(|error| path_error("read catalog shards", &sha_root, error))?;
-        let mut count = 0_usize;
-        let mut records = Vec::new();
-        while let Some(entry) = entries
+            .map_err(|error| path_error("read catalog shard files", &shard, error))?;
+        while let Some(file) = files
             .next_entry()
             .await
-            .map_err(|error| path_error("read catalog shard", &sha_root, error))?
+            .map_err(|error| path_error("read catalog record", &shard, error))?
         {
             count = count.saturating_add(1);
             if count > MAX_DIRECTORY_ENTRIES {
@@ -293,70 +386,41 @@ impl CapabilityGatewayCatalogStore {
                     "The catalog store inventory exceeds its bound.",
                 ));
             }
-            let name = entry
+            let file_name = file
                 .file_name()
                 .to_str()
-                .ok_or_else(|| store_invalid("A catalog shard name is not UTF-8."))?
+                .ok_or_else(|| store_invalid("A catalog filename is not UTF-8."))?
                 .to_owned();
-            if name.len() != 2
-                || !name
+            let Some(hex) = file_name.strip_suffix(".json") else {
+                return Err(path_invalid());
+            };
+            if hex.len() != 64
+                || !hex
                     .bytes()
                     .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+                || !hex.starts_with(&name)
             {
                 return Err(path_invalid());
             }
-            let shard = entry.path();
-            validate_directory(&shard).await?;
-            let mut files = fs::read_dir(&shard)
-                .await
-                .map_err(|error| path_error("read catalog shard files", &shard, error))?;
-            while let Some(file) = files
-                .next_entry()
-                .await
-                .map_err(|error| path_error("read catalog record", &shard, error))?
-            {
-                count = count.saturating_add(1);
-                if count > MAX_DIRECTORY_ENTRIES {
-                    return Err(store_invalid(
-                        "The catalog store inventory exceeds its bound.",
-                    ));
-                }
-                let file_name = file
-                    .file_name()
-                    .to_str()
-                    .ok_or_else(|| store_invalid("A catalog filename is not UTF-8."))?
-                    .to_owned();
-                let Some(hex) = file_name.strip_suffix(".json") else {
-                    return Err(path_invalid());
-                };
-                if hex.len() != 64
-                    || !hex
-                        .bytes()
-                        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-                    || !hex.starts_with(&name)
-                {
-                    return Err(path_invalid());
-                }
-                let digest = format!("sha256:{hex}");
-                let record_path = file.path();
-                let Some((catalog, _bytes)) = read_catalog_at(&record_path, &digest).await? else {
-                    return Err(catalog_conflict());
-                };
-                self.validate_catalog(&catalog)?;
-                records.push((digest, catalog));
-                if records.len() > MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS {
-                    return Err(store_invalid(
-                        "The Capability Gateway catalog store exceeded its retained-record limit.",
-                    ));
-                }
+            let digest = format!("sha256:{hex}");
+            let record_path = file.path();
+            let Some((catalog, _bytes)) = read_catalog_at(&record_path, &digest).await? else {
+                return Err(catalog_conflict());
+            };
+            store.validate_catalog(&catalog)?;
+            records.push((digest, catalog));
+            if records.len() > MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS {
+                return Err(store_invalid(
+                    "The Capability Gateway catalog store exceeded its retained-record limit.",
+                ));
             }
         }
-        records.sort_by(|left, right| left.0.cmp(&right.0));
-        if records.windows(2).any(|pair| pair[0].0 == pair[1].0) {
-            return Err(catalog_conflict());
-        }
-        Ok(records)
     }
+    records.sort_by(|left, right| left.0.cmp(&right.0));
+    if records.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+        return Err(catalog_conflict());
+    }
+    Ok(records)
 }
 
 struct MutationGuard(StdFile);
@@ -672,7 +736,22 @@ async fn ensure_directory_exists(path: &Path) -> UseResult<()> {
         }
         match fs::symlink_metadata(ancestor).await {
             Ok(metadata) => {
-                if metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
+                if metadata_is_link_or_reparse_point(&metadata) {
+                    // A configured state root may be reached through an
+                    // operating-system alias (for example macOS `/var`).
+                    // The final state-root component is still required to be
+                    // link-free; aliases outside that boundary are resolved
+                    // later by `physical_paths` before no-follow I/O.
+                    if ancestor == path {
+                        return Err(path_invalid());
+                    }
+                    let followed = fs::metadata(ancestor).await.map_err(|error| {
+                        path_error("resolve catalog state-root alias", ancestor, error)
+                    })?;
+                    if !followed.is_dir() {
+                        return Err(path_invalid());
+                    }
+                } else if !metadata.is_dir() {
                     return Err(path_invalid());
                 }
                 existing = true;
@@ -749,7 +828,17 @@ async fn validate_existing_path_ancestors(path: &Path) -> UseResult<bool> {
         }
         match fs::symlink_metadata(ancestor).await {
             Ok(metadata) => {
-                if metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
+                if metadata_is_link_or_reparse_point(&metadata) {
+                    if ancestor == path {
+                        return Err(path_invalid());
+                    }
+                    let followed = fs::metadata(ancestor).await.map_err(|error| {
+                        path_error("resolve catalog state-root alias", ancestor, error)
+                    })?;
+                    if !followed.is_dir() {
+                        return Err(path_invalid());
+                    }
+                } else if !metadata.is_dir() {
                     return Err(path_invalid());
                 }
             }
