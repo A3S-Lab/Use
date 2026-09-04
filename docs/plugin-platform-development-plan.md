@@ -193,6 +193,11 @@ Acceptance:
   prompt arguments are closed against the reviewed declaration, and embedded
   resource links must point back to the same catalog. Providers without the
   corresponding host capability fail closed.
+- [x] Bind optional descriptor `requiredExtensions` to the completed consumer
+  negotiation. Generic MCP projections omit extension-required descriptors;
+  negotiated A3S projections retain them, and the filtering happens before
+  both discovery and invocation route compilation. Tool pages are sorted by
+  name because the underlying router is hash-map backed.
 - [ ] Resolve opaque references from the live Use host, integrate receipt-owned
   provider composition, and complete per-consumer authorization across exact
   package-generation leases, drain, and retirement. The embedding path already
@@ -234,7 +239,8 @@ Flow, Knowledge, or UI extension labels, and the Gateway retains the resulting
 canonical digest across clones and leases. The labels remain metadata rather
 than authorization. The standard adapter now publishes catalog-authorized MCP
 Tools, Resources, and Prompts through the universal protocol; profile-aware A3S
-extensions and production host composition remain separate gates.
+extensions are now filtered at catalog composition but their Flow/Knowledge/UI
+payload projection and production host composition remain separate gates.
 
 PR [#192](https://github.com/A3S-Lab/Use/pull/192) records the contract and
 adapter boundary. The checked items are not an A3 exit-gate claim; lifecycle,

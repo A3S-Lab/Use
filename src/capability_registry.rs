@@ -2737,6 +2737,7 @@ extension "acme/workflow" {
             artifact_ref: None,
             endpoint_ref: None,
             dependencies: Vec::new(),
+            required_extensions: Vec::new(),
             publication: a3s_use_core::CapabilityPublicationEvidence {
                 catalog_record_digest: catalog_record_digest.to_owned(),
                 signature_digest: format!("sha256:{}", "d".repeat(64)),
