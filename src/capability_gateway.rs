@@ -46,7 +46,8 @@ mod session_factory;
 pub use crate::capability_catalog_store::{
     CapabilityGatewayCatalogPublication, CapabilityGatewayCatalogRetentionEntry,
     CapabilityGatewayCatalogRetentionPlan, CapabilityGatewayCatalogRetentionResult,
-    CapabilityGatewayCatalogStore, CAPABILITY_GATEWAY_CATALOG_RETENTION_PLAN_SCHEMA,
+    CapabilityGatewayCatalogStore, CAPABILITY_GATEWAY_CATALOG_RETENTION_JOURNAL_SCHEMA,
+    CAPABILITY_GATEWAY_CATALOG_RETENTION_PLAN_SCHEMA,
     CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA, CAPABILITY_GATEWAY_CATALOG_STORE_SCHEMA,
     MAX_CAPABILITY_GATEWAY_CATALOG_BYTES, MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS,
 };

@@ -1055,6 +1055,15 @@ operations on the same endpoint observe the new catalog. This is an adapter
 mechanism, not the lifecycle authority: Control cursor binding, receipt-owned
 provider composition, lease retirement, and catalog retention remain open.
 
+Implementation note (2026-09-05): the session factory now also offers
+`from_published` and `replace_published`. These paths read the exact
+installation/generation/revision/digest from `CapabilityGatewayCatalogStore`,
+re-project it for the server's completed consumer negotiation, and reject a
+missing, forged, tampered, or unpersisted catalog before the in-memory swap.
+The unverified compatibility method remains available for hosts with another
+persistence authority; Control cursor binding and payload lease retirement
+remain lifecycle responsibilities.
+
 Implementation note (2026-09-05): catalog payload retention now has an
 explicit plan/apply protocol. The lifecycle owner supplies the protected
 digest set; the store emits a canonical inventory partition, rechecks the

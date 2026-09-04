@@ -278,9 +278,12 @@ durable payload before composing an MCP endpoint.
   swaps immutable servers under serialized ownership; retains one standard MCP
   notification hub; and routes each operation through a current-server
   snapshot so old in-flight operations keep their exact lease while later
-  requests on the same endpoint observe the new catalog. Binding the replace
-  call to the durable Control cursor and implementing lease retirement remain
-  lifecycle responsibilities.
+  requests on the same endpoint observe the new catalog. The
+  `from_published`/`replace_published` paths additionally verify the exact
+  consumer projection against a durable `CapabilityGatewayCatalogStore`
+  publication before exposing it. Binding that publication to the durable
+  Control cursor and implementing lease retirement remain lifecycle
+  responsibilities.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,

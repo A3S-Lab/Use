@@ -71,6 +71,22 @@ pub struct CapabilityGatewayCatalogPublication {
     pub revision: String,
 }
 
+impl CapabilityGatewayCatalogPublication {
+    /// Validate the portable identity returned by a successful publication.
+    ///
+    /// The identity is intentionally not treated as proof of durable bytes on
+    /// its own: a composition boundary must still ask the same store for an
+    /// exact read before exposing a live session. Keeping this structural
+    /// check public lets hosts reject forged or deserialized evidence before
+    /// crossing that boundary.
+    pub fn validate(&self) -> UseResult<()> {
+        self.installation.validate()?;
+        validate_digest(&self.digest)?;
+        validate_revision(&self.revision)?;
+        Ok(())
+    }
+}
+
 /// Installation-scoped immutable catalog payload owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityGatewayCatalogStore {
