@@ -856,17 +856,27 @@ between graph siblings before their effects enter one installation outbox.
   Streamable HTTP at `/mcp` with host-owned bearer, Origin, and bounded
   admission configuration.
 - [x] Define portable `CapabilityDescriptor` contracts with opaque
-  `InvocationRef`, `ArtifactRef`, and `EndpointRef` values. Remove executable
-  paths, package roots, provider release paths, and secrets from external JSON.
+  `InvocationRef`, `ArtifactRef`, `EndpointRef`, and `ResourceRef` values.
+  Remove executable paths, package roots, provider release paths, and secrets
+  from external JSON.
 - [ ] Let the Use Host resolve an invocation reference and retain the exact
   package-generation lease for the entire call, stream, or server connection;
   drain and retirement operate on those server-side leases.
-- [ ] Define consumer profiles. Generic coding agents receive MCP tools,
-  resources, and prompts; A3S consumers may negotiate additional Flow, UI, and
-  Knowledge metadata without changing the universal contract.
+- [x] Define consumer profiles. Generic coding agents receive standard MCP
+  Tools, Resources, and Prompts; the typed profile/negotiation contract keeps
+  optional A3S extension labels explicit without changing the universal
+  contract.
+- [ ] Project negotiated Flow, UI, and Knowledge metadata for A3S consumers
+  and apply per-consumer discovery filtering without weakening the lower-
+  authority boundary.
 - [ ] Require signed descriptions and JSON input/output schemas for every
   agent-visible Tool. Legacy executable-only Tool Tasks remain host-only until
   a schema-valid descriptor is bound to them.
+- [x] Expose bounded, catalog-authorized MCP Resources and Prompts through the
+  standard `resources/list`, `resources/read`, `prompts/list`, and `prompts/get`
+  methods. Resource URIs are opaque and exact-match checked; prompt arguments
+  are closed against reviewed declarations; provider content is size-bounded,
+  path-free, and held under the same generation lease as Tool calls.
 - [ ] Materialize one immutable Capability Index at lifecycle cutover and emit
   generation-change notifications. Remove fixed-interval full filesystem
   rescans and repeated asset hashing from the normal watch path.
@@ -946,6 +956,14 @@ is the profile boundary only: profile-aware resource/prompt projection,
 production receipt/Runtime/Grant composition, and product host wiring remain
 open, so the consumer-profile checkbox is intentionally not marked complete
 yet.
+
+Implementation note (2026-09-04): the standard MCP projection now includes
+catalog-authorized Resources and Prompts in addition to Tools. Resource
+references are opaque, exact-match checked, and never interpreted as paths or
+URLs; prompt arguments are closed against the reviewed declaration; discovery
+is bounded and paginated; and provider output is validated before it crosses
+the agent boundary. This does not yet project A3S-specific Flow/UI/Knowledge
+metadata or provide per-consumer discovery filtering.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning

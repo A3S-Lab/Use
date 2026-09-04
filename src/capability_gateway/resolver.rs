@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use a3s_use_core::{CapabilityDescriptor, InvocationRef, UseError, UseResult};
 use async_trait::async_trait;
+use rmcp::model::{GetPromptResult, ResourceContents};
 use serde_json::Value;
 
 use super::{
@@ -39,6 +40,31 @@ pub trait CapabilityGatewayInvocation: Send + Sync {
         arguments: Value,
         context: &CapabilityGatewayRequestContext,
     ) -> UseResult<Value>;
+
+    /// Read a host-resolved MCP resource while retaining this handle's
+    /// generation lease. The default is fail-closed for Tool-only handles.
+    async fn read_resource(
+        &self,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<Vec<ResourceContents>> {
+        Err(UseError::new(
+            "use.plugin.capability_gateway_resource_unsupported",
+            "The resolved capability does not expose an MCP resource.",
+        ))
+    }
+
+    /// Materialize a host-resolved MCP prompt while retaining this handle's
+    /// generation lease. The default is fail-closed for Tool-only handles.
+    async fn get_prompt(
+        &self,
+        _arguments: Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<GetPromptResult> {
+        Err(UseError::new(
+            "use.plugin.capability_gateway_prompt_unsupported",
+            "The resolved capability does not expose an MCP prompt.",
+        ))
+    }
 }
 
 /// A resolved invocation together with the opaque identity it was resolved
@@ -109,6 +135,21 @@ impl CapabilityGatewayInvocationLease {
         context: &CapabilityGatewayRequestContext,
     ) -> UseResult<Value> {
         self.handle.invoke(arguments, context).await
+    }
+
+    pub(crate) async fn read_resource(
+        &self,
+        context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<Vec<ResourceContents>> {
+        self.handle.read_resource(context).await
+    }
+
+    pub(crate) async fn get_prompt(
+        &self,
+        arguments: Value,
+        context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<GetPromptResult> {
+        self.handle.get_prompt(arguments, context).await
     }
 }
 
@@ -347,6 +388,27 @@ impl CapabilityGatewayInvocationProvider for CapabilityGatewayResolvedProvider {
         lease.invoke(arguments, context).await
     }
 
+    async fn read_resource(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<Vec<ResourceContents>> {
+        let lease = self.resolve(descriptor, context).await?;
+        lease.authorize(&Value::Null, context).await?;
+        lease.read_resource(context).await
+    }
+
+    async fn get_prompt(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        arguments: Value,
+        context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<GetPromptResult> {
+        let lease = self.resolve(descriptor, context).await?;
+        lease.authorize(&arguments, context).await?;
+        lease.get_prompt(arguments, context).await
+    }
+
     async fn authorize_and_invoke(
         &self,
         descriptor: &CapabilityDescriptor,
@@ -363,6 +425,45 @@ impl CapabilityGatewayInvocationProvider for CapabilityGatewayResolvedProvider {
             .map_err(CapabilityGatewayInvocationFailure::Authorization)?;
         lease
             .invoke(arguments, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Invocation)
+    }
+
+    async fn authorize_and_read_resource(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        context: &CapabilityGatewayRequestContext,
+    ) -> Result<Vec<ResourceContents>, CapabilityGatewayInvocationFailure> {
+        let lease = self
+            .resolve(descriptor, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Invocation)?;
+        lease
+            .authorize(&Value::Null, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Authorization)?;
+        lease
+            .read_resource(context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Invocation)
+    }
+
+    async fn authorize_and_get_prompt(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        arguments: Value,
+        context: &CapabilityGatewayRequestContext,
+    ) -> Result<GetPromptResult, CapabilityGatewayInvocationFailure> {
+        let lease = self
+            .resolve(descriptor, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Invocation)?;
+        lease
+            .authorize(&arguments, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Authorization)?;
+        lease
+            .get_prompt(arguments, context)
             .await
             .map_err(CapabilityGatewayInvocationFailure::Invocation)
     }
