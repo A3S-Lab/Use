@@ -1431,51 +1431,54 @@ async fn http_principal_discovery_is_filtered_and_cached_per_context() {
     // Each principal has one frozen view containing all descriptors. Later
     // calls reuse it rather than re-evaluating policy and changing cursors.
     assert_eq!(discovery.evaluations.load(Ordering::SeqCst), 12);
-    let calls = provider.calls.lock().unwrap();
-    assert_eq!(calls.len(), 2);
-    assert_eq!(
-        calls
-            .iter()
-            .filter(
-                |call| call.2.principal().map(CapabilityGatewayPrincipal::as_str)
-                    == Some("agent/allowed")
-            )
-            .count(),
-        1
-    );
-    assert_eq!(
-        calls
-            .iter()
-            .filter(
-                |call| call.2.principal().map(CapabilityGatewayPrincipal::as_str)
-                    == Some("agent/denied")
-            )
-            .count(),
-        1
-    );
-    drop(calls);
-    let authorizations = provider.authorizations.lock().unwrap();
-    assert_eq!(authorizations.len(), 4);
-    assert_eq!(
-        authorizations
-            .iter()
-            .filter(
-                |context| context.principal().map(CapabilityGatewayPrincipal::as_str)
-                    == Some("agent/allowed")
-            )
-            .count(),
-        3
-    );
-    assert_eq!(
-        authorizations
-            .iter()
-            .filter(
-                |context| context.principal().map(CapabilityGatewayPrincipal::as_str)
-                    == Some("agent/denied")
-            )
-            .count(),
-        1
-    );
+    {
+        let calls = provider.calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls
+                .iter()
+                .filter(
+                    |call| call.2.principal().map(CapabilityGatewayPrincipal::as_str)
+                        == Some("agent/allowed")
+                )
+                .count(),
+            1
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(
+                    |call| call.2.principal().map(CapabilityGatewayPrincipal::as_str)
+                        == Some("agent/denied")
+                )
+                .count(),
+            1
+        );
+    }
+    {
+        let authorizations = provider.authorizations.lock().unwrap();
+        assert_eq!(authorizations.len(), 4);
+        assert_eq!(
+            authorizations
+                .iter()
+                .filter(
+                    |context| context.principal().map(CapabilityGatewayPrincipal::as_str)
+                        == Some("agent/allowed")
+                )
+                .count(),
+            3
+        );
+        assert_eq!(
+            authorizations
+                .iter()
+                .filter(
+                    |context| context.principal().map(CapabilityGatewayPrincipal::as_str)
+                        == Some("agent/denied")
+                )
+                .count(),
+            1
+        );
+    }
 
     allowed.cancel().await.unwrap();
     denied.cancel().await.unwrap();
