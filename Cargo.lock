@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "a3s-acl",
  "a3s-flow",
@@ -105,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-core"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "async-trait",
  "olpc-cjson",
@@ -123,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-extension"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "a3s-acl",
  "a3s-use-core",
