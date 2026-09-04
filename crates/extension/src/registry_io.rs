@@ -196,8 +196,6 @@ async fn open_registry_file(path: &Path) -> std::io::Result<fs::File> {
 fn configure_registry_file_options(options: &mut fs::OpenOptions) {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt as _;
-
         options.custom_flags(libc::O_NOFOLLOW);
     }
     #[cfg(windows)]
@@ -337,7 +335,7 @@ fn same_file_identity(left: &std::fs::Metadata, right: &std::fs::Metadata) -> bo
     {
         use std::os::unix::fs::MetadataExt as _;
 
-        return left.dev() == right.dev() && left.ino() == right.ino();
+        left.dev() == right.dev() && left.ino() == right.ino()
     }
     #[cfg(windows)]
     {
