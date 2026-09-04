@@ -1854,6 +1854,13 @@ generation and retain the corresponding session lease. Durable payload storage
 therefore closes a storage gap, but does not by itself complete live host
 composition, catalog/session replacement, or garbage-collection policy.
 
+The embedding boundary now also includes `CapabilityGatewaySessionFactory`:
+after durable publication, a host can replace immutable Gateway generations in
+order, retain one standard MCP notification hub, and keep old in-flight
+operations on their exact leases while later requests on the same endpoint
+observe the new catalog. Lifecycle Control binding, provider composition,
+retirement, and retention remain host responsibilities.
+
 | Area | Status |
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |

@@ -41,6 +41,7 @@ mod discovery;
 mod http;
 mod notifications;
 mod resolver;
+mod session_factory;
 
 pub use crate::capability_catalog_store::{
     CapabilityGatewayCatalogPublication, CapabilityGatewayCatalogStore,
@@ -56,6 +57,10 @@ pub use resolver::{
     CapabilityGatewayInvocation, CapabilityGatewayInvocationFactory,
     CapabilityGatewayInvocationLease, CapabilityGatewayInvocationResolver,
     CapabilityGatewayRegistryResolver, CapabilityGatewayResolvedProvider,
+};
+pub use session_factory::{
+    CapabilityGatewayLiveMcpServer, CapabilityGatewaySessionFactory, CapabilityGatewaySessionKey,
+    CapabilityGatewaySessionReplacement,
 };
 
 const MCP_ERROR: &str = "use.plugin.capability_gateway_mcp_invalid";

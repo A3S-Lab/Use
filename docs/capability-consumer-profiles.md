@@ -148,6 +148,33 @@ compiling the MCP transport adapter. The compatibility re-export at
 `a3s_use::capability_gateway::CapabilityGatewayCatalogStore` remains available
 when `mcp` is enabled.
 
+## Live endpoint cutover
+
+For a stateful endpoint, `CapabilityGatewaySessionFactory` is the host-owned
+cutover seam. Publish and verify the exact catalog payload first, then replace
+the immutable server source:
+
+```rust,ignore
+use a3s_use::capability_gateway::{
+    CapabilityGatewayMcpServer, CapabilityGatewaySessionFactory,
+};
+
+let factory = CapabilityGatewaySessionFactory::new(initial_gateway);
+// `factory.clone().serve_streamable_http(...)` owns the stable endpoint.
+let replacement = factory.replace(next_gateway).await?;
+assert!(replacement.catalog_changed);
+```
+
+The factory rejects a different installation, a stale publication generation,
+or a changed consumer-negotiation/lease contract. It swaps only immutable
+servers, keeps one notification hub across generations, and sends standard MCP
+list-change notifications after the new source is visible. The live adapter
+snapshots the selected server per operation: requests already in flight retain
+the old generation lease, while later list and invocation requests on the same
+MCP session observe the replacement. Lifecycle code still owns the durable
+Control cursor, receipt/Runtime/Grant composition, lease retirement, and
+catalog retention policy.
+
 ## Request cancellation
 
 The standard MCP adapter also consumes rmcp's per-request

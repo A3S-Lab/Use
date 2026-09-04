@@ -627,7 +627,12 @@ layout. It uses deterministic crash staging, no-follow path checks, and
 create-if-absent hard-link publication, then permits exact digest plus
 generation/revision reads after restart. This store is intentionally not a
 Control cursor or a latest pointer; lifecycle cutover, session retirement, and
-catalog retention remain higher-level authorities.
+catalog retention remain higher-level authorities. `CapabilityGatewaySessionFactory`
+now supplies the corresponding in-process endpoint seam: it serializes
+monotonic immutable-server replacement, preserves consumer negotiation and
+lease mode, shares the notification hub, and routes each operation through a
+current-server snapshot so old in-flight leases can drain. Durable Control
+cutover and retention remain outside this adapter.
 
 ## Storage model
 

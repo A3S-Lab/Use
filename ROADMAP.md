@@ -1044,6 +1044,17 @@ transactional cutover binding for the catalog digest, and the host still needs
 session replacement, lease drain, and retention/GC before the A3 catalog gate
 can be marked complete.
 
+Implementation note (2026-09-05): `CapabilityGatewaySessionFactory` now gives
+an embedding host a bounded live-endpoint cutover seam. It serializes
+replacement of immutable servers, rejects cross-installation and stale
+publication generations, keeps consumer negotiation and lease mode stable, and
+routes each MCP operation through a current-server snapshot. A replacement is
+made visible before the shared standard list-change fan-out; old in-flight
+operations retain their prior immutable server and lease, while subsequent
+operations on the same endpoint observe the new catalog. This is an adapter
+mechanism, not the lifecycle authority: Control cursor binding, receipt-owned
+provider composition, lease retirement, and catalog retention remain open.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must
