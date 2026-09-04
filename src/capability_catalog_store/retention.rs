@@ -159,9 +159,12 @@ impl CapabilityGatewayCatalogStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
-        let _mutation = self.acquire_mutation().await?;
-        super::validate_store_layout(&self.root).await?;
-        let records = self.scan_records().await?;
+        let Some((state_root, root)) = self.existing_physical_paths().await? else {
+            return build_plan(self.installation.clone(), Vec::new(), &retain_digests);
+        };
+        let _mutation = self.acquire_mutation(&state_root, &root).await?;
+        super::validate_store_layout(&root).await?;
+        let records = self.scan_records(&root).await?;
         build_plan(self.installation.clone(), records, &retain_digests)
     }
 
@@ -192,9 +195,24 @@ impl CapabilityGatewayCatalogStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
-        let _mutation = self.acquire_mutation().await?;
-        super::validate_store_layout(&self.root).await?;
-        let records = self.scan_records().await?;
+        let Some((state_root, root)) = self.existing_physical_paths().await? else {
+            if plan.before_record_count == 0 && plan.retain.is_empty() {
+                return Ok(CapabilityGatewayCatalogRetentionResult {
+                    schema: CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA.to_owned(),
+                    installation: self.installation.clone(),
+                    plan_digest: actual_plan_digest,
+                    changed: false,
+                    removed: Vec::new(),
+                    retained_record_count: 0,
+                });
+            }
+            return Err(retention_stale(
+                "The catalog state root disappeared after the retention plan was reviewed.",
+            ));
+        };
+        let _mutation = self.acquire_mutation(&state_root, &root).await?;
+        super::validate_store_layout(&root).await?;
+        let records = self.scan_records(&root).await?;
         let current = entries_from_records(&records)?;
         if current == plan.retain {
             return Ok(CapabilityGatewayCatalogRetentionResult {
@@ -225,13 +243,13 @@ impl CapabilityGatewayCatalogStore {
         }
 
         for entry in &plan.remove {
-            let target = self.path_for_digest(&entry.digest)?;
+            let target = super::path_for_digest(&root, &entry.digest)?;
             verify_record_before_remove(&target, entry).await?;
         }
 
         let mut removed = Vec::new();
         for entry in &plan.remove {
-            let target = self.path_for_digest(&entry.digest)?;
+            let target = super::path_for_digest(&root, &entry.digest)?;
             if let Err(error) = fs::remove_file(&target).await {
                 return Err(retention_outcome_unknown(
                     format!("A reviewed catalog record could not be removed: {error}"),
@@ -251,7 +269,7 @@ impl CapabilityGatewayCatalogStore {
             }
         }
 
-        let after = self.scan_records().await.map_err(|error| {
+        let after = self.scan_records(&root).await.map_err(|error| {
             retention_outcome_unknown(
                 format!(
                     "Catalog retention changed records, but the resulting inventory could not be verified: {}",
