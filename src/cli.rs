@@ -153,7 +153,7 @@ fn help() -> CommandOutput {
             "  a3s-use upgrade <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--registry-name <name>] [--offline] [--json]\n",
             "  a3s-use uninstall <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]\n",
             "  a3s-use component list|status|install|upgrade|uninstall [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
-            "  a3s-use plugin <command> [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
+            "  a3s-use plugin search|inspect|list-installed|status|plan-install|plan-upgrade|plan-uninstall|plan-enable|plan-disable|apply-plan|observe-operation|watch-operation|cancel-operation [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
             "  a3s-use knowledge <command> [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
             "  a3s-use registry source list [--json]\n",
             "  a3s-use registry source add <name> (--url <https-url> | --github <owner/repository>) --trust-root <sha256> [source options] [--json]\n",

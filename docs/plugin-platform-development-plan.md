@@ -19,7 +19,9 @@ work.
 1. Work in the relevant Use crate/application, not the A3S monorepo root.
 2. Human-authored package/configuration files use ACL and `a3s-acl`.
 3. CLI, TUI, and agent tools call one Plugin Manager.
-4. Planning is read-only; `plugin_apply_plan` is the only manager mutation.
+4. Planning is read-only; `plugin_apply_plan` is the only package-state
+   mutation, while explicit pre-admission cancellation is a separate
+   control-plane mutation.
 5. Registry URLs and trust roots are host configuration.
 6. Required missing provider/readiness evidence fails before publication.
 7. Package, Grant, provider, and capability generations cut over together.
@@ -48,8 +50,8 @@ Completed in the Use repository:
 - process-resilient pre-lock Registry/TUF resolution attempts with path-free
   refreshed/cached per-source diagnostics and exact handoff to download state;
 - operation plan v4, confirmation, policy and host/provider evidence;
-- manager toolset v4 with install-time Registry selection and plan/apply
-  enablement;
+- manager toolset v5 with install-time Registry selection, plan/apply
+  enablement, exact operation observation/watch, and explicit cancellation;
 - immutable package generations and one unified installation snapshot;
 - dependency-forward install, one cutover, reverse uninstall and upgrade GC;
 - durable Registry cutover replay and exact lifecycle journals;
@@ -274,16 +276,18 @@ Status: in progress
   frozen planning operations, durable reviewed-plan reopening, digest-only
   apply, and a standard MCP adapter with injected trusted confirmation.
 - [x] Migrate the standalone CLI to that service. The `plugin` command maps the
-  four reads, five planning operations, and digest-only apply directly to the
-  manager-v4 inputs and typed results. Plans do not mutate, apply requires the
-  exact durable operation ID and plan digest plus explicit `--yes`, `Ask` plans
-  receive no implicit confirmation, and exact replay remains zero-network.
+  four reads, five planning operations, digest-only apply, exact operation
+  observation/watch, and explicit cancellation directly to the manager-v5
+  inputs and typed results. Plans do not mutate, apply and cancellation require
+  the exact durable operation ID and plan digest plus explicit trusted user
+  authority, `Ask` plans receive no implicit confirmation, and exact replay
+  remains zero-network.
   Registry-backed compatibility install, upgrade, and uninstall fields remain
   unchanged.
 - [x] Migrate the A3S Code TUI and compose the manager MCP in Code on that
   service without a second presentation-owned plan, confirmation, or mutation
   path. A3S CLI commit `ce1240891d6926c132aed8212efabaf6c925f4db`
-  composes CLI, TUI `/packages`, and the exact manager-v4 MCP over one service.
+  composes CLI, TUI `/packages`, and the exact manager-v5 MCP over one service.
 - Keep Registry source state, catalog cache, plan generation, policy, apply, and
   operation replay out of view-specific code.
 - TUI `/packages`, CLI, and agent MCP must display and apply the same operation

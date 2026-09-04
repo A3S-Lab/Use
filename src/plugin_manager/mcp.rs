@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use a3s_use_core::{
     PluginManagerApplyPlanInput, PluginManagerInspectInput, PluginManagerInstallPlanInput,
-    PluginManagerListInstalledInput, PluginManagerPackageScopeInput, PluginManagerSearchInput,
-    PluginManagerToolDefinition, PluginManagerUpgradePlanInput, UseError, UseResult,
+    PluginManagerListInstalledInput, PluginManagerOperationInput, PluginManagerOperationWatchInput,
+    PluginManagerPackageScopeInput, PluginManagerSearchInput, PluginManagerToolDefinition,
+    PluginManagerUpgradePlanInput, UseError, UseResult,
 };
 use rmcp::handler::server::router::tool::{ToolRoute, ToolRouter};
 use rmcp::handler::server::tool::ToolCallContext;
@@ -147,6 +148,23 @@ impl PluginManagerMcpServer {
                 .await;
                 Ok(tool_result(result))
             }
+            "plugin_observe_operation" => {
+                let input = parse_input::<PluginManagerOperationInput>(arguments)?;
+                Ok(tool_result(self.service.observe_operation(input).await))
+            }
+            "plugin_watch_operation" => {
+                let input = parse_input::<PluginManagerOperationWatchInput>(arguments)?;
+                Ok(tool_result(self.service.watch_operation(input).await))
+            }
+            "plugin_cancel_operation" => {
+                let input = parse_input::<PluginManagerOperationInput>(arguments)?;
+                let result = async {
+                    let confirmation = self.confirmation_provider.cancellation_for(&input).await?;
+                    self.service.cancel_operation(input, confirmation).await
+                }
+                .await;
+                Ok(tool_result(result))
+            }
             "plugin_plan_enable" => {
                 let input = parse_input::<PluginManagerPackageScopeInput>(arguments)?;
                 Ok(tool_result(self.service.plan_enable(input).await))
@@ -156,7 +174,7 @@ impl PluginManagerMcpServer {
                 Ok(tool_result(self.service.plan_disable(input).await))
             }
             _ => Err(rmcp::ErrorData::invalid_params(
-                "Plugin Manager tool is not part of the frozen inventory.",
+                "Plugin Manager tool is not part of the supported frozen inventory.",
                 None,
             )),
         }
@@ -185,7 +203,7 @@ impl ServerHandler for PluginManagerMcpServer {
 }
 
 fn frozen_tool_router() -> UseResult<ToolRouter<PluginManagerMcpServer>> {
-    let toolset = a3s_use_core::PluginManagerToolset::v4();
+    let toolset = a3s_use_core::PluginManagerToolset::v5();
     toolset.validate()?;
     let mut router = ToolRouter::<PluginManagerMcpServer>::new();
     for definition in toolset.tools {
@@ -275,7 +293,7 @@ mod tests {
     fn dynamic_router_is_the_exact_frozen_toolset() {
         let router = frozen_tool_router().unwrap();
         let tools = router.list_all();
-        let frozen = a3s_use_core::PluginManagerToolset::v4();
+        let frozen = a3s_use_core::PluginManagerToolset::v5();
         assert_eq!(tools.len(), frozen.tools.len());
 
         for expected in frozen.tools {
@@ -327,8 +345,43 @@ mod tests {
         let client = TestClient.serve(client_transport).await.unwrap();
 
         let tools = client.list_all_tools().await.unwrap();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 13);
         assert!(tools.iter().any(|tool| tool.name == "plugin_apply_plan"));
+        for name in [
+            "plugin_observe_operation",
+            "plugin_watch_operation",
+            "plugin_cancel_operation",
+        ] {
+            assert!(tools.iter().any(|tool| tool.name == name));
+        }
+
+        let cancellation = client
+            .call_tool(CallToolRequestParam {
+                name: "plugin_cancel_operation".into(),
+                arguments: Some(
+                    serde_json::json!({
+                        "packageId": "acme/private-package",
+                        "scopeKind": "workspace",
+                        "scopeId": "workspace:plugin-manager-mcp-tests",
+                        "operationId": "operation:install:01",
+                        "planDigest": format!("sha256:{}", "a".repeat(64))
+                    })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                ),
+            })
+            .await
+            .unwrap();
+        assert_eq!(cancellation.is_error, Some(true));
+        let cancellation_error = cancellation
+            .structured_content
+            .expect("structured MCP cancellation error");
+        assert_eq!(
+            cancellation_error["code"],
+            "use.plugin.plan_confirmation_required"
+        );
+
         let result = client
             .call_tool(CallToolRequestParam {
                 name: "plugin_list_installed".into(),

@@ -1,7 +1,8 @@
 use a3s_use_core::{
     PlanScopeKind, PluginManagerApplyPlanInput, PluginManagerInspectInput,
-    PluginManagerInstallPlanInput, PluginManagerListInstalledInput, PluginManagerPackageScopeInput,
-    PluginManagerSearchInput, PluginManagerUpgradePlanInput, PluginSurfaceKind,
+    PluginManagerInstallPlanInput, PluginManagerListInstalledInput, PluginManagerOperationInput,
+    PluginManagerOperationWatchInput, PluginManagerPackageScopeInput, PluginManagerSearchInput,
+    PluginManagerUpgradePlanInput, PluginSurfaceKind, MAX_PLUGIN_HOST_OPERATION_WATCH_TIMEOUT_MS,
 };
 
 #[test]
@@ -93,6 +94,73 @@ fn manager_inputs_accept_the_frozen_tool_shapes() {
     }))
     .unwrap();
     apply.validate().unwrap();
+}
+
+#[test]
+fn manager_operation_inputs_bind_exact_identity_and_bounded_watch() {
+    let operation: PluginManagerOperationInput = serde_json::from_value(serde_json::json!({
+        "packageId": "acme/cognitive",
+        "scopeKind": "workspace",
+        "scopeId": "workspace:alpha",
+        "operationId": "operation:install:01",
+        "planDigest": format!("sha256:{}", "a".repeat(64))
+    }))
+    .unwrap();
+    operation.validate().unwrap();
+    assert_eq!(operation.scope().kind, PlanScopeKind::Workspace);
+
+    let watch: PluginManagerOperationWatchInput = serde_json::from_value(serde_json::json!({
+        "packageId": "acme/cognitive",
+        "scopeKind": "workspace",
+        "scopeId": "workspace:alpha",
+        "operationId": "operation:install:01",
+        "planDigest": format!("sha256:{}", "a".repeat(64)),
+        "afterRevision": format!("sha256:{}", "b".repeat(64)),
+        "timeoutMs": MAX_PLUGIN_HOST_OPERATION_WATCH_TIMEOUT_MS
+    }))
+    .unwrap();
+    watch.validate().unwrap();
+
+    let too_long: PluginManagerOperationWatchInput = serde_json::from_value(serde_json::json!({
+        "packageId": "acme/cognitive",
+        "scopeKind": "workspace",
+        "scopeId": "workspace:alpha",
+        "operationId": "operation:install:01",
+        "planDigest": format!("sha256:{}", "a".repeat(64)),
+        "timeoutMs": MAX_PLUGIN_HOST_OPERATION_WATCH_TIMEOUT_MS + 1
+    }))
+    .unwrap();
+    assert_eq!(
+        too_long.validate().unwrap_err().code,
+        "use.plugin.manager_input_invalid"
+    );
+
+    let malformed_revision: PluginManagerOperationWatchInput =
+        serde_json::from_value(serde_json::json!({
+            "packageId": "acme/cognitive",
+            "scopeKind": "workspace",
+            "scopeId": "workspace:alpha",
+            "operationId": "operation:install:01",
+            "planDigest": format!("sha256:{}", "a".repeat(64)),
+            "afterRevision": "revision:unknown"
+        }))
+        .unwrap();
+    assert_eq!(
+        malformed_revision.validate().unwrap_err().code,
+        "use.plugin.manager_input_invalid"
+    );
+
+    assert!(
+        serde_json::from_value::<PluginManagerOperationInput>(serde_json::json!({
+            "packageId": "acme/cognitive",
+            "scopeKind": "workspace",
+            "scopeId": "workspace:alpha",
+            "operationId": "operation:install:01",
+            "planDigest": format!("sha256:{}", "a".repeat(64)),
+            "path": "/tmp/escape"
+        }))
+        .is_err()
+    );
 }
 
 #[test]

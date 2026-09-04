@@ -1,16 +1,21 @@
 use std::cmp::Ordering;
 
 use a3s_use_core::{
-    PlanScope, PluginHostApplyRequest, PluginHostApplyResult, PluginHostEnablementPlanRequest,
-    PluginHostEnablementPlanResult, PluginHostManager, PluginHostObservationRequest,
-    PluginHostObservationResult, PluginHostObservationStatus, PluginHostPlanRequest,
+    PlanActor, PlanScope, PluginHostApplyRequest, PluginHostApplyResult, PluginHostCancelRequest,
+    PluginHostCancelResult, PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
+    PluginHostManager, PluginHostObservationRequest, PluginHostObservationResult,
+    PluginHostObservationStatus, PluginHostOperationObservationRequest,
+    PluginHostOperationObservationResult, PluginHostOperationWatchRequest, PluginHostPlanRequest,
     PluginHostPlanResult, PluginManagerApplyPlanInput, PluginManagerInspectInput,
-    PluginManagerInstallPlanInput, PluginManagerListInstalledInput, PluginManagerPackageScopeInput,
-    PluginManagerSearchInput, PluginManagerToolset, PluginManagerUpgradePlanInput,
-    PluginOperationAction, PluginOperationConfirmation, PluginPackageId, PluginPackageLock,
-    PluginReleaseChannel, PluginSurfaceRef, UseError, UseResult, VerifiedPluginCatalogRecord,
-    PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA,
-    PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
+    PluginManagerInstallPlanInput, PluginManagerListInstalledInput, PluginManagerOperationInput,
+    PluginManagerOperationWatchInput, PluginManagerPackageScopeInput, PluginManagerSearchInput,
+    PluginManagerToolset, PluginManagerUpgradePlanInput, PluginOperationAction,
+    PluginOperationConfirmation, PluginPackageId, PluginPackageLock, PluginReleaseChannel,
+    PluginSurfaceRef, UseError, UseResult, VerifiedPluginCatalogRecord,
+    PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_CANCEL_REQUEST_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA, PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA,
+    PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
 };
 use a3s_use_extension::PluginCatalogSearch;
 use semver::Version;
@@ -64,7 +69,7 @@ impl PluginManagerService {
     }
 
     pub fn toolset(&self) -> PluginManagerToolset {
-        PluginManagerToolset::v4()
+        PluginManagerToolset::v5()
     }
 
     pub fn managed_scope(&self) -> &a3s_use_core::PluginManagedScope {
@@ -366,6 +371,104 @@ impl PluginManagerService {
         self.host.apply(request).await
     }
 
+    /// Observe one exact reviewed operation through the typed Host Manager
+    /// boundary. The complete identity is required so an operation ID can
+    /// never be confused across packages, scopes, or plan generations.
+    pub async fn observe_operation(
+        &self,
+        input: PluginManagerOperationInput,
+    ) -> UseResult<PluginHostOperationObservationResult> {
+        input.validate()?;
+        self.verify_scope(&input.scope())?;
+        let request = self.operation_observation_request("observe-operation", &input)?;
+        request.validate_for_capabilities(self.host.host_capabilities())?;
+        let result = self.host.observe_operation(request.clone()).await?;
+        result.validate_for(&request, self.host.host_capabilities())?;
+        Ok(result)
+    }
+
+    /// Long-poll one exact reviewed operation for a new durable status
+    /// revision. A zero timeout is a bounded immediate read.
+    pub async fn watch_operation(
+        &self,
+        input: PluginManagerOperationWatchInput,
+    ) -> UseResult<PluginHostOperationObservationResult> {
+        input.validate()?;
+        self.verify_scope(&input.scope())?;
+        let observation = self.operation_observation_request("watch-operation", &input)?;
+        let request = PluginHostOperationWatchRequest {
+            schema: PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA.to_owned(),
+            observation,
+            after_revision: input.after_revision,
+            timeout_ms: input.timeout_ms,
+        };
+        request.validate_for_capabilities(self.host.host_capabilities())?;
+        let result = self.host.watch_operation(request.clone()).await?;
+        result.validate_for(&request.observation, self.host.host_capabilities())?;
+        Ok(result)
+    }
+
+    /// Request explicit-user cancellation at the Host Manager's durable safe
+    /// point. Cancellation is intentionally not inferred from observation or
+    /// from an MCP transport disconnect.
+    pub async fn cancel_operation(
+        &self,
+        input: PluginManagerOperationInput,
+        confirmation: Option<PluginOperationConfirmation>,
+    ) -> UseResult<PluginHostCancelResult> {
+        input.validate()?;
+        self.verify_scope(&input.scope())?;
+        let confirmation = confirmation.ok_or_else(|| {
+            UseError::new(
+                "use.plugin.plan_confirmation_required",
+                "Explicit trusted user confirmation is required before cancelling a plugin operation.",
+            )
+        })?;
+        confirmation.validate()?;
+        if confirmation.operation_id != input.operation_id
+            || confirmation.plan_digest != input.plan_digest
+            || confirmation.confirmed_by != PlanActor::User
+        {
+            return Err(UseError::new(
+                "use.plugin.plan_confirmation_mismatch",
+                "User cancellation confirmation does not bind the exact plugin operation.",
+            ));
+        }
+        let request_id = self.request_id("cancel-operation", &input)?;
+        let request = PluginHostCancelRequest {
+            schema: PLUGIN_HOST_CANCEL_REQUEST_SCHEMA.to_owned(),
+            request_id,
+            assignment_generation: self.assignment_generation,
+            capabilities_digest: self.capabilities_digest.clone(),
+            scope: self.host.managed_scope().clone(),
+            package_id: input.package_id,
+            operation_id: input.operation_id,
+            plan_digest: input.plan_digest,
+            requested_by: confirmation.confirmed_by,
+        };
+        request.validate_for_capabilities(self.host.host_capabilities())?;
+        let result = self.host.cancel(request.clone()).await?;
+        result.validate_for(&request, self.host.host_capabilities())?;
+        Ok(result)
+    }
+
+    fn operation_observation_request<T: Serialize + OperationIdentity>(
+        &self,
+        domain: &str,
+        input: &T,
+    ) -> UseResult<PluginHostOperationObservationRequest> {
+        Ok(PluginHostOperationObservationRequest {
+            schema: PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA.to_owned(),
+            request_id: self.request_id(domain, input)?,
+            assignment_generation: self.assignment_generation,
+            capabilities_digest: self.capabilities_digest.clone(),
+            scope: self.host.managed_scope().clone(),
+            package_id: input.package_id().clone(),
+            operation_id: input.operation_id().to_owned(),
+            plan_digest: input.plan_digest().to_owned(),
+        })
+    }
+
     async fn plan_graph(
         &self,
         action: PluginOperationAction,
@@ -617,6 +720,40 @@ fn require_root_candidate<'a>(
         .ok_or_else(|| {
             service_error("The resolved package lock omitted its selected root catalog record.")
         })
+}
+
+trait OperationIdentity {
+    fn package_id(&self) -> &PluginPackageId;
+    fn operation_id(&self) -> &str;
+    fn plan_digest(&self) -> &str;
+}
+
+impl OperationIdentity for PluginManagerOperationInput {
+    fn package_id(&self) -> &PluginPackageId {
+        &self.package_id
+    }
+
+    fn operation_id(&self) -> &str {
+        &self.operation_id
+    }
+
+    fn plan_digest(&self) -> &str {
+        &self.plan_digest
+    }
+}
+
+impl OperationIdentity for PluginManagerOperationWatchInput {
+    fn package_id(&self) -> &PluginPackageId {
+        &self.package_id
+    }
+
+    fn operation_id(&self) -> &str {
+        &self.operation_id
+    }
+
+    fn plan_digest(&self) -> &str {
+        &self.plan_digest
+    }
 }
 
 fn select_inspection_candidate(

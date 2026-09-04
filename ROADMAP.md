@@ -40,7 +40,8 @@ publishes one capability generation, and retires unused generations in reverse.
 2. **There is one current cognitive-package format.** Manifest v3, catalog v3,
    receipt v6, Installation Snapshot v2, Extension Registry snapshot v3,
    capability snapshot v5, extension cursor v3, capability cursor v4, plan v4,
-   host protocol v6, managed scope v2, manager toolset v4, pending graph v4,
+   host protocol v6, managed scope v2, manager toolset v5 (v4 migration
+   contract retained), pending graph v4,
    pre-lock resolution attempt/diagnostic v1, pre-plan download
    attempt/diagnostic v1, enablement recovery projection v3, and enablement
    operation v3 are the only accepted baseline.
@@ -57,7 +58,8 @@ publishes one capability generation, and retires unused generations in reverse.
    planning, lock creation, installation, and receipt loading.
 7. **Planning and mutation are separate.** Install, upgrade, uninstall,
    enable, and disable return an immutable reviewed plan before apply.
-   `plugin_apply_plan` is the only manager mutation tool.
+   `plugin_apply_plan` is the only package-state mutation tool; explicit
+   pre-admission cancellation is a separate control-plane mutation.
 8. **There is one Flow lifecycle.** `a3s-flow` owns workflow compilation and
    execution. `flow.json` may describe visual design/deployment but cannot
    create another package identity, receipt, or journal.
@@ -1076,7 +1078,7 @@ are frozen.
 | Host operation observation | `a3s.use.plugin-host-operation-observation-request/result.v1` |
 | Host operation watch | `a3s.use.plugin-host-operation-watch-request.v1` |
 | Host cancellation | `a3s.use.plugin-host-cancel-request/result.v1` |
-| Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
+| Manager MCP toolset | `a3s.use.plugin-manager-tools.v5` (v4 migration contract remains readable) |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
 | Pre-lock resolution attempt | `a3s.use.plugin-resolution-attempt.v1` |
 | Pre-plan download attempt | `a3s.use.plugin-download-attempt.v1` |
@@ -1228,14 +1230,17 @@ rejection. They are not supported decode paths.
 - [x] Workspace Grant proposal/change/resolution/ceiling binding.
 - [x] Candidate Grant persistence before prepare, cutover checkpointing,
   drain-before-revoke, and joint pre-cutover rollback.
-- [x] Manager MCP toolset v4 with explicit install-time Registry selection,
-  read-only planning, and one apply tool.
+- [x] Manager MCP toolset v5 with explicit install-time Registry selection,
+  read-only planning, digest-bound operation observation/watch, one apply tool,
+  and trusted explicit cancellation; the ten-tool v4 inventory remains a
+  migration contract.
 - [x] Shared typed `PluginManagerService` over the production Host Manager,
   with deterministic request replay, Registry-bound catalog cursors, stable
   installed-state pagination, exact/ranged SemVer selection, durable reviewed
-  plan reopening, and all ten frozen operations. Its standard MCP adapter
-  derives names, schemas, and annotations from toolset v4 and obtains apply
-  confirmation only from an injected trusted host provider.
+  plan reopening, exact operation observation/watch, and all thirteen frozen
+  operations. Its standard MCP adapter derives names, schemas, and annotations
+  from toolset v5 and obtains apply/cancellation confirmation only from an
+  injected trusted host provider.
 - [x] Production `CognitivePackageHostManager` for one exact managed-scope
   fence, with durable request/operation binding, selected-surface planning,
   digest-only graph and enablement apply, restart replay, provenance
@@ -1378,14 +1383,15 @@ Status: in progress
 
 - [x] Converge the standalone CLI on the shared `PluginManagerService` without
   a second catalog, plan, confirmation, or mutation implementation. The exact
-  manager-v4 read and planning inventory is available under `plugin`; apply
-  reopens a durable operation ID plus plan digest, requires explicit `--yes`,
-  and uses the verified cache without network access. Compatibility install,
+  manager-v5 read, planning, observation, watch, and cancellation inventory is
+  available under `plugin`; apply and cancellation reopen a durable operation ID
+  plus plan digest, require explicit trusted user authority (and CLI `--yes`),
+  and use the verified cache without network access. Compatibility install,
   upgrade, and uninstall fields remain intact.
 - [x] Migrate the A3S Code TUI to that service and compose the standard manager
-  MCP in Code. CLI, TUI `/packages`, and the exact ten-tool manager-v4 MCP now
-  reuse one host-owned service without a second plan, confirmation, or mutation
-  path at A3S CLI commit `ce1240891d6926c132aed8212efabaf6c925f4db`.
+  MCP in Code. CLI, TUI `/packages`, and the exact thirteen-tool manager-v5 MCP
+  now reuse one host-owned service without a second plan, confirmation, or
+  mutation path at A3S CLI commit `ce1240891d6926c132aed8212efabaf6c925f4db`.
 - [x] Verify TUI `/packages` and CLI output show the exact plan, package graph,
   source, permission ceiling, and confirmation boundary. A3S CLI `main` commit
   `bef7c913cbefba62638b37f91ce9263f4db2ffbb` derives one deterministic,

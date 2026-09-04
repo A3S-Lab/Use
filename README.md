@@ -406,6 +406,9 @@ a3s-use plugin plan-upgrade <publisher/name> --scope-kind <user|workspace> --sco
 a3s-use plugin plan-uninstall <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]
 a3s-use plugin plan-enable|plan-disable <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]
 a3s-use plugin apply-plan --operation-id <id> --plan-digest <sha256> --scope-kind <user|workspace> --scope-id <id> --yes [--json]
+a3s-use plugin observe-operation <publisher/name> --operation-id <id> --plan-digest <sha256> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use plugin watch-operation <publisher/name> --operation-id <id> --plan-digest <sha256> --scope-kind <user|workspace> --scope-id <id> [--after-revision <sha256>] [--timeout-ms <ms>] [--json]
+a3s-use plugin cancel-operation <publisher/name> --operation-id <id> --plan-digest <sha256> --scope-kind <user|workspace> --scope-id <id> --yes [--json]
 a3s-use extension inspect <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]
 a3s-use extension diagnose <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--history] [--json]
 a3s-use knowledge search <query> --scope-kind <user|workspace> --scope-id <id> [--limit <n>] [--json]
@@ -449,8 +452,9 @@ operation returns the durable replay result. Offline planning and recovery stay
 zero-network, and a supplied package-lock digest is rejected before any target
 download. The compatibility commands auto-apply only permission-free `Allow`
 plans. The one-to-one `plugin` commands expose the same four read operations,
-five read-only planning operations, and digest-only apply boundary as manager
-toolset v4. Each successful JSON `data` value is the exact typed service result,
+five read-only planning operations, digest-only apply, exact operation
+observation/watch, and explicit cancellation boundary as manager toolset v5.
+Each successful JSON `data` value is the exact typed service result,
 including the complete Host plan, package lock, source and permission evidence,
 operation ID, plan digest, confirmation decision, and terminal apply result.
 Planning never mutates package state. `plugin apply-plan` reopens only the exact
@@ -458,7 +462,7 @@ durable `(operation ID, plan digest)` pair and requires `--yes`; an ordinary CLI
 call does not imply user confirmation, and an `Ask` plan receives confirmation
 only at that explicit boundary. Exact apply and replay use the verified planning
 cache without Registry access. A3S Code CLI, TUI `/packages`, and the standard
-manager-v4 MCP now compose this same service without a presentation-owned plan,
+manager-v5 MCP now compose this same service without a presentation-owned plan,
 confirmation, or mutation path. Every standalone manager command requires an
 explicit User or Workspace installation. The selected `InstallationId` owns the
 manager and all mutable state; User and Workspace installations with the same
@@ -1264,10 +1268,13 @@ The manager MCP toolset exposes read-only planning separately from mutation:
 ```text
 plugin_plan_install     plugin_plan_upgrade     plugin_plan_uninstall
 plugin_plan_enable      plugin_plan_disable     plugin_apply_plan
+plugin_observe_operation plugin_watch_operation plugin_cancel_operation
 ```
 
-`plugin_apply_plan` is the only manager mutation entry point. A `NoChange`
-enablement result is terminal and has no synthetic mutation identity. Crash
+`plugin_apply_plan` is the only manager package-state mutation entry point;
+`plugin_cancel_operation` is a separate pre-admission control-plane mutation
+that cannot publish a package generation. A `NoChange` enablement result is
+terminal and has no synthetic mutation identity. Crash
 recovery resumes the exact stored plan and authorization; re-reading a finished
 operation returns its durable result without repeating side effects.
 Applying and rolling-back records both retain exclusive operation ownership;
@@ -1279,16 +1286,17 @@ package-scoped journal lock.
 `CognitivePackageHostManager`. It owns deterministic request identities,
 Registry-bound search cursors, stable installed-state pagination, SemVer
 install/upgrade selection, all five planning paths, durable plan reopening,
-and digest-only apply. `PluginManagerMcpServer` exposes the exact ten v4 tools
-through standard MCP initialization, `tools/list`, and `tools/call`; its
-schemas and annotations are generated from the frozen toolset. MCP apply asks
-an injected trusted host confirmation provider for existing exact evidence and
-never treats an agent tool call as user confirmation. The standalone CLI's
+and digest-only apply. `PluginManagerMcpServer` exposes the exact thirteen v5
+tools through standard MCP initialization, `tools/list`, and `tools/call`; its
+schemas and annotations are generated from the frozen toolset. MCP apply and
+cancellation ask an injected trusted host confirmation provider for existing
+exact evidence and never treat an agent tool call as user confirmation. The standalone CLI's
 Registry-backed install, upgrade, and uninstall mutations use this service and
 expose the exact reviewed Host plan/result alongside their released output
-fields. Its `plugin` surface maps all ten manager operations to the same
-service, keeps every plan read-only, and requires the exact operation ID, plan
-digest, and explicit `--yes` for apply. Code TUI `/packages` and the Code-side
+fields. Its `plugin` surface maps all thirteen manager operations to the same
+service, keeps every plan read-only, exposes exact operation observation/watch,
+and requires the exact operation ID, plan digest, and explicit `--yes` for
+apply or cancellation. Code TUI `/packages` and the Code-side
 manager MCP now use that same service. Human CLI and TUI review derive one
 deterministic, read-only projection from the immutable Manager envelope and
 show the exact plan identity, candidate/prior package graph, source,
@@ -1712,7 +1720,7 @@ Only the following cognitive-package protocol line is accepted:
 | Host operation observation | `a3s.use.plugin-host-operation-observation-request/result.v1` |
 | Host operation watch | `a3s.use.plugin-host-operation-watch-request.v1` |
 | Host cancellation | `a3s.use.plugin-host-cancel-request/result.v1` |
-| Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
+| Manager MCP toolset | `a3s.use.plugin-manager-tools.v5` (v4 migration contract remains readable) |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
 | Pre-lock resolution attempt | `a3s.use.plugin-resolution-attempt.v1` |
 | Pre-plan download attempt | `a3s.use.plugin-download-attempt.v1` |
@@ -1794,7 +1802,7 @@ for the contract and its limits.
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | MHS research-preview adapter profile | The A3S Use boundary, least-authority ceiling, exact managed-MCP publication gate, dependency graph, and no-implicit-write-retry rule are documented and contract-tested. This is not an MHS implementation or protocol-conformance claim |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
-| Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
+| Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, digest-only apply, exact operation observation/watch, and trusted pre-admission cancellation over one Host Manager. Its standard MCP adapter exposes the thirteen-tool v5 inventory and requires injected trusted confirmation evidence for mutation or cancellation. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all thirteen operations, exact typed results, explicit digest-bound `--yes` apply/cancellation, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, operation status, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
 | Capability Gateway contract and embedding MCP adapter | Implemented and contract-tested: immutable path-free descriptor/catalog contracts, opaque invocation/artifact/endpoint references, exact snapshot-lease and publication/lifecycle-generation binding, typed generic-MCP/A3S consumer-profile negotiation with canonical digests and no-silent-downgrade semantics, and a standard MCP `CapabilityGatewayMcpServer` that routes only catalog-authorized tools through an injected `CapabilityGatewayInvocationProvider`. The host can expose Streamable HTTP at `/mcp` with bearer authentication, optional exact Origin policy, duplicate-header rejection, bounded in-flight/rolling-window admission, sanitized HTTP errors, an explicit required pre-invocation authorization hook, and a typed host-authenticated transport/principal context delivered to both authorization and invocation. `CapabilityGatewayHttpConfig::for_principal` and `for_principals` bind one or more configured principals to validated endpoint credentials; the bounded mapping is immutable and scanned without early exit. `CapabilityGatewayInvocationResolver` and `CapabilityGatewayResolvedProvider` provide a single-resolution, lease-scoped host path for opaque references; the returned handle must retain the exact package-generation lease through invocation. An independent Rust client discovery/invocation check covers the path-free boundary. Profile-aware resource/prompt projection, production receipt/Runtime/Grant composition, CLI wiring, TLS termination, and the TypeScript/Python client/recovery matrix remain open |
 | Registry target observations, explicit offline install/upgrade, bounded source working set, resumable downloads, usage, and confirmed source cleanup | Implemented with interruption, range, tamper, and zero-network tests; cleanup never claims global blob reclamation |
 | Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive reference boundary prevents maintenance or whole-installation restore from racing durable reference publication. Physical, Registry-reference, global-reference, and joined-reachability v1 evidence covers canonical content, staging, every durable owner, expectation mismatches, and checked storage usage. Optional canonical hard quota, full digest audit, exact-plan logical quarantine, and verified zero-reference rehydration remain separate authorities. Confirmed GC now accepts only a bounded explicit Blob/expanded-package digest allowlist, repeats the complete zero-reference proof, binds physical and lifecycle evidence plus predecessor completion into one canonical plan, and persists a global fail-closed fence before same-shard atomic retirement and bounded tombstone deletion. Terminal replay is read-only and cannot delete a later recreated object. Source prune, scoped uninstall, audit, quarantine, rehydration, quota pressure, and unreachability never independently authorize global deletion |

@@ -7,7 +7,7 @@ description: Responsibility boundaries across A3S Use, the shared Plugin Manager
 
 This is the architecture of the development preview, not a description of a
 released product. Only manifest v3, catalog v3, receipt v6, plan v4, host
-protocol v6, managed scope v2, and manager tools v4 are current
+protocol v6, managed scope v2, and manager tools v5 are current
 cognitive-package inputs.
 
 Host protocol v6 binds User and Workspace kind independently from the textual
@@ -26,15 +26,16 @@ invocation authority.
 
 The Use-owned `PluginManagerService` is now the typed presentation boundary
 over that Host protocol. Its standard MCP adapter exposes exactly the frozen
-ten-tool v4 inventory and delegates every operation to the same service. Apply
-reopens the durable plan and requests existing confirmation from an injected
-trusted host provider; an agent tool call never becomes user confirmation.
+thirteen-tool v5 inventory and delegates every operation to the same service.
+Apply and cancellation reopen durable evidence and request existing
+confirmation from an injected trusted host provider; an agent tool call never
+becomes user confirmation.
 Standalone Registry-backed install, upgrade, and uninstall now use this
 service and include the exact Host plan/apply result in their JSON output while
-preserving existing fields. The standalone `plugin` CLI maps all ten manager
-operations to the same service, returns the exact typed result, keeps planning
-read-only, and requires the exact durable operation ID, plan digest, and
-explicit `--yes` for apply. A normal CLI or agent call does not imply
+preserving existing fields. The standalone `plugin` CLI maps all thirteen
+manager operations to the same service, returns the exact typed result, keeps
+planning read-only, and requires the exact durable operation ID, plan digest,
+and explicit `--yes` for apply or cancellation. A normal CLI or agent call does not imply
 confirmation. The A3S Code TUI and Code-side manager MCP composition now reuse
 this same service, so the CLI, TUI, and manager endpoint share one operation
 identity and confirmation boundary.
@@ -150,7 +151,7 @@ The current implementation reuses these existing mechanisms:
 - `src/surface_reconciler` plus `src/capability_registry`: dependency readiness and capability publication;
 - `src/plugin_manager`: the shared typed application service and standard
   manager MCP adapter over the production Host Manager. Standalone
-  Registry-backed compatibility mutations and the complete ten-operation
+  Registry-backed compatibility mutations and the complete thirteen-operation
   `plugin` CLI, A3S Code TUI, and Code-side manager MCP composition use this
   service. The adapter projects only the bounded, secret-free manager error
   contract; host lifecycle leases and endpoint authorization remain separate.

@@ -1,8 +1,13 @@
-use a3s_use_core::{PluginManagerToolset, PLUGIN_MANAGER_TOOLSET_SCHEMA_V4};
+use a3s_use_core::{
+    PluginManagerToolset, PLUGIN_MANAGER_TOOLSET_SCHEMA_V4, PLUGIN_MANAGER_TOOLSET_SCHEMA_V5,
+};
 
 const TOOLSET: &[u8] = include_bytes!("../fixtures/plugins/manager-toolset-v4.json");
 const TOOLSET_DIGEST: &str =
     include_str!("../fixtures/plugins/manager-toolset-v4.sha256").trim_ascii_end();
+const TOOLSET_V5: &[u8] = include_bytes!("../fixtures/plugins/manager-toolset-v5.json");
+const TOOLSET_V5_DIGEST: &str =
+    include_str!("../fixtures/plugins/manager-toolset-v5.sha256").trim_ascii_end();
 
 fn canonical_fixture(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\n").unwrap_or(bytes)
@@ -112,4 +117,65 @@ fn current_manager_toolset_fixture_is_canonical_and_frozen() {
     let error =
         PluginManagerToolset::from_json(&serde_json::to_vec(&retired).unwrap()).unwrap_err();
     assert_eq!(error.code, "use.plugin.manager_toolset_invalid");
+}
+
+#[test]
+fn manager_toolset_v5_adds_digest_bound_operation_control_without_mutation_shortcuts() {
+    let toolset = PluginManagerToolset::v5();
+    toolset.validate().unwrap();
+    assert_eq!(toolset.schema, PLUGIN_MANAGER_TOOLSET_SCHEMA_V5);
+    assert_eq!(toolset.tools.len(), 13);
+    let fixture = PluginManagerToolset::from_json(TOOLSET_V5).unwrap();
+    assert_eq!(fixture, toolset);
+    assert_eq!(
+        fixture.canonical_bytes().unwrap(),
+        canonical_fixture(TOOLSET_V5)
+    );
+    assert_eq!(fixture.descriptor_digest().unwrap(), TOOLSET_V5_DIGEST);
+
+    for name in [
+        "plugin_observe_operation",
+        "plugin_watch_operation",
+        "plugin_cancel_operation",
+    ] {
+        let tool = toolset.tool(name).expect("v5 operation tool");
+        assert_eq!(
+            tool.input_schema["required"],
+            serde_json::json!([
+                "packageId",
+                "scopeKind",
+                "scopeId",
+                "operationId",
+                "planDigest"
+            ])
+        );
+        assert_eq!(
+            tool.input_schema["properties"].as_object().unwrap().len(),
+            if name == "plugin_watch_operation" {
+                7
+            } else {
+                5
+            }
+        );
+        assert!(tool.input_schema["properties"].get("path").is_none());
+    }
+
+    let observe = toolset.tool("plugin_observe_operation").unwrap();
+    assert!(observe.annotations.read_only_hint);
+    assert!(!observe.annotations.destructive_hint);
+    let watch = toolset.tool("plugin_watch_operation").unwrap();
+    assert_eq!(
+        watch.input_schema["properties"]["timeoutMs"]["maximum"],
+        serde_json::json!(30000)
+    );
+    let cancel = toolset.tool("plugin_cancel_operation").unwrap();
+    assert!(!cancel.annotations.read_only_hint);
+    assert!(cancel.annotations.destructive_hint);
+
+    // The v4 fixture remains a supported migration contract.
+    assert_eq!(
+        PluginManagerToolset::v4().schema,
+        PLUGIN_MANAGER_TOOLSET_SCHEMA_V4
+    );
+    PluginManagerToolset::v4().validate().unwrap();
 }

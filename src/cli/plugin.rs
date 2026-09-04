@@ -2,8 +2,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
     PlanActor, PlanPolicyDecision, PluginHostEnablementPlanResult, PluginHostEnablementPlanStatus,
-    PluginHostObservationStatus, PluginManagerApplyPlanInput, PluginManagerInspectInput,
-    PluginManagerInstallPlanInput, PluginManagerListInstalledInput, PluginManagerPackageScopeInput,
+    PluginHostObservationStatus, PluginHostOperationObservationResult, PluginManagerApplyPlanInput,
+    PluginManagerInspectInput, PluginManagerInstallPlanInput, PluginManagerListInstalledInput,
+    PluginManagerOperationInput, PluginManagerOperationWatchInput, PluginManagerPackageScopeInput,
     PluginManagerSearchInput, PluginManagerUpgradePlanInput, PluginOperationConfirmation,
     PluginPackageId, PluginReleaseChannel, PluginSurfaceKind, PluginSurfaceRef, UseError,
     UseResult, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
@@ -17,7 +18,7 @@ use super::*;
 
 const CLI_ERROR: &str = "use.plugin.manager_cli_invalid";
 #[cfg(test)]
-const CLI_COMMANDS: [&str; 10] = [
+const CLI_COMMANDS: [&str; 13] = [
     "search",
     "inspect",
     "list-installed",
@@ -28,6 +29,9 @@ const CLI_COMMANDS: [&str; 10] = [
     "apply-plan",
     "plan-enable",
     "plan-disable",
+    "observe-operation",
+    "watch-operation",
+    "cancel-operation",
 ];
 
 pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
@@ -49,6 +53,9 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
         "plugin_plan_enable" => plan_package(args, PluginPlanCommand::Enable).await,
         "plugin_plan_disable" => plan_package(args, PluginPlanCommand::Disable).await,
         "plugin_apply_plan" => apply_plan(args).await,
+        "plugin_observe_operation" => observe_operation(args).await,
+        "plugin_watch_operation" => watch_operation(args).await,
+        "plugin_cancel_operation" => cancel_operation(args).await,
         _ => Err(cli_error(
             "The Plugin Manager CLI mapping differs from the frozen tool inventory.",
         )),
@@ -67,6 +74,9 @@ fn manager_tool_name(command: &str) -> Option<&'static str> {
         "apply-plan" => Some("plugin_apply_plan"),
         "plan-enable" => Some("plugin_plan_enable"),
         "plan-disable" => Some("plugin_plan_disable"),
+        "observe-operation" => Some("plugin_observe_operation"),
+        "watch-operation" => Some("plugin_watch_operation"),
+        "cancel-operation" => Some("plugin_cancel_operation"),
         _ => None,
     }
 }
@@ -355,6 +365,128 @@ async fn apply_plan(args: &[String]) -> UseResult<CommandOutput> {
     )
 }
 
+async fn observe_operation(args: &[String]) -> UseResult<CommandOutput> {
+    validate_operation_options(args, "plugin observe-operation", false, false)?;
+    let service = standalone_plugin_manager_service(managed_scope_argument(args)?)?;
+    let result = service
+        .observe_operation(operation_input(
+            args,
+            "plugin observe-operation requires a package ID",
+        )?)
+        .await?;
+    operation_observation_output(result)
+}
+
+async fn watch_operation(args: &[String]) -> UseResult<CommandOutput> {
+    validate_operation_options(args, "plugin watch-operation", true, false)?;
+    let service = standalone_plugin_manager_service(managed_scope_argument(args)?)?;
+    let result = service
+        .watch_operation(operation_watch_input(
+            args,
+            "plugin watch-operation requires a package ID",
+        )?)
+        .await?;
+    operation_observation_output(result)
+}
+
+async fn cancel_operation(args: &[String]) -> UseResult<CommandOutput> {
+    validate_operation_options(args, "plugin cancel-operation", false, true)?;
+    if !flag_argument(args, "--yes")? {
+        return Err(usage_error(
+            "plugin cancel-operation requires --yes after reviewing the exact operation ID and plan digest",
+        ));
+    }
+    let service = standalone_plugin_manager_service(managed_scope_argument(args)?)?;
+    let input = operation_input(args, "plugin cancel-operation requires a package ID")?;
+    let confirmation = PluginOperationConfirmation {
+        schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_owned(),
+        operation_id: input.operation_id.clone(),
+        plan_digest: input.plan_digest.clone(),
+        confirmed_by: PlanActor::User,
+        confirmed_at_ms: now_ms()?,
+    };
+    let result = service.cancel_operation(input, Some(confirmation)).await?;
+    cancellation_output(result)
+}
+
+fn validate_operation_options(
+    args: &[String],
+    command: &str,
+    allow_watch: bool,
+    allow_yes: bool,
+) -> UseResult<()> {
+    let mut values = vec![
+        "--operation-id",
+        "--plan-digest",
+        "--scope-kind",
+        "--scope-id",
+    ];
+    if allow_watch {
+        values.extend(["--after-revision", "--timeout-ms"]);
+    }
+    let flags = if allow_yes {
+        vec!["--json", "--yes"]
+    } else {
+        vec!["--json"]
+    };
+    validate_options(args, 2, &flags, &values, &[], command)
+}
+
+fn operation_input(args: &[String], message: &str) -> UseResult<PluginManagerOperationInput> {
+    let scope = managed_scope_argument(args)?;
+    Ok(PluginManagerOperationInput {
+        package_id: package_id_argument(args, 1, message)?,
+        scope_kind: scope.kind,
+        scope_id: scope.id,
+        operation_id: required_option(args, "--operation-id", "operation ID")?.to_owned(),
+        plan_digest: required_option(args, "--plan-digest", "plan digest")?.to_owned(),
+    })
+}
+
+fn operation_watch_input(
+    args: &[String],
+    message: &str,
+) -> UseResult<PluginManagerOperationWatchInput> {
+    let scope = managed_scope_argument(args)?;
+    Ok(PluginManagerOperationWatchInput {
+        package_id: package_id_argument(args, 1, message)?,
+        scope_kind: scope.kind,
+        scope_id: scope.id,
+        operation_id: required_option(args, "--operation-id", "operation ID")?.to_owned(),
+        plan_digest: required_option(args, "--plan-digest", "plan digest")?.to_owned(),
+        after_revision: option_argument(args, "--after-revision")?.map(str::to_owned),
+        timeout_ms: integer_option(args, "--timeout-ms", 0)?,
+    })
+}
+
+fn required_option<'a>(args: &'a [String], name: &str, label: &str) -> UseResult<&'a str> {
+    option_argument(args, name)?.ok_or_else(|| usage_error(format!("{name} <{label}> is required")))
+}
+
+fn operation_observation_output(
+    result: PluginHostOperationObservationResult,
+) -> UseResult<CommandOutput> {
+    let phase = serialized_label(&result.status.phase)?;
+    encoded_output(
+        format!(
+            "Operation '{}' for plugin '{}' is {phase}.",
+            result.operation_id, result.package_id
+        ),
+        &result,
+    )
+}
+
+fn cancellation_output(result: a3s_use_core::PluginHostCancelResult) -> UseResult<CommandOutput> {
+    let status = serialized_label(&result.status)?;
+    encoded_output(
+        format!(
+            "Cancellation request for operation '{}' is {status}.",
+            result.operation_id
+        ),
+        &result,
+    )
+}
+
 fn plan_output(result: &a3s_use_core::PluginHostPlanResult) -> UseResult<CommandOutput> {
     encoded_output(
         format!(
@@ -565,7 +697,7 @@ mod tests {
             .iter()
             .map(|command| manager_tool_name(command).unwrap())
             .collect::<Vec<_>>();
-        let frozen_tools = a3s_use_core::PluginManagerToolset::v4()
+        let frozen_tools = a3s_use_core::PluginManagerToolset::v5()
             .tools
             .into_iter()
             .map(|tool| tool.name)

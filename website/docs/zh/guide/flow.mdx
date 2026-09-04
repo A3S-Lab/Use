@@ -80,7 +80,7 @@ A3S Code 把 `flow.json` 作为 Workflow-as-a-Service 的可见设计文档。�
 
 ## 当前实现边界
 
-A3S Use 已实现 manifest 准入、精确源码证据、签名 catalog 闭包、包生命周期顺序、reconciler owner、host-capabilities v6、managed scope v2、manager tools v4、类型化 capability projection 与具体的 `A3sFlowLifecycleHost`。该 host 委托真实 `a3s-flow` Native TypeScript preflight，持久化精确 generation 的源码/编译产物 binding，并在 observation 时重新检查两者。未注入 `a3s-flow` host adapter 时，standalone engine 会在变更前拒绝包含必需 Flow 的包。
+A3S Use 已实现 manifest 准入、精确源码证据、签名 catalog 闭包、包生命周期顺序、reconciler owner、host-capabilities v6、managed scope v2、manager tools v5、类型化 capability projection 与具体的 `A3sFlowLifecycleHost`。该 host 委托真实 `a3s-flow` Native TypeScript preflight，持久化精确 generation 的源码/编译产物 binding，并在 observation 时重新检查两者。未注入 `a3s-flow` host adapter 时，standalone engine 会在变更前拒绝包含必需 Flow 的包。
 
 非激活的 Control Store qualification 现在也包含 committed-authority Flow owner。它通过 verified Artifact Store lease 读取有界源码快照，在 owner 自己的 workspace 中以 durable no-clobber 内容寻址方式持久化副本，然后只把该副本交给类型化的 `a3s-flow` Native TypeScript preflight。Artifact Store 的 package root 不会穿过 owner 边界。编译器/cache 路径只是运行时配置，不是 desired-state authority；源码替换或 preflight 失败不会写入 Control observation，Artifact Store 争用则沿同一个 effect key 安全延迟。Stop/remove 仍是与路径无关的 receipt。Runtime 与 dispatcher cutover gate 完成前，该 owner 不接入生产组合。
 
