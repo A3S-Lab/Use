@@ -23,6 +23,8 @@ The current preview accepts one contract line only:
 | Capability snapshot            | schema 5                                                                                 |
 | Capability descriptor          | `a3s.use.capability-descriptor.v1`                                                       |
 | Capability Gateway catalog     | `a3s.use.capability-gateway-catalog.v1`                                                  |
+| Capability consumer profile    | `a3s.use.capability-consumer-profile.v1`                                                 |
+| Consumer negotiation           | `a3s.use.capability-consumer-negotiation.v1`                                             |
 | Snapshot cursors               | `a3s.use.extension-snapshot-cursor.v3` / `a3s.use.capability-snapshot-cursor.v4`         |
 | Operation plan                 | `a3s.use.plugin-operation-plan.v4`                                                       |
 | Host capabilities              | `a3s.use.plugin-host-capabilities.v6`, protocol 6                                        |
@@ -451,6 +453,11 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   snapshot-to-catalog composition gap with a bounded, fail-closed projection;
   this is an embedding primitive, not the live resolver or production
   multi-principal registry.
+- `CapabilityConsumerProfile` and `CapabilityConsumerNegotiation` now bind an
+  explicit `generic-mcp` or `a3s` profile to the Gateway. A3S extension labels
+  are canonical and fail closed instead of being silently dropped. This is the
+  typed negotiation boundary only; resources/prompts and production host
+  projection remain open.
 - Qualify discovery and invocation from independent Rust, TypeScript, and
   Python clients without a shared package filesystem, including upgrade,
   restart, uninstall, and denied cross-scope access.

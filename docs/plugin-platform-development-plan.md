@@ -206,6 +206,14 @@ Acceptance:
   CLI/service composition and the independent Rust/TypeScript/Python recovery
   matrix.
 
+The typed consumer boundary is now available as
+`CapabilityConsumerProfile`/`CapabilityConsumerNegotiation`. Generic MCP is
+the default; an A3S host must explicitly negotiate a complete supported set of
+Flow, Knowledge, or UI extension labels, and the Gateway retains the resulting
+canonical digest across clones and leases. The labels remain metadata rather
+than authorization, and the standard adapter still publishes only Tools until
+profile-aware resources/prompts and production host composition are delivered.
+
 PR [#192](https://github.com/A3S-Lab/Use/pull/192) records the contract and
 adapter boundary. The checked items are not an A3 exit-gate claim; lifecycle,
 authorization, and production-host integration remain explicit follow-up work.

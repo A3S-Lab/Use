@@ -77,6 +77,14 @@ surface。签名验证和 opaque reference 解析仍由宿主负责；对应的
 `CapabilityGatewayMcpServer::from_registry_snapshot` 只在 projection 成功后获取匹配的
 RAII lease，如果 publication 已变化或 package 正在 draining 则不提供 server。
 
+Embedding 边界现在也会保留类型化 consumer 决策。`CapabilityConsumerProfile`
+区分默认 `generic-mcp` client 与显式 `a3s` client；
+`CapabilityConsumerNegotiation` 在宿主不支持请求的 Flow、Knowledge 或 UI label
+时直接拒绝，不会静默丢弃。canonical negotiation 与 digest 会在 Gateway clone
+和 snapshot lease 中保持一致。这些 label 是 metadata 而不是 grant：当前标准 MCP
+adapter 仍只发布通过 schema 校验的 Tool，profile-aware resource/prompt 与生产宿主
+组合仍未完成。
+
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、TUI 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
 ```text

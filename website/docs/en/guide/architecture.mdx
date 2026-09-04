@@ -96,6 +96,15 @@ companion `CapabilityGatewayMcpServer::from_registry_snapshot` acquires the
 matching RAII lease only after projection and returns no server when the
 publication changes or is draining.
 
+The embedding boundary now retains a typed consumer decision as well.
+`CapabilityConsumerProfile` distinguishes the default `generic-mcp` client
+from an explicit `a3s` client, and `CapabilityConsumerNegotiation` rejects an
+unsupported Flow, Knowledge, or UI request instead of silently dropping it.
+The canonical negotiation and digest survive Gateway clones and snapshot
+leases. These labels are metadata rather than grants: the current standard MCP
+adapter still publishes only schema-validated Tools, while profile-aware
+resources/prompts and production host composition remain open.
+
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
 ```text
