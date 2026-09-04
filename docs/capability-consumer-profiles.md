@@ -115,6 +115,22 @@ Gateway from a refreshed immutable catalog/policy snapshot. Existing
 constructors use an allow-all compatibility policy, so a production
 multi-principal host must inject an explicit policy.
 
+## Request cancellation
+
+The standard MCP adapter also consumes rmcp's per-request
+`RequestContext.ct`. When a client sends `notifications/cancelled`, the Gateway
+stops waiting for the in-flight Tool, Resource, or Prompt provider operation
+and returns the typed `use.plugin.capability_gateway_cancelled` boundary result
+when a response is still deliverable. Dropping the provider future releases
+the Gateway admission permit and any resolver/Invocation lease held by that
+operation; the server-wide snapshot lease remains intact for other requests.
+
+Cancellation is cooperative at the async boundary. Host providers should
+make downstream I/O cancellation-safe and must not detach work that can keep
+mutating state after the request has been cancelled. A cancellation token is
+request-local and is never included in catalog metadata, MCP arguments, or
+principal discovery cache keys.
+
 ## Current boundary and follow-up work
 
 Profile negotiation intentionally stays separate from capability

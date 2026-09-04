@@ -8,6 +8,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::Arc;
 
 use a3s_use_core::{
@@ -31,6 +32,7 @@ use rmcp::model::{
 use rmcp::{ServerHandler, ServiceExt};
 use serde_json::Value;
 use tokio::sync::{Mutex, OnceCell, OwnedSemaphorePermit};
+use tokio_util::sync::CancellationToken;
 
 use crate::capability_registry::{CapabilitySnapshotCursor, CapabilitySnapshotLease};
 
@@ -57,6 +59,7 @@ const MCP_RATE_LIMIT_ERROR: &str = "use.plugin.capability_gateway_rate_limited";
 const MCP_RESOURCE_ERROR: &str = "use.plugin.capability_gateway_resource_failed";
 const MCP_PROMPT_ERROR: &str = "use.plugin.capability_gateway_prompt_failed";
 const MCP_DISCOVERY_ERROR: &str = "use.plugin.capability_gateway_discovery_unavailable";
+const MCP_CANCELLED_ERROR: &str = "use.plugin.capability_gateway_cancelled";
 const MAX_CAPABILITY_VALUE_BYTES: usize = 256 * 1024;
 const MAX_CAPABILITY_VALUE_DEPTH: usize = 32;
 const MAX_CAPABILITY_VALUE_ELEMENTS: usize = 4_096;
@@ -838,7 +841,26 @@ impl CapabilityGatewayMcpServer {
         self
     }
 
+    #[cfg(test)]
     async fn discovery_view(
+        &self,
+        context: &CapabilityGatewayRequestContext,
+    ) -> Result<Arc<[usize]>, rmcp::ErrorData> {
+        self.discovery_view_with_cancellation(context, &CancellationToken::new())
+            .await
+    }
+
+    async fn discovery_view_with_cancellation(
+        &self,
+        context: &CapabilityGatewayRequestContext,
+        cancellation: &CancellationToken,
+    ) -> Result<Arc<[usize]>, rmcp::ErrorData> {
+        run_until_cancelled(cancellation, self.discovery_view_uncancellable(context))
+            .await
+            .unwrap_or_else(|| Err(cancellation_error()))
+    }
+
+    async fn discovery_view_uncancellable(
         &self,
         context: &CapabilityGatewayRequestContext,
     ) -> Result<Arc<[usize]>, rmcp::ErrorData> {
@@ -888,14 +910,23 @@ impl CapabilityGatewayMcpServer {
         name: &str,
         arguments: Option<JsonObject>,
         context: &CapabilityGatewayRequestContext,
+        cancellation: &CancellationToken,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if cancellation.is_cancelled() {
+            return Ok(structured_error(
+                MCP_CANCELLED_ERROR,
+                "The Capability Gateway request was cancelled.",
+            ));
+        }
         let tool = self.tools.get(name).ok_or_else(|| {
             rmcp::ErrorData::invalid_params(
                 "Capability Gateway Tool is not part of the immutable catalog.",
                 None,
             )
         })?;
-        let view = self.discovery_view(context).await?;
+        let view = self
+            .discovery_view_with_cancellation(context, cancellation)
+            .await?;
         if !descriptor_is_visible(&view, tool.descriptor_index) {
             return Err(rmcp::ErrorData::invalid_params(
                 "Capability Gateway Tool is not part of the immutable catalog.",
@@ -934,19 +965,29 @@ impl CapabilityGatewayMcpServer {
                 None,
             )
         })?;
-        let result = match self
-            .provider
-            .authorize_and_invoke(descriptor, arguments, context)
-            .await
+        let result = match run_until_cancelled(
+            cancellation,
+            self.provider
+                .authorize_and_invoke(descriptor, arguments, context),
+        )
+        .await
         {
-            Ok(value) => Ok(value),
-            Err(CapabilityGatewayInvocationFailure::Authorization(_)) => {
+            None => {
                 return Ok(structured_error(
-                    MCP_AUTHORIZATION_ERROR,
-                    "The Capability Gateway denied this invocation.",
+                    MCP_CANCELLED_ERROR,
+                    "The Capability Gateway request was cancelled.",
                 ));
             }
-            Err(CapabilityGatewayInvocationFailure::Invocation(error)) => Err(error),
+            Some(result) => match result {
+                Ok(value) => Ok(value),
+                Err(CapabilityGatewayInvocationFailure::Authorization(_)) => {
+                    return Ok(structured_error(
+                        MCP_AUTHORIZATION_ERROR,
+                        "The Capability Gateway denied this invocation.",
+                    ));
+                }
+                Err(CapabilityGatewayInvocationFailure::Invocation(error)) => Err(error),
+            },
         };
         Ok(tool_result(result, &tool.output_schema))
     }
@@ -999,7 +1040,9 @@ impl ServerHandler for CapabilityGatewayMcpServer {
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListToolsResult, rmcp::ErrorData> {
         let context = self.request_context(&request_context)?;
-        let view = self.discovery_view(&context).await?;
+        let view = self
+            .discovery_view_with_cancellation(&context, &request_context.ct)
+            .await?;
         let mut tools = self.tool_router.list_all();
         tools.retain(|tool| {
             let name: &str = tool.name.as_ref();
@@ -1023,7 +1066,9 @@ impl ServerHandler for CapabilityGatewayMcpServer {
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListResourcesResult, rmcp::ErrorData> {
         let context = self.request_context(&request_context)?;
-        let view = self.discovery_view(&context).await?;
+        let view = self
+            .discovery_view_with_cancellation(&context, &request_context.ct)
+            .await?;
         let resources = self
             .resources
             .values()
@@ -1049,7 +1094,9 @@ impl ServerHandler for CapabilityGatewayMcpServer {
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListPromptsResult, rmcp::ErrorData> {
         let context = self.request_context(&request_context)?;
-        let view = self.discovery_view(&context).await?;
+        let view = self
+            .discovery_view_with_cancellation(&context, &request_context.ct)
+            .await?;
         let prompts = self
             .prompts
             .values()
@@ -1083,7 +1130,9 @@ impl ServerHandler for CapabilityGatewayMcpServer {
                 None,
             )
         })?;
-        let view = self.discovery_view(&context).await?;
+        let view = self
+            .discovery_view_with_cancellation(&context, &request_context.ct)
+            .await?;
         if !descriptor_is_visible(&view, route.descriptor_index) {
             return Err(rmcp::ErrorData::resource_not_found(
                 "The requested Capability Gateway resource is not published.",
@@ -1101,24 +1150,29 @@ impl ServerHandler for CapabilityGatewayMcpServer {
                     None,
                 )
             })?;
-        let contents = match self
-            .provider
-            .authorize_and_read_resource(descriptor, &context)
-            .await
+        let contents = match run_until_cancelled(
+            &request_context.ct,
+            self.provider
+                .authorize_and_read_resource(descriptor, &context),
+        )
+        .await
         {
-            Ok(contents) => contents,
-            Err(CapabilityGatewayInvocationFailure::Authorization(_)) => {
-                return Err(rmcp::ErrorData::invalid_request(
-                    "The Capability Gateway denied this resource request.",
-                    None,
-                ));
-            }
-            Err(CapabilityGatewayInvocationFailure::Invocation(_)) => {
-                return Err(rmcp::ErrorData::internal_error(
-                    "The Capability Gateway could not read this resource.",
-                    None,
-                ));
-            }
+            None => return Err(cancellation_error()),
+            Some(result) => match result {
+                Ok(contents) => contents,
+                Err(CapabilityGatewayInvocationFailure::Authorization(_)) => {
+                    return Err(rmcp::ErrorData::invalid_request(
+                        "The Capability Gateway denied this resource request.",
+                        None,
+                    ));
+                }
+                Err(CapabilityGatewayInvocationFailure::Invocation(_)) => {
+                    return Err(rmcp::ErrorData::internal_error(
+                        "The Capability Gateway could not read this resource.",
+                        None,
+                    ));
+                }
+            },
         };
         validate_resource_contents(&request.uri, &contents).map_err(|_| {
             rmcp::ErrorData::internal_error(
@@ -1141,7 +1195,9 @@ impl ServerHandler for CapabilityGatewayMcpServer {
                 None,
             )
         })?;
-        let view = self.discovery_view(&context).await?;
+        let view = self
+            .discovery_view_with_cancellation(&context, &request_context.ct)
+            .await?;
         if !descriptor_is_visible(&view, route.descriptor_index) {
             return Err(rmcp::ErrorData::invalid_params(
                 "The requested Capability Gateway prompt is not published.",
@@ -1166,24 +1222,29 @@ impl ServerHandler for CapabilityGatewayMcpServer {
                     None,
                 )
             })?;
-        let result = match self
-            .provider
-            .authorize_and_get_prompt(descriptor, arguments, &context)
-            .await
+        let result = match run_until_cancelled(
+            &request_context.ct,
+            self.provider
+                .authorize_and_get_prompt(descriptor, arguments, &context),
+        )
+        .await
         {
-            Ok(result) => result,
-            Err(CapabilityGatewayInvocationFailure::Authorization(_)) => {
-                return Err(rmcp::ErrorData::invalid_request(
-                    "The Capability Gateway denied this prompt request.",
-                    None,
-                ));
-            }
-            Err(CapabilityGatewayInvocationFailure::Invocation(_)) => {
-                return Err(rmcp::ErrorData::internal_error(
-                    "The Capability Gateway could not generate this prompt.",
-                    None,
-                ));
-            }
+            None => return Err(cancellation_error()),
+            Some(result) => match result {
+                Ok(result) => result,
+                Err(CapabilityGatewayInvocationFailure::Authorization(_)) => {
+                    return Err(rmcp::ErrorData::invalid_request(
+                        "The Capability Gateway denied this prompt request.",
+                        None,
+                    ));
+                }
+                Err(CapabilityGatewayInvocationFailure::Invocation(_)) => {
+                    return Err(rmcp::ErrorData::internal_error(
+                        "The Capability Gateway could not generate this prompt.",
+                        None,
+                    ));
+                }
+            },
         };
         let visible_resource_uris = self.visible_resource_uris(&view);
         validate_prompt_result(&result, &visible_resource_uris).map_err(|_| {
@@ -1286,9 +1347,15 @@ fn frozen_tool_router(
                 Box::pin(async move {
                     let gateway_context =
                         context.service.request_context(&context.request_context)?;
+                    let cancellation = context.request_context.ct.clone();
                     context
                         .service
-                        .dispatch(&route_name, context.arguments, &gateway_context)
+                        .dispatch(
+                            &route_name,
+                            context.arguments,
+                            &gateway_context,
+                            &cancellation,
+                        )
                         .await
                 })
             },
@@ -1733,6 +1800,24 @@ fn structured_error(code: &str, message: &str) -> CallToolResult {
         "code": code,
         "message": message,
     }))
+}
+
+fn cancellation_error() -> rmcp::ErrorData {
+    rmcp::ErrorData::invalid_request(
+        "The Capability Gateway request was cancelled.",
+        Some(serde_json::json!({ "code": MCP_CANCELLED_ERROR })),
+    )
+}
+
+async fn run_until_cancelled<F, T>(cancellation: &CancellationToken, future: F) -> Option<T>
+where
+    F: Future<Output = T>,
+{
+    tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => None,
+        output = future => Some(output),
+    }
 }
 
 fn schema_value_error() -> UseError {

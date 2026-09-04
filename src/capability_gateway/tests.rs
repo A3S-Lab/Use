@@ -19,6 +19,7 @@ use rmcp::transport::streamable_http_client::{
 };
 use rmcp::{ClientHandler, ServiceExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::capability_registry::{
@@ -253,6 +254,104 @@ impl CapabilityGatewayDiscoveryPolicy for FailingDiscoveryPolicy {
 }
 
 #[derive(Debug)]
+struct CancellationProbeProvider {
+    started: AtomicUsize,
+    started_notify: Notify,
+    dropped: AtomicUsize,
+    dropped_notify: Notify,
+}
+
+#[derive(Debug)]
+struct CancellationProbeGuard<'a> {
+    provider: &'a CancellationProbeProvider,
+}
+
+impl Default for CancellationProbeProvider {
+    fn default() -> Self {
+        Self {
+            started: AtomicUsize::new(0),
+            started_notify: Notify::new(),
+            dropped: AtomicUsize::new(0),
+            dropped_notify: Notify::new(),
+        }
+    }
+}
+
+impl CancellationProbeProvider {
+    async fn wait_for_started(&self, expected: usize) {
+        loop {
+            if self.started.load(Ordering::SeqCst) >= expected {
+                return;
+            }
+            self.started_notify.notified().await;
+        }
+    }
+
+    async fn wait_for_dropped(&self, expected: usize) {
+        loop {
+            if self.dropped.load(Ordering::SeqCst) >= expected {
+                return;
+            }
+            self.dropped_notify.notified().await;
+        }
+    }
+
+    fn begin(&self) -> CancellationProbeGuard<'_> {
+        self.started.fetch_add(1, Ordering::SeqCst);
+        self.started_notify.notify_waiters();
+        CancellationProbeGuard { provider: self }
+    }
+}
+
+impl Drop for CancellationProbeGuard<'_> {
+    fn drop(&mut self) {
+        self.provider.dropped.fetch_add(1, Ordering::SeqCst);
+        self.provider.dropped_notify.notify_waiters();
+    }
+}
+
+#[async_trait]
+impl CapabilityGatewayInvocationProvider for CancellationProbeProvider {
+    async fn authorize(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: &Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<()> {
+        Ok(())
+    }
+
+    async fn invoke(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<Value> {
+        let _guard = self.begin();
+        std::future::pending::<UseResult<Value>>().await
+    }
+
+    async fn read_resource(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<Vec<ResourceContents>> {
+        let _guard = self.begin();
+        std::future::pending::<UseResult<Vec<ResourceContents>>>().await
+    }
+
+    async fn get_prompt(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<GetPromptResult> {
+        let _guard = self.begin();
+        std::future::pending::<UseResult<GetPromptResult>>().await
+    }
+}
+
+#[derive(Debug)]
 struct LeaseProbeResolver {
     expected: InvocationRef,
     resolves: AtomicUsize,
@@ -435,6 +534,169 @@ async fn discovery_context_cache_is_bounded() {
         error.data.as_ref().and_then(|data| data["code"].as_str()),
         Some(MCP_DISCOVERY_ERROR)
     );
+}
+
+#[tokio::test]
+async fn cancelled_tool_dispatch_drops_provider_future_and_returns_typed_error() {
+    let provider = Arc::new(CancellationProbeProvider::default());
+    let server = CapabilityGatewayMcpServer::new(
+        test_catalog(test_descriptor()),
+        Arc::clone(&provider) as Arc<dyn CapabilityGatewayInvocationProvider>,
+    )
+    .unwrap();
+    let cancellation = CancellationToken::new();
+    let context = CapabilityGatewayRequestContext::stdio();
+    let task = tokio::spawn({
+        let cancellation = cancellation.clone();
+        async move {
+            server
+                .dispatch(
+                    "search",
+                    Some(
+                        serde_json::json!({ "query": "cancel" })
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    ),
+                    &context,
+                    &cancellation,
+                )
+                .await
+        }
+    });
+
+    tokio::time::timeout(Duration::from_secs(1), provider.wait_for_started(1))
+        .await
+        .expect("the provider invocation must start");
+    cancellation.cancel();
+    let result = tokio::time::timeout(Duration::from_secs(1), task)
+        .await
+        .expect("cancellation must settle the adapter promptly")
+        .expect("the dispatch task must not panic")
+        .expect("the adapter returns a structured cancellation result");
+    assert_eq!(result.is_error, Some(true));
+    assert_eq!(
+        result
+            .structured_content
+            .as_ref()
+            .and_then(|value| value["code"].as_str()),
+        Some(MCP_CANCELLED_ERROR)
+    );
+    tokio::time::timeout(Duration::from_secs(1), provider.wait_for_dropped(1))
+        .await
+        .expect("cancellation must drop the provider future");
+}
+
+#[tokio::test]
+async fn rmcp_cancellation_reaches_tool_resource_and_prompt_providers() {
+    let tool = test_descriptor();
+    let resource = test_resource_descriptor();
+    let prompt = test_prompt_descriptor();
+    let resource_uri = resource.resource_uri().unwrap().as_str().to_owned();
+    let provider = Arc::new(CancellationProbeProvider::default());
+    let server = CapabilityGatewayMcpServer::new(
+        CapabilityGatewayCatalog::new(
+            InstallationId::new(InstallationKind::User, "user/gateway-cancel-tests").unwrap(),
+            9,
+            vec![tool, resource, prompt],
+        )
+        .unwrap(),
+        Arc::clone(&provider) as Arc<dyn CapabilityGatewayInvocationProvider>,
+    )
+    .unwrap();
+    let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
+    let server_handle = tokio::spawn(async move {
+        server
+            .serve(server_transport)
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let client = TestClient.serve(client_transport).await.unwrap();
+
+    let tool_handle = client
+        .peer()
+        .send_cancellable_request(
+            rmcp::model::ClientRequest::from(rmcp::model::CallToolRequest::new(
+                CallToolRequestParam {
+                    name: "search".into(),
+                    arguments: Some(
+                        serde_json::json!({ "query": "cancel" })
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    ),
+                },
+            )),
+            rmcp::service::PeerRequestOptions::no_options(),
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), provider.wait_for_started(1))
+        .await
+        .expect("the tool provider must start");
+    tool_handle
+        .cancel(Some("test tool cancellation".to_owned()))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), provider.wait_for_dropped(1))
+        .await
+        .expect("tool cancellation must drop its provider future");
+
+    let resource_handle = client
+        .peer()
+        .send_cancellable_request(
+            rmcp::model::ClientRequest::from(rmcp::model::ReadResourceRequest::new(
+                ReadResourceRequestParam { uri: resource_uri },
+            )),
+            rmcp::service::PeerRequestOptions::no_options(),
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), provider.wait_for_started(2))
+        .await
+        .expect("the resource provider must start");
+    resource_handle
+        .cancel(Some("test resource cancellation".to_owned()))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), provider.wait_for_dropped(2))
+        .await
+        .expect("resource cancellation must drop its provider future");
+
+    let prompt_handle = client
+        .peer()
+        .send_cancellable_request(
+            rmcp::model::ClientRequest::from(rmcp::model::GetPromptRequest::new(
+                GetPromptRequestParam {
+                    name: "research".to_owned(),
+                    arguments: Some(
+                        serde_json::json!({ "topic": "cancel" })
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    ),
+                },
+            )),
+            rmcp::service::PeerRequestOptions::no_options(),
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), provider.wait_for_started(3))
+        .await
+        .expect("the prompt provider must start");
+    prompt_handle
+        .cancel(Some("test prompt cancellation".to_owned()))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), provider.wait_for_dropped(3))
+        .await
+        .expect("prompt cancellation must drop its provider future");
+
+    client.cancel().await.unwrap();
+    server_handle.await.unwrap();
 }
 
 #[test]
