@@ -216,12 +216,9 @@ fn resources_and_prompts_round_trip_and_share_a_surface_generation() {
     let installation =
         InstallationId::new(super::super::InstallationKind::User, "user/current").unwrap();
     let catalog = CapabilityGatewayCatalog::new(installation, 7, vec![resource, prompt]).unwrap();
-    assert_eq!(
-        catalog
-            .find_resource(catalog.descriptors()[0].resource_uri().unwrap().as_str())
-            .is_some(),
-        true
-    );
+    assert!(catalog
+        .find_resource(catalog.descriptors()[0].resource_uri().unwrap().as_str())
+        .is_some());
     assert!(catalog.find_prompt("research").is_some());
 }
 

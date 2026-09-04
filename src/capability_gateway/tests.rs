@@ -672,8 +672,7 @@ async fn adapter_exposes_standard_mcp_resources_and_prompts() {
         _ => panic!("expected text prompt message"),
     }
 
-    let authorizations = provider.authorizations.lock().unwrap();
-    assert_eq!(authorizations.len(), 2);
+    assert_eq!(provider.authorizations.lock().unwrap().len(), 2);
     client.cancel().await.unwrap();
     server_handle.await.unwrap();
 }
