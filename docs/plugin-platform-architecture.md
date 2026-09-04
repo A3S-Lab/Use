@@ -560,6 +560,16 @@ with the host, and `CapabilityGatewayMcpServer::from_registry_snapshot` acquires
 the exact RAII lease only after the projection succeeds. A publication change
 or a draining package returns no server rather than serving a mixed snapshot.
 
+Consumer selection is now explicit at the embedding boundary. The core
+`CapabilityConsumerProfile` contract distinguishes `generic-mcp` from `a3s`,
+and `CapabilityConsumerNegotiation` accepts only a complete host-supported
+extension set (`flow`, `knowledge`, and `ui`). Canonical bytes and a digest bind
+the decision, and `CapabilityGatewayMcpServer` retains it through clones and
+snapshot leases. This metadata does not grant authorization or manufacture
+MCP resources/prompts; the current adapter still exposes only schema-validated
+Tools, while profile-aware projection and production host composition remain
+open.
+
 The steady-state watch path reads immutable publications without acquiring the
 Registry writer lock. A watcher may take that lock once to repair a verified
 receipt/publication mismatch after a crash. Lifecycle mutations absorb this

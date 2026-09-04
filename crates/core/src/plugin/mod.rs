@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{UseError, UseResult};
 
+mod capability_consumer;
 mod capability_gateway;
 mod catalog;
 mod catalog_plan;
@@ -38,6 +39,11 @@ mod planning_bundle;
 mod resolved_grant_changes;
 pub(crate) mod validation;
 
+pub use capability_consumer::{
+    CapabilityConsumerExtension, CapabilityConsumerKind, CapabilityConsumerNegotiation,
+    CapabilityConsumerProfile, CAPABILITY_CONSUMER_NEGOTIATION_SCHEMA_V1,
+    CAPABILITY_CONSUMER_PROFILE_SCHEMA_V1, MAX_CAPABILITY_CONSUMER_EXTENSIONS,
+};
 pub use capability_gateway::{
     ArtifactRef, CapabilityDescriptionProof, CapabilityDescriptor, CapabilityDescriptorKind,
     CapabilityGatewayCatalog, CapabilityMcpTransport, CapabilityPublicationEvidence,

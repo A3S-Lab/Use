@@ -11,8 +11,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use a3s_use_core::{
-    CapabilityDescriptionProof, CapabilityDescriptor, CapabilityDescriptorKind,
-    CapabilityGatewayCatalog, CapabilityToolAnnotations, UseError, UseResult,
+    CapabilityConsumerNegotiation, CapabilityConsumerProfile, CapabilityDescriptionProof,
+    CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
+    CapabilityToolAnnotations, UseError, UseResult,
 };
 use async_trait::async_trait;
 use jsonschema::{Draft, Validator};
@@ -254,6 +255,7 @@ pub enum CapabilityGatewayInvocationFailure {
 #[derive(Clone)]
 pub struct CapabilityGatewayMcpServer {
     catalog: Arc<CapabilityGatewayCatalog>,
+    consumer_negotiation: Arc<CapabilityConsumerNegotiation>,
     provider: Arc<dyn CapabilityGatewayInvocationProvider>,
     tools: Arc<BTreeMap<String, CapabilityGatewayTool>>,
     tool_router: ToolRouter<Self>,
@@ -269,6 +271,7 @@ impl std::fmt::Debug for CapabilityGatewayMcpServer {
         formatter
             .debug_struct("CapabilityGatewayMcpServer")
             .field("catalog", &self.catalog)
+            .field("consumer_negotiation", &self.consumer_negotiation)
             .field("has_snapshot_lease", &self.snapshot_lease.is_some())
             .field("transport", &self.transport)
             .finish_non_exhaustive()
@@ -281,7 +284,13 @@ impl CapabilityGatewayMcpServer {
         catalog: CapabilityGatewayCatalog,
         provider: Arc<dyn CapabilityGatewayInvocationProvider>,
     ) -> UseResult<Self> {
-        Self::build(catalog, provider, None, CapabilityGatewayLimits::default())
+        Self::build(
+            catalog,
+            provider,
+            CapabilityConsumerNegotiation::generic_mcp(),
+            None,
+            CapabilityGatewayLimits::default(),
+        )
     }
 
     /// Compose an MCP adapter with explicit bounded invocation admission.
@@ -290,7 +299,42 @@ impl CapabilityGatewayMcpServer {
         provider: Arc<dyn CapabilityGatewayInvocationProvider>,
         limits: CapabilityGatewayLimits,
     ) -> UseResult<Self> {
-        Self::build(catalog, provider, None, limits)
+        Self::build(
+            catalog,
+            provider,
+            CapabilityConsumerNegotiation::generic_mcp(),
+            None,
+            limits,
+        )
+    }
+
+    /// Compose a Gateway for an explicit, already completed consumer
+    /// negotiation. The negotiation is retained with the immutable server so
+    /// a caller cannot accidentally reuse an A3S extension decision with a
+    /// different consumer or silently downgrade a requested extension.
+    pub fn with_consumer_negotiation(
+        catalog: CapabilityGatewayCatalog,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        negotiation: CapabilityConsumerNegotiation,
+    ) -> UseResult<Self> {
+        Self::build(
+            catalog,
+            provider,
+            negotiation,
+            None,
+            CapabilityGatewayLimits::default(),
+        )
+    }
+
+    /// Compose a Gateway for an explicit consumer negotiation and bounded
+    /// invocation admission.
+    pub fn with_consumer_negotiation_and_limits(
+        catalog: CapabilityGatewayCatalog,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        negotiation: CapabilityConsumerNegotiation,
+        limits: CapabilityGatewayLimits,
+    ) -> UseResult<Self> {
+        Self::build(catalog, provider, negotiation, None, limits)
     }
 
     /// Compose a Gateway over an exact Use capability snapshot lease.
@@ -309,6 +353,7 @@ impl CapabilityGatewayMcpServer {
         Self::build(
             catalog,
             provider,
+            CapabilityConsumerNegotiation::generic_mcp(),
             Some(Arc::new(lease)),
             CapabilityGatewayLimits::default(),
         )
@@ -322,7 +367,49 @@ impl CapabilityGatewayMcpServer {
         limits: CapabilityGatewayLimits,
     ) -> UseResult<Self> {
         validate_snapshot_binding(&catalog, &lease)?;
-        Self::build(catalog, provider, Some(Arc::new(lease)), limits)
+        Self::build(
+            catalog,
+            provider,
+            CapabilityConsumerNegotiation::generic_mcp(),
+            Some(Arc::new(lease)),
+            limits,
+        )
+    }
+
+    /// Compose a leased Gateway for an explicit consumer negotiation.
+    pub fn with_snapshot_lease_and_consumer_negotiation(
+        catalog: CapabilityGatewayCatalog,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        lease: CapabilitySnapshotLease,
+        negotiation: CapabilityConsumerNegotiation,
+    ) -> UseResult<Self> {
+        validate_snapshot_binding(&catalog, &lease)?;
+        Self::build(
+            catalog,
+            provider,
+            negotiation,
+            Some(Arc::new(lease)),
+            CapabilityGatewayLimits::default(),
+        )
+    }
+
+    /// Compose a leased Gateway for an explicit consumer negotiation and
+    /// bounded invocation admission.
+    pub fn with_snapshot_lease_and_consumer_negotiation_and_limits(
+        catalog: CapabilityGatewayCatalog,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        lease: CapabilitySnapshotLease,
+        negotiation: CapabilityConsumerNegotiation,
+        limits: CapabilityGatewayLimits,
+    ) -> UseResult<Self> {
+        validate_snapshot_binding(&catalog, &lease)?;
+        Self::build(
+            catalog,
+            provider,
+            negotiation,
+            Some(Arc::new(lease)),
+            limits,
+        )
     }
 
     /// Bind a catalog to the current Use publication and acquire its exact
@@ -339,6 +426,24 @@ impl CapabilityGatewayMcpServer {
             return Ok(None);
         };
         Self::with_snapshot_lease(catalog, provider, lease).map(Some)
+    }
+
+    /// Bind a catalog to the current Use publication and an explicit consumer
+    /// negotiation. `None` means the publication changed or a required
+    /// generation is already draining.
+    pub async fn from_registry_with_consumer_negotiation(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        catalog: CapabilityGatewayCatalog,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        negotiation: CapabilityConsumerNegotiation,
+    ) -> UseResult<Option<Self>> {
+        negotiation.validate()?;
+        let snapshot = registry.snapshot().await?;
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        Self::with_snapshot_lease_and_consumer_negotiation(catalog, provider, lease, negotiation)
+            .map(Some)
     }
 
     /// Build and bind a Gateway catalog from one stable Use snapshot.
@@ -362,6 +467,24 @@ impl CapabilityGatewayMcpServer {
         Self::with_snapshot_lease(catalog, provider, lease).map(Some)
     }
 
+    /// Build and bind a Gateway catalog from one stable Use snapshot for an
+    /// explicit consumer negotiation.
+    pub async fn from_registry_snapshot_with_consumer_negotiation(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        descriptors: Vec<CapabilityDescriptor>,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        negotiation: CapabilityConsumerNegotiation,
+    ) -> UseResult<Option<Self>> {
+        negotiation.validate()?;
+        let snapshot = registry.snapshot().await?;
+        let catalog = snapshot.capability_gateway_catalog(descriptors)?;
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        Self::with_snapshot_lease_and_consumer_negotiation(catalog, provider, lease, negotiation)
+            .map(Some)
+    }
+
     /// Build and bind a Gateway from descriptions that a host has verified
     /// against its signed Registry publication.  This is the preferred
     /// production constructor; the descriptor-only variant remains useful
@@ -380,12 +503,32 @@ impl CapabilityGatewayMcpServer {
         Self::with_snapshot_lease(catalog, provider, lease).map(Some)
     }
 
+    /// Build and bind a Gateway from verified descriptions for an explicit
+    /// consumer negotiation.
+    pub async fn from_verified_registry_snapshot_with_consumer_negotiation(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        proofs: Vec<CapabilityDescriptionProof>,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        negotiation: CapabilityConsumerNegotiation,
+    ) -> UseResult<Option<Self>> {
+        negotiation.validate()?;
+        let snapshot = registry.snapshot().await?;
+        let catalog = snapshot.capability_gateway_catalog_from_verified_descriptions(proofs)?;
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        Self::with_snapshot_lease_and_consumer_negotiation(catalog, provider, lease, negotiation)
+            .map(Some)
+    }
+
     fn build(
         catalog: CapabilityGatewayCatalog,
         provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        consumer_negotiation: CapabilityConsumerNegotiation,
         snapshot_lease: Option<Arc<CapabilitySnapshotLease>>,
         limits: CapabilityGatewayLimits,
     ) -> UseResult<Self> {
+        consumer_negotiation.validate()?;
         catalog.validate()?;
         let catalog = Arc::new(catalog);
         let tools = Arc::new(compile_tools(&catalog)?);
@@ -393,6 +536,7 @@ impl CapabilityGatewayMcpServer {
         let admission = Arc::new(GatewayAdmission::new(limits)?);
         Ok(Self {
             catalog,
+            consumer_negotiation: Arc::new(consumer_negotiation),
             provider,
             tools,
             tool_router,
@@ -405,6 +549,16 @@ impl CapabilityGatewayMcpServer {
     /// Return the exact immutable catalog used by this server.
     pub fn catalog(&self) -> &CapabilityGatewayCatalog {
         &self.catalog
+    }
+
+    /// Return the immutable consumer negotiation bound to this Gateway.
+    pub fn consumer_negotiation(&self) -> &CapabilityConsumerNegotiation {
+        &self.consumer_negotiation
+    }
+
+    /// Return the negotiated consumer profile bound to this Gateway.
+    pub fn consumer_profile(&self) -> &CapabilityConsumerProfile {
+        self.consumer_negotiation.profile()
     }
 
     /// Return the exact lease cursor when this server is bound to a live Use

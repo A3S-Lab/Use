@@ -924,6 +924,18 @@ when the publication changes or is already draining. This closes the
 snapshot-to-catalog composition gap without claiming the remaining live
 resolver, receipt-owned provider, or multi-principal production wiring.
 
+Implementation note (2026-09-04): the typed
+`CapabilityConsumerProfile`/`CapabilityConsumerNegotiation` contract now
+distinguishes the default `generic-mcp` consumer from an explicit `a3s`
+consumer. Extension requests are canonical, sorted, bounded, and digest-bound;
+fail closed when the host cannot support the complete requested set. The
+embedding Gateway retains the completed negotiation across its clones and
+leased constructors; legacy constructors remain generic-MCP by default. This
+is the profile boundary only: profile-aware resource/prompt projection,
+production receipt/Runtime/Grant composition, and product host wiring remain
+open, so the consumer-profile checkbox is intentionally not marked complete
+yet.
+
 Implementation note (2026-09-03): PR [#197](https://github.com/A3S-Lab/Use/pull/197)
 added a secret-free error projection at the Package Manager MCP boundary. The
 adapter retains only validated `use.*` contract codes and a bounded public
@@ -1082,6 +1094,8 @@ are frozen.
 | Capability snapshot | schema version 5 |
 | Capability descriptor | `a3s.use.capability-descriptor.v1` |
 | Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
+| Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
+| Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
 | Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |
 | Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v3` |
 | Coordinated Use state backup | `a3s.use.state-backup.v2` |

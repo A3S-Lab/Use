@@ -22,6 +22,8 @@ production-ready。合约完成和测试通过只是实现证据，不是发布�
 | Capability snapshot            | schema 5                                                                                 |
 | Capability descriptor          | `a3s.use.capability-descriptor.v1`                                                       |
 | Capability Gateway catalog     | `a3s.use.capability-gateway-catalog.v1`                                                  |
+| Capability consumer profile    | `a3s.use.capability-consumer-profile.v1`                                                 |
+| Consumer negotiation           | `a3s.use.capability-consumer-negotiation.v1`                                             |
 | snapshot cursor                | `a3s.use.extension-snapshot-cursor.v3` / `a3s.use.capability-snapshot-cursor.v4`         |
 | operation plan                 | `a3s.use.plugin-operation-plan.v4`                                                       |
 | host capabilities              | `a3s.use.plugin-host-capabilities.v6`，protocol 6                                        |
@@ -339,6 +341,10 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
 - `CapabilityRegistrySnapshot::capability_gateway_catalog` 与
   `CapabilityGatewayMcpServer::from_registry_snapshot` 已补齐 snapshot 到 catalog
   的有界、fail-closed 组合间隙；签名验证与 opaque reference 解析仍由宿主负责。
+- `CapabilityConsumerProfile` 与 `CapabilityConsumerNegotiation` 现在会把显式
+  `generic-mcp` 或 `a3s` profile 绑定到 Gateway。A3S extension label 使用
+  canonical contract，缺失支持时 fail closed，不会静默降级；这只是类型化协商
+  边界，resource/prompt 与生产宿主 projection 仍未完成。
 - 需要用不共享 package filesystem 的独立 Rust、TypeScript、Python client
   验证 discovery/invocation，并覆盖 upgrade、restart、uninstall 与跨 scope
   拒绝。

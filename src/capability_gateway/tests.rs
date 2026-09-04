@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a3s_use_core::{
-    ArtifactRef, CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
-    CapabilityPublicationEvidence, CapabilityToolAnnotations, EndpointRef, InstallationId,
-    InstallationKind, InvocationRef, PluginPackageId, PluginSurfaceKind, PluginSurfaceRef,
-    CAPABILITY_DESCRIPTOR_SCHEMA_V1,
+    ArtifactRef, CapabilityConsumerExtension, CapabilityConsumerNegotiation, CapabilityDescriptor,
+    CapabilityDescriptorKind, CapabilityGatewayCatalog, CapabilityPublicationEvidence,
+    CapabilityToolAnnotations, EndpointRef, InstallationId, InstallationKind, InvocationRef,
+    PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, CAPABILITY_DESCRIPTOR_SCHEMA_V1,
 };
 use rmcp::model::CallToolRequestParam;
 use rmcp::transport::streamable_http_client::{
@@ -286,6 +286,43 @@ fn gateway_admission_is_bounded_and_shared() {
     assert_eq!(
         admission.try_acquire().unwrap_err(),
         AdmissionFailure::RateLimited
+    );
+}
+
+#[test]
+fn gateway_retains_the_explicit_consumer_negotiation() {
+    let negotiation = CapabilityConsumerNegotiation::negotiate(
+        a3s_use_core::CapabilityConsumerProfile::a3s([
+            CapabilityConsumerExtension::Flow,
+            CapabilityConsumerExtension::Ui,
+        ])
+        .unwrap(),
+        [
+            CapabilityConsumerExtension::Flow,
+            CapabilityConsumerExtension::Knowledge,
+            CapabilityConsumerExtension::Ui,
+        ],
+    )
+    .unwrap();
+    let server = CapabilityGatewayMcpServer::with_consumer_negotiation(
+        test_catalog(test_descriptor()),
+        Arc::new(RecordingProvider::default()),
+        negotiation.clone(),
+    )
+    .unwrap();
+
+    assert_eq!(server.consumer_negotiation(), &negotiation);
+    assert_eq!(server.consumer_profile(), negotiation.profile());
+    assert!(server
+        .consumer_negotiation()
+        .accepts(CapabilityConsumerExtension::Flow));
+    assert!(!server
+        .consumer_negotiation()
+        .accepts(CapabilityConsumerExtension::Knowledge));
+    assert_eq!(
+        server.clone().consumer_negotiation(),
+        &negotiation,
+        "cloning a Gateway must not drop the negotiated profile"
     );
 }
 
