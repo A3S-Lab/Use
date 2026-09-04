@@ -4,7 +4,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread::{self, Thread};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use a3s_use_core::{UseError, UseResult};
 use notify::{Config, Event, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
@@ -12,7 +12,6 @@ use tokio::sync::{mpsc, oneshot};
 
 const FALLBACK_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_ACTIVE_REGISTRY_WATCHERS: usize = 64;
-const WATCHER_SHUTDOWN_INTERVAL: Duration = Duration::from_millis(50);
 static ACTIVE_REGISTRY_WATCHERS: AtomicUsize = AtomicUsize::new(0);
 
 pub(super) struct RegistryChangeWatcher {
@@ -53,6 +52,7 @@ impl RegistryChangeWatcher {
         let failure = Arc::new(Mutex::new(None));
         let worker_failure = Arc::clone(&failure);
         let worker_target = target.clone();
+        let worker_probe_events = event_sender.clone();
         let (ready_sender, ready) = oneshot::channel();
         let capacity = RegistryWatcherCapacity::acquire()?;
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -61,8 +61,13 @@ impl RegistryChangeWatcher {
             .name("a3s-use-registry-watch".to_owned())
             .spawn(move || {
                 let _capacity = capacity;
-                let watcher =
-                    platform_watcher(&watch_root, worker_target, event_sender, worker_failure);
+                let mut observed_target = target_fingerprint(&worker_target);
+                let watcher = platform_watcher(
+                    &watch_root,
+                    worker_target.clone(),
+                    event_sender,
+                    worker_failure,
+                );
                 match watcher {
                     Ok(watcher) => {
                         if ready_sender.send(Ok(())).is_err()
@@ -75,7 +80,15 @@ impl RegistryChangeWatcher {
                         // Drop on this detached thread so an async runtime
                         // worker is never blocked during cancellation.
                         while !worker_cancelled.load(Ordering::Acquire) {
-                            thread::park_timeout(WATCHER_SHUTDOWN_INTERVAL);
+                            thread::park_timeout(FALLBACK_POLL_INTERVAL);
+                            if worker_cancelled.load(Ordering::Acquire) {
+                                break;
+                            }
+                            let current_target = target_fingerprint(&worker_target);
+                            if current_target != observed_target {
+                                observed_target = current_target;
+                                let _ = worker_probe_events.try_send(());
+                            }
                         }
                         drop(watcher);
                     }
@@ -180,6 +193,46 @@ impl Drop for RegistryWatcherCapacity {
 enum PlatformWatcher {
     Recommended { _watcher: RecommendedWatcher },
     Poll { _watcher: PollWatcher },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TargetFingerprint {
+    length: u64,
+    modified: Option<SystemTime>,
+    created: Option<SystemTime>,
+    is_file: bool,
+    is_directory: bool,
+    is_link_or_reparse: bool,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+}
+
+fn target_fingerprint(path: &Path) -> Option<TargetFingerprint> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(_) => return None,
+    };
+    Some(TargetFingerprint {
+        length: metadata.len(),
+        modified: metadata.modified().ok(),
+        created: metadata.created().ok(),
+        is_file: metadata.is_file(),
+        is_directory: metadata.is_dir(),
+        is_link_or_reparse: a3s_use_core::metadata_is_link_or_reparse_point(&metadata),
+        #[cfg(unix)]
+        device: {
+            use std::os::unix::fs::MetadataExt as _;
+            metadata.dev()
+        },
+        #[cfg(unix)]
+        inode: {
+            use std::os::unix::fs::MetadataExt as _;
+            metadata.ino()
+        },
+    })
 }
 
 fn platform_watcher(

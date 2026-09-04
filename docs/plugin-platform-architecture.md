@@ -589,11 +589,13 @@ Registry writer lock. After one reconciliation read it registers a bounded
 cross-platform filesystem subscription against the atomic Registry commit
 point, closes the read-to-subscribe race with a second publication read, and
 then re-reads only when a target event arrives. Native notifications are
-preferred; a metadata-only polling watcher is used only when the native backend
-cannot be registered. If the installation directory does not yet exist, only
-the closest existing ancestor's immediate entries are observed; each relevant
-directory creation advances the subscription toward the exact commit point,
-so no recursive drive or user-state watch is introduced. Every existing path
+preferred, and a bounded target-metadata probe runs alongside them to cover
+platform backends that coalesce or omit an atomic replacement; a metadata-only
+polling watcher is also available when the native backend cannot be registered.
+If the installation directory does not yet exist, only the closest existing
+ancestor's immediate entries are observed; each relevant directory creation
+advances the subscription toward the exact commit point, so no recursive drive
+or user-state watch is introduced. Every existing path
 component below the configured Use state root must remain an owned directory;
 symlinks and Windows reparse points fail closed before registration. Callback
 events are filtered before entering a capacity-one coalescing channel, and at

@@ -376,13 +376,15 @@ remains explicitly owned by the Use lifecycle coordinator.
 
 Capability watches now subscribe to the atomic Extension Registry publication
 instead of rebuilding the complete projection on a fixed interval. The native
-filesystem backend is preferred, with a metadata-only polling backend used
-only when native notifications are unavailable. Events are target-filtered
-and coalesced into one bounded signal; the validated `registry.json` remains
-the authority. `CapabilityRegistry` rebuilds and hashes the full projection at
-subscription setup, after a real generation advance, and once at timeout to
-close the final race. This removes repeated package scans and asset hashing
-from the normal wait path without creating a second mutable generation cursor.
+filesystem backend is preferred, while a bounded target-metadata probe runs
+alongside it to catch atomic replacements that a platform backend can coalesce
+or omit; a metadata-only polling backend is used when native registration is
+unavailable. Events are target-filtered and coalesced into one bounded signal;
+the validated `registry.json` remains the authority. `CapabilityRegistry`
+rebuilds and hashes the full projection at subscription setup, after a real
+generation advance, and once at timeout to close the final race. This removes
+repeated package scans and asset hashing from the normal wait path without
+creating a second mutable generation cursor.
 Persisting the complete agent-facing descriptor catalog in the lifecycle
 Capability Index remains a separate product gate.
 
