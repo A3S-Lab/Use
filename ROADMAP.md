@@ -1055,6 +1055,15 @@ operations on the same endpoint observe the new catalog. This is an adapter
 mechanism, not the lifecycle authority: Control cursor binding, receipt-owned
 provider composition, lease retirement, and catalog retention remain open.
 
+Implementation note (2026-09-05): catalog payload retention now has an
+explicit plan/apply protocol. The lifecycle owner supplies the protected
+digest set; the store emits a canonical inventory partition, rechecks the
+exact plan under its mutation lock, verifies each regular record before
+removal, fsyncs the affected shard, and supports read-only terminal replay.
+The store refuses an empty protection set for a non-empty inventory and never
+infers liveness from a mutable pointer. Control cursor and session-lease
+coordination remain the authority that chooses the protected set.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

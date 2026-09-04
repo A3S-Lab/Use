@@ -263,6 +263,12 @@ Acceptance:
 The store is exposed through the standalone `capability-catalog` Cargo feature
 and included by both `mcp` and `extensions`, so a headless manager can own the
 durable payload before composing an MCP endpoint.
+- [x] Add explicit catalog retention/GC planning. The payload store accepts a
+  lifecycle-supplied protected digest set, emits a canonical inventory
+  partition, rechecks the exact plan under its mutation lock, removes only
+  reviewed regular records with shard fsync, and supports terminal replay.
+  It never invents a current pointer or assumes that an unlisted generation is
+  safe to delete; Control cursor and session-lease ownership remain external.
 - [x] Provide a live Gateway session factory for host cutover. The factory
   rejects cross-installation, stale-generation, and consumer-contract changes;
   swaps immutable servers under serialized ownership; retains one standard MCP

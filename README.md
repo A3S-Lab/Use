@@ -1861,6 +1861,13 @@ operations on their exact leases while later requests on the same endpoint
 observe the new catalog. Lifecycle Control binding, provider composition,
 retirement, and retention remain host responsibilities.
 
+Catalog payload cleanup is now an explicit plan/apply operation as well:
+`CapabilityGatewayCatalogStore` requires a lifecycle-supplied protected digest
+set, revalidates the canonical inventory under its mutation lock, and removes
+only the reviewed complement with durability checks. It never guesses which
+generation is current; active and draining session leases must remain in the
+protected set.
+
 | Area | Status |
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |

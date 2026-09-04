@@ -23,7 +23,14 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
 
 mod layout;
+mod retention;
 use layout::validate_store_layout;
+
+pub use retention::{
+    CapabilityGatewayCatalogRetentionEntry, CapabilityGatewayCatalogRetentionPlan,
+    CapabilityGatewayCatalogRetentionResult, CAPABILITY_GATEWAY_CATALOG_RETENTION_PLAN_SCHEMA,
+    CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA,
+};
 
 /// Stable identifier for this payload-owner layout.
 ///

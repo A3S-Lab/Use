@@ -84,7 +84,7 @@ extensions = [
     "dep:semver",
     "dep:tempfile",
 ]
-capability-catalog = ["dep:fs2"]
+capability-catalog = ["dep:fs2", "dep:olpc-cjson"]
 mcp = [
     "dep:axum",
     "dep:async-trait",
