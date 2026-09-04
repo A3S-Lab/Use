@@ -867,8 +867,9 @@ between graph siblings before their effects enter one installation outbox.
   optional A3S extension labels explicit without changing the universal
   contract.
 - [ ] Project negotiated Flow, UI, and Knowledge metadata for A3S consumers
-  and apply per-consumer discovery filtering without weakening the lower-
-  authority boundary.
+  without weakening the lower-authority boundary. Principal-scoped discovery
+  filtering is now available as a separate host policy seam; actual typed
+  extension payload projection remains open.
 - [ ] Require signed descriptions and JSON input/output schemas for every
   agent-visible Tool. Legacy executable-only Tool Tasks remain host-only until
   a schema-valid descriptor is bound to them.
@@ -888,7 +889,10 @@ between graph siblings before their effects enter one installation outbox.
   pre-invocation provider authorization hook, and typed propagation of the
   host-authenticated transport/principal context are implemented; bounded
   HTTP token-to-principal mapping is now also available. Production
-  receipt/Runtime/Grant authorization and product CLI wiring remain.
+  receipt/Runtime/Grant authorization and product CLI wiring remain. A host can
+  now inject a bounded, fail-closed `CapabilityGatewayDiscoveryPolicy` so
+  authenticated principals receive frozen per-context Tool/Resource/Prompt
+  views; this metadata boundary remains separate from invocation authorization.
 - [ ] Prove one-endpoint discovery and invocation from independent Rust,
   TypeScript, and Python clients, including a container or remote client with
   no shared package filesystem. Cover install, live upgrade, prior-generation
@@ -976,6 +980,17 @@ Unaccepted descriptors are removed before MCP route compilation, so they are
 absent from both list responses and direct lookup. Tool discovery is explicitly
 sorted because the underlying router uses a hash map; cursors therefore cannot
 silently reorder or skip capabilities between pages.
+
+Implementation note (2026-09-04): the Gateway now exposes an explicit
+`CapabilityGatewayDiscoveryPolicy` seam for host-authenticated principal
+filtering. Policy decisions are evaluated once per trusted context and cached
+in a bounded `OnceCell` view shared by server clones, so `tools/list`,
+`resources/list`, `prompts/list`, and direct Tool/Resource/Prompt requests use
+the same stable visibility set. Denied routes behave like unpublished routes;
+policy errors are sanitized and fail closed, while the provider's per-call
+principal/Grant/generation authorization remains mandatory. Existing
+constructors retain an allow-all compatibility default, so production
+multi-principal hosts must opt in explicitly.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning

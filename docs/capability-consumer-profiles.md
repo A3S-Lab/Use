@@ -83,6 +83,38 @@ profile handshake; there is no implicit profile upgrade.
   leases, principals, and policy remain owned by the existing Gateway and
   host authorities.
 
+## Principal-scoped discovery
+
+The HTTP edge authenticates a bearer credential and attaches the configured
+`CapabilityGatewayPrincipal` to the trusted request context. Hosts that serve
+multiple principals should additionally attach a
+`CapabilityGatewayDiscoveryPolicy`:
+
+```rust,ignore
+use std::sync::Arc;
+
+let gateway = CapabilityGatewayMcpServer::new(catalog, provider)?
+    .with_discovery_policy(Arc::new(MyDiscoveryPolicy));
+```
+
+The policy receives each immutable descriptor and the host-authenticated
+transport/principal context. `Ok(false)` removes that descriptor from
+`tools/list`, `resources/list`, and `prompts/list`; direct Tool, Resource, and
+Prompt requests receive the same unpublished-route response and never reach
+the provider. Policy errors are converted to a generic internal MCP error and
+never expose policy diagnostics. This is an information boundary, not an
+authorization grant: the provider's pre-operation principal, scope, Grant,
+and generation checks still run for every visible operation.
+
+The Gateway evaluates a policy lazily and freezes the resulting descriptor
+indices per trusted context for the server lifetime. The bounded cache holds
+at most 64 contexts (matching the HTTP credential mapping), and `OnceCell`
+coordination makes concurrent requests share one view. Numeric cursors are
+therefore stable for a principal; changing policy requires constructing a new
+Gateway from a refreshed immutable catalog/policy snapshot. Existing
+constructors use an allow-all compatibility policy, so a production
+multi-principal host must inject an explicit policy.
+
 ## Current boundary and follow-up work
 
 Profile negotiation intentionally stays separate from capability
@@ -96,8 +128,8 @@ plus descriptors whose complete requirement set it negotiated.
 The current contract does not fabricate Flow, Knowledge, or UI metadata from a
 label. Producers must first publish a schema-validated descriptor and mark any
 non-universal interpretation with its required extension. Projecting the
-actual Flow/Knowledge/UI payloads, principal-specific discovery policy, live
-receipt/Runtime/Grant composition, CLI wiring, and the independent
+actual Flow/Knowledge/UI payloads, composing the policy with production
+receipt/Runtime/Grant authorization, CLI wiring, and the independent
 Rust/TypeScript/Python recovery matrix remain A3 follow-up work. A live host
 can use
 `CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options`

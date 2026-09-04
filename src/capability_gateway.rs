@@ -30,16 +30,18 @@ use rmcp::model::{
 };
 use rmcp::{ServerHandler, ServiceExt};
 use serde_json::Value;
-use tokio::sync::OwnedSemaphorePermit;
+use tokio::sync::{Mutex, OnceCell, OwnedSemaphorePermit};
 
 use crate::capability_registry::{CapabilitySnapshotCursor, CapabilitySnapshotLease};
 
 mod admission;
+mod discovery;
 mod http;
 mod resolver;
 
 pub use admission::CapabilityGatewayLimits;
 use admission::{AdmissionFailure, GatewayAdmission};
+pub use discovery::{AllowAllCapabilityGatewayDiscoveryPolicy, CapabilityGatewayDiscoveryPolicy};
 pub use http::CapabilityGatewayHttpConfig;
 pub use resolver::{
     CapabilityGatewayInvocation, CapabilityGatewayInvocationFactory,
@@ -54,6 +56,7 @@ const MCP_INVOCATION_ERROR: &str = "use.plugin.capability_gateway_invocation_fai
 const MCP_RATE_LIMIT_ERROR: &str = "use.plugin.capability_gateway_rate_limited";
 const MCP_RESOURCE_ERROR: &str = "use.plugin.capability_gateway_resource_failed";
 const MCP_PROMPT_ERROR: &str = "use.plugin.capability_gateway_prompt_failed";
+const MCP_DISCOVERY_ERROR: &str = "use.plugin.capability_gateway_discovery_unavailable";
 const MAX_CAPABILITY_VALUE_BYTES: usize = 256 * 1024;
 const MAX_CAPABILITY_VALUE_DEPTH: usize = 32;
 const MAX_CAPABILITY_VALUE_ELEMENTS: usize = 4_096;
@@ -61,6 +64,11 @@ const MAX_CAPABILITY_RESOURCE_SIZE: u32 = 256 * 1024;
 const MAX_CAPABILITY_PRINCIPAL_BYTES: usize = 256;
 const MAX_DISCOVERY_ITEMS_PER_PAGE: usize = 64;
 const MAX_DISCOVERY_CURSOR_BYTES: usize = 16;
+const MAX_DISCOVERY_CONTEXTS: usize = 64;
+
+type DiscoveryView = Arc<[usize]>;
+type DiscoveryViewCell = Arc<OnceCell<DiscoveryView>>;
+type DiscoveryViewCache = Arc<Mutex<BTreeMap<CapabilityGatewayRequestContext, DiscoveryViewCell>>>;
 
 /// Host-authenticated identity supplied to a Capability Gateway provider.
 ///
@@ -101,14 +109,14 @@ impl CapabilityGatewayPrincipal {
 
 /// Transport context visible only to the host authorization and invocation
 /// provider. The value is never serialized into MCP discovery or results.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CapabilityGatewayTransport {
     Stdio,
     StreamableHttp,
 }
 
 /// Trusted request context assembled by the Gateway boundary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CapabilityGatewayRequestContext {
     transport: CapabilityGatewayTransport,
     principal: Option<CapabilityGatewayPrincipal>,
@@ -379,6 +387,11 @@ pub struct CapabilityGatewayMcpServer {
     prompts: Arc<BTreeMap<String, CapabilityGatewayPrompt>>,
     tool_router: ToolRouter<Self>,
     admission: Arc<GatewayAdmission>,
+    discovery_policy: Arc<dyn CapabilityGatewayDiscoveryPolicy>,
+    /// One immutable visibility view is retained per trusted request context.
+    /// `OnceCell` prevents concurrent requests from observing different
+    /// policy decisions for the same pagination cursor.
+    discovery_views: DiscoveryViewCache,
     transport: CapabilityGatewayTransport,
     /// When present, this RAII lease pins every callable package generation
     /// for the lifetime of the MCP service (including cloned session handles).
@@ -391,6 +404,7 @@ impl std::fmt::Debug for CapabilityGatewayMcpServer {
             .debug_struct("CapabilityGatewayMcpServer")
             .field("catalog", &self.catalog)
             .field("consumer_negotiation", &self.consumer_negotiation)
+            .field("discovery_context_count", &self.discovery_views_count())
             .field("has_snapshot_lease", &self.snapshot_lease.is_some())
             .field("transport", &self.transport)
             .finish_non_exhaustive()
@@ -732,6 +746,8 @@ impl CapabilityGatewayMcpServer {
             prompts,
             tool_router,
             admission,
+            discovery_policy: Arc::new(AllowAllCapabilityGatewayDiscoveryPolicy),
+            discovery_views: Arc::new(Mutex::new(BTreeMap::new())),
             transport: CapabilityGatewayTransport::Stdio,
             snapshot_lease,
         })
@@ -750,6 +766,29 @@ impl CapabilityGatewayMcpServer {
     /// Return the negotiated consumer profile bound to this Gateway.
     pub fn consumer_profile(&self) -> &CapabilityConsumerProfile {
         self.consumer_negotiation.profile()
+    }
+
+    /// Attach a host-owned principal discovery policy.
+    ///
+    /// The policy is evaluated lazily for each distinct trusted request
+    /// context and its descriptor decisions are frozen for the lifetime of
+    /// the returned server. This keeps numeric MCP pagination cursors stable
+    /// even when requests are concurrent. Existing constructors remain
+    /// backwards-compatible with an allow-all policy.
+    pub fn with_discovery_policy(
+        mut self,
+        policy: Arc<dyn CapabilityGatewayDiscoveryPolicy>,
+    ) -> Self {
+        self.discovery_policy = policy;
+        self.discovery_views = Arc::new(Mutex::new(BTreeMap::new()));
+        self
+    }
+
+    fn discovery_views_count(&self) -> usize {
+        self.discovery_views
+            .try_lock()
+            .map(|views| views.len())
+            .unwrap_or_default()
     }
 
     /// Return the exact lease cursor when this server is bound to a live Use
@@ -799,6 +838,51 @@ impl CapabilityGatewayMcpServer {
         self
     }
 
+    async fn discovery_view(
+        &self,
+        context: &CapabilityGatewayRequestContext,
+    ) -> Result<Arc<[usize]>, rmcp::ErrorData> {
+        let cell = {
+            let mut views = self.discovery_views.lock().await;
+            if let Some(cell) = views.get(context) {
+                Arc::clone(cell)
+            } else {
+                if views.len() >= MAX_DISCOVERY_CONTEXTS {
+                    return Err(discovery_policy_error());
+                }
+                let cell = Arc::new(OnceCell::new());
+                views.insert(context.clone(), Arc::clone(&cell));
+                cell
+            }
+        };
+
+        let policy = Arc::clone(&self.discovery_policy);
+        let catalog = Arc::clone(&self.catalog);
+        cell.get_or_try_init(|| async move {
+            let mut visible = Vec::with_capacity(catalog.descriptors().len());
+            for (index, descriptor) in catalog.descriptors().iter().enumerate() {
+                if policy
+                    .is_visible(descriptor, context)
+                    .await
+                    .map_err(|_| discovery_policy_error())?
+                {
+                    visible.push(index);
+                }
+            }
+            Ok::<Arc<[usize]>, rmcp::ErrorData>(Arc::from(visible.into_boxed_slice()))
+        })
+        .await
+        .map(Arc::clone)
+    }
+
+    fn visible_resource_uris(&self, view: &[usize]) -> std::collections::BTreeSet<String> {
+        self.resources
+            .iter()
+            .filter(|(_, route)| descriptor_is_visible(view, route.descriptor_index))
+            .map(|(uri, _)| uri.clone())
+            .collect()
+    }
+
     async fn dispatch(
         &self,
         name: &str,
@@ -811,6 +895,13 @@ impl CapabilityGatewayMcpServer {
                 None,
             )
         })?;
+        let view = self.discovery_view(context).await?;
+        if !descriptor_is_visible(&view, tool.descriptor_index) {
+            return Err(rmcp::ErrorData::invalid_params(
+                "Capability Gateway Tool is not part of the immutable catalog.",
+                None,
+            ));
+        }
         let _permit = match self.admission.try_acquire() {
             Ok(permit) => permit,
             Err(AdmissionFailure::InFlight | AdmissionFailure::RateLimited) => {
@@ -907,8 +998,15 @@ impl ServerHandler for CapabilityGatewayMcpServer {
         request: Option<PaginatedRequestParam>,
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListToolsResult, rmcp::ErrorData> {
-        self.request_context(&request_context)?;
+        let context = self.request_context(&request_context)?;
+        let view = self.discovery_view(&context).await?;
         let mut tools = self.tool_router.list_all();
+        tools.retain(|tool| {
+            let name: &str = tool.name.as_ref();
+            self.tools
+                .get(name)
+                .is_some_and(|route| descriptor_is_visible(&view, route.descriptor_index))
+        });
         tools.sort_by(|left, right| left.name.cmp(&right.name));
         let (start, end, next_cursor) =
             discovery_page(request.and_then(|request| request.cursor), tools.len())?;
@@ -924,17 +1022,21 @@ impl ServerHandler for CapabilityGatewayMcpServer {
         request: Option<PaginatedRequestParam>,
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListResourcesResult, rmcp::ErrorData> {
-        self.request_context(&request_context)?;
-        let (start, end, next_cursor) = discovery_page(
-            request.and_then(|request| request.cursor),
-            self.resources.len(),
-        )?;
+        let context = self.request_context(&request_context)?;
+        let view = self.discovery_view(&context).await?;
+        let resources = self
+            .resources
+            .values()
+            .filter(|route| descriptor_is_visible(&view, route.descriptor_index))
+            .map(|route| route.resource.clone())
+            .collect::<Vec<_>>();
+        let (start, end, next_cursor) =
+            discovery_page(request.and_then(|request| request.cursor), resources.len())?;
         let mut result = ListResourcesResult::with_all_items(
-            self.resources
-                .values()
+            resources
+                .into_iter()
                 .skip(start)
                 .take(end - start)
-                .map(|route| route.resource.clone())
                 .collect(),
         );
         result.next_cursor = next_cursor;
@@ -946,18 +1048,18 @@ impl ServerHandler for CapabilityGatewayMcpServer {
         request: Option<PaginatedRequestParam>,
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListPromptsResult, rmcp::ErrorData> {
-        self.request_context(&request_context)?;
-        let (start, end, next_cursor) = discovery_page(
-            request.and_then(|request| request.cursor),
-            self.prompts.len(),
-        )?;
+        let context = self.request_context(&request_context)?;
+        let view = self.discovery_view(&context).await?;
+        let prompts = self
+            .prompts
+            .values()
+            .filter(|route| descriptor_is_visible(&view, route.descriptor_index))
+            .map(|route| route.prompt.clone())
+            .collect::<Vec<_>>();
+        let (start, end, next_cursor) =
+            discovery_page(request.and_then(|request| request.cursor), prompts.len())?;
         let mut result = ListPromptsResult::with_all_items(
-            self.prompts
-                .values()
-                .skip(start)
-                .take(end - start)
-                .map(|route| route.prompt.clone())
-                .collect(),
+            prompts.into_iter().skip(start).take(end - start).collect(),
         );
         result.next_cursor = next_cursor;
         Ok(result)
@@ -981,6 +1083,13 @@ impl ServerHandler for CapabilityGatewayMcpServer {
                 None,
             )
         })?;
+        let view = self.discovery_view(&context).await?;
+        if !descriptor_is_visible(&view, route.descriptor_index) {
+            return Err(rmcp::ErrorData::resource_not_found(
+                "The requested Capability Gateway resource is not published.",
+                None,
+            ));
+        }
         let _permit = content_admission(&self.admission)?;
         let descriptor = self
             .catalog
@@ -1032,6 +1141,13 @@ impl ServerHandler for CapabilityGatewayMcpServer {
                 None,
             )
         })?;
+        let view = self.discovery_view(&context).await?;
+        if !descriptor_is_visible(&view, route.descriptor_index) {
+            return Err(rmcp::ErrorData::invalid_params(
+                "The requested Capability Gateway prompt is not published.",
+                None,
+            ));
+        }
         let arguments = Value::Object(request.arguments.unwrap_or_default());
         validate_prompt_arguments(&arguments, &route.arguments).map_err(|_| {
             rmcp::ErrorData::invalid_params(
@@ -1069,7 +1185,8 @@ impl ServerHandler for CapabilityGatewayMcpServer {
                 ));
             }
         };
-        validate_prompt_result(&result, &self.resources).map_err(|_| {
+        let visible_resource_uris = self.visible_resource_uris(&view);
+        validate_prompt_result(&result, &visible_resource_uris).map_err(|_| {
             rmcp::ErrorData::internal_error(
                 "The Capability Gateway prompt provider returned an invalid result.",
                 None,
@@ -1361,6 +1478,17 @@ fn content_admission(
     }
 }
 
+fn descriptor_is_visible(view: &[usize], descriptor_index: usize) -> bool {
+    view.binary_search(&descriptor_index).is_ok()
+}
+
+fn discovery_policy_error() -> rmcp::ErrorData {
+    rmcp::ErrorData::internal_error(
+        "The Capability Gateway discovery policy is unavailable.",
+        Some(serde_json::json!({ "code": MCP_DISCOVERY_ERROR })),
+    )
+}
+
 fn discovery_page(
     cursor: Option<String>,
     item_count: usize,
@@ -1473,7 +1601,7 @@ fn validate_prompt_arguments(
 
 fn validate_prompt_result(
     result: &GetPromptResult,
-    resources: &BTreeMap<String, CapabilityGatewayResource>,
+    resource_uris: &std::collections::BTreeSet<String>,
 ) -> UseResult<()> {
     let encoded = serde_json::to_vec(result).map_err(|_| schema_value_error())?;
     if encoded.len() > MAX_CAPABILITY_VALUE_BYTES
@@ -1496,11 +1624,11 @@ fn validate_prompt_result(
                 validate_content_text(&image.mime_type)?;
             }
             PromptMessageContent::Resource { resource } => {
-                validate_prompt_resource_contents(&resource.resource, resources)?;
+                validate_prompt_resource_contents(&resource.resource, resource_uris)?;
             }
             PromptMessageContent::ResourceLink { link } => {
                 if ResourceRef::parse(link.uri.clone()).is_err()
-                    || !resources.contains_key(link.uri.as_str())
+                    || !resource_uris.contains(link.uri.as_str())
                     || !valid_content_text(&link.name)
                     || link
                         .description
@@ -1517,7 +1645,7 @@ fn validate_prompt_result(
 
 fn validate_prompt_resource_contents(
     content: &ResourceContents,
-    resources: &BTreeMap<String, CapabilityGatewayResource>,
+    resource_uris: &std::collections::BTreeSet<String>,
 ) -> UseResult<()> {
     let uri = match content {
         ResourceContents::TextResourceContents {
@@ -1541,7 +1669,7 @@ fn validate_prompt_resource_contents(
             uri
         }
     };
-    if ResourceRef::parse(uri.clone()).is_err() || !resources.contains_key(uri.as_str()) {
+    if ResourceRef::parse(uri.clone()).is_err() || !resource_uris.contains(uri.as_str()) {
         return Err(schema_value_error());
     }
     Ok(())

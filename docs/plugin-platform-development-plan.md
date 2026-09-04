@@ -198,6 +198,14 @@ Acceptance:
   negotiated A3S projections retain them, and the filtering happens before
   both discovery and invocation route compilation. Tool pages are sorted by
   name because the underlying router is hash-map backed.
+- [x] Provide a host-owned `CapabilityGatewayDiscoveryPolicy` for principal-
+  scoped discovery. The policy receives the trusted transport/principal
+  context, hides denied Tools, Resources, and Prompts from all standard list
+  methods, and makes direct hidden access behave like an unpublished route.
+  Decisions are evaluated once per bounded context and frozen for the server
+  lifetime so pagination cursors remain stable; policy failures are sanitized
+  and fail closed. This information boundary remains separate from the
+  provider's per-operation authorization.
 - [ ] Resolve opaque references from the live Use host, integrate receipt-owned
   provider composition, and complete per-consumer authorization across exact
   package-generation leases, drain, and retirement. The embedding path already
@@ -241,6 +249,14 @@ than authorization. The standard adapter now publishes catalog-authorized MCP
 Tools, Resources, and Prompts through the universal protocol; profile-aware A3S
 extensions are now filtered at catalog composition but their Flow/Knowledge/UI
 payload projection and production host composition remain separate gates.
+
+Principal-scoped discovery is also available as an explicit embedding seam:
+`CapabilityGatewayDiscoveryPolicy` projects a frozen, bounded visibility view
+for each host-authenticated context before list responses or direct resource,
+prompt, and tool admission. Existing constructors retain an allow-all default
+for compatibility; production multi-principal hosts must inject a policy, and
+the invocation provider must still enforce the actual principal, scope, Grant,
+and generation authorization.
 
 PR [#192](https://github.com/A3S-Lab/Use/pull/192) records the contract and
 adapter boundary. The checked items are not an A3 exit-gate claim; lifecycle,
