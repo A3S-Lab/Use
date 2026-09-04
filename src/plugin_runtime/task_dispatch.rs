@@ -155,6 +155,7 @@ impl RuntimeTaskDispatcher {
         let RuntimeBindingReceipt::Task(binding) = receipt else {
             return Err(binding_mismatch());
         };
+        super::validate_task_descriptor_binding(lease.extension(), request.surface_id(), &binding)?;
         validate_dispatch_binding(&binding, &request, &surface)?;
 
         let provider_id = ProviderId::parse(binding.provider_id.clone())

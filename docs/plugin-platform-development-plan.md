@@ -109,6 +109,10 @@ Status: in progress
   lease held through capture and cleanup.
 - [x] Publish exact installation/package/generation-matched Runtime Tool Tasks
   through capability snapshot schema v5; omit missing or mismatched bindings.
+- [x] Cross-bind Runtime Task receipts to the installed package's retained
+  planning evidence and exact release descriptor digest; Registry-trusted
+  bindings with missing, substituted, or cross-generation evidence fail closed
+  before publication or provider connection.
 - [x] Require explicit owner evidence for every required Tool, MCP, Flow, OKF,
   Skill, and UI surface before atomically publishing the capability generation.
 - [x] Persist `a3s.use.runtime-service-provisioning.v1` before apply, retain

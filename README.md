@@ -1180,6 +1180,12 @@ Current Registry rules:
   derives only its unique unit ID and bounded argv, reopens the receipt-owned
   provider, and holds the exact published-generation lease through output
   capture and cleanup. Hidden or replaced generations reject new calls.
+- Runtime Task publication and dispatch also cross-check that durable binding
+  against the installed package's retained planning evidence. Registry-trusted
+  packages must retain a catalog-bound signed planning bundle and the exact
+  release descriptor digest; a self-consistent but substituted descriptor,
+  package generation, or missing evidence is omitted or rejected before a
+  provider connection.
 - The catalog record, archive, expanded package, and manifest all have exact
   digest/size evidence.
 - Archive admission rebinds every planning launcher to the exact digest-bound

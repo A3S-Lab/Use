@@ -947,6 +947,16 @@ production receipt/Runtime/Grant composition, and product host wiring remain
 open, so the consumer-profile checkbox is intentionally not marked complete
 yet.
 
+Implementation note (2026-09-04): Runtime Task publication and dispatch now
+cross-bind each durable receipt to the installed package's retained planning
+evidence and exact release descriptor digest. Registry-trusted packages must
+retain catalog-bound signed planning evidence; substituted descriptors,
+cross-generation bindings, and missing evidence are omitted or rejected before
+provider connection. Local explicit packages retain their host-owned
+qualification path. This closes a Runtime integrity gap but does not complete
+the broader A3 receipt/Runtime/Grant authorization or independent-client exit
+gate.
+
 Implementation note (2026-09-03): PR [#197](https://github.com/A3S-Lab/Use/pull/197)
 added a secret-free error projection at the Package Manager MCP boundary. The
 adapter retains only validated `use.*` contract codes and a bounded public
