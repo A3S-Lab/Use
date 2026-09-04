@@ -1834,6 +1834,15 @@ secret-free cancellation result when the protocol can still deliver one. See
 [Capability consumer profiles](docs/capability-consumer-profiles.md) for the
 contract and its limits.
 
+The Gateway also exposes a shared, bounded
+`CapabilityGatewayNotificationHub`. Once a client has initialized, the host
+can publish a newer immutable catalog key and fan out the standard MCP
+`tools/list_changed`, `resources/list_changed`, and `prompts/list_changed`
+notifications concurrently. Repeated or older publication keys are coalesced,
+and closed or back-pressured peers are retired. This is a notification seam,
+not a mutable catalog: hosts must switch new sessions to the replacement
+server and retain the prior generation lease until drain.
+
 | Area | Status |
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |

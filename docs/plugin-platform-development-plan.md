@@ -245,9 +245,14 @@ Acceptance:
   target-metadata probe for platform events that are coalesced or omitted; it
   falls back to metadata-only polling when registration is unavailable,
   coalesces target-filtered events in a capacity-one channel, and closes both
-  read-to-subscribe and timeout races with authoritative reads. Persisting the
-  complete agent-facing catalog in the lifecycle Capability Index and emitting
-  MCP list-change notifications remain separate gates.
+  read-to-subscribe and timeout races with authoritative reads. The Gateway
+  also exposes a bounded host-owned notification hub: initialized peers are
+  registered once, all standard MCP `list_changed` capabilities are
+  advertised, exact publication keys are coalesced, older generations are
+  rejected, and failed or closed transports are retired. The hub only signals a re-list; it does not
+  mutate a frozen server or replace the host's durable catalog/session
+  cutover. Persisting the complete agent-facing catalog in the lifecycle
+  Capability Index and wiring that cutover to the hub remain separate gates.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,

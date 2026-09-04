@@ -610,10 +610,16 @@ The facade capability watcher delegates its steady-state wait to that
 generation notification. It builds the complete capability projection at
 subscription setup, after a real generation advance, and once at timeout to
 close the final race, rather than rescanning receipts and rehashing immutable
-Skill, Flow, and UI assets every 100 ms. This is the notification half of the
-Capability Index gate; the Control lifecycle still has to persist the complete
-agent-facing descriptor catalog and connect its generation changes to MCP list
-notifications.
+Skill, Flow, and UI assets every 100 ms. The Gateway exposes a shared,
+bounded `CapabilityGatewayNotificationHub` for the protocol half: initialized
+MCP peers are retained up to a fixed limit, exact publication keys are
+coalesced, older generations are rejected, and standard `tools/list_changed`,
+`resources/list_changed`, and `prompts/list_changed` notifications are sent
+concurrently with a bounded timeout. This hub only tells clients to re-list; it does not mutate the
+immutable server or silently move a session across generations. A host must
+durably publish the replacement catalog, route new sessions to it, and keep
+the old lease through drain. The Control lifecycle still has to persist the
+complete agent-facing descriptor catalog and connect its cutover to this hub.
 
 ## Storage model
 
