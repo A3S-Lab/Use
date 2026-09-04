@@ -97,6 +97,15 @@ companion `CapabilityGatewayMcpServer::from_registry_snapshot` acquires the
 matching RAII lease only after projection and returns no server when the
 publication changes or is draining.
 
+For a live host that has verified signed descriptions, the preferred
+constructor is
+`CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options`.
+It consumes one snapshot, binds the verified catalog and resolver to the same
+cursor, acquires the exact server lease, and retains consumer negotiation and
+bounded admission policy together. A publication race returns no server. The
+injected factory remains responsible for receipt, Runtime, Grant, principal,
+and scope authorization.
+
 The embedding boundary now retains a typed consumer decision as well.
 `CapabilityConsumerProfile` distinguishes the default `generic-mcp` client
 from an explicit `a3s` client, and `CapabilityConsumerNegotiation` rejects an

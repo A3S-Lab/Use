@@ -926,6 +926,15 @@ when the publication changes or is already draining. This closes the
 snapshot-to-catalog composition gap without claiming the remaining live
 resolver, receipt-owned provider, or multi-principal production wiring.
 
+The verified live-host composition boundary is now explicit as well:
+`CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options`
+observes one snapshot, consumes host-verified description proofs, captures the
+same cursor in `CapabilityGatewayRegistryResolver`, acquires the exact server
+lease, and retains consumer negotiation plus bounded admission policy. A
+publication race returns no server. The injected factory still owns receipt,
+Runtime, Grant, principal, and scope authorization, so the overall A3 exit gate
+remains open.
+
 Implementation note (2026-09-04): the typed
 `CapabilityConsumerProfile`/`CapabilityConsumerNegotiation` contract now
 distinguishes the default `generic-mcp` consumer from an explicit `a3s`

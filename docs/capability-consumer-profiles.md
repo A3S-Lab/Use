@@ -81,12 +81,16 @@ profile handshake; there is no implicit profile upgrade.
 
 ## Current boundary and follow-up work
 
-This increment intentionally stops at typed profile negotiation. The current
-standard MCP adapter still publishes only the catalog's schema-validated Tool
-surface. Flow, Knowledge, UI, resources, and prompts are not fabricated from
-profile labels. Live opaque-reference resolution, receipt/Runtime/Grant
-composition, per-consumer authorization, CLI wiring, and the independent
-Rust/TypeScript/Python recovery matrix remain A3 follow-up work.
+This increment intentionally keeps profile negotiation separate from
+capability authorization. The current standard MCP adapter still publishes
+only the catalog's schema-validated Tool surface. Flow, Knowledge, UI,
+resources, and prompts are not fabricated from profile labels. A live host can
+use `CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options`
+to bind verified descriptions, one snapshot cursor, a resolver factory, the
+exact lease, and endpoint policy in one fail-closed composition step. The
+factory still owns receipt/Runtime/Grant resolution and per-consumer
+authorization; CLI wiring and the independent Rust/TypeScript/Python recovery
+matrix remain A3 follow-up work.
 
 Focused validation:
 

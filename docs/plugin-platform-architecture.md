@@ -563,6 +563,17 @@ with the host, and `CapabilityGatewayMcpServer::from_registry_snapshot` acquires
 the exact RAII lease only after the projection succeeds. A publication change
 or a draining package returns no server rather than serving a mixed snapshot.
 
+For hosts that have crossed the signed-description boundary, the preferred
+entry point is
+`CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options`.
+It observes one snapshot, projects the verified proofs, captures that same
+cursor in `CapabilityGatewayRegistryResolver`, acquires the exact server
+lease, and retains the negotiated consumer policy and bounded admission limits
+together. The resolver still receives a per-call lease and the host-owned
+factory remains responsible for receipt, Runtime, Grant, principal, and scope
+authorization; a publication race returns no server instead of serving mixed
+catalog and provider state.
+
 Consumer selection is now explicit at the embedding boundary. The core
 `CapabilityConsumerProfile` contract distinguishes `generic-mcp` from `a3s`,
 and `CapabilityConsumerNegotiation` accepts only a complete host-supported

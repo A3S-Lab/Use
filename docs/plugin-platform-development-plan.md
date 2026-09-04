@@ -200,6 +200,12 @@ Acceptance:
   publication, and ready-binding evidence before lease acquisition; live
   opaque-reference resolution and receipt-owned provider composition remain host
   responsibilities.
+- [x] Provide one fail-closed composition entry point for verified descriptions,
+  a cursor-bound resolver factory, the exact snapshot lease, consumer
+  negotiation, and bounded Gateway admission. The
+  `from_verified_registry_snapshot_with_factory_and_options` constructor
+  returns no server when publication acquisition races or a package is
+  draining; the injected factory remains the receipt/Runtime/Grant authority.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,
