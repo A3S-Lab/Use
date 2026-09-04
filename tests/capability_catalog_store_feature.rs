@@ -33,7 +33,10 @@ async fn retention_is_explicit_plan_bound_and_replay_safe() {
     let second = store.publish(&catalog(1)).await.unwrap();
     let third = store.publish(&catalog(2)).await.unwrap();
 
-    let plan = store.plan_retention(&[third.digest.clone()]).await.unwrap();
+    let plan = store
+        .plan_retention(std::slice::from_ref(&third.digest))
+        .await
+        .unwrap();
     assert_eq!(plan.retain.len(), 1);
     assert_eq!(plan.remove.len(), 2);
     let plan_digest = plan.descriptor_digest().unwrap();
@@ -69,7 +72,7 @@ async fn retention_rejects_stale_inventory_and_tampered_plan() {
     let first = CapabilityGatewayCatalog::new(installation.clone(), 0, Vec::new()).unwrap();
     let first_publication = store.publish(&first).await.unwrap();
     let plan = store
-        .plan_retention(&[first_publication.digest.clone()])
+        .plan_retention(std::slice::from_ref(&first_publication.digest))
         .await
         .unwrap();
     let plan_digest = plan.descriptor_digest().unwrap();
