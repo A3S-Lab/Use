@@ -17,6 +17,9 @@ use sha2::{Digest, Sha256};
 
 use crate::UseResult;
 
+use super::capability_consumer::{
+    CapabilityConsumerExtension, CapabilityConsumerNegotiation, MAX_CAPABILITY_CONSUMER_EXTENSIONS,
+};
 use super::validation::{strictly_sorted_unique, valid_segment, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, InstallationId,
@@ -289,6 +292,11 @@ pub struct CapabilityDescriptor {
     pub endpoint_ref: Option<EndpointRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<PluginSurfaceRef>,
+    /// Optional A3S metadata required by a consumer before this descriptor
+    /// can be exposed. An empty set means the capability is usable by every
+    /// standard MCP consumer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_extensions: Vec<CapabilityConsumerExtension>,
     pub publication: CapabilityPublicationEvidence,
     #[serde(flatten)]
     pub capability: CapabilityDescriptorKind,
@@ -312,6 +320,8 @@ struct CapabilityDescriptorWire {
     endpoint_ref: Option<EndpointRef>,
     #[serde(default)]
     dependencies: Vec<PluginSurfaceRef>,
+    #[serde(default)]
+    required_extensions: Vec<CapabilityConsumerExtension>,
     publication: CapabilityPublicationEvidence,
     kind: String,
     #[serde(default)]
@@ -365,6 +375,7 @@ fn decode_capability_descriptor(value: Value) -> Result<CapabilityDescriptor, St
         "artifactRef",
         "endpointRef",
         "dependencies",
+        "requiredExtensions",
         "publication",
         "kind",
         "name",
@@ -506,6 +517,7 @@ fn decode_capability_descriptor(value: Value) -> Result<CapabilityDescriptor, St
         artifact_ref: wire.artifact_ref,
         endpoint_ref: wire.endpoint_ref,
         dependencies: wire.dependencies,
+        required_extensions: wire.required_extensions,
         publication: wire.publication,
         capability,
     })
@@ -549,6 +561,8 @@ impl CapabilityDescriptor {
             || !valid_capability_text(&self.description, MAX_CAPABILITY_TEXT_BYTES)
             || self.dependencies.len() > MAX_CAPABILITY_DEPENDENCIES
             || !strictly_sorted_unique(&self.dependencies)
+            || self.required_extensions.len() > MAX_CAPABILITY_CONSUMER_EXTENSIONS
+            || !strictly_sorted_unique(&self.required_extensions)
             || self
                 .dependencies
                 .iter()
@@ -619,10 +633,11 @@ impl CapabilityDescriptor {
                 name,
                 uri,
                 mime_type,
-                size: _,
+                size,
             } => {
                 if !valid_tool_name(name)
                     || validate_opaque_ref(uri.as_str(), "resource:v1:", "ResourceRef").is_err()
+                    || size.is_some_and(|value| value > 256 * 1024)
                     || mime_type.as_deref().is_some_and(|value| {
                         value.is_empty()
                             || value.len() > MAX_CAPABILITY_PROTOCOL_BYTES
@@ -663,6 +678,17 @@ impl CapabilityDescriptor {
 
     pub fn descriptor_digest(&self) -> UseResult<String> {
         Ok(canonical_digest(&self.canonical_bytes()?))
+    }
+
+    /// Return the optional consumer extensions required to understand this
+    /// descriptor. Requirements are descriptive publication metadata; they
+    /// are never treated as an authorization grant.
+    pub fn required_extensions(&self) -> &[CapabilityConsumerExtension] {
+        &self.required_extensions
+    }
+
+    pub fn requires_extension(&self, extension: CapabilityConsumerExtension) -> bool {
+        self.required_extensions.contains(&extension)
     }
 
     pub fn tool_name(&self) -> Option<&str> {
@@ -917,6 +943,29 @@ impl CapabilityGatewayCatalog {
         self.descriptors
             .iter()
             .find(|descriptor| descriptor.prompt_name() == Some(name))
+    }
+
+    /// Project this immutable publication for one already completed consumer
+    /// negotiation. A descriptor that requires an extension the consumer did
+    /// not explicitly accept is omitted from the projected catalog, including
+    /// its invocation route. Rebuilding through [`Self::new`] gives the
+    /// projection its own canonical revision and re-runs all catalog
+    /// invariants instead of retaining a revision for a different view.
+    pub fn for_consumer(&self, negotiation: &CapabilityConsumerNegotiation) -> UseResult<Self> {
+        self.validate()?;
+        negotiation.validate()?;
+        let descriptors = self
+            .descriptors
+            .iter()
+            .filter(|descriptor| {
+                descriptor
+                    .required_extensions()
+                    .iter()
+                    .all(|extension| negotiation.accepts(*extension))
+            })
+            .cloned()
+            .collect();
+        Self::new(self.installation.clone(), self.generation, descriptors)
     }
 }
 

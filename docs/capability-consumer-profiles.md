@@ -75,22 +75,35 @@ profile handshake; there is no implicit profile upgrade.
   cannot report success while silently dropping part of the request.
 - Accepted extensions must equal the requested extensions. The negotiation is
   descriptive metadata, not an authorization grant.
+- A descriptor may declare a bounded, sorted `requiredExtensions` set. The
+  Gateway projects the immutable catalog for the completed negotiation before
+  compiling any MCP route; a descriptor whose requirements are not accepted is
+  absent from both discovery and direct invocation lookup.
 - Package identity, publication generation, opaque invocation references,
   leases, principals, and policy remain owned by the existing Gateway and
   host authorities.
 
 ## Current boundary and follow-up work
 
-This increment intentionally keeps profile negotiation separate from
-capability authorization. The current standard MCP adapter still publishes
-only the catalog's schema-validated Tool surface. Flow, Knowledge, UI,
-resources, and prompts are not fabricated from profile labels. A live host can
-use `CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options`
+Profile negotiation intentionally stays separate from capability
+authorization. The standard MCP adapter publishes catalog-authorized Tools,
+Resources, and Prompts. `requiredExtensions` is a discovery boundary, not an
+allow-list: every visible operation still passes through the host's principal,
+Grant, policy, and generation-fenced provider. A generic MCP consumer receives
+only descriptors with an empty requirement set; an A3S consumer receives those
+plus descriptors whose complete requirement set it negotiated.
+
+The current contract does not fabricate Flow, Knowledge, or UI metadata from a
+label. Producers must first publish a schema-validated descriptor and mark any
+non-universal interpretation with its required extension. Projecting the
+actual Flow/Knowledge/UI payloads, principal-specific discovery policy, live
+receipt/Runtime/Grant composition, CLI wiring, and the independent
+Rust/TypeScript/Python recovery matrix remain A3 follow-up work. A live host
+can use
+`CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options`
 to bind verified descriptions, one snapshot cursor, a resolver factory, the
-exact lease, and endpoint policy in one fail-closed composition step. The
-factory still owns receipt/Runtime/Grant resolution and per-consumer
-authorization; CLI wiring and the independent Rust/TypeScript/Python recovery
-matrix remain A3 follow-up work.
+exact lease, consumer projection, and endpoint policy in one fail-closed
+composition step.
 
 Focused validation:
 

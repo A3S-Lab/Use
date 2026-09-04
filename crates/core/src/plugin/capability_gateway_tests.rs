@@ -1,5 +1,9 @@
 use super::*;
 
+use super::super::{
+    CapabilityConsumerExtension, CapabilityConsumerNegotiation, CapabilityConsumerProfile,
+};
+
 fn package() -> super::super::PluginPackageId {
     super::super::PluginPackageId::parse("acme/assistant").unwrap()
 }
@@ -42,6 +46,7 @@ fn tool() -> CapabilityDescriptor {
         title: "Search".to_owned(),
         description: "Search verified knowledge.".to_owned(),
         dependencies: Vec::new(),
+        required_extensions: Vec::new(),
         publication: CapabilityPublicationEvidence {
             catalog_record_digest: digest('f'),
             signature_digest: digest('0'),
@@ -71,6 +76,7 @@ fn resource() -> CapabilityDescriptor {
         title: "Knowledge index".to_owned(),
         description: "Verified knowledge resource.".to_owned(),
         dependencies: Vec::new(),
+        required_extensions: Vec::new(),
         publication: CapabilityPublicationEvidence {
             catalog_record_digest: digest('f'),
             signature_digest: digest('0'),
@@ -100,6 +106,7 @@ fn prompt() -> CapabilityDescriptor {
         title: "Research prompt".to_owned(),
         description: "Compose a bounded research request.".to_owned(),
         dependencies: Vec::new(),
+        required_extensions: Vec::new(),
         publication: CapabilityPublicationEvidence {
             catalog_record_digest: digest('f'),
             signature_digest: digest('0'),
@@ -330,6 +337,72 @@ fn catalog_rejects_two_lifecycle_generations_of_one_surface() {
     )
     .unwrap();
     assert!(CapabilityGatewayCatalog::new(installation, 42, vec![first, second]).is_err());
+}
+
+#[test]
+fn catalog_projection_is_bound_to_the_negotiated_consumer_extensions() {
+    let installation =
+        InstallationId::new(super::super::InstallationKind::User, "user/current").unwrap();
+    let universal = tool();
+    let mut flow_only = tool();
+    flow_only.surface = surface(PluginSurfaceKind::Tool, "review");
+    flow_only.invocation_ref = InvocationRef::derive(
+        &flow_only.package_id,
+        &flow_only.surface,
+        flow_only.generation,
+        &digest('7'),
+    )
+    .unwrap();
+    if let CapabilityDescriptorKind::Tool { name, .. } = &mut flow_only.capability {
+        *name = "review".to_owned();
+    }
+    flow_only.required_extensions = vec![CapabilityConsumerExtension::Flow];
+
+    let catalog =
+        CapabilityGatewayCatalog::new(installation, 7, vec![universal, flow_only]).unwrap();
+    let generic = catalog
+        .for_consumer(&CapabilityConsumerNegotiation::generic_mcp())
+        .unwrap();
+    assert_eq!(generic.descriptors().len(), 1);
+    assert_eq!(
+        generic.find_tool("search").unwrap().tool_name(),
+        Some("search")
+    );
+    assert!(generic.find_tool("review").is_none());
+
+    let a3s = CapabilityConsumerNegotiation::negotiate(
+        CapabilityConsumerProfile::a3s([CapabilityConsumerExtension::Flow]).unwrap(),
+        [CapabilityConsumerExtension::Flow],
+    )
+    .unwrap();
+    let negotiated = catalog.for_consumer(&a3s).unwrap();
+    assert_eq!(negotiated.descriptors().len(), 2);
+    assert!(negotiated.find_tool("review").is_some());
+    assert_ne!(generic.revision(), negotiated.revision());
+}
+
+#[test]
+fn descriptor_extension_requirements_are_canonical_and_sorted() {
+    let mut descriptor = tool();
+    descriptor.required_extensions = vec![
+        CapabilityConsumerExtension::Ui,
+        CapabilityConsumerExtension::Flow,
+    ];
+    assert!(descriptor.validate().is_err());
+    descriptor.required_extensions = vec![CapabilityConsumerExtension::Flow];
+    let encoded = serde_json::to_value(&descriptor).unwrap();
+    assert_eq!(encoded["requiredExtensions"], serde_json::json!(["flow"]));
+    let decoded: CapabilityDescriptor = serde_json::from_value(encoded).unwrap();
+    assert_eq!(decoded, descriptor);
+}
+
+#[test]
+fn resource_size_is_bounded_by_the_gateway_content_limit() {
+    let mut descriptor = resource();
+    if let CapabilityDescriptorKind::Resource { size, .. } = &mut descriptor.capability {
+        *size = Some(256 * 1024 + 1);
+    }
+    assert!(descriptor.validate().is_err());
 }
 
 #[test]

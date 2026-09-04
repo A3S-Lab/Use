@@ -3,15 +3,16 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a3s_use_core::{
-    ArtifactRef, CapabilityConsumerExtension, CapabilityConsumerNegotiation, CapabilityDescriptor,
-    CapabilityDescriptorKind, CapabilityGatewayCatalog, CapabilityPromptArgument,
-    CapabilityPublicationEvidence, CapabilityToolAnnotations, EndpointRef, InstallationId,
-    InstallationKind, InvocationRef, PluginPackageId, PluginSurfaceKind, PluginSurfaceRef,
-    ResourceRef, CAPABILITY_DESCRIPTOR_SCHEMA_V1,
+    ArtifactRef, CapabilityConsumerExtension, CapabilityConsumerNegotiation,
+    CapabilityConsumerProfile, CapabilityDescriptor, CapabilityDescriptorKind,
+    CapabilityGatewayCatalog, CapabilityPromptArgument, CapabilityPublicationEvidence,
+    CapabilityToolAnnotations, EndpointRef, InstallationId, InstallationKind, InvocationRef,
+    PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, ResourceRef,
+    CAPABILITY_DESCRIPTOR_SCHEMA_V1,
 };
 use rmcp::model::{
-    CallToolRequestParam, GetPromptRequestParam, GetPromptResult, PromptMessage, PromptMessageRole,
-    ReadResourceRequestParam, ResourceContents,
+    CallToolRequestParam, GetPromptRequestParam, GetPromptResult, PaginatedRequestParam,
+    PromptMessage, PromptMessageRole, ReadResourceRequestParam, ResourceContents,
 };
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
@@ -384,6 +385,77 @@ fn gateway_retains_the_explicit_consumer_negotiation() {
 }
 
 #[test]
+fn gateway_projects_discovery_and_routes_for_the_negotiated_consumer() {
+    let universal = test_descriptor();
+    let mut flow_only = test_descriptor();
+    let surface = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Tool,
+        id: "review".to_owned(),
+    };
+    let digest = |letter: char| format!("sha256:{}", letter.to_string().repeat(64));
+    flow_only.surface = surface.clone();
+    flow_only.title = "Review".to_owned();
+    flow_only.description = "Review with the Flow extension.".to_owned();
+    flow_only.invocation_ref = InvocationRef::derive(
+        &flow_only.package_id,
+        &surface,
+        flow_only.generation,
+        &digest('7'),
+    )
+    .unwrap();
+    flow_only.artifact_ref = Some(
+        ArtifactRef::derive(
+            &flow_only.package_id,
+            &surface,
+            flow_only.generation,
+            &digest('8'),
+        )
+        .unwrap(),
+    );
+    flow_only.endpoint_ref = Some(
+        EndpointRef::derive(
+            &flow_only.package_id,
+            &surface,
+            flow_only.generation,
+            &digest('9'),
+        )
+        .unwrap(),
+    );
+    if let CapabilityDescriptorKind::Tool { name, .. } = &mut flow_only.capability {
+        *name = "review".to_owned();
+    }
+    flow_only.required_extensions = vec![CapabilityConsumerExtension::Flow];
+    let catalog = CapabilityGatewayCatalog::new(
+        InstallationId::new(InstallationKind::User, "user/gateway-tests").unwrap(),
+        9,
+        vec![universal, flow_only],
+    )
+    .unwrap();
+
+    let generic =
+        CapabilityGatewayMcpServer::new(catalog.clone(), Arc::new(RecordingProvider::default()))
+            .unwrap();
+    assert_eq!(generic.catalog().descriptors().len(), 1);
+    assert!(generic.catalog().find_tool("review").is_none());
+    assert!(generic.tools.get("review").is_none());
+
+    let negotiation = CapabilityConsumerNegotiation::negotiate(
+        CapabilityConsumerProfile::a3s([CapabilityConsumerExtension::Flow]).unwrap(),
+        [CapabilityConsumerExtension::Flow],
+    )
+    .unwrap();
+    let a3s = CapabilityGatewayMcpServer::with_consumer_negotiation(
+        catalog,
+        Arc::new(RecordingProvider::default()),
+        negotiation,
+    )
+    .unwrap();
+    assert_eq!(a3s.catalog().descriptors().len(), 2);
+    assert!(a3s.catalog().find_tool("review").is_some());
+    assert!(a3s.tools.get("review").is_some());
+}
+
+#[test]
 fn gateway_limits_and_http_credentials_fail_closed() {
     assert!(CapabilityGatewayLimits::new(0, 1, Duration::from_secs(1)).is_err());
     assert!(CapabilityGatewayLimits::new(1, 1, Duration::ZERO).is_err());
@@ -603,6 +675,100 @@ async fn adapter_uses_standard_mcp_initialization_list_and_call() {
 }
 
 #[tokio::test]
+async fn adapter_paginates_tools_in_stable_name_order() {
+    let descriptors = (0..65)
+        .map(|index| {
+            let mut descriptor = test_descriptor();
+            let surface = PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: format!("tool-{index:03}"),
+            };
+            let digest = |letter: char| format!("sha256:{}", letter.to_string().repeat(64));
+            descriptor.surface = surface.clone();
+            descriptor.invocation_ref = InvocationRef::derive(
+                &descriptor.package_id,
+                &surface,
+                descriptor.generation,
+                &digest('c'),
+            )
+            .unwrap();
+            descriptor.artifact_ref = Some(
+                ArtifactRef::derive(
+                    &descriptor.package_id,
+                    &surface,
+                    descriptor.generation,
+                    &digest('d'),
+                )
+                .unwrap(),
+            );
+            descriptor.endpoint_ref = Some(
+                EndpointRef::derive(
+                    &descriptor.package_id,
+                    &surface,
+                    descriptor.generation,
+                    &digest('e'),
+                )
+                .unwrap(),
+            );
+            if let CapabilityDescriptorKind::Tool { name, .. } = &mut descriptor.capability {
+                *name = surface.id.clone();
+            }
+            descriptor
+        })
+        .collect();
+    let catalog = CapabilityGatewayCatalog::new(
+        InstallationId::new(InstallationKind::User, "user/gateway-tests").unwrap(),
+        9,
+        descriptors,
+    )
+    .unwrap();
+    let server =
+        CapabilityGatewayMcpServer::new(catalog, Arc::new(RecordingProvider::default())).unwrap();
+    let (server_transport, client_transport) = tokio::io::duplex(256 * 1024);
+    let server_handle = tokio::spawn(async move {
+        server
+            .serve(server_transport)
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let client = TestClient.serve(client_transport).await.unwrap();
+
+    let first = client.peer().list_tools(None).await.unwrap();
+    assert_eq!(first.tools.len(), 64);
+    assert_eq!(first.next_cursor.as_deref(), Some("64"));
+    assert!(first
+        .tools
+        .windows(2)
+        .all(|pair| pair[0].name <= pair[1].name));
+    assert_eq!(first.tools[0].name, "tool-000");
+    assert_eq!(first.tools[63].name, "tool-063");
+
+    let second = client
+        .peer()
+        .list_tools(Some(PaginatedRequestParam {
+            cursor: first.next_cursor,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(second.tools.len(), 1);
+    assert_eq!(second.tools[0].name, "tool-064");
+    assert!(second.next_cursor.is_none());
+    assert!(client
+        .peer()
+        .list_tools(Some(PaginatedRequestParam {
+            cursor: Some("not-a-cursor".to_owned()),
+        }))
+        .await
+        .is_err());
+
+    client.cancel().await.unwrap();
+    server_handle.await.unwrap();
+}
+
+#[tokio::test]
 async fn adapter_exposes_standard_mcp_resources_and_prompts() {
     let tool = test_descriptor();
     let resource = test_resource_descriptor();
@@ -731,9 +897,33 @@ fn gateway_content_contract_rejects_pathful_resources_and_unknown_prompt_argumen
         &[ResourceContents::text("private", "file:///srv/private.txt")]
     )
     .is_err());
+    assert!(validate_resource_contents(
+        &opaque_uri,
+        &[ResourceContents::BlobResourceContents {
+            uri: opaque_uri.clone(),
+            mime_type: Some("application/octet-stream".to_owned()),
+            blob: "not-base64".to_owned(),
+            meta: None,
+        }]
+    )
+    .is_err());
+    assert!(validate_resource_contents(
+        &opaque_uri,
+        &[ResourceContents::BlobResourceContents {
+            uri: opaque_uri.clone(),
+            mime_type: Some("application/octet-stream".to_owned()),
+            blob: "aGVsbG8=".to_owned(),
+            meta: None,
+        }]
+    )
+    .is_ok());
     let declarations = vec![CapabilityPromptArgument::new("topic", true)];
     assert!(
         validate_prompt_arguments(&serde_json::json!({ "other": "value" }), &declarations).is_err()
+    );
+    assert!(validate_prompt_arguments(&serde_json::json!({ "topic": 42 }), &declarations).is_err());
+    assert!(
+        validate_prompt_arguments(&serde_json::json!({ "topic": "value" }), &declarations).is_ok()
     );
 }
 
@@ -1523,6 +1713,7 @@ fn test_descriptor() -> CapabilityDescriptor {
         artifact_ref: Some(ArtifactRef::derive(&package_id, &surface, 1, &digest('d')).unwrap()),
         endpoint_ref: Some(EndpointRef::derive(&package_id, &surface, 1, &digest('e')).unwrap()),
         dependencies: Vec::new(),
+        required_extensions: Vec::new(),
         publication: CapabilityPublicationEvidence {
             catalog_record_digest: digest('f'),
             signature_digest: digest('0'),

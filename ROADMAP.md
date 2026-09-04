@@ -951,19 +951,31 @@ distinguishes the default `generic-mcp` consumer from an explicit `a3s`
 consumer. Extension requests are canonical, sorted, bounded, and digest-bound;
 fail closed when the host cannot support the complete requested set. The
 embedding Gateway retains the completed negotiation across its clones and
-leased constructors; legacy constructors remain generic-MCP by default. This
-is the profile boundary only: profile-aware resource/prompt projection,
-production receipt/Runtime/Grant composition, and product host wiring remain
-open, so the consumer-profile checkbox is intentionally not marked complete
-yet.
+leased constructors; legacy constructors remain generic-MCP by default.
+Descriptors can now carry a canonical `requiredExtensions` set, and every
+Gateway constructor projects the immutable catalog against the completed
+negotiation before compiling discovery or invocation routes. This closes the
+generic-consumer information-leak path, but it is still only the profile
+boundary: actual Flow/UI/Knowledge payload projection, principal-specific
+discovery policy, production receipt/Runtime/Grant composition, and product
+host wiring remain open, so the consumer-profile checkbox is intentionally not
+marked complete yet.
 
 Implementation note (2026-09-04): the standard MCP projection now includes
 catalog-authorized Resources and Prompts in addition to Tools. Resource
 references are opaque, exact-match checked, and never interpreted as paths or
-URLs; prompt arguments are closed against the reviewed declaration; discovery
-is bounded and paginated; and provider output is validated before it crosses
-the agent boundary. This does not yet project A3S-specific Flow/UI/Knowledge
-metadata or provide per-consumer discovery filtering.
+URLs; prompt arguments are closed against the reviewed declaration; every
+standard discovery list is deterministic, bounded, and cursor-paginated; and
+provider output is validated before it crosses the agent boundary. This does
+not yet project A3S-specific Flow/UI/Knowledge metadata or principal-specific
+discovery policy.
+
+Implementation note (2026-09-04): Gateway catalog projection now evaluates
+descriptor `requiredExtensions` against the immutable consumer negotiation.
+Unaccepted descriptors are removed before MCP route compilation, so they are
+absent from both list responses and direct lookup. Tool discovery is explicitly
+sorted because the underlying router uses a hash map; cursors therefore cannot
+silently reorder or skip capabilities between pages.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
