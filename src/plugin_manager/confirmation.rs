@@ -1,4 +1,6 @@
-use a3s_use_core::{PluginHostPlanResult, PluginOperationConfirmation, UseResult};
+use a3s_use_core::{
+    PluginHostPlanResult, PluginManagerOperationInput, PluginOperationConfirmation, UseResult,
+};
 use async_trait::async_trait;
 
 /// Trusted host boundary for reopening an explicit user confirmation.
@@ -12,6 +14,19 @@ pub trait PluginManagerConfirmationProvider: Send + Sync {
         &self,
         plan: &PluginHostPlanResult,
     ) -> UseResult<Option<PluginOperationConfirmation>>;
+
+    /// Return existing trusted user evidence for an explicit cancellation.
+    ///
+    /// A transport invocation alone is never treated as user authority. The
+    /// default is fail-closed so hosts that do not implement an interactive
+    /// cancellation policy cannot accidentally expose one.
+    async fn cancellation_for(
+        &self,
+        operation: &PluginManagerOperationInput,
+    ) -> UseResult<Option<PluginOperationConfirmation>> {
+        operation.validate()?;
+        Ok(None)
+    }
 }
 
 /// Read-only and unattended-host policy that never claims user confirmation.

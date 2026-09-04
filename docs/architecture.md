@@ -513,7 +513,7 @@ code accepts one preview baseline only:
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6`, protocol 6 |
 | Host managed scope | `a3s.use.plugin-managed-scope.v2` |
-| Manager tools | `a3s.use.plugin-manager-tools.v4` |
+| Manager tools | `a3s.use.plugin-manager-tools.v5` (v4 migration contract remains readable) |
 | Pending graph | `a3s.use.pending-package-graph-operation.v4` |
 | Pre-lock resolution attempt/diagnostic | `a3s.use.plugin-resolution-attempt.v1` / `a3s.use.plugin-resolution-attempt-diagnostic.v1` |
 | Pre-plan download attempt/diagnostic | `a3s.use.plugin-download-attempt.v1` / `a3s.use.plugin-download-attempt-diagnostic.v1` |

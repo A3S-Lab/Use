@@ -5,7 +5,8 @@ use crate::UseResult;
 
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract,
-    PLUGIN_MANAGER_TOOLSET_SCHEMA_V4,
+    MAX_PLUGIN_HOST_OPERATION_WATCH_TIMEOUT_MS, PLUGIN_MANAGER_TOOLSET_SCHEMA_V4,
+    PLUGIN_MANAGER_TOOLSET_SCHEMA_V5,
 };
 
 const MANAGER_ERROR: &str = "use.plugin.manager_toolset_invalid";
@@ -40,11 +41,40 @@ pub struct PluginManagerToolAnnotations {
 }
 
 impl PluginManagerToolset {
-    pub fn v4() -> Self {
-        Self::contract()
+    /// The current manager inventory. Version 4 remains available through
+    /// [`Self::v4`] so older embeddings can migrate without silently losing
+    /// their frozen contract.
+    pub fn v5() -> Self {
+        let mut toolset = Self::v4();
+        toolset.schema = PLUGIN_MANAGER_TOOLSET_SCHEMA_V5.to_owned();
+        toolset.tools.extend([
+            tool(
+                "plugin_observe_operation",
+                "Read the durable status of one exact reviewed operation identified by package, scope, operation ID, and plan digest.",
+                operation_schema(),
+                annotations(true, false, true, false),
+            ),
+            tool(
+                "plugin_watch_operation",
+                "Long-poll one exact reviewed operation until its status revision changes or the bounded timeout expires.",
+                operation_watch_schema(),
+                annotations(true, false, true, false),
+            ),
+            tool(
+                "plugin_cancel_operation",
+                "Request explicit-user cancellation of one exact reviewed operation at the host's safe cancellation point.",
+                operation_schema(),
+                annotations(false, true, true, false),
+            ),
+        ]);
+        toolset
     }
 
-    fn contract() -> Self {
+    pub fn v4() -> Self {
+        Self::contract_v4()
+    }
+
+    fn contract_v4() -> Self {
         Self {
             schema: PLUGIN_MANAGER_TOOLSET_SCHEMA_V4.to_owned(),
             tools: vec![
@@ -122,9 +152,9 @@ impl PluginManagerToolset {
     }
 
     pub fn validate(&self) -> UseResult<()> {
-        if self != &Self::v4() {
+        if self != &Self::v4() && self != &Self::v5() {
             return Err(manager_error(
-                "The plugin manager MCP tool inventory differs from the current frozen contract.",
+                "The plugin manager MCP tool inventory differs from every supported frozen contract.",
             ));
         }
         Ok(())
@@ -267,6 +297,63 @@ fn apply_schema() -> Value {
             ),
         ],
         &["operationId", "planDigest"],
+    )
+}
+
+fn operation_schema() -> Value {
+    object_schema(
+        vec![
+            ("packageId", package_id_schema()),
+            ("scopeKind", scope_kind_schema()),
+            ("scopeId", machine_id_schema()),
+            ("operationId", machine_id_schema()),
+            (
+                "planDigest",
+                json!({"type":"string","pattern":DIGEST_PATTERN}),
+            ),
+        ],
+        &[
+            "packageId",
+            "scopeKind",
+            "scopeId",
+            "operationId",
+            "planDigest",
+        ],
+    )
+}
+
+fn operation_watch_schema() -> Value {
+    object_schema(
+        vec![
+            ("packageId", package_id_schema()),
+            ("scopeKind", scope_kind_schema()),
+            ("scopeId", machine_id_schema()),
+            ("operationId", machine_id_schema()),
+            (
+                "planDigest",
+                json!({"type":"string","pattern":DIGEST_PATTERN}),
+            ),
+            (
+                "afterRevision",
+                json!({"type":"string","pattern":DIGEST_PATTERN}),
+            ),
+            (
+                "timeoutMs",
+                json!({
+                    "type":"integer",
+                    "minimum":0,
+                    "maximum":MAX_PLUGIN_HOST_OPERATION_WATCH_TIMEOUT_MS,
+                    "default":0
+                }),
+            ),
+        ],
+        &[
+            "packageId",
+            "scopeKind",
+            "scopeId",
+            "operationId",
+            "planDigest",
+        ],
     )
 }
 

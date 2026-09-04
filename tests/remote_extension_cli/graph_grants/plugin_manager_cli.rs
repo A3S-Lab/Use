@@ -301,6 +301,100 @@ fn run_standalone_plugin_manager_cli_scenario() {
     assert_eq!(json(&uninstalled)["data"]["state"]["desired"], "absent");
     assert!(extension_aliases(&home).is_empty());
     assert!(server.requests().is_empty());
+
+    // Operation observation, bounded long-poll, and explicit cancellation
+    // use the same exact operation identity after the lifecycle mutation.
+    let pending_install = plugin_command(
+        &home,
+        &[
+            "plan-install",
+            "acme/worker",
+            "--registry-name",
+            "fixture",
+            "--version-requirement",
+            "2.0.0",
+            "--channel",
+            "stable",
+            "--surface",
+            "tool/convert",
+        ],
+    );
+    assert!(pending_install.status.success(), "{pending_install:?}");
+    let pending_install = json(&pending_install);
+    let (pending_operation_id, pending_plan_digest) = plan_identity(&pending_install);
+
+    let observed = plugin_command(
+        &home,
+        &[
+            "observe-operation",
+            "acme/worker",
+            "--operation-id",
+            &pending_operation_id,
+            "--plan-digest",
+            &pending_plan_digest,
+        ],
+    );
+    assert!(observed.status.success(), "{observed:?}");
+    let observed = json(&observed);
+    assert_eq!(observed["data"]["operationId"], pending_operation_id);
+    assert_eq!(observed["data"]["planDigest"], pending_plan_digest);
+    assert!(observed["data"]["revision"].as_str().is_some());
+
+    let revision = observed["data"]["revision"].as_str().unwrap().to_owned();
+    let watched = plugin_command(
+        &home,
+        &[
+            "watch-operation",
+            "acme/worker",
+            "--operation-id",
+            &pending_operation_id,
+            "--plan-digest",
+            &pending_plan_digest,
+            "--after-revision",
+            &revision,
+            "--timeout-ms",
+            "0",
+        ],
+    );
+    assert!(watched.status.success(), "{watched:?}");
+    let watched = json(&watched);
+    assert_eq!(watched["data"]["changed"], false);
+    assert_eq!(watched["data"]["timedOut"], true);
+
+    let cancelled = plugin_command(
+        &home,
+        &[
+            "cancel-operation",
+            "acme/worker",
+            "--operation-id",
+            &pending_operation_id,
+            "--plan-digest",
+            &pending_plan_digest,
+            "--yes",
+        ],
+    );
+    assert!(cancelled.status.success(), "{cancelled:?}");
+    assert_eq!(json(&cancelled)["data"]["status"], "cancelled");
+
+    let cancelled_observation = plugin_command(
+        &home,
+        &[
+            "observe-operation",
+            "acme/worker",
+            "--operation-id",
+            &pending_operation_id,
+            "--plan-digest",
+            &pending_plan_digest,
+        ],
+    );
+    assert!(
+        cancelled_observation.status.success(),
+        "{cancelled_observation:?}"
+    );
+    assert_eq!(
+        json(&cancelled_observation)["data"]["status"]["phase"],
+        "cancelled"
+    );
 }
 
 fn plugin_command(home: &std::path::Path, args: &[&str]) -> Output {

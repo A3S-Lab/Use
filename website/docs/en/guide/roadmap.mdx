@@ -32,7 +32,7 @@ The current preview accepts one contract line only:
 | Host operation observation     | `a3s.use.plugin-host-operation-observation-request/result.v1`                            |
 | Host operation watch           | `a3s.use.plugin-host-operation-watch-request.v1`                                         |
 | Host cancellation              | `a3s.use.plugin-host-cancel-request/result.v1`                                           |
-| Manager MCP tools              | `a3s.use.plugin-manager-tools.v4`                                                        |
+| Manager MCP tools              | `a3s.use.plugin-manager-tools.v5` (v4 migration contract remains readable)               |
 | Pending package graph          | `a3s.use.pending-package-graph-operation.v4`                                             |
 | Pre-lock resolution attempt    | `a3s.use.plugin-resolution-attempt.v1`                                                   |
 | Pre-plan download attempt      | `a3s.use.plugin-download-attempt.v1`                                                     |
@@ -345,9 +345,9 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
 - The Use-owned typed `PluginManagerService` now implements catalog search and
   inspection, stable installed-state pagination, status, all frozen planning
   operations, durable reviewed-plan reopening, and digest-only apply over the
-  production Host Manager. Its standard MCP adapter derives the exact ten v4
-  tools from the frozen contract and obtains confirmation only from an injected
-  trusted host provider.
+  production Host Manager. Its standard MCP adapter derives the exact thirteen
+  v5 tools from the frozen contract and obtains apply/cancellation confirmation
+  only from an injected trusted host provider.
 - The path-free `CapabilityDescriptor` and catalog contracts, opaque reference
   types, exact snapshot lease/generation binding, and embedding
   `CapabilityGatewayMcpServer` are implemented and contract-tested. The

@@ -38,7 +38,7 @@ current set.
 | Host operation observation request/result | `a3s.use.plugin-host-operation-observation-request/result.v1` |
 | Host operation watch request | `a3s.use.plugin-host-operation-watch-request.v1` |
 | Host cancellation request/result | `a3s.use.plugin-host-cancel-request/result.v1` |
-| Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
+| Manager MCP toolset | `a3s.use.plugin-manager-tools.v5` (v4 migration contract remains readable) |
 | Installed receipt | numeric schema version `6` |
 | Installation snapshot | `a3s.use.installation-snapshot.v2` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
@@ -84,10 +84,14 @@ current set.
 | OKF Knowledge restore diagnostic | `a3s.use.okf-knowledge-restore-diagnostic.v2` |
 
 The host capability inventory is exact: the current Host and managed-scope
-schemas above, catalog v3, plan v4, and all six surface kinds. The separate
-manager toolset accepts v4 only. Toolset v4 exposes optional canonical
-`registryName` only on install planning; upgrade stays bound to installed
-Registry provenance. A host advertising a different inventory is rejected.
+schemas above, catalog v3, plan v4, and all six surface kinds. The current
+manager toolset is v5; v4 remains a separately frozen migration contract and
+is accepted by the shared typed parser so an embedding can upgrade without
+silently changing its existing inventory. Toolset v5 exposes optional
+canonical `registryName` only on install planning; upgrade stays bound to
+installed Registry provenance. It also exposes exact operation observation,
+bounded long-poll watch, and explicit cancellation controls. A host or adapter
+advertising any other inventory is rejected.
 
 ## Package manifest
 
@@ -380,7 +384,7 @@ textual IDs in different kinds produce different descriptor digests and cannot
 alias a Host fence, request replay store, authorization, plan, or observation.
 The v1 scope and Host v5 inventory are rejection fixtures only.
 
-The manager toolset contains exactly:
+The current v5 manager toolset contains exactly:
 
 ```text
 plugin_search
@@ -393,18 +397,32 @@ plugin_plan_uninstall
 plugin_apply_plan
 plugin_plan_enable
 plugin_plan_disable
+plugin_observe_operation
+plugin_watch_operation
+plugin_cancel_operation
 ```
+
+The ten-tool v4 inventory remains available as `PluginManagerToolset::v4()`
+for migration and fixture compatibility. The three v5 operation controls all
+require the complete `(packageId, scopeKind, scopeId, operationId,
+planDigest)` identity. `plugin_watch_operation` additionally accepts an
+optional status revision and a timeout bounded to 30 seconds. A cancellation
+request is destructive and must receive existing trusted user confirmation
+from the embedding host; an MCP transport call by itself never becomes user
+authority.
 
 There is no `plugin_enable` or `plugin_disable` mutation tool. Enablement uses
 plan then `plugin_apply_plan` like every other mutation.
 
 The runtime adapter is standard MCP, not an A3S JSON-RPC dialect. Its
 `tools/list` names, descriptions, input schemas, and annotations are constructed
-from `PluginManagerToolset::v4()`. Each tool deserializes into a closed typed
+from `PluginManagerToolset::v5()`. Each tool deserializes into a closed typed
 input and delegates to the same `PluginManagerService`. The apply input remains
 only `operationId` plus `planDigest`; explicit user confirmation comes from an
 injected trusted host provider after the exact durable plan is reopened. The
-adapter never synthesizes `confirmedBy: User` from a tool invocation.
+adapter never synthesizes `confirmedBy: User` from an apply or cancellation
+tool invocation. Cancellation uses the same injected provider for a separate
+exact identity confirmation before it reaches the Host Manager.
 
 `CognitivePackageHostManager` is the production adapter for this port. It is
 bound to one exact `PluginManagedScope` fence and advertises one immutable

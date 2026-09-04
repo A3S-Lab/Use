@@ -80,21 +80,24 @@ change or strand an already reviewed operation.
 
 The presentation-facing boundary is `PluginManagerService`. It adds no state
 machine: deterministic request IDs, opaque Registry cursors, stable installed
-pages, and reviewed-plan reopening all bind back to Host Manager evidence. The
-standard `PluginManagerMcpServer` derives its ten routes directly from
-`PluginManagerToolset::v4()` and delegates every call to that service. Apply
-confirmation is supplied only by an injected trusted host provider. The
-standalone CLI's Registry-backed install, upgrade, and uninstall mutations use
-this boundary and return the exact Host plan/apply evidence alongside their
-existing output. Its `plugin` command maps all ten frozen manager operations to
-the same service: four reads, five non-mutating plans, and one apply that reopens
-the exact durable operation ID plus plan digest and requires explicit `--yes`.
-An ordinary invocation never creates `Ask` confirmation, and exact apply or
-replay performs no Registry request. A3S Code CLI, TUI `/packages`, and the
-product-host manager MCP now compose this same service. The Host Manager's
-signed six-surface User/Workspace lifecycle and replay matrix is qualified;
-complete Code product-host E2E and release qualification remain open, so the
-complete M2 product convergence gate is not yet satisfied.
+pages, reviewed-plan reopening, exact operation observation, bounded watch, and
+safe cancellation all bind back to Host Manager evidence. The standard
+`PluginManagerMcpServer` derives its current thirteen routes directly from
+`PluginManagerToolset::v5()` and delegates every call to that service. Apply and
+cancellation confirmation are supplied only by an injected trusted host
+provider. The standalone CLI's Registry-backed install, upgrade, and uninstall
+mutations use this boundary and return the exact Host plan/apply evidence
+alongside their existing output. Its `plugin` command maps all thirteen frozen
+manager operations to the same service: four reads, five non-mutating plans,
+one apply, two read-only operation controls, and one explicit cancellation
+control. Observation and cancellation require the exact package/scope/
+operation/plan identity; cancellation also requires `--yes`. An ordinary MCP
+invocation never creates `User` authority, and exact apply or replay performs
+no Registry request. A3S Code CLI, TUI `/packages`, and the product-host
+manager MCP now compose this same service. The Host Manager's signed
+six-surface User/Workspace lifecycle and replay matrix is qualified; complete
+Code product-host E2E and release qualification remain open, so the complete
+M2 product convergence gate is not yet satisfied.
 
 ## Domain model
 

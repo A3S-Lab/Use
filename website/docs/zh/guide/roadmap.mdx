@@ -31,7 +31,7 @@ production-ready。合约完成和测试通过只是实现证据，不是发布�
 | Host operation observation     | `a3s.use.plugin-host-operation-observation-request/result.v1`                            |
 | Host operation watch           | `a3s.use.plugin-host-operation-watch-request.v1`                                         |
 | Host cancellation              | `a3s.use.plugin-host-cancel-request/result.v1`                                           |
-| manager MCP tools              | `a3s.use.plugin-manager-tools.v4`                                                        |
+| manager MCP tools              | `a3s.use.plugin-manager-tools.v5`（v4 migration contract 仍可读取）                      |
 | pending package graph          | `a3s.use.pending-package-graph-operation.v4`                                             |
 | pre-lock resolution attempt    | `a3s.use.plugin-resolution-attempt.v1`                                                   |
 | pre-plan download attempt      | `a3s.use.plugin-download-attempt.v1`                                                     |
@@ -247,8 +247,8 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
 - Use 已实现类型化 `PluginManagerService`，在 production Host Manager 之上
   统一 catalog search/inspect、稳定 installed-state 分页、status、全部冻结的
   planning operation、持久 reviewed-plan 重开与 digest-only apply。标准 MCP
-  adapter 直接从冻结合约生成 10 个 v4 tool，确认只由注入的可信 host provider
-  提供。
+  adapter 直接从冻结合约生成 13 个 v5 tool，apply/cancellation 确认只由注入的
+  可信 host provider 提供；10 个 v4 tool 作为 migration contract 保留。
 - 无路径的 `CapabilityDescriptor` 与 catalog 合约、opaque reference 类型以及
   embedding `CapabilityGatewayMcpServer` 已实现并通过 contract test。adapter
   只通过注入 provider，以标准 MCP 发布 catalog 授权的 Tool；精确 snapshot

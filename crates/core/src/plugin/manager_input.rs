@@ -9,6 +9,7 @@ use super::validation::{valid_segment, valid_sha256};
 use super::{
     InstallationId, PlanScope, PlanScopeKind, PluginOperationPlan, PluginPackageId,
     PluginReleaseChannel, PluginSurfaceKind, PluginSurfaceRef,
+    MAX_PLUGIN_HOST_OPERATION_WATCH_TIMEOUT_MS,
 };
 
 const MANAGER_INPUT_ERROR: &str = "use.plugin.manager_input_invalid";
@@ -95,6 +96,37 @@ pub struct PluginManagerUpgradePlanInput {
 pub struct PluginManagerApplyPlanInput {
     pub operation_id: String,
     pub plan_digest: String,
+}
+
+/// Exact identity of one reviewed Plugin Manager operation.
+///
+/// Operation status and cancellation deliberately require the package, scope,
+/// operation ID, and plan digest together.  A caller cannot accidentally
+/// observe or cancel a different operation that happens to reuse an ID in
+/// another managed scope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginManagerOperationInput {
+    pub package_id: PluginPackageId,
+    pub scope_kind: PlanScopeKind,
+    pub scope_id: String,
+    pub operation_id: String,
+    pub plan_digest: String,
+}
+
+/// Long-poll options for one exact reviewed Plugin Manager operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginManagerOperationWatchInput {
+    pub package_id: PluginPackageId,
+    pub scope_kind: PlanScopeKind,
+    pub scope_id: String,
+    pub operation_id: String,
+    pub plan_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_revision: Option<String>,
+    #[serde(default)]
+    pub timeout_ms: u64,
 }
 
 impl PluginManagerSearchInput {
@@ -240,6 +272,59 @@ impl PluginManagerApplyPlanInput {
             ));
         }
         Ok(())
+    }
+}
+
+impl PluginManagerOperationInput {
+    pub fn validate(&self) -> UseResult<()> {
+        validate_scope(self.scope_kind, &self.scope_id)?;
+        PluginOperationPlan::validate_operation_id(&self.operation_id).map_err(|_| {
+            manager_input_error("The observed plugin operation identity is invalid.")
+        })?;
+        if !valid_sha256(&self.plan_digest) {
+            return Err(manager_input_error(
+                "The observed plugin operation plan digest is invalid.",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn scope(&self) -> PlanScope {
+        PlanScope {
+            kind: self.scope_kind,
+            id: self.scope_id.clone(),
+        }
+    }
+}
+
+impl PluginManagerOperationWatchInput {
+    pub fn validate(&self) -> UseResult<()> {
+        PluginManagerOperationInput {
+            package_id: self.package_id.clone(),
+            scope_kind: self.scope_kind,
+            scope_id: self.scope_id.clone(),
+            operation_id: self.operation_id.clone(),
+            plan_digest: self.plan_digest.clone(),
+        }
+        .validate()?;
+        if self.timeout_ms > MAX_PLUGIN_HOST_OPERATION_WATCH_TIMEOUT_MS
+            || self
+                .after_revision
+                .as_deref()
+                .is_some_and(|revision| !valid_sha256(revision))
+        {
+            return Err(manager_input_error(
+                "The plugin operation watch revision or timeout is invalid.",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn scope(&self) -> PlanScope {
+        PlanScope {
+            kind: self.scope_kind,
+            id: self.scope_id.clone(),
+        }
     }
 }
 
