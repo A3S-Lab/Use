@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Development Plan
 
 Status: active
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ## Objective
 
@@ -109,6 +109,10 @@ Status: in progress
   lease held through capture and cleanup.
 - [x] Publish exact installation/package/generation-matched Runtime Tool Tasks
   through capability snapshot schema v5; omit missing or mismatched bindings.
+- [x] Cross-bind Runtime Task receipts to the installed package's retained
+  planning evidence and exact release descriptor digest; Registry-trusted
+  bindings with missing, substituted, or cross-generation evidence fail closed
+  before publication or provider connection.
 - [x] Require explicit owner evidence for every required Tool, MCP, Flow, OKF,
   Skill, and UI surface before atomically publishing the capability generation.
 - [x] Persist `a3s.use.runtime-service-provisioning.v1` before apply, retain
@@ -178,8 +182,17 @@ Acceptance:
 - [x] Freeze path-free `CapabilityDescriptor` and catalog contracts with
   domain-separated opaque invocation, artifact, and endpoint references.
 - [x] Provide an embedding `CapabilityGatewayMcpServer` that exposes only
-  catalog-authorized Tool descriptors over standard MCP and delegates calls to
-  an injected `CapabilityGatewayInvocationProvider`.
+  catalog-authorized Tool, Resource, and Prompt descriptors over standard MCP
+  and delegates every live operation to an injected
+  `CapabilityGatewayInvocationProvider`. Resource URIs are opaque,
+  generation-bound references; prompt arguments and provider results are
+  bounded and validated before crossing the protocol boundary.
+- [x] Project static resources and prompts through standard `resources/list`,
+  `resources/read`, `prompts/list`, and `prompts/get` methods. Discovery is
+  bounded and paginated, resource reads require the exact published opaque URI,
+  prompt arguments are closed against the reviewed declaration, and embedded
+  resource links must point back to the same catalog. Providers without the
+  corresponding host capability fail closed.
 - [ ] Resolve opaque references from the live Use host, integrate receipt-owned
   provider composition, and complete per-consumer authorization across exact
   package-generation leases, drain, and retirement. The embedding path already
@@ -219,8 +232,9 @@ The typed consumer boundary is now available as
 the default; an A3S host must explicitly negotiate a complete supported set of
 Flow, Knowledge, or UI extension labels, and the Gateway retains the resulting
 canonical digest across clones and leases. The labels remain metadata rather
-than authorization, and the standard adapter still publishes only Tools until
-profile-aware resources/prompts and production host composition are delivered.
+than authorization. The standard adapter now publishes catalog-authorized MCP
+Tools, Resources, and Prompts through the universal protocol; profile-aware A3S
+extensions and production host composition remain separate gates.
 
 PR [#192](https://github.com/A3S-Lab/Use/pull/192) records the contract and
 adapter boundary. The checked items are not an A3 exit-gate claim; lifecycle,

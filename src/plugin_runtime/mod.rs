@@ -68,6 +68,8 @@ pub use surface_observer::{
 pub use task::RuntimeTaskExecution;
 pub use task_dispatch::{RuntimeTaskDispatchRequest, RuntimeTaskDispatcher};
 
+pub(crate) use task_binding::validate_task_descriptor_binding;
+
 #[cfg(test)]
 mod store_tests;
 #[cfg(test)]

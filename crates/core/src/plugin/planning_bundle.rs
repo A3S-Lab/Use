@@ -186,6 +186,42 @@ impl PluginPlanningBundle {
         Ok(canonical_digest(&self.canonical_bytes()?))
     }
 
+    /// Return the digest of the signed release descriptor for one executable
+    /// surface.
+    ///
+    /// Native package-local launchers deliberately have no release descriptor
+    /// and therefore return `None`.  A caller resolving a Runtime-backed
+    /// surface should require `Some` and compare it with the durable Runtime
+    /// binding.  Keeping this lookup on the validated planning bundle avoids
+    /// duplicating the enum matching rules at each host boundary.
+    pub fn release_descriptor_digest(
+        &self,
+        surface: &PluginSurfaceRef,
+    ) -> UseResult<Option<String>> {
+        self.validate()?;
+        let executable = self
+            .surfaces
+            .iter()
+            .find(|candidate| candidate.reference() == *surface)
+            .ok_or_else(|| {
+                planning_error(
+                    "The planning bundle has no executable surface for the requested identity.",
+                )
+            })?;
+        let digest = match executable {
+            ExecutablePlanningSurface::ToolTask { descriptor, .. }
+            | ExecutablePlanningSurface::ToolService { descriptor, .. } => {
+                Some(descriptor.descriptor_digest()?)
+            }
+            ExecutablePlanningSurface::McpService { descriptor, .. } => {
+                Some(descriptor.descriptor_digest()?)
+            }
+            ExecutablePlanningSurface::ToolTaskNative { .. }
+            | ExecutablePlanningSurface::McpStdio { .. } => None,
+        };
+        Ok(digest)
+    }
+
     /// Recheck typed planning evidence against the exact verified catalog.
     ///
     /// Repository clients use this after transporting a previously verified

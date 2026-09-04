@@ -55,6 +55,62 @@ fn tool() -> CapabilityDescriptor {
     }
 }
 
+fn resource() -> CapabilityDescriptor {
+    let package = package();
+    let surface = surface(PluginSurfaceKind::Skill, "knowledge");
+    CapabilityDescriptor {
+        schema: CAPABILITY_DESCRIPTOR_SCHEMA_V1.to_owned(),
+        invocation_ref: InvocationRef::derive(&package, &surface, 7, &digest('a')).unwrap(),
+        artifact_ref: None,
+        endpoint_ref: None,
+        package_id: package.clone(),
+        surface: surface.clone(),
+        generation: 7,
+        package_digest: digest('d'),
+        manifest_digest: digest('e'),
+        title: "Knowledge index".to_owned(),
+        description: "Verified knowledge resource.".to_owned(),
+        dependencies: Vec::new(),
+        publication: CapabilityPublicationEvidence {
+            catalog_record_digest: digest('f'),
+            signature_digest: digest('0'),
+        },
+        capability: CapabilityDescriptorKind::Resource {
+            name: "knowledge".to_owned(),
+            uri: ResourceRef::derive(&package, &surface, 7, &digest('1')).unwrap(),
+            mime_type: Some("text/plain".to_owned()),
+            size: Some(128),
+        },
+    }
+}
+
+fn prompt() -> CapabilityDescriptor {
+    let package = package();
+    let surface = surface(PluginSurfaceKind::Skill, "prompts");
+    CapabilityDescriptor {
+        schema: CAPABILITY_DESCRIPTOR_SCHEMA_V1.to_owned(),
+        invocation_ref: InvocationRef::derive(&package, &surface, 7, &digest('a')).unwrap(),
+        artifact_ref: None,
+        endpoint_ref: None,
+        package_id: package.clone(),
+        surface: surface.clone(),
+        generation: 7,
+        package_digest: digest('d'),
+        manifest_digest: digest('e'),
+        title: "Research prompt".to_owned(),
+        description: "Compose a bounded research request.".to_owned(),
+        dependencies: Vec::new(),
+        publication: CapabilityPublicationEvidence {
+            catalog_record_digest: digest('f'),
+            signature_digest: digest('0'),
+        },
+        capability: CapabilityDescriptorKind::Prompt {
+            name: "research".to_owned(),
+            arguments: vec![CapabilityPromptArgument::new("topic", true)],
+        },
+    }
+}
+
 #[test]
 fn opaque_references_are_deterministic_and_domain_separated() {
     let package = package();
@@ -138,6 +194,46 @@ fn descriptor_rejects_executable_only_and_external_schema_authority() {
             "{reference_keyword} escaped"
         );
     }
+}
+
+#[test]
+fn resources_and_prompts_round_trip_and_share_a_surface_generation() {
+    let resource = resource();
+    let prompt = prompt();
+    resource.validate().unwrap();
+    prompt.validate().unwrap();
+    let resource_json = serde_json::to_value(&resource).unwrap();
+    let prompt_json = serde_json::to_value(&prompt).unwrap();
+    assert_eq!(
+        serde_json::from_value::<CapabilityDescriptor>(resource_json).unwrap(),
+        resource
+    );
+    assert_eq!(
+        serde_json::from_value::<CapabilityDescriptor>(prompt_json).unwrap(),
+        prompt
+    );
+
+    let installation =
+        InstallationId::new(super::super::InstallationKind::User, "user/current").unwrap();
+    let catalog = CapabilityGatewayCatalog::new(installation, 7, vec![resource, prompt]).unwrap();
+    assert!(catalog
+        .find_resource(catalog.descriptors()[0].resource_uri().unwrap().as_str())
+        .is_some());
+    assert!(catalog.find_prompt("research").is_some());
+}
+
+#[test]
+fn resource_refs_remain_opaque_and_cross_kind_fields_are_rejected() {
+    let descriptor = resource();
+    let encoded = serde_json::to_value(&descriptor).unwrap();
+    assert!(encoded["uri"]
+        .as_str()
+        .unwrap()
+        .starts_with("resource:v1:sha256:"));
+    assert!(ResourceRef::parse("https://example.invalid/private").is_err());
+    let mut tampered = encoded;
+    tampered["inputSchema"] = serde_json::json!({});
+    assert!(serde_json::from_value::<CapabilityDescriptor>(tampered).is_err());
 }
 
 #[test]
@@ -278,6 +374,8 @@ fn public_gateway_contracts_are_send_and_sync() {
     assert_send_sync::<InvocationRef>();
     assert_send_sync::<ArtifactRef>();
     assert_send_sync::<EndpointRef>();
+    assert_send_sync::<ResourceRef>();
+    assert_send_sync::<CapabilityPromptArgument>();
     assert_send_sync::<CapabilityDescriptionProof>();
     assert_send_sync::<CapabilityDescriptor>();
     assert_send_sync::<CapabilityGatewayCatalog>();

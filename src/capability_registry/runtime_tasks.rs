@@ -71,6 +71,12 @@ pub(super) async fn runtime_task_evidence_from_store(
             observations.insert(reference, SurfaceObservedState::Failed);
             continue;
         };
+        if crate::plugin_runtime::validate_task_descriptor_binding(extension, &surface.id, &binding)
+            .is_err()
+        {
+            observations.insert(reference, SurfaceObservedState::Failed);
+            continue;
+        }
         let contract_matches = matches!(
             &binding.contract,
             RuntimeSurfaceContract::ToolTask {
@@ -143,7 +149,11 @@ fn readable_segment(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use a3s_runtime::contract::NetworkMode;
-    use a3s_use_core::{PlanEnforcementProfile, PlannedProviderEvidence};
+    use a3s_use_core::{
+        ExecutablePlanningSurface, PlanEnforcementProfile, PlannedProviderEvidence,
+        PlanningArtifactRef, PlanningSurfaceActivation, PluginPlanningBundle, PluginReleaseChannel,
+        PLUGIN_PLANNING_BUNDLE_SCHEMA,
+    };
     use a3s_use_extension::{ExtensionManifest, ExtensionReceipt, ExtensionTrust};
 
     use crate::plugin_runtime::{
@@ -189,6 +199,7 @@ extension "acme/research" {
             .map(|surface| surface.surface)
             .collect::<Vec<_>>();
         selected_surfaces.sort();
+        let descriptor = crate::plugin_runtime::test_support::task_descriptor();
         let receipt = ExtensionReceipt {
             schema_version: a3s_use_extension::EXTENSION_RECEIPT_SCHEMA_VERSION,
             installation: crate::test_installation(),
@@ -199,10 +210,42 @@ extension "acme/research" {
             package_root: package_root.to_path_buf(),
             manifest_sha256: format!("{:x}", Sha256::digest(TASK_PLUGIN.as_bytes())),
             package_sha256: Some("a".repeat(64)),
-            trust: ExtensionTrust::RegistryTuf,
+            trust: ExtensionTrust::LocalExplicit,
             registry: None,
             verified_catalog: None,
-            planning_bundle: None,
+            planning_bundle: Some(PluginPlanningBundle {
+                schema: PLUGIN_PLANNING_BUNDLE_SCHEMA.to_owned(),
+                package_id: manifest.package_id.clone(),
+                version: manifest.version.clone(),
+                channel: PluginReleaseChannel::Stable,
+                target: "linux-x86_64".to_owned(),
+                archive_sha256: format!("sha256:{}", "c".repeat(64)),
+                package_sha256: format!("sha256:{}", "a".repeat(64)),
+                manifest_sha256: format!(
+                    "sha256:{}",
+                    Sha256::digest(TASK_PLUGIN.as_bytes())
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect::<String>()
+                ),
+                permission_ceiling_digest: format!("sha256:{}", "d".repeat(64)),
+                surfaces: vec![ExecutablePlanningSurface::ToolTask {
+                    id: "convert".to_owned(),
+                    activation: PlanningSurfaceActivation::Lazy,
+                    command: "acme-convert".to_owned(),
+                    json_output: true,
+                    timeout_ms: 120_000,
+                    artifact: PlanningArtifactRef {
+                        uri: format!(
+                            "oci://registry.example/acme/research@{}",
+                            descriptor.artifact.digest
+                        ),
+                        digest: descriptor.artifact.digest.clone(),
+                        media_type: descriptor.artifact.media_type.clone(),
+                    },
+                    descriptor,
+                }],
+            }),
             selected_surfaces,
             installed_at_unix: 1,
             enabled: true,
@@ -375,5 +418,69 @@ extension "acme/research" {
         .unwrap();
         assert!(!capability.enabled);
         assert!(capability.tool_tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn self_consistent_binding_with_replaced_signed_descriptor_fails_closed() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut extension = installed_extension(temporary.path());
+        let bundle = extension.receipt.planning_bundle.as_mut().unwrap();
+        let ExecutablePlanningSurface::ToolTask { descriptor, .. } = &mut bundle.surfaces[0] else {
+            panic!("fixture must contain a Runtime Tool Task planning surface")
+        };
+        descriptor
+            .provenance
+            .build_operation_id
+            .push_str("-tampered");
+        descriptor.validate().unwrap();
+
+        let store = RuntimeBindingStore::new(temporary.path().join("state"), scope()).unwrap();
+        let scope = scope();
+        let package_digest = format!("sha256:{}", "a".repeat(64));
+        let binding = task_binding(&extension, scope.clone(), &package_digest, 7);
+        store
+            .put(&RuntimeBindingReceipt::Task(binding))
+            .await
+            .unwrap();
+
+        let evidence = runtime_task_evidence_from_store(&extension, &store, &scope)
+            .await
+            .unwrap();
+        assert!(evidence.projections.is_empty());
+        assert_eq!(
+            evidence.observations.get(&PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: "convert".to_owned(),
+            }),
+            Some(&SurfaceObservedState::Failed)
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_runtime_task_without_planning_evidence_fails_closed() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut extension = installed_extension(temporary.path());
+        extension.receipt.trust = ExtensionTrust::RegistryTuf;
+        extension.receipt.planning_bundle = None;
+        let store = RuntimeBindingStore::new(temporary.path().join("state"), scope()).unwrap();
+        let scope = scope();
+        let package_digest = format!("sha256:{}", "a".repeat(64));
+        let binding = task_binding(&extension, scope.clone(), &package_digest, 7);
+        store
+            .put(&RuntimeBindingReceipt::Task(binding))
+            .await
+            .unwrap();
+
+        let evidence = runtime_task_evidence_from_store(&extension, &store, &scope)
+            .await
+            .unwrap();
+        assert!(evidence.projections.is_empty());
+        assert_eq!(
+            evidence.observations.get(&PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: "convert".to_owned(),
+            }),
+            Some(&SurfaceObservedState::Failed)
+        );
     }
 }

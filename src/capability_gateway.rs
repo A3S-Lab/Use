@@ -13,17 +13,21 @@ use std::sync::Arc;
 use a3s_use_core::{
     CapabilityConsumerNegotiation, CapabilityConsumerProfile, CapabilityDescriptionProof,
     CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
-    CapabilityToolAnnotations, UseError, UseResult,
+    CapabilityPromptArgument, CapabilityToolAnnotations, ResourceRef, UseError, UseResult,
 };
 use async_trait::async_trait;
 use jsonschema::{Draft, Validator};
 use rmcp::handler::server::router::tool::{ToolRoute, ToolRouter};
+use rmcp::model::AnnotateAble;
 use rmcp::model::{
-    CallToolResult, Implementation, JsonObject, ServerCapabilities, ServerInfo, Tool,
-    ToolAnnotations,
+    CallToolResult, GetPromptRequestParam, GetPromptResult, Implementation, JsonObject,
+    ListPromptsResult, ListResourcesResult, PaginatedRequestParam, Prompt, PromptArgument,
+    PromptMessageContent, RawResource, ReadResourceRequestParam, ReadResourceResult, Resource,
+    ResourceContents, ServerCapabilities, ServerInfo, Tool, ToolAnnotations,
 };
 use rmcp::{tool_handler, ServerHandler, ServiceExt};
 use serde_json::Value;
+use tokio::sync::OwnedSemaphorePermit;
 
 use crate::capability_registry::{CapabilitySnapshotCursor, CapabilitySnapshotLease};
 
@@ -45,10 +49,14 @@ const MCP_SCHEMA_ERROR: &str = "use.plugin.capability_gateway_schema_violation";
 const MCP_AUTHORIZATION_ERROR: &str = "use.plugin.capability_gateway_forbidden";
 const MCP_INVOCATION_ERROR: &str = "use.plugin.capability_gateway_invocation_failed";
 const MCP_RATE_LIMIT_ERROR: &str = "use.plugin.capability_gateway_rate_limited";
+const MCP_RESOURCE_ERROR: &str = "use.plugin.capability_gateway_resource_failed";
+const MCP_PROMPT_ERROR: &str = "use.plugin.capability_gateway_prompt_failed";
 const MAX_CAPABILITY_VALUE_BYTES: usize = 256 * 1024;
 const MAX_CAPABILITY_VALUE_DEPTH: usize = 32;
 const MAX_CAPABILITY_VALUE_ELEMENTS: usize = 4_096;
 const MAX_CAPABILITY_PRINCIPAL_BYTES: usize = 256;
+const MAX_DISCOVERY_ITEMS_PER_PAGE: usize = 64;
+const MAX_DISCOVERY_CURSOR_BYTES: usize = 16;
 
 /// Host-authenticated identity supplied to a Capability Gateway provider.
 ///
@@ -194,6 +202,19 @@ struct CapabilityGatewayTool {
     output_schema: CompiledCapabilitySchema,
 }
 
+#[derive(Clone)]
+struct CapabilityGatewayResource {
+    descriptor_index: usize,
+    resource: Resource,
+}
+
+#[derive(Clone)]
+struct CapabilityGatewayPrompt {
+    descriptor_index: usize,
+    prompt: Prompt,
+    arguments: Vec<CapabilityPromptArgument>,
+}
+
 /// Host-owned invocation boundary for a Capability Gateway Tool.
 ///
 /// Implementations must resolve `descriptor.invocation_ref` against their
@@ -222,6 +243,33 @@ pub trait CapabilityGatewayInvocationProvider: Send + Sync {
         context: &CapabilityGatewayRequestContext,
     ) -> UseResult<Value>;
 
+    /// Resolve and materialize one catalog-authorized MCP resource. Providers
+    /// that do not support resources remain fail-closed by default.
+    async fn read_resource(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<Vec<ResourceContents>> {
+        Err(UseError::new(
+            MCP_RESOURCE_ERROR,
+            "The Capability Gateway resource provider is not configured.",
+        ))
+    }
+
+    /// Resolve and materialize one catalog-authorized MCP prompt. Providers
+    /// that do not support prompts remain fail-closed by default.
+    async fn get_prompt(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> UseResult<GetPromptResult> {
+        Err(UseError::new(
+            MCP_PROMPT_ERROR,
+            "The Capability Gateway prompt provider is not configured.",
+        ))
+    }
+
     /// Authorize and invoke one call as one provider operation.
     ///
     /// The default preserves the two-hook compatibility contract. Providers
@@ -238,6 +286,35 @@ pub trait CapabilityGatewayInvocationProvider: Send + Sync {
             .await
             .map_err(CapabilityGatewayInvocationFailure::Authorization)?;
         self.invoke(descriptor, arguments, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Invocation)
+    }
+
+    /// Authorize and read a resource as one provider operation.
+    async fn authorize_and_read_resource(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        context: &CapabilityGatewayRequestContext,
+    ) -> Result<Vec<ResourceContents>, CapabilityGatewayInvocationFailure> {
+        self.authorize(descriptor, &Value::Null, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Authorization)?;
+        self.read_resource(descriptor, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Invocation)
+    }
+
+    /// Authorize and get a prompt as one provider operation.
+    async fn authorize_and_get_prompt(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        arguments: Value,
+        context: &CapabilityGatewayRequestContext,
+    ) -> Result<GetPromptResult, CapabilityGatewayInvocationFailure> {
+        self.authorize(descriptor, &arguments, context)
+            .await
+            .map_err(CapabilityGatewayInvocationFailure::Authorization)?;
+        self.get_prompt(descriptor, arguments, context)
             .await
             .map_err(CapabilityGatewayInvocationFailure::Invocation)
     }
@@ -294,6 +371,8 @@ pub struct CapabilityGatewayMcpServer {
     consumer_negotiation: Arc<CapabilityConsumerNegotiation>,
     provider: Arc<dyn CapabilityGatewayInvocationProvider>,
     tools: Arc<BTreeMap<String, CapabilityGatewayTool>>,
+    resources: Arc<BTreeMap<String, CapabilityGatewayResource>>,
+    prompts: Arc<BTreeMap<String, CapabilityGatewayPrompt>>,
     tool_router: ToolRouter<Self>,
     admission: Arc<GatewayAdmission>,
     transport: CapabilityGatewayTransport,
@@ -632,6 +711,8 @@ impl CapabilityGatewayMcpServer {
         catalog.validate()?;
         let catalog = Arc::new(catalog);
         let tools = Arc::new(compile_tools(&catalog)?);
+        let resources = Arc::new(compile_resources(&catalog)?);
+        let prompts = Arc::new(compile_prompts(&catalog)?);
         let tool_router = frozen_tool_router(&catalog)?;
         let admission = Arc::new(GatewayAdmission::new(limits)?);
         Ok(Self {
@@ -639,6 +720,8 @@ impl CapabilityGatewayMcpServer {
             consumer_negotiation: Arc::new(consumer_negotiation),
             provider,
             tools,
+            resources,
+            prompts,
             tool_router,
             admission,
             transport: CapabilityGatewayTransport::Stdio,
@@ -773,8 +856,14 @@ impl CapabilityGatewayMcpServer {
 #[tool_handler]
 impl ServerHandler for CapabilityGatewayMcpServer {
     fn get_info(&self) -> ServerInfo {
+        let capabilities = ServerCapabilities {
+            prompts: (!self.prompts.is_empty()).then(Default::default),
+            resources: (!self.resources.is_empty()).then(Default::default),
+            tools: Some(Default::default()),
+            ..Default::default()
+        };
         ServerInfo {
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            capabilities,
             server_info: Implementation {
                 name: "a3s-use-capability-gateway".to_owned(),
                 title: Some("A3S Use Capability Gateway".to_owned()),
@@ -788,6 +877,165 @@ impl ServerHandler for CapabilityGatewayMcpServer {
             ),
             ..Default::default()
         }
+    }
+
+    async fn list_resources(
+        &self,
+        request: Option<PaginatedRequestParam>,
+        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<ListResourcesResult, rmcp::ErrorData> {
+        self.request_context(&request_context)?;
+        let (start, end, next_cursor) = discovery_page(
+            request.and_then(|request| request.cursor),
+            self.resources.len(),
+        )?;
+        let mut result = ListResourcesResult::with_all_items(
+            self.resources
+                .values()
+                .skip(start)
+                .take(end - start)
+                .map(|route| route.resource.clone())
+                .collect(),
+        );
+        result.next_cursor = next_cursor;
+        Ok(result)
+    }
+
+    async fn list_prompts(
+        &self,
+        request: Option<PaginatedRequestParam>,
+        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<ListPromptsResult, rmcp::ErrorData> {
+        self.request_context(&request_context)?;
+        let (start, end, next_cursor) = discovery_page(
+            request.and_then(|request| request.cursor),
+            self.prompts.len(),
+        )?;
+        let mut result = ListPromptsResult::with_all_items(
+            self.prompts
+                .values()
+                .skip(start)
+                .take(end - start)
+                .map(|route| route.prompt.clone())
+                .collect(),
+        );
+        result.next_cursor = next_cursor;
+        Ok(result)
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParam,
+        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<ReadResourceResult, rmcp::ErrorData> {
+        let context = self.request_context(&request_context)?;
+        let resource_ref = ResourceRef::parse(request.uri.clone()).map_err(|_| {
+            rmcp::ErrorData::invalid_params(
+                "The requested Capability Gateway resource URI is invalid.",
+                None,
+            )
+        })?;
+        let route = self.resources.get(resource_ref.as_str()).ok_or_else(|| {
+            rmcp::ErrorData::resource_not_found(
+                "The requested Capability Gateway resource is not published.",
+                None,
+            )
+        })?;
+        let _permit = content_admission(&self.admission)?;
+        let descriptor = self
+            .catalog
+            .descriptors()
+            .get(route.descriptor_index)
+            .ok_or_else(|| {
+                rmcp::ErrorData::internal_error(
+                    "Capability Gateway route index is inconsistent with its catalog.",
+                    None,
+                )
+            })?;
+        let contents = match self
+            .provider
+            .authorize_and_read_resource(descriptor, &context)
+            .await
+        {
+            Ok(contents) => contents,
+            Err(CapabilityGatewayInvocationFailure::Authorization(_)) => {
+                return Err(rmcp::ErrorData::invalid_request(
+                    "The Capability Gateway denied this resource request.",
+                    None,
+                ));
+            }
+            Err(CapabilityGatewayInvocationFailure::Invocation(_)) => {
+                return Err(rmcp::ErrorData::internal_error(
+                    "The Capability Gateway could not read this resource.",
+                    None,
+                ));
+            }
+        };
+        validate_resource_contents(&request.uri, &contents).map_err(|_| {
+            rmcp::ErrorData::internal_error(
+                "The Capability Gateway resource provider returned an invalid result.",
+                None,
+            )
+        })?;
+        Ok(ReadResourceResult { contents })
+    }
+
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParam,
+        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<GetPromptResult, rmcp::ErrorData> {
+        let context = self.request_context(&request_context)?;
+        let route = self.prompts.get(&request.name).ok_or_else(|| {
+            rmcp::ErrorData::invalid_params(
+                "The requested Capability Gateway prompt is not published.",
+                None,
+            )
+        })?;
+        let arguments = Value::Object(request.arguments.unwrap_or_default());
+        validate_prompt_arguments(&arguments, &route.arguments).map_err(|_| {
+            rmcp::ErrorData::invalid_params(
+                "The Capability Gateway prompt arguments are invalid.",
+                None,
+            )
+        })?;
+        let _permit = content_admission(&self.admission)?;
+        let descriptor = self
+            .catalog
+            .descriptors()
+            .get(route.descriptor_index)
+            .ok_or_else(|| {
+                rmcp::ErrorData::internal_error(
+                    "Capability Gateway route index is inconsistent with its catalog.",
+                    None,
+                )
+            })?;
+        let result = match self
+            .provider
+            .authorize_and_get_prompt(descriptor, arguments, &context)
+            .await
+        {
+            Ok(result) => result,
+            Err(CapabilityGatewayInvocationFailure::Authorization(_)) => {
+                return Err(rmcp::ErrorData::invalid_request(
+                    "The Capability Gateway denied this prompt request.",
+                    None,
+                ));
+            }
+            Err(CapabilityGatewayInvocationFailure::Invocation(_)) => {
+                return Err(rmcp::ErrorData::internal_error(
+                    "The Capability Gateway could not generate this prompt.",
+                    None,
+                ));
+            }
+        };
+        validate_prompt_result(&result, &self.resources).map_err(|_| {
+            rmcp::ErrorData::internal_error(
+                "The Capability Gateway prompt provider returned an invalid result.",
+                None,
+            )
+        })?;
+        Ok(result)
     }
 }
 
@@ -914,7 +1162,9 @@ fn compile_tools(
                 output_schema,
                 ..
             } => (input_schema, output_schema),
-            CapabilityDescriptorKind::McpServer { .. } => {
+            CapabilityDescriptorKind::McpServer { .. }
+            | CapabilityDescriptorKind::Resource { .. }
+            | CapabilityDescriptorKind::Prompt { .. } => {
                 return Err(mcp_error(
                     "Only Tool descriptors can be compiled for the MCP Gateway.",
                 ));
@@ -930,6 +1180,83 @@ fn compile_tools(
         );
     }
     Ok(tools)
+}
+
+fn compile_resources(
+    catalog: &CapabilityGatewayCatalog,
+) -> UseResult<BTreeMap<String, CapabilityGatewayResource>> {
+    let mut resources = BTreeMap::new();
+    for (descriptor_index, descriptor) in catalog.descriptors().iter().enumerate() {
+        let CapabilityDescriptorKind::Resource {
+            name,
+            uri,
+            mime_type,
+            size,
+        } = &descriptor.capability
+        else {
+            continue;
+        };
+        if resources.contains_key(uri.as_str()) {
+            return Err(mcp_error(format!(
+                "The Capability Gateway catalog contains duplicate resource URI `{}`.",
+                uri.as_str()
+            )));
+        }
+        let mut raw = RawResource::new(uri.as_str(), name.clone());
+        raw.title = Some(descriptor.title.clone());
+        raw.description = Some(descriptor.description.clone());
+        raw.mime_type = mime_type.clone();
+        raw.size = *size;
+        resources.insert(
+            uri.as_str().to_owned(),
+            CapabilityGatewayResource {
+                descriptor_index,
+                resource: raw.no_annotation(),
+            },
+        );
+    }
+    Ok(resources)
+}
+
+fn compile_prompts(
+    catalog: &CapabilityGatewayCatalog,
+) -> UseResult<BTreeMap<String, CapabilityGatewayPrompt>> {
+    let mut prompts = BTreeMap::new();
+    for (descriptor_index, descriptor) in catalog.descriptors().iter().enumerate() {
+        let CapabilityDescriptorKind::Prompt { name, arguments } = &descriptor.capability else {
+            continue;
+        };
+        if prompts.contains_key(name) {
+            return Err(mcp_error(format!(
+                "The Capability Gateway catalog contains duplicate prompt name `{name}`."
+            )));
+        }
+        let prompt_arguments = arguments
+            .iter()
+            .map(|argument| PromptArgument {
+                name: argument.name.clone(),
+                title: argument.title.clone(),
+                description: argument.description.clone(),
+                required: Some(argument.required),
+            })
+            .collect::<Vec<_>>();
+        let prompt = Prompt {
+            name: name.clone(),
+            title: Some(descriptor.title.clone()),
+            description: Some(descriptor.description.clone()),
+            arguments: (!prompt_arguments.is_empty()).then_some(prompt_arguments),
+            icons: None,
+        };
+        prompts.insert(
+            name.clone(),
+            CapabilityGatewayPrompt {
+                descriptor_index,
+                prompt,
+                arguments: arguments.clone(),
+            },
+        );
+    }
+    Ok(prompts)
 }
 
 fn mcp_tool(descriptor: &CapabilityDescriptor) -> UseResult<Tool> {
@@ -969,6 +1296,223 @@ fn mcp_annotations(annotations: CapabilityToolAnnotations) -> ToolAnnotations {
         idempotent_hint: Some(annotations.idempotent_hint),
         open_world_hint: Some(annotations.open_world_hint),
     }
+}
+
+fn content_admission(
+    admission: &GatewayAdmission,
+) -> Result<OwnedSemaphorePermit, rmcp::ErrorData> {
+    match admission.try_acquire() {
+        Ok(permit) => Ok(permit),
+        Err(AdmissionFailure::InFlight | AdmissionFailure::RateLimited) => {
+            Err(rmcp::ErrorData::internal_error(
+                "The Capability Gateway is temporarily rate limited.",
+                None,
+            ))
+        }
+        Err(AdmissionFailure::StatePoisoned) => Err(rmcp::ErrorData::internal_error(
+            "The Capability Gateway admission state is unavailable.",
+            None,
+        )),
+    }
+}
+
+fn discovery_page(
+    cursor: Option<String>,
+    item_count: usize,
+) -> Result<(usize, usize, Option<String>), rmcp::ErrorData> {
+    let start = match cursor {
+        None => 0,
+        Some(cursor)
+            if cursor.len() <= MAX_DISCOVERY_CURSOR_BYTES
+                && !cursor.is_empty()
+                && cursor.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            cursor.parse::<usize>().map_err(|_| {
+                rmcp::ErrorData::invalid_params(
+                    "The Capability Gateway discovery cursor is invalid.",
+                    None,
+                )
+            })?
+        }
+        Some(_) => {
+            return Err(rmcp::ErrorData::invalid_params(
+                "The Capability Gateway discovery cursor is invalid.",
+                None,
+            ));
+        }
+    };
+    if start > item_count {
+        return Err(rmcp::ErrorData::invalid_params(
+            "The Capability Gateway discovery cursor is outside the catalog.",
+            None,
+        ));
+    }
+    let end = start
+        .saturating_add(MAX_DISCOVERY_ITEMS_PER_PAGE)
+        .min(item_count);
+    let next_cursor = (end < item_count).then(|| end.to_string());
+    Ok((start, end, next_cursor))
+}
+
+fn validate_resource_contents(uri: &str, contents: &[ResourceContents]) -> UseResult<()> {
+    if contents.len() > MAX_CAPABILITY_VALUE_ELEMENTS {
+        return Err(schema_value_error());
+    }
+    for content in contents {
+        let content_uri = match content {
+            ResourceContents::TextResourceContents {
+                uri,
+                mime_type,
+                text,
+                ..
+            } => {
+                validate_content_text(text)?;
+                validate_content_mime(mime_type.as_deref())?;
+                uri
+            }
+            ResourceContents::BlobResourceContents {
+                uri,
+                mime_type,
+                blob,
+                ..
+            } => {
+                validate_content_text(blob)?;
+                validate_content_mime(mime_type.as_deref())?;
+                uri
+            }
+        };
+        if content_uri != uri || ResourceRef::parse(content_uri.clone()).is_err() {
+            return Err(schema_value_error());
+        }
+    }
+    let encoded = serde_json::to_vec(contents).map_err(|_| schema_value_error())?;
+    if encoded.len() > MAX_CAPABILITY_VALUE_BYTES {
+        return Err(schema_value_error());
+    }
+    Ok(())
+}
+
+fn validate_prompt_arguments(
+    arguments: &Value,
+    declarations: &[CapabilityPromptArgument],
+) -> UseResult<()> {
+    let Value::Object(arguments) = arguments else {
+        return Err(schema_value_error());
+    };
+    let encoded = serde_json::to_vec(arguments).map_err(|_| schema_value_error())?;
+    if encoded.len() > MAX_CAPABILITY_VALUE_BYTES {
+        return Err(schema_value_error());
+    }
+    validate_value_bounds(&Value::Object(arguments.clone()), 0)?;
+    for key in arguments.keys() {
+        if !declarations
+            .iter()
+            .any(|declaration| declaration.name == *key)
+        {
+            return Err(schema_value_error());
+        }
+    }
+    for declaration in declarations {
+        if declaration.required && !arguments.contains_key(&declaration.name) {
+            return Err(schema_value_error());
+        }
+    }
+    Ok(())
+}
+
+fn validate_prompt_result(
+    result: &GetPromptResult,
+    resources: &BTreeMap<String, CapabilityGatewayResource>,
+) -> UseResult<()> {
+    let encoded = serde_json::to_vec(result).map_err(|_| schema_value_error())?;
+    if encoded.len() > MAX_CAPABILITY_VALUE_BYTES
+        || result.messages.len() > MAX_CAPABILITY_VALUE_ELEMENTS
+    {
+        return Err(schema_value_error());
+    }
+    if result
+        .description
+        .as_deref()
+        .is_some_and(|description| !valid_content_text(description))
+    {
+        return Err(schema_value_error());
+    }
+    for message in &result.messages {
+        match &message.content {
+            PromptMessageContent::Text { text } => validate_content_text(text)?,
+            PromptMessageContent::Image { image } => {
+                validate_content_text(&image.data)?;
+                validate_content_text(&image.mime_type)?;
+            }
+            PromptMessageContent::Resource { resource } => {
+                validate_prompt_resource_contents(&resource.resource, resources)?;
+            }
+            PromptMessageContent::ResourceLink { link } => {
+                if ResourceRef::parse(link.uri.clone()).is_err()
+                    || !resources.contains_key(link.uri.as_str())
+                    || !valid_content_text(&link.name)
+                    || link
+                        .description
+                        .as_deref()
+                        .is_some_and(|description| !valid_content_text(description))
+                {
+                    return Err(schema_value_error());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_prompt_resource_contents(
+    content: &ResourceContents,
+    resources: &BTreeMap<String, CapabilityGatewayResource>,
+) -> UseResult<()> {
+    let uri = match content {
+        ResourceContents::TextResourceContents {
+            uri,
+            mime_type,
+            text,
+            ..
+        } => {
+            validate_content_text(text)?;
+            validate_content_mime(mime_type.as_deref())?;
+            uri
+        }
+        ResourceContents::BlobResourceContents {
+            uri,
+            mime_type,
+            blob,
+            ..
+        } => {
+            validate_content_text(blob)?;
+            validate_content_mime(mime_type.as_deref())?;
+            uri
+        }
+    };
+    if ResourceRef::parse(uri.clone()).is_err() || !resources.contains_key(uri.as_str()) {
+        return Err(schema_value_error());
+    }
+    Ok(())
+}
+
+fn validate_content_mime(mime_type: Option<&str>) -> UseResult<()> {
+    if mime_type.is_some_and(|value| !valid_content_text(value)) {
+        return Err(schema_value_error());
+    }
+    Ok(())
+}
+
+fn validate_content_text(value: &str) -> UseResult<()> {
+    if valid_content_text(value) {
+        Ok(())
+    } else {
+        Err(schema_value_error())
+    }
+}
+
+fn valid_content_text(value: &str) -> bool {
+    value.len() <= MAX_CAPABILITY_VALUE_BYTES && !value.chars().any(char::is_control)
 }
 
 fn tool_result(

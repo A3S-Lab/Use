@@ -46,9 +46,10 @@ pub use capability_consumer::{
 };
 pub use capability_gateway::{
     ArtifactRef, CapabilityDescriptionProof, CapabilityDescriptor, CapabilityDescriptorKind,
-    CapabilityGatewayCatalog, CapabilityMcpTransport, CapabilityPublicationEvidence,
-    CapabilityToolAnnotations, EndpointRef, InvocationRef, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1,
-    CAPABILITY_DESCRIPTOR_SCHEMA_V1, CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1,
+    CapabilityGatewayCatalog, CapabilityMcpTransport, CapabilityPromptArgument,
+    CapabilityPublicationEvidence, CapabilityToolAnnotations, EndpointRef, InvocationRef,
+    ResourceRef, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1, CAPABILITY_DESCRIPTOR_SCHEMA_V1,
+    CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1,
 };
 pub use catalog::{
     CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,

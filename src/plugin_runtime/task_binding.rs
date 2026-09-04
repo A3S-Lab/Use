@@ -1,6 +1,10 @@
 use a3s_runtime::contract::RuntimeUnitClass;
 use a3s_runtime::ProviderId;
-use a3s_use_core::{PlannedProviderEvidence, PluginSurfaceKind, UseResult};
+use a3s_use_core::{
+    ExecutablePlanningSurface, PlannedProviderEvidence, PluginSurfaceKind, PluginSurfaceRef,
+    UseError, UseResult,
+};
+use a3s_use_extension::{ExtensionTrust, InstalledExtension};
 
 use super::client::enforcement_profile;
 use super::model::{
@@ -122,4 +126,115 @@ impl RuntimePreparedTaskBinding {
             self.template_spec.generation,
         )
     }
+}
+
+/// Cross-check a durable Runtime Task binding against the signed planning
+/// evidence retained by its installed package.
+///
+/// `RuntimePreparedTaskBinding::validate` proves that the receipt is
+/// internally self-consistent, but that alone would permit a replacement
+/// descriptor and template that were edited together. Registry-trusted
+/// packages must retain a planning bundle and the exact release descriptor
+/// digest for the requested surface. Local/explicit packages may omit that
+/// signed bundle, preserving the intentionally host-owned qualification path;
+/// when a bundle is present it is still validated and enforced.
+pub(crate) fn validate_task_descriptor_binding(
+    extension: &InstalledExtension,
+    surface_id: &str,
+    binding: &RuntimePreparedTaskBinding,
+) -> UseResult<()> {
+    binding.validate()?;
+    if binding.surface.package_id != extension.receipt.package_id
+        || binding.surface.surface
+            != (PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: surface_id.to_owned(),
+            })
+        || binding.package_digest
+            != extension
+                .receipt
+                .package_sha256
+                .as_deref()
+                .map(|digest| format!("sha256:{digest}"))
+                .unwrap_or_default()
+        || binding.template_spec.generation != extension.receipt.lifecycle_generation.unwrap_or(0)
+    {
+        return Err(runtime_descriptor_binding_error(
+            "The Runtime Task binding is not owned by the installed package generation.",
+        ));
+    }
+    let surface = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Tool,
+        id: surface_id.to_owned(),
+    };
+    let bundle = if extension.receipt.trust == ExtensionTrust::RegistryTuf {
+        extension
+            .plan_ready_planning_bundle()
+            .map_err(|_| {
+                runtime_descriptor_binding_error(
+                    "The Registry-trusted Runtime Task has invalid signed planning evidence.",
+                )
+            })?
+            .ok_or_else(|| {
+                runtime_descriptor_binding_error(
+                    "A Registry-trusted Runtime Task is missing its signed planning bundle.",
+                )
+            })?
+    } else {
+        let Some(bundle) = extension.receipt.planning_bundle.as_ref() else {
+            return Ok(());
+        };
+        bundle
+    };
+
+    let expected_package_digest = extension
+        .receipt
+        .package_sha256
+        .as_deref()
+        .map(|digest| format!("sha256:{digest}"));
+    let expected_manifest_digest = format!("sha256:{}", extension.receipt.manifest_sha256);
+    if bundle.package_id != extension.receipt.package_id
+        || bundle.version != extension.receipt.version
+        || Some(bundle.package_sha256.as_str()) != expected_package_digest.as_deref()
+        || bundle.manifest_sha256 != expected_manifest_digest
+    {
+        return Err(runtime_descriptor_binding_error(
+            "The Runtime planning bundle is not owned by the installed package.",
+        ));
+    }
+
+    bundle.validate().map_err(|_| {
+        runtime_descriptor_binding_error("The retained Runtime planning bundle is invalid.")
+    })?;
+    let expected = bundle.release_descriptor_digest(&surface).map_err(|_| {
+        runtime_descriptor_binding_error(
+            "The retained Runtime planning bundle has no exact Tool Task surface.",
+        )
+    })?;
+    let Some(expected) = expected else {
+        return Err(runtime_descriptor_binding_error(
+            "A Runtime Task binding must reference a signed release descriptor.",
+        ));
+    };
+    if binding.descriptor_digest != expected {
+        return Err(runtime_descriptor_binding_error(
+            "The Runtime Task binding descriptor differs from signed planning evidence.",
+        ));
+    }
+
+    // A planning bundle entry with a different workload is not a valid source
+    // for this dispatcher, even if a caller supplied a matching digest.
+    if !bundle.surfaces.iter().any(|candidate| {
+        candidate.reference() == surface
+            && matches!(candidate, ExecutablePlanningSurface::ToolTask { .. })
+    }) {
+        return Err(runtime_descriptor_binding_error(
+            "The signed planning surface is not a Runtime Tool Task.",
+        ));
+    }
+    Ok(())
+}
+
+fn runtime_descriptor_binding_error(message: impl Into<String>) -> UseError {
+    UseError::new("use.plugin.runtime.descriptor_binding_mismatch", message)
 }
