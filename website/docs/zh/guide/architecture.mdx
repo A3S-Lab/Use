@@ -78,6 +78,13 @@ surface。签名验证和 opaque reference 解析仍由宿主负责；对应的
 `CapabilityGatewayMcpServer::from_registry_snapshot` 只在 projection 成功后获取匹配的
 RAII lease，如果 publication 已变化或 package 正在 draining 则不提供 server。
 
+对于已经完成签名 description 验证的 live host，推荐使用
+`CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options`。
+它从同一个 snapshot 生成 verified catalog，将 resolver 绑定到同一 cursor，获取
+精确的 server lease，并一起保留 consumer negotiation 与有界 admission policy。
+如果 publication 在获取期间发生竞争则返回空结果。注入的 factory 仍负责 receipt、
+Runtime、Grant、principal 与 scope authorization。
+
 Embedding 边界现在也会保留类型化 consumer 决策。`CapabilityConsumerProfile`
 区分默认 `generic-mcp` client 与显式 `a3s` client；
 `CapabilityConsumerNegotiation` 在宿主不支持请求的 Flow、Knowledge 或 UI label

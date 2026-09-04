@@ -251,6 +251,42 @@ pub enum CapabilityGatewayInvocationFailure {
     Invocation(UseError),
 }
 
+/// Host-owned options for composing a live Capability Gateway.
+///
+/// The options are deliberately separate from package descriptors.  A
+/// consumer negotiation and admission limits are endpoint policy, while the
+/// invocation factory remains the host's receipt/Runtime/Grant authority.
+/// Keeping all three values in one validated input makes it harder for an
+/// embedding host to accidentally construct the catalog with one policy and
+/// the live resolver with another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityGatewayCompositionOptions {
+    pub negotiation: CapabilityConsumerNegotiation,
+    pub limits: CapabilityGatewayLimits,
+}
+
+impl Default for CapabilityGatewayCompositionOptions {
+    fn default() -> Self {
+        Self {
+            negotiation: CapabilityConsumerNegotiation::generic_mcp(),
+            limits: CapabilityGatewayLimits::default(),
+        }
+    }
+}
+
+impl CapabilityGatewayCompositionOptions {
+    /// Construct explicit endpoint policy for one live Gateway composition.
+    pub fn new(
+        negotiation: CapabilityConsumerNegotiation,
+        limits: CapabilityGatewayLimits,
+    ) -> Self {
+        Self {
+            negotiation,
+            limits,
+        }
+    }
+}
+
 /// Standard MCP server backed by an immutable Capability Gateway catalog.
 #[derive(Clone)]
 pub struct CapabilityGatewayMcpServer {
@@ -519,6 +555,70 @@ impl CapabilityGatewayMcpServer {
         };
         Self::with_snapshot_lease_and_consumer_negotiation(catalog, provider, lease, negotiation)
             .map(Some)
+    }
+
+    /// Build a production Gateway from host-verified descriptions and a live
+    /// invocation factory.
+    ///
+    /// This is the preferred composition entry point for embedding hosts. It
+    /// observes one immutable Registry snapshot, projects only the supplied
+    /// verified descriptions, captures the same snapshot cursor for the live
+    /// resolver, and acquires the exact RAII lease before returning a server.
+    /// A publication race or an already-draining package returns `None`; the
+    /// host should refresh its proofs and retry. The factory is still the
+    /// host-owned receipt/Runtime/Grant boundary and receives a per-call lease
+    /// for every opaque invocation reference.
+    pub async fn from_verified_registry_snapshot_with_factory(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        proofs: Vec<CapabilityDescriptionProof>,
+        factory: Arc<dyn CapabilityGatewayInvocationFactory>,
+    ) -> UseResult<Option<Self>> {
+        Self::from_verified_registry_snapshot_with_factory_and_options(
+            registry,
+            proofs,
+            factory,
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+    }
+
+    /// Build a production Gateway with explicit negotiation and admission
+    /// policy. All policy is validated and retained by the returned server.
+    pub async fn from_verified_registry_snapshot_with_factory_and_options(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        proofs: Vec<CapabilityDescriptionProof>,
+        factory: Arc<dyn CapabilityGatewayInvocationFactory>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> UseResult<Option<Self>> {
+        options.negotiation.validate()?;
+        let snapshot = registry.snapshot().await?;
+        let catalog = snapshot.capability_gateway_catalog_from_verified_descriptions(proofs)?;
+
+        // The resolver and the server lease are both bound to this exact
+        // cursor. The resolver re-acquires a short per-call lease, while the
+        // server lease keeps the published package generations callable for
+        // the lifetime of the MCP service and its clones.
+        let resolver = CapabilityGatewayRegistryResolver::new(
+            registry.clone(),
+            snapshot.cursor().clone(),
+            factory,
+        )?;
+        let provider = Arc::new(CapabilityGatewayResolvedProvider::new(Arc::new(resolver)));
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        let CapabilityGatewayCompositionOptions {
+            negotiation,
+            limits,
+        } = options;
+        Self::with_snapshot_lease_and_consumer_negotiation_and_limits(
+            catalog,
+            provider,
+            lease,
+            negotiation,
+            limits,
+        )
+        .map(Some)
     }
 
     fn build(

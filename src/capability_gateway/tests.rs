@@ -1207,6 +1207,62 @@ async fn leased_server_snapshot_lifetime() {
     assert_eq!(clone.snapshot_cursor(), Some(&cursor));
 }
 
+#[cfg(feature = "extensions")]
+#[test]
+fn verified_factory_composition_binds_catalog_resolver_and_lease_to_one_cursor() {
+    std::thread::Builder::new()
+        .name("capability-gateway-composition".to_owned())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(verified_factory_composition_cursor())
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[cfg(feature = "extensions")]
+async fn verified_factory_composition_cursor() {
+    let temporary = tempfile::tempdir().unwrap();
+    let installation =
+        InstallationId::new(InstallationKind::Workspace, "gateway-composition-tests").unwrap();
+    let registry = a3s_use_extension::ExtensionRegistry::new(
+        a3s_use_extension::ExtensionPaths::new(
+            temporary.path().join("data"),
+            temporary.path().join("state"),
+            installation.clone(),
+        )
+        .unwrap(),
+    );
+    let capability_registry = crate::capability_registry::CapabilityRegistry::new(registry);
+    let expected = capability_registry
+        .snapshot()
+        .await
+        .unwrap()
+        .cursor()
+        .clone();
+    let negotiation = CapabilityConsumerNegotiation::generic_mcp();
+    let limits = CapabilityGatewayLimits::new(2, 4, Duration::from_secs(30)).unwrap();
+    let server =
+        CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options(
+            &capability_registry,
+            Vec::new(),
+            Arc::new(NoopFactory),
+            CapabilityGatewayCompositionOptions::new(negotiation.clone(), limits),
+        )
+        .await
+        .unwrap()
+        .expect("an empty, stable publication must compose");
+
+    assert_eq!(server.snapshot_cursor(), Some(&expected));
+    assert_eq!(server.consumer_negotiation(), &negotiation);
+    assert!(server.catalog().descriptors().is_empty());
+}
+
 fn test_catalog(descriptor: CapabilityDescriptor) -> CapabilityGatewayCatalog {
     CapabilityGatewayCatalog::new(
         InstallationId::new(InstallationKind::User, "user/gateway-tests").unwrap(),
