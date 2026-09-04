@@ -256,7 +256,8 @@ Acceptance:
 - [x] Provide a durable host-owned payload store for immutable Agent-facing
   catalogs. `CapabilityGatewayCatalogStore` validates installation scope and
   canonical bytes, uses bounded SHA-256 content addressing, no-follow path
-  checks, deterministic crash staging, and create-if-absent hard-link
+  checks (including physical resolution of platform ancestor aliases),
+  deterministic crash staging, and create-if-absent hard-link
   publication, and supports exact digest/generation/revision reads after
  restart. The store intentionally has no mutable current pointer; Control
  cutover binding, session replacement/drain, and retention/GC remain open.

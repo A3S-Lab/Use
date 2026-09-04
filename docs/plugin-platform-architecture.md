@@ -624,7 +624,8 @@ complete agent-facing descriptor catalog and connect its cutover to this hub.
 The payload-owner side is now explicit: `CapabilityGatewayCatalogStore` stores
 the canonical catalog bytes under an installation-scoped, bounded SHA-256
 layout. It uses deterministic crash staging, no-follow path checks, and
-create-if-absent hard-link publication, then permits exact digest plus
+physical resolution of platform ancestor aliases before no-follow I/O. It then
+uses create-if-absent hard-link publication and permits exact digest plus
 generation/revision reads after restart. This store is intentionally not a
 Control cursor or a latest pointer; lifecycle cutover, session retirement, and
 catalog retention remain higher-level authorities. `CapabilityGatewaySessionFactory`
