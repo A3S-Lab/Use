@@ -1008,6 +1008,19 @@ when a response remains deliverable, while the server-wide snapshot lease is
 left available to other requests. Integration tests exercise real rmcp
 `notifications/cancelled` traffic for all three operation classes.
 
+Implementation note (2026-09-05): Extension Registry watches now follow the
+atomic `registry.json` publication through a bounded cross-platform filesystem
+subscription instead of a fixed 50 ms read loop. Native notifications are
+preferred; an explicit metadata-only polling backend is retained only when the
+platform backend cannot be registered. Callback events are target-filtered and
+coalesced to one signal, and every wake-up re-reads the validated publication.
+`CapabilityRegistry::wait_for_change` no longer rebuilds, scans, and hashes the
+complete capability projection every 100 ms; it projects at subscription
+setup, after a real generation advance, and once at timeout to close the final
+race. The roadmap item remains open until the complete agent-facing catalog is
+materialized into the lifecycle Capability Index and product hosts emit the
+corresponding MCP discovery notifications.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

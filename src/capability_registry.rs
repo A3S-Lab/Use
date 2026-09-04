@@ -64,7 +64,6 @@ pub const CAPABILITY_REGISTRY_SCHEMA_VERSION: u32 = 5;
 pub const UI_DEPENDENCY_EVIDENCE_SCHEMA: &str = "a3s.use.ui-dependency-evidence.v1";
 #[cfg(feature = "extensions")]
 const PLANNER_EVIDENCE_SCHEMA_VERSION: u32 = 1;
-const WATCH_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_STABLE_SNAPSHOT_ATTEMPTS: usize = 5;
 const MAX_FLOW_SOURCE_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -182,6 +181,10 @@ impl CapabilityRegistry {
         after_revision: Option<&str>,
         timeout: Duration,
     ) -> UseResult<Option<CapabilityRegistrySnapshot>> {
+        let current = self.snapshot().await?;
+        if snapshot_changed(&current, after_generation, after_revision) {
+            return Ok(Some(current));
+        }
         let deadline = Instant::now().checked_add(timeout).ok_or_else(|| {
             UseError::new(
                 "use.capability.timeout_invalid",
@@ -189,24 +192,49 @@ impl CapabilityRegistry {
             )
         })?;
 
-        loop {
-            let current = self.snapshot().await?;
-            let changed = match after_revision {
-                Some(revision) => {
-                    current.generation != after_generation || current.revision != revision
+        #[cfg(feature = "extensions")]
+        {
+            if let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+                if self
+                    .extensions
+                    .wait_for_change(after_generation, remaining)
+                    .await?
+                    .is_some()
+                {
+                    let current = self.snapshot().await?;
+                    if snapshot_changed(&current, after_generation, after_revision) {
+                        return Ok(Some(current));
+                    }
+                    return Err(UseError::new(
+                        "use.capability.notification_invalid",
+                        "The extension Registry changed without advancing the capability publication.",
+                    ));
                 }
-                None => current.generation > after_generation,
-            };
-            if changed {
-                return Ok(Some(current));
             }
-
-            let now = Instant::now();
-            if now >= deadline {
-                return Ok(None);
-            }
-            tokio::time::sleep(WATCH_INTERVAL.min(deadline.saturating_duration_since(now))).await;
         }
+
+        #[cfg(not(feature = "extensions"))]
+        if let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+            tokio::time::sleep(remaining).await;
+        }
+
+        // A final projection closes the notification-to-timeout race and
+        // preserves revision-based detection for custom builds without the
+        // extension lifecycle publisher. The normal wait path performs no
+        // fixed-interval projection, filesystem scan, or asset hashing.
+        let current = self.snapshot().await?;
+        Ok(snapshot_changed(&current, after_generation, after_revision).then_some(current))
+    }
+}
+
+fn snapshot_changed(
+    current: &CapabilityRegistrySnapshot,
+    after_generation: u64,
+    after_revision: Option<&str>,
+) -> bool {
+    match after_revision {
+        Some(revision) => current.generation != after_generation || current.revision != revision,
+        None => current.generation > after_generation,
     }
 }
 
@@ -2692,6 +2720,66 @@ extension "acme/workflow" {
         .await
         .unwrap();
         assert!(changed.is_none());
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn capability_wait_delegates_to_the_atomic_registry_notification() {
+        let temporary = tempfile::tempdir().unwrap();
+        let installation = a3s_use_core::InstallationId::new(
+            a3s_use_core::InstallationKind::User,
+            "capability-watch-tests",
+        )
+        .unwrap();
+        let extensions = a3s_use_extension::ExtensionRegistry::new(
+            a3s_use_extension::ExtensionPaths::new(
+                temporary.path().join("data"),
+                temporary.path().join("state"),
+                installation.clone(),
+            )
+            .unwrap(),
+        );
+        let registry = CapabilityRegistry::new(extensions.clone());
+        let initial = registry.snapshot().await.unwrap();
+        let initial_generation = initial.generation;
+        let initial_revision = initial.revision.clone();
+        let initial_registry_revision = initial.cursor().registry_revision.clone();
+        let wait_revision = initial_revision.clone();
+        let observer = registry.clone();
+        let wait = tokio::spawn(async move {
+            observer
+                .wait_for_change(
+                    initial_generation,
+                    Some(wait_revision.as_str()),
+                    Duration::from_secs(10),
+                )
+                .await
+        });
+
+        let mut published =
+            a3s_use_extension::ExtensionRegistrySnapshot::empty(installation).unwrap();
+        published.generation = initial_generation + 1;
+        let parent = extensions.paths().installation_state_root();
+        tokio::fs::create_dir_all(&parent).await.unwrap();
+        let staging = parent.join(".registry-capability-watch.tmp");
+        tokio::fs::write(&staging, serde_json::to_vec(&published).unwrap())
+            .await
+            .unwrap();
+        tokio::fs::rename(staging, parent.join("registry.json"))
+            .await
+            .unwrap();
+
+        let changed = tokio::time::timeout(Duration::from_secs(15), wait)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(changed.generation, published.generation);
+        assert_ne!(
+            changed.cursor().registry_revision,
+            initial_registry_revision
+        );
     }
 
     fn gateway_projection_descriptor(

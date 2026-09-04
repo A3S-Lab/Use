@@ -28,6 +28,7 @@ mod cutover;
 mod lifecycle;
 mod receipt;
 mod snapshot_lease;
+mod watch;
 
 pub use artifact_reference::ExtensionArtifactReference;
 pub use cutover::{
@@ -48,7 +49,6 @@ pub use snapshot_lease::{
 };
 
 pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 3;
-const WATCH_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -270,19 +270,43 @@ impl ExtensionRegistry {
             return Ok(Some(initial));
         }
         let deadline = deadline_after(timeout)?;
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
+        let target = self.paths.registry_snapshot_path();
         loop {
-            // Lifecycle mutations publish the immutable projection before
-            // draining old calls. Reading it directly keeps watchers live even
-            // while the mutation deliberately holds the registry write lock.
+            let Some(mut watcher) = watch::RegistryChangeWatcher::start(
+                target.clone(),
+                self.paths.use_paths().state_root().to_path_buf(),
+                deadline,
+            )
+            .await?
+            else {
+                return Ok(None);
+            };
+
+            // Close every read-to-subscribe race. A cutover that committed
+            // before the platform watcher was ready is observed by this read
+            // even when no event remains queued.
             let published = read_registry_snapshot(&self.paths).await?;
             if published.generation > after_generation {
                 return Ok(Some(published));
             }
-            let now = Instant::now();
-            if now >= deadline {
+            if !watcher.changed(deadline).await? {
                 return Ok(None);
             }
-            tokio::time::sleep(WATCH_INTERVAL.min(deadline.saturating_duration_since(now))).await;
+            // Lifecycle mutations atomically replace the immutable projection
+            // before draining old calls. A notification only wakes the reader;
+            // the validated publication remains the source of truth.
+            let published = read_registry_snapshot(&self.paths).await?;
+            if published.generation > after_generation {
+                return Ok(Some(published));
+            }
+            // When the installation state root did not exist at subscription
+            // time, the watcher observes only the next ancestor creation. Drop
+            // it and subscribe again so the watched directory advances toward
+            // the exact Registry commit point without ever recursively
+            // observing an unrelated ancestor tree.
         }
     }
 

@@ -15,6 +15,7 @@ async-trait.workspace = true
 fs2.workspace = true
 flate2.workspace = true
 futures-util.workspace = true
+notify.workspace = true
 olpc-cjson = "0.1"
 reqwest.workspace = true
 serde.workspace = true

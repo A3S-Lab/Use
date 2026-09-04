@@ -34,6 +34,55 @@ fn published_generation_lease_is_send_and_sync() {
     assert_send_sync::<ExtensionArtifactReference>();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn wait_for_change_observes_the_atomic_registry_publication() {
+    let temporary = tempfile::tempdir().unwrap();
+    let registry = registry(temporary.path());
+    let initial = registry.snapshot().await.unwrap();
+    let observer = registry.clone();
+    let wait = tokio::spawn(async move {
+        observer
+            .wait_for_change(initial.generation, Duration::from_secs(10))
+            .await
+    });
+
+    let published = ExtensionRegistrySnapshot {
+        schema_version: REGISTRY_SCHEMA_VERSION,
+        installation: registry.installation().clone(),
+        generation: initial.generation + 1,
+        packages: Vec::new(),
+        pending_cutovers: Vec::new(),
+    };
+    crate::registry_io::write_registry_snapshot(registry.paths(), &published)
+        .await
+        .unwrap();
+
+    let changed = tokio::time::timeout(Duration::from_secs(15), wait)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(changed, published);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn wait_for_change_times_out_without_a_publication() {
+    let temporary = tempfile::tempdir().unwrap();
+    let registry = registry(temporary.path());
+    let initial = registry.snapshot().await.unwrap();
+
+    let changed = tokio::time::timeout(
+        Duration::from_secs(5),
+        registry.wait_for_change(initial.generation, Duration::from_millis(25)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert!(changed.is_none());
+}
+
 #[tokio::test]
 async fn receipt_writer_rejects_an_oversized_record_before_publication() {
     let temporary = tempfile::tempdir().unwrap();
