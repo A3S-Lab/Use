@@ -87,6 +87,11 @@ The implementation and fixtures exercise the product model directly:
   packages at one sharded global SHA-256 path, serializes concurrent commits by
   digest, rejects linked/reparse-point ancestors, and carries no installation
   or activation authority.
+- [`CapabilityGatewayCatalogStore`](src/capability_catalog_store.rs) owns the
+  exact Agent-facing catalog payload for one installation. It publishes
+  immutable canonical records, supports explicit protected-set retention, and
+  persists a bounded recovery journal so interrupted pruning can resume via
+  `recover_retention()` without inventing lifecycle authority.
 - [`RegistryNetworkPolicy`](crates/extension/src/remote/network.rs) lets an
   embedding host select the strict public-Internet boundary for untrusted
   Registry endpoints. That mode requires HTTPS, pins checked DNS answers,

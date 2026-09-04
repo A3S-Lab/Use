@@ -17,10 +17,17 @@ use tokio::fs;
 #[cfg(feature = "extensions")]
 use a3s_use_extension::StateMaintenanceLock;
 
+mod journal;
+#[cfg(test)]
+mod tests;
+
 use super::{
     metadata_is_link_or_reparse_point, path_error, path_invalid, read_catalog_at,
-    CapabilityGatewayCatalogStore, MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS, MAX_DIRECTORY_ENTRIES,
+    CapabilityGatewayCatalogStore, CATALOG_RETENTION_JOURNAL,
+    MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS, MAX_DIRECTORY_ENTRIES, MAX_RETENTION_JOURNAL_BYTES,
 };
+
+use journal::RetentionJournal;
 
 /// Canonical schema for one reviewed catalog-retention plan.
 pub const CAPABILITY_GATEWAY_CATALOG_RETENTION_PLAN_SCHEMA: &str =
@@ -28,12 +35,16 @@ pub const CAPABILITY_GATEWAY_CATALOG_RETENTION_PLAN_SCHEMA: &str =
 /// Canonical schema for one completed catalog-retention result.
 pub const CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA: &str =
     "a3s.use.capability-gateway-catalog-retention-result.v1";
+/// Canonical schema for the crash-recoverable retention journal.
+pub const CAPABILITY_GATEWAY_CATALOG_RETENTION_JOURNAL_SCHEMA: &str =
+    "a3s.use.capability-gateway-catalog-retention-journal.v1";
 
 const MAX_PLAN_BYTES: usize = 4 * 1024 * 1024;
 const ERROR_INVALID: &str = "use.plugin.capability_gateway_catalog_retention_invalid";
 const ERROR_STALE: &str = "use.plugin.capability_gateway_catalog_retention_stale";
 const ERROR_OUTCOME_UNKNOWN: &str =
     "use.plugin.capability_gateway_catalog_retention_outcome_unknown";
+const ERROR_JOURNAL_IO: &str = "use.plugin.capability_gateway_catalog_retention_journal_io";
 
 /// One immutable catalog named by a retention plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,6 +175,7 @@ impl CapabilityGatewayCatalogStore {
         };
         let _mutation = self.acquire_mutation(&state_root, &root).await?;
         super::validate_store_layout(&root).await?;
+        ensure_no_pending_journal(&root).await?;
         let records = self.scan_records(&root).await?;
         build_plan(self.installation.clone(), records, &retain_digests)
     }
@@ -214,51 +226,149 @@ impl CapabilityGatewayCatalogStore {
         super::validate_store_layout(&root).await?;
         let records = self.scan_records(&root).await?;
         let current = entries_from_records(&records)?;
-        if current == plan.retain {
-            return Ok(CapabilityGatewayCatalogRetentionResult {
-                schema: CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA.to_owned(),
-                installation: self.installation.clone(),
-                plan_digest: actual_plan_digest,
-                changed: false,
-                removed: Vec::new(),
-                retained_record_count: u64::try_from(current.len()).map_err(|_| {
-                    retention_outcome_unknown(
-                        "The retained catalog count exceeds the platform range.",
-                        &[],
-                    )
-                })?,
-            });
-        }
-        if inventory_digest(&current)? != plan.before_inventory_digest {
-            return Err(retention_stale(
-                "The catalog inventory changed after the retention plan was reviewed.",
-            ));
-        }
-        if current.len() != usize::try_from(plan.before_record_count).unwrap_or(usize::MAX)
-            || !same_partition(&current, plan)
-        {
-            return Err(retention_stale(
-                "The catalog inventory no longer matches the retention plan.",
-            ));
-        }
+        let mut journal = RetentionJournal::load(&root, plan, &actual_plan_digest).await?;
 
-        for entry in &plan.remove {
+        // A plan that already describes the current inventory is a read-only
+        // replay only when no unfinished journal claims ownership of it.
+        if journal.is_none() && current == plan.retain {
+            return retention_result(
+                self.installation.clone(),
+                actual_plan_digest,
+                false,
+                Vec::new(),
+                current.len(),
+            );
+        }
+        if journal.is_none() {
+            if inventory_digest(&current)? != plan.before_inventory_digest {
+                return Err(retention_stale(
+                    "The catalog inventory changed after the retention plan was reviewed.",
+                ));
+            }
+            if current.len() != usize::try_from(plan.before_record_count).unwrap_or(usize::MAX)
+                || !same_partition(&current, plan)
+            {
+                return Err(retention_stale(
+                    "The catalog inventory no longer matches the retention plan.",
+                ));
+            }
+            journal = Some(RetentionJournal::create(&root, plan, &actual_plan_digest).await?);
+        }
+        let mut journal = journal.ok_or_else(|| {
+            retention_invalid("The catalog-retention recovery journal was not initialized.")
+        })?;
+
+        loop {
+            let records = self.scan_records(&root).await.map_err(|error| {
+                progress_error(
+                    error,
+                    &journal,
+                    "Catalog retention changed records, but the current inventory could not be read.",
+                )
+            })?;
+            let current = entries_from_records(&records).map_err(|error| {
+                progress_error(
+                    error,
+                    &journal,
+                    "The catalog-retention recovery inventory could not be decoded.",
+                )
+            })?;
+            if let Err(error) = reconcile_journal(&mut journal, &current).await {
+                return Err(progress_error(
+                    error,
+                    &journal,
+                    "The catalog-retention recovery journal does not match the catalog inventory.",
+                ));
+            }
+            if journal.is_completed() || journal.next_index().is_none() {
+                if current != plan.retain {
+                    return Err(retention_outcome_unknown(
+                        "The catalog inventory is not the reviewed retained set after recovery.",
+                        &journal.removed_entries(),
+                    ));
+                }
+                if !journal.is_completed() {
+                    if let Err(error) = journal.complete().await {
+                        return Err(retention_outcome_unknown(
+                            format!(
+                                "Catalog retention completed file removal, but its terminal checkpoint could not be persisted: {}",
+                                error.message
+                            ),
+                            &journal.plan().remove,
+                        ));
+                    }
+                }
+                let removed = journal.removed_entries();
+                if let Err(error) = journal.retire().await {
+                    return Err(retention_outcome_unknown(
+                        format!(
+                            "Catalog retention completed, but its recovery journal could not be retired: {}",
+                            error.message
+                        ),
+                        &removed,
+                    ));
+                }
+                return retention_result(
+                    self.installation.clone(),
+                    actual_plan_digest.clone(),
+                    !removed.is_empty(),
+                    removed,
+                    current.len(),
+                );
+            }
+
+            let (index, checkpointed) = if let Some(index) = journal.in_flight() {
+                (index, true)
+            } else {
+                (
+                    journal.next_index().ok_or_else(|| {
+                        retention_invalid(
+                            "The catalog-retention recovery journal has no next removal.",
+                        )
+                    })?,
+                    false,
+                )
+            };
+            let entry = plan.remove.get(index).ok_or_else(|| {
+                retention_invalid(
+                    "The catalog-retention recovery journal removal is out of bounds.",
+                )
+            })?;
             let target = super::path_for_digest(&root, &entry.digest)?;
+            // Validate the target before making the in-flight checkpoint. A
+            // second validation after the checkpoint closes the small race
+            // between inspection and the destructive operation.
             verify_record_before_remove(&target, entry).await?;
-        }
-
-        let mut removed = Vec::new();
-        for entry in &plan.remove {
-            let target = super::path_for_digest(&root, &entry.digest)?;
+            if !checkpointed {
+                if let Err(error) = journal.begin_removal(index).await {
+                    return Err(retention_outcome_unknown(
+                        format!(
+                            "A catalog-retention removal was reviewed but its in-flight checkpoint could not be persisted: {}",
+                            error.message
+                        ),
+                        &journal.removed_entries(),
+                    ));
+                }
+            }
+            if let Err(error) = verify_record_before_remove(&target, entry).await {
+                return Err(retention_outcome_unknown(
+                    format!(
+                        "A reviewed catalog record changed after its in-flight checkpoint: {}",
+                        error.message
+                    ),
+                    &journal.removed_entries(),
+                ));
+            }
             if let Err(error) = fs::remove_file(&target).await {
                 return Err(retention_outcome_unknown(
                     format!("A reviewed catalog record could not be removed: {error}"),
-                    &removed,
+                    &journal.removed_entries(),
                 ));
             }
-            removed.push(entry.clone());
             let parent = target.parent().ok_or_else(path_invalid)?;
             if let Err(error) = super::sync_directory(parent).await {
+                let mut removed = journal.removed_entries();
+                removed.push(entry.clone());
                 return Err(retention_outcome_unknown(
                     format!(
                         "A catalog record was removed, but shard durability could not be confirmed: {}",
@@ -267,46 +377,134 @@ impl CapabilityGatewayCatalogStore {
                     &removed,
                 ));
             }
+            if let Err(error) = journal.mark_removed(index).await {
+                let mut removed = journal.removed_entries();
+                removed.push(entry.clone());
+                return Err(retention_outcome_unknown(
+                    format!(
+                        "A catalog record was removed, but its recovery checkpoint could not be persisted: {}",
+                        error.message
+                    ),
+                    &removed,
+                ));
+            }
         }
+    }
 
-        let after = self.scan_records(&root).await.map_err(|error| {
+    /// Resume the durable retention operation left by an interrupted process.
+    ///
+    /// The journal contains the reviewed plan and its canonical digest, so a
+    /// host restart does not need to reconstruct or guess the destructive
+    /// intent. `None` means that this store has no pending retention journal.
+    pub async fn recover_retention(
+        &self,
+    ) -> UseResult<Option<CapabilityGatewayCatalogRetentionResult>> {
+        let (plan, plan_digest) = {
+            #[cfg(feature = "extensions")]
+            let _maintenance = StateMaintenanceLock::new(&self.state_root)
+                .acquire_shared()
+                .await?;
+            let Some((state_root, root)) = self.existing_physical_paths().await? else {
+                return Ok(None);
+            };
+            let _mutation = self.acquire_mutation(&state_root, &root).await?;
+            super::validate_store_layout(&root).await?;
+            let Some(journal) = RetentionJournal::load_unbound(&root).await? else {
+                return Ok(None);
+            };
+            (journal.plan().clone(), journal.plan_digest().to_owned())
+        };
+        self.apply_retention(&plan, &plan_digest).await.map(Some)
+    }
+}
+
+/// Block unrelated mutations while a reviewed retention operation remains in
+/// the durable journal. A later publication would otherwise invalidate the
+/// journal's exact inventory proof and make recovery ambiguous.
+pub(super) async fn ensure_no_pending_journal(root: &Path) -> UseResult<()> {
+    if journal::RetentionJournal::load_unbound(root)
+        .await?
+        .is_some()
+    {
+        return Err(retention_stale(
+            "A catalog-retention recovery journal is pending; resume that exact plan before publishing or planning another retention operation.",
+        ));
+    }
+    Ok(())
+}
+
+fn retention_result(
+    installation: InstallationId,
+    plan_digest: String,
+    changed: bool,
+    removed: Vec<CapabilityGatewayCatalogRetentionEntry>,
+    retained_count: usize,
+) -> UseResult<CapabilityGatewayCatalogRetentionResult> {
+    Ok(CapabilityGatewayCatalogRetentionResult {
+        schema: CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA.to_owned(),
+        installation,
+        plan_digest,
+        changed,
+        removed,
+        retained_record_count: u64::try_from(retained_count).map_err(|_| {
             retention_outcome_unknown(
-                format!(
-                    "Catalog retention changed records, but the resulting inventory could not be verified: {}",
-                    error.message
-                ),
-                &removed,
+                "The retained catalog count exceeds the platform range.",
+                &[],
             )
-        })?;
-        let after_entries = entries_from_records(&after).map_err(|error| {
-            retention_outcome_unknown(
-                format!(
-                    "The retained catalog inventory could not be decoded: {}",
-                    error.message
-                ),
-                &removed,
-            )
-        })?;
-        if after_entries != plan.retain {
+        })?,
+    })
+}
+
+async fn reconcile_journal(
+    journal: &mut RetentionJournal,
+    current: &[CapabilityGatewayCatalogRetentionEntry],
+) -> UseResult<()> {
+    if journal.is_completed() {
+        if current != journal.plan().retain {
             return Err(retention_outcome_unknown(
-                "The catalog inventory changed during retention apply.",
-                &removed,
+                "A completed catalog-retention journal does not match the retained inventory.",
+                &journal.removed_entries(),
             ));
         }
-        Ok(CapabilityGatewayCatalogRetentionResult {
-            schema: CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA.to_owned(),
-            installation: self.installation.clone(),
-            plan_digest: actual_plan_digest,
-            changed: !removed.is_empty(),
-            removed,
-            retained_record_count: u64::try_from(after_entries.len()).map_err(|_| {
-                retention_outcome_unknown(
-                    "The retained catalog count exceeds the platform range.",
-                    &[],
-                )
-            })?,
-        })
+        return Ok(());
     }
+    if let Some(index) = journal.in_flight() {
+        if current == journal.expected_entries() {
+            return Ok(());
+        }
+        if let Some(after) = journal.expected_entries_after_in_flight() {
+            if current == after.as_slice() {
+                journal.mark_removed(index).await?;
+                return Ok(());
+            }
+        }
+        return Err(retention_outcome_unknown(
+            "An in-flight catalog-retention removal has an unexpected inventory.",
+            &journal.removed_entries(),
+        ));
+    }
+    if current != journal.expected_entries() {
+        if journal.removed_count() == 0 {
+            return Err(retention_stale(
+                "The catalog inventory changed before catalog-retention recovery resumed.",
+            ));
+        }
+        return Err(retention_outcome_unknown(
+            "The catalog inventory changed during catalog-retention recovery.",
+            &journal.removed_entries(),
+        ));
+    }
+    Ok(())
+}
+
+fn progress_error(error: UseError, journal: &RetentionJournal, context: &str) -> UseError {
+    if journal.removed_count() == 0 && journal.in_flight().is_none() {
+        return error;
+    }
+    retention_outcome_unknown(
+        format!("{context}: {}", error.message),
+        &journal.removed_entries(),
+    )
 }
 
 fn build_plan(
@@ -497,4 +695,8 @@ fn retention_outcome_unknown(
             .map(|entry| entry.digest.clone())
             .collect::<Vec<_>>(),
     )
+}
+
+fn retention_journal_io(message: impl Into<String>) -> UseError {
+    UseError::new(ERROR_JOURNAL_IO, message)
 }

@@ -636,8 +636,12 @@ current-server snapshot so old in-flight leases can drain. Durable Control
 cutover remains outside this adapter. The store now exposes an explicit,
 canonical retention plan/apply protocol: the lifecycle owner names every
 protected digest, the apply step rechecks the inventory under the mutation
-lock, and only reviewed records are removed. This prevents payload GC from
-silently becoming a second lifecycle authority.
+lock, and only reviewed records are removed. Apply also writes a bounded,
+canonical append-only recovery journal before each unlink, reconciles an
+in-flight unlink after restart, repairs a torn final journal record, and blocks
+conflicting publication until `recover_retention()` completes. This prevents
+payload GC from silently becoming a second lifecycle authority while making a
+partially completed prune recoverable.
 
 ## Storage model
 

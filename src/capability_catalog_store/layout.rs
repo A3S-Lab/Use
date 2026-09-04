@@ -5,8 +5,9 @@ use tokio::fs;
 
 use super::{
     catalog_conflict, path_error, path_invalid, store_invalid, validate_directory,
-    validate_regular_file, CATALOG_LOCK, CATALOG_STAGING, MAX_CAPABILITY_GATEWAY_CATALOG_BYTES,
-    MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS, MAX_DIRECTORY_ENTRIES, MAX_STAGING_BYTES,
+    validate_regular_file, CATALOG_LOCK, CATALOG_RETENTION_JOURNAL, CATALOG_STAGING,
+    MAX_CAPABILITY_GATEWAY_CATALOG_BYTES, MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS,
+    MAX_DIRECTORY_ENTRIES, MAX_RETENTION_JOURNAL_BYTES, MAX_STAGING_BYTES,
 };
 
 /// Validate the store's top-level namespace before interpreting any payload.
@@ -40,10 +41,24 @@ pub(super) async fn validate_store_layout(root: &Path) -> UseResult<()> {
         let path = entry.path();
         match name.as_str() {
             CATALOG_LOCK => validate_regular_file(&path).await?,
+            CATALOG_RETENTION_JOURNAL => validate_retention_journal(&path).await?,
             CATALOG_STAGING => validate_staging_layout(&path).await?,
             "sha256" => validate_directory(&path).await?,
             _ => return Err(path_invalid()),
         }
+    }
+    Ok(())
+}
+
+async fn validate_retention_journal(path: &Path) -> UseResult<()> {
+    validate_regular_file(path).await?;
+    let metadata = fs::symlink_metadata(path)
+        .await
+        .map_err(|error| path_error("inspect catalog-retention journal", path, error))?;
+    if metadata.len() == 0 || metadata.len() > MAX_RETENTION_JOURNAL_BYTES {
+        return Err(store_invalid(
+            "The catalog-retention journal exceeds its byte bound.",
+        ));
     }
     Ok(())
 }

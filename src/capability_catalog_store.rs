@@ -28,7 +28,8 @@ use layout::validate_store_layout;
 
 pub use retention::{
     CapabilityGatewayCatalogRetentionEntry, CapabilityGatewayCatalogRetentionPlan,
-    CapabilityGatewayCatalogRetentionResult, CAPABILITY_GATEWAY_CATALOG_RETENTION_PLAN_SCHEMA,
+    CapabilityGatewayCatalogRetentionResult, CAPABILITY_GATEWAY_CATALOG_RETENTION_JOURNAL_SCHEMA,
+    CAPABILITY_GATEWAY_CATALOG_RETENTION_PLAN_SCHEMA,
     CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA,
 };
 
@@ -47,8 +48,12 @@ pub const MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS: usize = 4_096;
 const CATALOG_DIRECTORY: &str = "capability-gateway/catalogs";
 const CATALOG_LOCK: &str = ".mutation.lock";
 const CATALOG_STAGING: &str = ".staging";
+/// Durable intent/progress marker for an interrupted retention operation.
+const CATALOG_RETENTION_JOURNAL: &str = ".retention.journal";
 const MAX_DIRECTORY_ENTRIES: usize = MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS * 4;
 const MAX_STAGING_BYTES: u64 = 64 * 1024 * 1024;
+/// Bound for the append-only retention journal, including its reviewed plan.
+const MAX_RETENTION_JOURNAL_BYTES: u64 = 8 * 1024 * 1024;
 const LOCK_WAIT: Duration = Duration::from_secs(2);
 const LOCK_RETRY: Duration = Duration::from_millis(25);
 const MAX_REVISION_BYTES: usize = 128;
@@ -195,6 +200,7 @@ impl CapabilityGatewayCatalogStore {
 
         ensure_owned_directory_chain(&state_root, &root).await?;
         validate_store_layout(&root).await?;
+        retention::ensure_no_pending_journal(&root).await?;
         let parent = target.parent().ok_or_else(path_invalid)?;
         ensure_owned_directory_chain(&state_root, parent).await?;
         let existing = read_catalog_at(&target, &digest).await?;
