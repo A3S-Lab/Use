@@ -23,9 +23,17 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
 
 mod layout;
+#[cfg(feature = "extensions")]
+mod restore;
 mod retention;
 use layout::validate_store_layout;
 
+#[cfg(feature = "extensions")]
+pub use restore::{
+    CapabilityGatewayCatalogRestoreEntry, CapabilityGatewayCatalogRestorePlan,
+    CapabilityGatewayCatalogRestoreResult, CAPABILITY_GATEWAY_CATALOG_RESTORE_PLAN_SCHEMA,
+    CAPABILITY_GATEWAY_CATALOG_RESTORE_RESULT_SCHEMA,
+};
 pub use retention::{
     CapabilityGatewayCatalogRetentionEntry, CapabilityGatewayCatalogRetentionPlan,
     CapabilityGatewayCatalogRetentionResult, CAPABILITY_GATEWAY_CATALOG_RETENTION_JOURNAL_SCHEMA,

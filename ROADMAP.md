@@ -1214,6 +1214,18 @@ protection set from deleting every snapshot. Production Control owner
 registration, clean-target restore activation, and Registry/TUF policy wiring
 remain separate gates.
 
+Implementation note (2026-09-06): `CapabilityGatewayCatalogStore` now also
+exposes an owner-native clean-target restore boundary. A reviewed plan binds
+the installation, canonical byte counts, and the complete digest-sorted
+inventory; apply re-derives every supplied catalog, stages and rescans a full
+candidate tree, persists a plan-bound activation marker, and publishes with a
+no-clobber directory move. Existing owner state is never merged or replaced,
+foreign staged plans are rejected, and a durable candidate/marker can be
+replayed after interruption. This closes the catalog half of the restore
+primitive, but descriptor-snapshot restore, Control owner registration,
+signed replay policy, session drain, and production rollback coordination
+remain release gates.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must
