@@ -146,9 +146,11 @@ single implementation stream, that slice is roughly **3–6 focused weeks**.
 That is not an estimate for the complete A3S-USE product. Backup/restore and
 the official Registry, A2 production activation, A4 host/provider adoption,
 MHS qualification, cross-platform recovery, and security/operations sign-off
-remain separate product gates. A production-ready release therefore needs at
-least **6–12 additional focused weeks** of engineering and verification (about
-2–3 months of calendar time in a dedicated stream), with no fixed date until
-the external Registry, host, platform, and security dependencies are staffed
-and accepted. The current PR #238 reduces one P0 mechanism but does not close
-those gates.
+remain separate product gates. For one focused implementation stream, a
+production-ready release is therefore roughly **9–18 focused weeks** in total
+(the A3 slice plus those productization gates), before external waiting time.
+With multiple staffed owners, the calendar can compress to about **6–12
+weeks**, but only if Registry, host, platform, and security dependencies are
+available and accepted in parallel. No fixed date is responsible until those
+external gates are staffed. The current PR #238 reduces one P0 mechanism but
+does not close those gates.
