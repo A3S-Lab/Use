@@ -1968,6 +1968,11 @@ and removed by an operator using only published artifacts and documentation.
 
 ## Release blockers
 
+The first-principles capability and release-gate audit is recorded in
+[docs/agent-package-manager-audit.md](docs/agent-package-manager-audit.md). It
+distinguishes qualified mechanisms from inactive Control proofs and from the
+production composition, trust, interoperability, and operations gates below.
+
 The first supported product release is blocked until all of the following are
 green:
 

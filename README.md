@@ -2028,6 +2028,7 @@ the default human-authored configuration format.
 - [Development plan](docs/plugin-platform-development-plan.md)
 - [Verified release installation](docs/release-installation.md)
 - [Release descriptors](docs/release-descriptors.md)
+- [Agent Package Manager first-principles audit](docs/agent-package-manager-audit.md)
 - [OKF Knowledge operations](docs/okf-knowledge-operations.md)
 - [Registry cache operations](docs/registry-cache-operations.md)
 - [Documentation website](https://a3s-lab.github.io/Use/)
