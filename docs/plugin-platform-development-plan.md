@@ -242,6 +242,20 @@ Acceptance:
   `from_verified_registry_snapshot_with_factory_and_options` constructor
   returns no server when publication acquisition races or a package is
   draining; the injected factory remains the receipt/Runtime/Grant authority.
+- [x] Replace fixed-interval Extension Registry and capability projection scans
+  with bounded generation notifications. The watcher observes the atomic
+  Registry commit point through a native filesystem backend plus a bounded
+  target-metadata probe for platform events that are coalesced or omitted; it
+  falls back to metadata-only polling when registration is unavailable,
+  coalesces target-filtered events in a capacity-one channel, and closes both
+  read-to-subscribe and timeout races with authoritative reads. The Gateway
+  also exposes a bounded host-owned notification hub: initialized peers are
+  registered once, all standard MCP `list_changed` capabilities are
+  advertised, exact publication keys are coalesced, older generations are
+  rejected, and failed or closed transports are retired. The hub only signals a re-list; it does not
+  mutate a frozen server or replace the host's durable catalog/session
+  cutover. Persisting the complete agent-facing catalog in the lifecycle
+  Capability Index and wiring that cutover to the hub remain separate gates.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,

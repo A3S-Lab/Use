@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -14,6 +15,7 @@ use rmcp::model::{
     CallToolRequestParam, GetPromptRequestParam, GetPromptResult, PaginatedRequestParam,
     PromptMessage, PromptMessageRole, ReadResourceRequestParam, ResourceContents,
 };
+use rmcp::service::{NotificationContext, RoleClient};
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
 };
@@ -466,6 +468,57 @@ struct TestClient;
 
 impl ClientHandler for TestClient {}
 
+#[derive(Debug, Clone, Default)]
+struct NotificationClient {
+    tools: Arc<AtomicUsize>,
+    resources: Arc<AtomicUsize>,
+    prompts: Arc<AtomicUsize>,
+    notified: Arc<Notify>,
+}
+
+impl NotificationClient {
+    async fn wait_for_all(&self, expected: usize) {
+        loop {
+            if self.tools.load(Ordering::SeqCst) >= expected
+                && self.resources.load(Ordering::SeqCst) >= expected
+                && self.prompts.load(Ordering::SeqCst) >= expected
+            {
+                return;
+            }
+            self.notified.notified().await;
+        }
+    }
+}
+
+impl ClientHandler for NotificationClient {
+    fn on_tool_list_changed(
+        &self,
+        _context: NotificationContext<RoleClient>,
+    ) -> impl Future<Output = ()> + Send + '_ {
+        self.tools.fetch_add(1, Ordering::SeqCst);
+        self.notified.notify_waiters();
+        std::future::ready(())
+    }
+
+    fn on_resource_list_changed(
+        &self,
+        _context: NotificationContext<RoleClient>,
+    ) -> impl Future<Output = ()> + Send + '_ {
+        self.resources.fetch_add(1, Ordering::SeqCst);
+        self.notified.notify_waiters();
+        std::future::ready(())
+    }
+
+    fn on_prompt_list_changed(
+        &self,
+        _context: NotificationContext<RoleClient>,
+    ) -> impl Future<Output = ()> + Send + '_ {
+        self.prompts.fetch_add(1, Ordering::SeqCst);
+        self.notified.notify_waiters();
+        std::future::ready(())
+    }
+}
+
 #[test]
 fn gateway_admission_is_bounded_and_shared() {
     let limits = CapabilityGatewayLimits::new(1, 2, Duration::from_secs(60)).unwrap();
@@ -482,6 +535,105 @@ fn gateway_admission_is_bounded_and_shared() {
         admission.try_acquire().unwrap_err(),
         AdmissionFailure::RateLimited
     );
+}
+
+#[tokio::test]
+async fn gateway_advertises_and_broadcasts_standard_catalog_notifications() {
+    let initial = test_catalog(test_descriptor());
+    let next = CapabilityGatewayCatalog::new(
+        initial.installation().clone(),
+        initial.generation().saturating_add(1),
+        initial.descriptors().to_vec(),
+    )
+    .unwrap();
+    let server =
+        CapabilityGatewayMcpServer::new(initial.clone(), Arc::new(RecordingProvider::default()))
+            .unwrap();
+    let info = server.get_info();
+    assert_eq!(
+        info.capabilities
+            .tools
+            .as_ref()
+            .and_then(|capability| capability.list_changed),
+        Some(true)
+    );
+    assert_eq!(
+        info.capabilities
+            .resources
+            .as_ref()
+            .and_then(|capability| capability.list_changed),
+        Some(true)
+    );
+    assert_eq!(
+        info.capabilities
+            .prompts
+            .as_ref()
+            .and_then(|capability| capability.list_changed),
+        Some(true)
+    );
+
+    let hub = server.notification_hub();
+    let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
+    let server_handle = tokio::spawn(async move {
+        server
+            .serve(server_transport)
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let notification_client = NotificationClient::default();
+    let client = notification_client
+        .clone()
+        .serve(client_transport)
+        .await
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if hub.peer_count().await == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("initialized MCP peer must be registered");
+
+    let report = hub.notify_catalog_changed(&next).await.unwrap();
+    assert_eq!(report.generation, next.generation());
+    assert_eq!(report.revision, next.revision());
+    assert_eq!(report.notified_peers, 1);
+    tokio::time::timeout(Duration::from_secs(1), notification_client.wait_for_all(1))
+        .await
+        .expect("the client must receive all standard list-change notifications");
+
+    let duplicate = hub.notify_catalog_changed(&next).await.unwrap();
+    assert_eq!(duplicate.notified_peers, 0);
+    assert_eq!(notification_client.tools.load(Ordering::SeqCst), 1);
+    assert_eq!(notification_client.resources.load(Ordering::SeqCst), 1);
+    assert_eq!(notification_client.prompts.load(Ordering::SeqCst), 1);
+
+    let mut same_generation_descriptor = initial.descriptors()[0].clone();
+    same_generation_descriptor.title = "A newer projection".to_owned();
+    let same_generation = CapabilityGatewayCatalog::new(
+        initial.installation().clone(),
+        next.generation(),
+        vec![same_generation_descriptor],
+    )
+    .unwrap();
+    let same_generation_report = hub.notify_catalog_changed(&same_generation).await.unwrap();
+    assert_eq!(same_generation_report.notified_peers, 1);
+    tokio::time::timeout(Duration::from_secs(1), notification_client.wait_for_all(2))
+        .await
+        .expect("a distinct same-generation revision must be observable");
+
+    let older = hub.notify_catalog_changed(&initial).await.unwrap();
+    assert_eq!(older.notified_peers, 0);
+
+    client.cancel().await.unwrap();
+    server_handle.await.unwrap();
 }
 
 #[tokio::test]

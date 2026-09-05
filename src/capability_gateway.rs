@@ -39,12 +39,14 @@ use crate::capability_registry::{CapabilitySnapshotCursor, CapabilitySnapshotLea
 mod admission;
 mod discovery;
 mod http;
+mod notifications;
 mod resolver;
 
 pub use admission::CapabilityGatewayLimits;
 use admission::{AdmissionFailure, GatewayAdmission};
 pub use discovery::{AllowAllCapabilityGatewayDiscoveryPolicy, CapabilityGatewayDiscoveryPolicy};
 pub use http::CapabilityGatewayHttpConfig;
+pub use notifications::{CapabilityGatewayNotificationHub, CapabilityGatewayNotificationReport};
 pub use resolver::{
     CapabilityGatewayInvocation, CapabilityGatewayInvocationFactory,
     CapabilityGatewayInvocationLease, CapabilityGatewayInvocationResolver,
@@ -399,6 +401,10 @@ pub struct CapabilityGatewayMcpServer {
     /// When present, this RAII lease pins every callable package generation
     /// for the lifetime of the MCP service (including cloned session handles).
     snapshot_lease: Option<Arc<CapabilitySnapshotLease>>,
+    /// Shared standard MCP list-change fan-out. The catalog itself remains
+    /// immutable; a host may use this hub while replacing the session factory
+    /// with a newer generation-bound server.
+    notification_hub: Arc<CapabilityGatewayNotificationHub>,
 }
 
 impl std::fmt::Debug for CapabilityGatewayMcpServer {
@@ -409,6 +415,7 @@ impl std::fmt::Debug for CapabilityGatewayMcpServer {
             .field("consumer_negotiation", &self.consumer_negotiation)
             .field("discovery_context_count", &self.discovery_views_count())
             .field("has_snapshot_lease", &self.snapshot_lease.is_some())
+            .field("notification_hub", &self.notification_hub)
             .field("transport", &self.transport)
             .finish_non_exhaustive()
     }
@@ -734,6 +741,10 @@ impl CapabilityGatewayMcpServer {
         // explicitly accept must disappear from both discovery and direct
         // invocation routing.
         let catalog = catalog.for_consumer(&consumer_negotiation)?;
+        let notification_hub = Arc::new(
+            CapabilityGatewayNotificationHub::for_catalog(&catalog)
+                .map_err(|_| mcp_error("The Capability Gateway notification state is invalid."))?,
+        );
         let catalog = Arc::new(catalog);
         let tools = Arc::new(compile_tools(&catalog)?);
         let resources = Arc::new(compile_resources(&catalog)?);
@@ -753,6 +764,7 @@ impl CapabilityGatewayMcpServer {
             discovery_views: Arc::new(Mutex::new(BTreeMap::new())),
             transport: CapabilityGatewayTransport::Stdio,
             snapshot_lease,
+            notification_hub,
         })
     }
 
@@ -800,6 +812,44 @@ impl CapabilityGatewayMcpServer {
         self.snapshot_lease
             .as_deref()
             .map(CapabilitySnapshotLease::cursor)
+    }
+
+    /// Return the shared standard MCP list-change hub for this server.
+    ///
+    /// A production host should share this value with the component that
+    /// creates the next immutable, generation-bound session server. Calling
+    /// [`CapabilityGatewayNotificationHub::notify_catalog_changed`] after the
+    /// new catalog is durably published prompts connected clients to re-list
+    /// without inventing an A3S-specific wire method.
+    pub fn notification_hub(&self) -> Arc<CapabilityGatewayNotificationHub> {
+        Arc::clone(&self.notification_hub)
+    }
+
+    /// Reuse a host-owned notification hub when constructing the next
+    /// generation-bound server. The hub and catalog must belong to the same
+    /// installation; the hub's monotonic publication key intentionally may be
+    /// ahead of this server while an older session drains.
+    pub fn with_notification_hub(
+        mut self,
+        notification_hub: Arc<CapabilityGatewayNotificationHub>,
+    ) -> UseResult<Self> {
+        if notification_hub.installation() != self.catalog.installation() {
+            return Err(mcp_error(
+                "The Capability Gateway notification hub belongs to another installation.",
+            ));
+        }
+        self.notification_hub = notification_hub;
+        Ok(self)
+    }
+
+    /// Broadcast a newer catalog through the server's shared notification
+    /// hub. The server's own catalog is intentionally not mutated; callers
+    /// must route future sessions to the supplied immutable catalog.
+    pub async fn notify_catalog_changed(
+        &self,
+        catalog: &CapabilityGatewayCatalog,
+    ) -> UseResult<CapabilityGatewayNotificationReport> {
+        self.notification_hub.notify_catalog_changed(catalog).await
     }
 
     /// Serve standard MCP framing over stdin/stdout until the peer
@@ -996,9 +1046,20 @@ impl CapabilityGatewayMcpServer {
 impl ServerHandler for CapabilityGatewayMcpServer {
     fn get_info(&self) -> ServerInfo {
         let capabilities = ServerCapabilities {
-            prompts: (!self.prompts.is_empty()).then(Default::default),
-            resources: (!self.resources.is_empty()).then(Default::default),
-            tools: Some(Default::default()),
+            // The Gateway implements all three standard discovery surfaces
+            // and may gain a surface on the next immutable publication. Keep
+            // the capabilities advertised even when this generation is empty,
+            // and explicitly opt into standard list-change notifications.
+            prompts: Some(rmcp::model::PromptsCapability {
+                list_changed: Some(true),
+            }),
+            resources: Some(rmcp::model::ResourcesCapability {
+                subscribe: None,
+                list_changed: Some(true),
+            }),
+            tools: Some(rmcp::model::ToolsCapability {
+                list_changed: Some(true),
+            }),
             ..Default::default()
         };
         ServerInfo {
@@ -1254,6 +1315,10 @@ impl ServerHandler for CapabilityGatewayMcpServer {
             )
         })?;
         Ok(result)
+    }
+
+    async fn on_initialized(&self, context: rmcp::service::NotificationContext<rmcp::RoleServer>) {
+        let _ = self.notification_hub.register(context.peer).await;
     }
 }
 

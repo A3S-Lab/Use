@@ -585,11 +585,41 @@ Tools, while profile-aware projection and production host composition remain
 open.
 
 The steady-state watch path reads immutable publications without acquiring the
-Registry writer lock. A watcher may take that lock once to repair a verified
+Registry writer lock. After one reconciliation read it registers a bounded
+cross-platform filesystem subscription against the atomic Registry commit
+point, closes the read-to-subscribe race with a second publication read, and
+then re-reads only when a target event arrives. Native notifications are
+preferred, and a bounded target-metadata probe runs alongside them to cover
+platform backends that coalesce or omit an atomic replacement; a metadata-only
+polling watcher is also available when the native backend cannot be registered.
+If the installation directory does not yet exist, only the closest existing
+ancestor's immediate entries are observed; each relevant directory creation
+advances the subscription toward the exact commit point, so no recursive drive
+or user-state watch is introduced. Every existing path
+component below the configured Use state root must remain an owned directory;
+symlinks and Windows reparse points fail closed before registration. Callback
+events are filtered before entering a capacity-one coalescing channel, and at
+most 64 Registry watchers may exist in one process. The operating-system event
+is never treated as authority: every wake must still decode and validate
+`registry.json`. A watcher may take the writer lock once to repair a verified
 receipt/publication mismatch after a crash. Lifecycle mutations absorb this
 short reconciliation window with a bounded asynchronous wait, while a real
-concurrent writer still returns `use.extension.busy`. The wait never turns a
-read into an unbounded mutation queue.
+concurrent writer still returns `use.extension.busy`.
+
+The facade capability watcher delegates its steady-state wait to that
+generation notification. It builds the complete capability projection at
+subscription setup, after a real generation advance, and once at timeout to
+close the final race, rather than rescanning receipts and rehashing immutable
+Skill, Flow, and UI assets every 100 ms. The Gateway exposes a shared,
+bounded `CapabilityGatewayNotificationHub` for the protocol half: initialized
+MCP peers are retained up to a fixed limit, exact publication keys are
+coalesced, older generations are rejected, and standard `tools/list_changed`,
+`resources/list_changed`, and `prompts/list_changed` notifications are sent
+concurrently with a bounded timeout. This hub only tells clients to re-list; it does not mutate the
+immutable server or silently move a session across generations. A host must
+durably publish the replacement catalog, route new sessions to it, and keep
+the old lease through drain. The Control lifecycle still has to persist the
+complete agent-facing descriptor catalog and connect its cutover to this hub.
 
 The authoritative `registry.json` file is itself treated as a hostile mutable
 boundary. Its complete configured state-directory chain must be an owned,

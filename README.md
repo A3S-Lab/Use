@@ -383,6 +383,20 @@ a Run scope while Use lifecycle retirement waits for accepted work to drain.
 Dropping it only releases synchronous generation locks; asynchronous cleanup
 remains explicitly owned by the Use lifecycle coordinator.
 
+Capability watches now subscribe to the atomic Extension Registry publication
+instead of rebuilding the complete projection on a fixed interval. The native
+filesystem backend is preferred, while a bounded target-metadata probe runs
+alongside it to catch atomic replacements that a platform backend can coalesce
+or omit; a metadata-only polling backend is used when native registration is
+unavailable. Events are target-filtered and coalesced into one bounded signal;
+the validated `registry.json` remains the authority. `CapabilityRegistry`
+rebuilds and hashes the full projection at subscription setup, after a real
+generation advance, and once at timeout to close the final race. This removes
+repeated package scans and asset hashing from the normal wait path without
+creating a second mutable generation cursor.
+Persisting the complete agent-facing descriptor catalog in the lifecycle
+Capability Index remains a separate product gate.
+
 The `capability snapshot --json` schema v5 remains the outer CLI envelope. It
 exposes the Installation Snapshot generation and digest, while the complete
 in-process cursor is deliberately not appended to that independently released
@@ -1828,6 +1842,15 @@ provider future and its short-lived admission/resolver lease, with a typed
 secret-free cancellation result when the protocol can still deliver one. See
 [Capability consumer profiles](docs/capability-consumer-profiles.md) for the
 contract and its limits.
+
+The Gateway also exposes a shared, bounded
+`CapabilityGatewayNotificationHub`. Once a client has initialized, the host
+can publish a newer immutable catalog key and fan out the standard MCP
+`tools/list_changed`, `resources/list_changed`, and `prompts/list_changed`
+notifications concurrently. Repeated or older publication keys are coalesced,
+and closed or back-pressured peers are retired. This is a notification seam,
+not a mutable catalog: hosts must switch new sessions to the replacement
+server and retain the prior generation lease until drain.
 
 | Area | Status |
 | --- | --- |
