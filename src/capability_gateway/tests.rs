@@ -637,6 +637,108 @@ async fn gateway_advertises_and_broadcasts_standard_catalog_notifications() {
 }
 
 #[tokio::test]
+async fn gateway_session_factory_replaces_catalog_monotonically() {
+    let initial = test_catalog(test_descriptor());
+    let next = CapabilityGatewayCatalog::new(
+        initial.installation().clone(),
+        initial.generation() + 1,
+        initial.descriptors().to_vec(),
+    )
+    .unwrap();
+    let server =
+        CapabilityGatewayMcpServer::new(initial.clone(), Arc::new(RecordingProvider::default()))
+            .unwrap();
+    let hub = server.notification_hub();
+    let factory = CapabilityGatewaySessionFactory::new(server);
+
+    let replacement = factory
+        .replace(
+            CapabilityGatewayMcpServer::new(next.clone(), Arc::new(RecordingProvider::default()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(replacement.previous.generation, initial.generation());
+    assert_eq!(replacement.current.generation, next.generation());
+    assert!(replacement.catalog_changed);
+    assert_eq!(replacement.notification.unwrap().notified_peers, 0);
+    assert_eq!(factory.current().catalog(), &next);
+    assert_eq!(factory.current_key().unwrap().generation, next.generation());
+    assert!(Arc::ptr_eq(&hub, &factory.notification_hub()));
+
+    let stale = factory
+        .replace(
+            CapabilityGatewayMcpServer::new(initial, Arc::new(RecordingProvider::default()))
+                .unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(stale.code, "use.plugin.capability_gateway_session_stale");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_gateway_session_routes_existing_client_after_cutover() {
+    let initial = test_catalog(test_descriptor());
+    let mut changed_descriptor = test_descriptor();
+    if let CapabilityDescriptorKind::Tool { name, .. } = &mut changed_descriptor.capability {
+        *name = "lookup".to_owned();
+    }
+    let next = CapabilityGatewayCatalog::new(
+        initial.installation().clone(),
+        initial.generation() + 1,
+        vec![changed_descriptor],
+    )
+    .unwrap();
+    let factory = CapabilityGatewaySessionFactory::new(
+        CapabilityGatewayMcpServer::new(initial, Arc::new(RecordingProvider::default())).unwrap(),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let serving_factory = factory.clone();
+    let server_handle = tokio::spawn(serving_factory.serve_streamable_http(
+        listener,
+        CapabilityGatewayHttpConfig::new("session-factory-token").unwrap(),
+        shutdown.clone(),
+    ));
+    tokio::time::sleep(Duration::from_millis(30)).await;
+
+    let transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("session-factory-token"),
+    );
+    let notification_client = NotificationClient::default();
+    let client = notification_client.clone().serve(transport).await.unwrap();
+    assert_eq!(client.list_all_tools().await.unwrap()[0].name, "search");
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if factory.notification_hub().peer_count().await == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("live client must register with the shared notification hub");
+
+    let replacement = factory
+        .replace(
+            CapabilityGatewayMcpServer::new(next, Arc::new(RecordingProvider::default())).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(replacement.notification.unwrap().notified_peers, 1);
+    tokio::time::timeout(Duration::from_secs(1), notification_client.wait_for_all(1))
+        .await
+        .expect("the existing client must receive standard list-change notifications");
+    assert_eq!(client.list_all_tools().await.unwrap()[0].name, "lookup");
+
+    client.cancel().await.unwrap();
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn catalog_store_publishes_canonical_content_addressed_records() {
     let temporary = tempfile::tempdir().unwrap();
     let catalog = test_catalog(test_descriptor());

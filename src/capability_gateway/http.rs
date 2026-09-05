@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use super::admission::{AdmissionFailure, GatewayAdmission};
 use super::{
     mcp_error, CapabilityGatewayMcpServer, CapabilityGatewayPrincipal,
-    CapabilityGatewayRequestContext, CapabilityGatewayTransport,
+    CapabilityGatewayRequestContext, CapabilityGatewaySessionFactory, CapabilityGatewayTransport,
 };
 use a3s_use_core::UseResult;
 
@@ -220,9 +220,35 @@ impl CapabilityGatewayMcpServer {
         config: CapabilityGatewayHttpConfig,
         shutdown: CancellationToken,
     ) -> UseResult<()> {
-        let server = self.with_transport(CapabilityGatewayTransport::StreamableHttp);
-        let service: StreamableHttpService<Self, LocalSessionManager> = StreamableHttpService::new(
-            move || Ok(server.clone()),
+        CapabilityGatewaySessionFactory::new(self)
+            .serve_streamable_http(listener, config, shutdown)
+            .await
+    }
+}
+
+impl CapabilityGatewaySessionFactory {
+    /// Serve a live Gateway endpoint whose immutable source can be replaced
+    /// with [`Self::replace`](CapabilityGatewaySessionFactory::replace).
+    ///
+    /// The HTTP session factory is deliberately created once per endpoint.
+    /// Every initialized MCP peer receives the same notification hub, while
+    /// each operation snapshots the current immutable server generation.
+    pub async fn serve_streamable_http(
+        self,
+        listener: tokio::net::TcpListener,
+        config: CapabilityGatewayHttpConfig,
+        shutdown: CancellationToken,
+    ) -> UseResult<()> {
+        let factory = self.clone();
+        let service: StreamableHttpService<
+            super::CapabilityGatewayLiveMcpServer,
+            LocalSessionManager,
+        > = StreamableHttpService::new(
+            move || {
+                Ok(factory
+                    .live_server()
+                    .with_transport(CapabilityGatewayTransport::StreamableHttp))
+            },
             Arc::new(LocalSessionManager::default()),
             StreamableHttpServerConfig {
                 stateful_mode: true,

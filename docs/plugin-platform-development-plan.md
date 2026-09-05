@@ -267,6 +267,14 @@ Acceptance:
 The store is exposed through the standalone `capability-catalog` Cargo feature
 and included by both `mcp` and `extensions`, so a headless manager can own the
 durable payload before composing an MCP endpoint.
+- [x] Provide a live Gateway session factory for host cutover. The factory
+  rejects cross-installation, stale-generation, and consumer-contract changes;
+  swaps immutable servers under serialized ownership; retains one standard MCP
+  notification hub; and routes each operation through a current-server
+  snapshot so old in-flight operations keep their exact lease while later
+  requests on the same endpoint observe the new catalog. Binding the replace
+  call to the durable Control cursor and implementing lease retirement remain
+  lifecycle responsibilities.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,

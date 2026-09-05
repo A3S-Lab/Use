@@ -47,8 +47,13 @@ async fn committed_claim_dispatches_through_the_real_knowledge_owner_and_persist
             operation_id: reviewed.operation_id().to_string(),
             worker_id: "worker:knowledge-dispatch".to_string(),
             claim_token: "claim:knowledge-dispatch".to_string(),
-            lease_duration_ms: 10_000,
-            provider_timeout_ms: 5_000,
+            // This exercises the real SQLite/OKF owner, including two
+            // `spawn_blocking` phases.  Keep a bounded provider deadline, but
+            // leave enough room for a cold Windows worker under the full
+            // cross-platform test suite; the lease still leaves the required
+            // observation budget after the provider timeout.
+            lease_duration_ms: 60_000,
+            provider_timeout_ms: 30_000,
             deferred_retry_delay_ms: 1_000,
             explicit_reconciliation: false,
         })
