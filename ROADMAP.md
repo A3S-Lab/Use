@@ -1115,6 +1115,21 @@ mechanism, not production activation, complete receipt/Runtime/Grant-backed
 descriptor projection, payload backup/restore, or session drain/retention
 coordination.
 
+Implementation note (2026-09-05): the inactive Capability Plane now also has
+an explicit descriptor-evidence projector. It accepts only host-verified
+`CapabilityDescriptionProof` values and an immutable package-scoped signer
+allowlist. Every supplied descriptor is checked against the committed enabled
+package and lifecycle incarnation, exact catalog-record provenance, selected
+surface dependency graph, terminal prepared owner receipt, active Grant
+coverage, and reviewed Tool/MCP workload or transport before the projector
+derives domain-separated opaque invocation, endpoint, artifact, and resource
+references. Optional degraded surfaces and substituted owner evidence remain
+unpublishable, and projection failures are safe deterministic rejections with
+no payload write. This is a strict subset gate: cryptographic key custody,
+runtime payload/schema attestation, a durable proof snapshot for crash retry,
+and production Control/Runtime/receipt wiring remain open before the complete
+A3 catalog exit gate can close.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

@@ -253,7 +253,9 @@ candidate 与精确的终态 surface evidence 生成包含 catalog 身份的规�
 mutable current 文件；Control 中 applied cutover observation 是唯一 publication cursor，并在同一事务绑定 catalog 身份。Admission 会在取得
 每个精确 package lifecycle incarnation 的共享锁前后各读取一次该 cursor；drain 仅允许已经不再发布的旧
 incarnation 取得排他锁，并在 accepted call 仍活跃时安全 deferred。No-follow、no-replace 发布与精确 staging
-重放保护 immutable catalog/Index。Index 与 lease 文件都是不进入备份的派生 operational state；catalog 仍需登记到 backup/restore owner 集合。真实组合测试已经覆盖 Knowledge、Skill、catalog/Index cutover、stale admission 与
+重放保护 immutable catalog/Index。Index 与 lease 文件都是不进入备份的派生 operational state；catalog 仍需登记到 backup/restore owner 集合。该边界的严格 descriptor projector 只接受经过 host 验证的
+`CapabilityDescriptionProof` 与 package-scoped signer allowlist，并在派生 opaque route identity 前核对精确 catalog provenance、dependency closure、prepared owner evidence、active Grant 与 reviewed Tool/MCP shape。
+它是无副作用的 subset projection；key custody、durable proof snapshot 以及生产 Control/Runtime wiring 仍是独立的 activation gate。真实组合测试已经覆盖 Knowledge、Skill、catalog/Index cutover、stale admission 与
 同一 key 的 drain 重试。非激活 Runtime owner 现在已完成 release-backed Tool Task/Service 与 Streamable
 HTTP MCP 验收。首次 prepare 只消费无路径、已验证的 release payload，把完整 plan semantics 绑定到已提交
 provider evidence，持久化单调 Runtime/Gateway recovery state，并在不依赖 Artifact 路径的情况下重放或退休
