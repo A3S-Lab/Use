@@ -188,9 +188,14 @@ provides a plan-bound clean-target restore adapter: it verifies an exact
 digest-sorted set, records an activation marker, and publishes a complete
 candidate directory without clobbering an existing target. The descriptor
 snapshot owner now exposes the corresponding exact-set restore boundary and
-requires current trust-store verification for signed v2 evidence. Production
-owner registration/retention coordination, coordinated cursor reopening, and
-official Registry/TUF key-source binding remain activation gates.
+requires current trust-store verification for signed v2 evidence. A dedicated
+`ControlCapabilityPayloadRestoreCoordinator` binds both owner plans to one
+canonical digest, preflights their sources and clean targets under one
+exclusive maintenance fence, and replays fixed-order no-clobber activation.
+This is recoverable ordered activation, not a cross-directory atomic rename.
+Production owner registration/retention coordination, coordinated cursor
+reopening, and official Registry/TUF key-source binding remain activation
+gates.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,

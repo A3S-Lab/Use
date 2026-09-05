@@ -292,6 +292,53 @@ impl ControlCapabilityDescriptorSnapshotStore {
             .await
     }
 
+    /// Apply a reviewed descriptor restore while an outer coordinator owns
+    /// the installation-wide maintenance fence.
+    pub(in crate::control_store) async fn apply_clean_restore_under_maintenance(
+        &self,
+        plan: &restore::ControlCapabilityDescriptorSnapshotRestorePlan,
+        snapshots: &[ControlCapabilityDescriptorSnapshot],
+        plan_digest: &str,
+        verification: restore::ControlCapabilityDescriptorSnapshotRestoreVerification<'_>,
+    ) -> UseResult<restore::ControlCapabilityDescriptorSnapshotRestoreResult> {
+        restore::apply_clean_restore_under_maintenance(
+            self,
+            plan,
+            snapshots,
+            plan_digest,
+            verification,
+        )
+        .await
+    }
+
+    /// Validate a reviewed descriptor source while an outer coordinator owns
+    /// the installation-wide maintenance fence. No bytes are written.
+    pub(in crate::control_store) fn validate_clean_restore_source_under_maintenance(
+        &self,
+        plan: &restore::ControlCapabilityDescriptorSnapshotRestorePlan,
+        snapshots: &[ControlCapabilityDescriptorSnapshot],
+        plan_digest: &str,
+        verification: &restore::ControlCapabilityDescriptorSnapshotRestoreVerification<'_>,
+    ) -> UseResult<()> {
+        restore::validate_clean_restore_source_under_maintenance(
+            self,
+            plan,
+            snapshots,
+            plan_digest,
+            verification,
+        )
+    }
+
+    /// Preflight a reviewed descriptor restore while an outer coordinator
+    /// owns the installation-wide maintenance fence. No bytes are written.
+    pub(in crate::control_store) async fn ensure_clean_restore_target_under_maintenance(
+        &self,
+        plan: &restore::ControlCapabilityDescriptorSnapshotRestorePlan,
+        plan_digest: &str,
+    ) -> UseResult<()> {
+        restore::ensure_clean_restore_target_under_maintenance(self, plan, plan_digest).await
+    }
+
     async fn acquire_mutation(&self) -> UseResult<SnapshotLock> {
         acquire_lock(&self.root, LockMode::Exclusive).await
     }

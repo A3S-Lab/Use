@@ -1539,8 +1539,12 @@ no-replace, no-follow, crash-replayable, and path-free. The Index is derived
 operational state excluded from backup; the coordinated state inventory now
 registers and semantically verifies catalog and descriptor-snapshot records
 as one `CapabilityPayloads` family, while locks, staging, journals, and lease
-files remain excluded. Production Control owner registration, clean-target
-restore activation, and retention coordination remain separate gates. A real
+files remain excluded. `ControlCapabilityPayloadRestoreCoordinator` now binds
+the catalog and descriptor plans under one exclusive maintenance fence,
+preflights both clean targets, and retries fixed-order activation without
+clobbering an already-published owner. Production Control owner registration,
+cursor reopening, lease drain, and retention coordination remain separate
+gates. A real
 composition test joins Knowledge, Skill, catalog/Index publication, exact
 payload admission, stale admission, and drain.
 The inactive composition now accepts the canonical cognitive-package Plan
@@ -1795,6 +1799,8 @@ Only the following cognitive-package protocol line is accepted:
 | Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
 | Capability Gateway catalog restore plan | `a3s.use.capability-gateway-catalog-restore-plan.v1` |
 | Capability Gateway catalog restore result | `a3s.use.capability-gateway-catalog-restore-result.v1` |
+| Capability payload restore plan | `a3s.use.control-capability-payload-restore-plan.v1` |
+| Capability payload restore result | `a3s.use.control-capability-payload-restore-result.v1` |
 | Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
 | Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
@@ -1967,10 +1973,13 @@ clean-target adapter. Its plan binds every snapshot digest to the key digest,
 Control generations, canonical byte count, and signed/proof-only mode; apply
 rechecks the exact set and, for signed v2 records, requires the current
 `CapabilityDescriptionTrustStore` and clock before staging. Candidate and
-activation evidence are replayable and publication is no-clobber. This closes
-the two immutable payload owners' local restore mechanisms; coordinated
-Control cursor reopening, owner registration, lease drain, and rollback
-authority remain outside these stores.
+activation evidence are replayable and publication is no-clobber. The
+`ControlCapabilityPayloadRestoreCoordinator` composes both owner plans under a
+single exclusive fence and replays them in a fixed order; a process stop
+between owner publications is recoverable by replaying the same plan. This is
+ordered, recoverable activation rather than a cross-directory atomic rename.
+Coordinated Control cursor reopening, owner registration, lease drain, and
+rollback authority remain outside these stores.
 
 Control descriptor snapshots expose the same owner-level contract through
 `plan_retention`, `apply_retention`, and `recover_retention`. The plan embeds
