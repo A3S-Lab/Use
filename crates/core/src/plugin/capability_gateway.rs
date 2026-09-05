@@ -34,7 +34,13 @@ pub const CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1: &str = "a3s.use.capability-gatew
 /// signed capability description and the Runtime payload.
 pub const CAPABILITY_SCHEMA_DIGEST_SCHEMA_V1: &str = "a3s.use.capability-schema-digest.v1";
 mod description_proof;
+mod description_signature;
 pub use description_proof::{CapabilityDescriptionProof, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1};
+pub use description_signature::{
+    CapabilityDescriptionSignatureAlgorithm, CapabilityDescriptionSignaturePayload,
+    SignedCapabilityDescription, CAPABILITY_DESCRIPTION_SIGNATURE_ALGORITHM_ED25519,
+    CAPABILITY_DESCRIPTION_SIGNATURE_SCHEMA_V1,
+};
 
 const CAPABILITY_ERROR: &str = "use.plugin.capability_gateway_invalid";
 const CAPABILITY_REF_DOMAIN: &[u8] = b"a3s.use.capability-ref.v1\0";

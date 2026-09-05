@@ -1780,6 +1780,7 @@ Only the following cognitive-package protocol line is accepted:
 | Capability snapshot | schema version `5` |
 | Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |
 | Capability descriptor | `a3s.use.capability-descriptor.v1` |
+| Signed capability description | `a3s.use.capability-description-signature.v1` (Ed25519) |
 | Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
 | Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
 | Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
@@ -1857,6 +1858,16 @@ provider future and its short-lived admission/resolver lease, with a typed
 secret-free cancellation result when the protocol can still deliver one. See
 [Capability consumer profiles](docs/capability-consumer-profiles.md) for the
 contract and its limits.
+
+Agent-visible descriptions can also cross an explicit cryptographic trust
+boundary. `a3s-use-core` defines the canonical, domain-separated
+`SignedCapabilityDescription` envelope; `a3s-use-extension` verifies Ed25519
+signatures with a bounded public-key trust store that enforces key rotation,
+expiry, and revocation. The private `VerifiedCapabilityDescription` wrapper
+retains exact replay bytes and must be reverified after restore. This mechanism
+is qualified but not yet wired to the official Registry/TUF source or the
+production Control lifecycle. See
+[Capability description signatures](docs/capability-description-signatures.md).
 
 The Gateway also exposes a shared, bounded
 `CapabilityGatewayNotificationHub`. Once a client has initialized, the host

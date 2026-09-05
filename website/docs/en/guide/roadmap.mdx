@@ -186,7 +186,12 @@ duplicate keys, or tampering fails closed. The store is still an inactive
 external owner and is not registered for backup/restore. Runtime Tool release
 planning now carries canonical input/output-schema attestation through the
 inactive Runtime and Control path; production Control/Runtime wiring, key
-custody, and backup/restore registration remain open. The inactive Flow owner now follows the
+custody, and backup/restore registration remain open. The core now defines a
+domain-separated `SignedCapabilityDescription` envelope, and the extension
+boundary verifies it with a bounded Ed25519 trust store that checks key
+rotation, expiry, and revocation. This is a qualified mechanism only: the
+Registry/TUF key source, Control proof admission, and production lifecycle
+wiring remain open. The inactive Flow owner now follows the
 same boundary: it reads a path-free verified source payload, publishes a
 durable no-clobber content-addressed owner copy, and delegates Native
 TypeScript preflight only to `a3s-flow`. Package roots never cross the owner

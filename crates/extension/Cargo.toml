@@ -18,6 +18,7 @@ futures-util.workspace = true
 notify.workspace = true
 olpc-cjson = "0.1"
 reqwest.workspace = true
+ring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 semver.workspace = true
@@ -37,6 +38,3 @@ windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
 ] }
-
-[dev-dependencies]
-ring = "0.17"

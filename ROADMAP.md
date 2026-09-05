@@ -1148,6 +1148,18 @@ descriptor projection compare the same descriptor and schema digests. The
 implementation is qualified in the inactive kernel, while production
 lifecycle activation remains open.
 
+Implementation note (2026-09-05): the signed-description trust boundary now
+has a canonical `SignedCapabilityDescription` envelope in `a3s-use-core` and
+an Ed25519 `CapabilityDescriptionTrustStore` in `a3s-use-extension`. The
+envelope domain-separates the exact descriptor bytes, key/signer identities,
+and bounded validity window. The verifier owns no private keys, rejects
+identity, expiry, revocation, canonical-byte, and signature mismatches, and
+returns a private replay wrapper that must be reverified after restart. Multiple
+keys for one signer are supported for rotation, and schema-bearing Runtime
+Tool descriptors are required. This qualifies the cryptographic mechanism but
+does not mark the A3 checkbox: Registry/TUF key-source binding, Control
+proof-snapshot admission, and production lifecycle wiring remain open.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

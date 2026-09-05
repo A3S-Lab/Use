@@ -36,7 +36,7 @@ execution; the Gateway exposes only an opaque, authorized projection.
 | Atomic lifecycle | Reviewed plan/apply service, six-surface lifecycle, cutover and retirement journals, subprocess recovery matrices | Qualified in inactive and managed-host test paths | Production Code/managed-host composition and the remaining platform/reboot fault matrix |
 | Provider isolation and resource ceilings | Runtime plans bind unit class, isolation, mounts, secrets, resources, provider build and semantics digest | Qualified for Runtime contracts | Production Runtime Service composition, actual host secret delivery, and provider admission under the live Control authority |
 | Agent-facing contract | Standard MCP Tools/Resources/Prompts, bounded closed JSON schemas, opaque references, consumer negotiation and cancellation | Contract-complete | A3S Flow/UI/Knowledge extension payloads and independent client interoperability |
-| Signed Tool description | `CapabilityDescriptionProof`, package signer allowlist, durable proof snapshots and exact descriptor digests | Inactive qualification only | `from_verified` is a host assertion; cryptographic signature verification, key custody, rotation/revocation and Registry-to-proof production wiring are absent |
+| Signed Tool description | `CapabilityDescriptionProof`, package signer allowlist, durable proof snapshots, exact descriptor digests, canonical Ed25519 envelopes, and a bounded public-key trust store with expiry/revocation | Inactive qualification plus verifier mechanism | Registry/TUF key-source binding, Control proof-snapshot admission, and production Registry-to-proof lifecycle wiring remain open; `from_verified` is still only a compatibility host assertion |
 | Runtime contract continuity | Tool release input/output schemas and domain-separated `RuntimeToolSchemaAttestation` now flow through plans, task/service receipts, provisioning and Control evidence; verified payload admission and strict projection compare digests | Implemented in the inactive kernel (PR #238) | Production Control/Runtime/receipt/Grant composition and real schema-bearing release fixtures |
 | Live invocation authorization | Gateway resolver/factory seam, principal context, discovery policy, generation leases and provider `authorize` hook | Embedding mechanism qualified | A production resolver must bind the opaque reference to the exact scope, Grant, receipt and Runtime provider; no generic adapter can infer this safely |
 | Generation-safe upgrade and drain | Immutable session factory, snapshot leases, list-change hub, explicit retention plans and drain leases | Mechanism qualified | Lifecycle must publish the new catalog, replace sessions, retain old leases, and retire payloads in one production transition |
@@ -70,13 +70,14 @@ product lifecycle: two authorities can still be composed by a host.
 The current proof envelope is intentionally a host-owned hand-off. Its
 `signerId` and descriptor digest are useful evidence, but `from_verified` does
 not verify a signature and a signer allowlist is not a key store. The release
-path needs one explicit trust boundary that:
+path now has a qualified canonical Ed25519 envelope and public-key verifier;
+the remaining production trust boundary must:
 
-- verifies a canonical signed description using Registry-controlled keys;
-- binds key id, algorithm, signer, descriptor digest and expiry/revocation;
-- persists the exact verified envelope for restart replay;
-- rechecks the same policy during projection and restore; and
-- exposes only schema-bearing Tools to generic agents.
+- source the trust store from Registry-controlled/TUF-authenticated keys;
+- bind key id, algorithm, signer, descriptor digest and expiry/revocation;
+- persist the exact verified envelope for restart replay;
+- recheck the same policy during projection and restore; and
+- expose only schema-bearing Tools to generic agents.
 
 The verifier must remain outside the universal Gateway protocol, but its
 result must be a typed, non-forgeable input to the Control owner. A caller

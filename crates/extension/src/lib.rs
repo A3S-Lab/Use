@@ -15,6 +15,7 @@ mod test_filesystem;
 
 mod artifact_store;
 mod atomic_file;
+mod capability_description_verifier;
 mod digest;
 mod generation_lease;
 mod package;
@@ -69,6 +70,10 @@ pub use atomic_file::{
     persist_named_temporary_noclobber_blocking, persist_temporary_noclobber_blocking,
     persist_temporary_replace_blocking, remove_dir_all_with_windows_retry_blocking,
     rename_path_with_windows_retry_blocking,
+};
+pub use capability_description_verifier::{
+    CapabilityDescriptionTrustKey, CapabilityDescriptionTrustStore, VerifiedCapabilityDescription,
+    CAPABILITY_DESCRIPTION_TRUST_KEY_SCHEMA_V1, CAPABILITY_DESCRIPTION_TRUST_STORE_SCHEMA_V1,
 };
 pub use paths::{ExtensionPaths, UsePaths};
 pub use plugin_manifest::{

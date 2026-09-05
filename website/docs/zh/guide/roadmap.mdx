@@ -148,7 +148,11 @@ custody 仍未完成。安装级 descriptor snapshot store 现在会把精确规
 发布并在重启读取时复验。缺失证据会安全 deferred，替换、重复 key 或篡改会 fail closed；该 store 仍是
 未激活且尚未登记 backup/restore 的 external owner。Runtime Tool release 规划现在会沿未激活的
 Runtime/Control 路径携带规范化 input/output schema attestation；生产 Control/Runtime wiring、key
-custody 与 backup/restore 登记仍未完成。Flow owner 现在也沿同一边界完成
+custody 与 backup/restore 登记仍未完成。core 现在定义了 domain-separated 的
+`SignedCapabilityDescription` envelope，extension boundary 使用有界 Ed25519
+trust store 校验 key rotation、expiry 与 revocation。这只是已验收的机制；
+Registry/TUF key source、Control proof admission 与 production lifecycle wiring
+仍未完成。Flow owner 现在也沿同一边界完成
 qualification：读取 path-free verified 源码 payload，以 durable no-clobber 内容寻址方式写入 owner
 workspace，并且只委托 `a3s-flow` 执行 Native TypeScript preflight。package root 不会跨越 owner 边界；
 源码替换或 preflight 失败不会写入 Control observation，Artifact Store 争用则沿同一个 key 安全延迟。
