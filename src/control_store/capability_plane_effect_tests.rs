@@ -21,8 +21,9 @@ use super::dispatcher::{
 };
 use super::effect_owner::capability_plane::{
     ControlCapabilityDescriptorProjection, ControlCapabilityDescriptorSnapshot,
-    ControlCapabilityDescriptorSnapshotKey, ControlCapabilityDescriptorSnapshotStore,
-    ControlCapabilityPlaneEffectPort, ControlCapabilitySignerPolicy,
+    ControlCapabilityDescriptorSnapshotKey, ControlCapabilityDescriptorSnapshotRestoreVerification,
+    ControlCapabilityDescriptorSnapshotStore, ControlCapabilityPlaneEffectPort,
+    ControlCapabilitySignerPolicy,
 };
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
@@ -624,6 +625,198 @@ async fn descriptor_snapshot_retention_is_plan_bound_and_idempotent() {
     assert!(!replay.changed);
     assert!(replay.removed.is_empty());
     assert_eq!(replay.retained_record_count, 1);
+}
+
+#[tokio::test]
+async fn descriptor_snapshot_clean_restore_publishes_exact_set_and_replays() {
+    let fixture =
+        prepared_capability_plane("operation:capability-plane:descriptor-snapshot-clean-restore")
+            .await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-snapshot-clean-restore",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let proof = CapabilityDescriptionProof::from_verified(descriptor, signer).unwrap();
+    let policy = signer_policy_for(proof.descriptor.package_id.as_str(), signer);
+    let key = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let snapshot =
+        ControlCapabilityDescriptorSnapshot::new(key.clone(), vec![proof], policy).unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    let plan = store
+        .plan_clean_restore(std::slice::from_ref(&snapshot))
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+
+    let result = store
+        .apply_clean_restore(
+            &plan,
+            std::slice::from_ref(&snapshot),
+            &plan_digest,
+            ControlCapabilityDescriptorSnapshotRestoreVerification::ProofOnly,
+        )
+        .await
+        .unwrap();
+    assert!(result.changed);
+    assert_eq!(result.restored_record_count, 1);
+    assert_eq!(store.get(&key).await.unwrap(), Some(snapshot.clone()));
+
+    let replay = store
+        .apply_clean_restore(
+            &plan,
+            std::slice::from_ref(&snapshot),
+            &plan_digest,
+            ControlCapabilityDescriptorSnapshotRestoreVerification::ProofOnly,
+        )
+        .await
+        .unwrap();
+    assert!(!replay.changed);
+    assert_eq!(replay.plan_digest, result.plan_digest);
+}
+
+#[tokio::test]
+async fn descriptor_snapshot_clean_restore_refuses_existing_owner_state() {
+    let fixture = prepared_capability_plane(
+        "operation:capability-plane:descriptor-snapshot-clean-restore-conflict",
+    )
+    .await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-snapshot-clean-restore-conflict",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let proof = CapabilityDescriptionProof::from_verified(descriptor, signer).unwrap();
+    let policy = signer_policy_for(proof.descriptor.package_id.as_str(), signer);
+    let key = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let existing =
+        ControlCapabilityDescriptorSnapshot::new(key, vec![proof.clone()], policy.clone()).unwrap();
+    let requested_key = ControlCapabilityDescriptorSnapshotKey::new(
+        authority.generation.snapshot.installation.clone(),
+        authority.generation.snapshot.generation + 1,
+        authority.generation.capability.generation + 1,
+        digest('a'),
+    )
+    .unwrap();
+    let requested =
+        ControlCapabilityDescriptorSnapshot::new(requested_key, vec![proof], policy).unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    store.publish(&existing).await.unwrap();
+    let plan = store
+        .plan_clean_restore(std::slice::from_ref(&requested))
+        .unwrap();
+    let error = store
+        .apply_clean_restore(
+            &plan,
+            std::slice::from_ref(&requested),
+            &plan.descriptor_digest().unwrap(),
+            ControlCapabilityDescriptorSnapshotRestoreVerification::ProofOnly,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.control.capability_descriptor_snapshot_restore_target_not_empty"
+    );
+    assert_eq!(store.keys().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn signed_descriptor_snapshot_clean_restore_requires_current_trust_verification() {
+    let fixture = prepared_capability_plane(
+        "operation:capability-plane:signed-descriptor-snapshot-clean-restore",
+    )
+    .await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:signed-descriptor-snapshot-clean-restore",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let (signed, trust_store) = signed_descriptor_for(descriptor, signer, 1_000, 2_000);
+    let policy = signer_policy_for(signed.descriptor().package_id.as_str(), signer);
+    let key = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let snapshot = ControlCapabilityDescriptorSnapshot::new_signed(
+        key,
+        vec![signed],
+        policy,
+        &trust_store,
+        1_500,
+    )
+    .unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    let plan = store
+        .plan_clean_restore(std::slice::from_ref(&snapshot))
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+    let error = store
+        .apply_clean_restore(
+            &plan,
+            std::slice::from_ref(&snapshot),
+            &plan_digest,
+            ControlCapabilityDescriptorSnapshotRestoreVerification::ProofOnly,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.control.capability_descriptor_snapshot_restore_invalid"
+    );
+    assert!(store.keys().await.unwrap().is_empty());
+
+    let result = store
+        .apply_clean_restore(
+            &plan,
+            std::slice::from_ref(&snapshot),
+            &plan_digest,
+            ControlCapabilityDescriptorSnapshotRestoreVerification::Signed {
+                trust_store: &trust_store,
+                now_unix_seconds: 1_500,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(result.changed);
 }
 
 #[tokio::test]

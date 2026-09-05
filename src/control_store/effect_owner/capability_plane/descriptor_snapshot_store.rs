@@ -11,6 +11,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::*;
 
+#[path = "descriptor_snapshot_restore.rs"]
+pub(in crate::control_store) mod restore;
 #[path = "descriptor_snapshot_retention.rs"]
 pub(in crate::control_store) mod retention;
 
@@ -263,6 +265,31 @@ impl ControlCapabilityDescriptorSnapshotStore {
         &self,
     ) -> UseResult<Option<retention::ControlCapabilityDescriptorSnapshotRetentionResult>> {
         retention::recover_retention(self).await
+    }
+
+    /// Build a path-free plan for restoring an exact descriptor-snapshot set
+    /// into a clean owner target. The plan contains no source paths or trust
+    /// decisions; apply revalidates both the canonical records and the
+    /// current signed-description policy.
+    pub(in crate::control_store) fn plan_clean_restore(
+        &self,
+        snapshots: &[ControlCapabilityDescriptorSnapshot],
+    ) -> UseResult<restore::ControlCapabilityDescriptorSnapshotRestorePlan> {
+        restore::plan_clean_restore(self, snapshots)
+    }
+
+    /// Apply one reviewed descriptor-snapshot restore only to a clean owner
+    /// target. Signed v2 records require the explicit current trust policy
+    /// verification mode before any candidate is published.
+    pub(in crate::control_store) async fn apply_clean_restore(
+        &self,
+        plan: &restore::ControlCapabilityDescriptorSnapshotRestorePlan,
+        snapshots: &[ControlCapabilityDescriptorSnapshot],
+        expected_plan_digest: &str,
+        verification: restore::ControlCapabilityDescriptorSnapshotRestoreVerification<'_>,
+    ) -> UseResult<restore::ControlCapabilityDescriptorSnapshotRestoreResult> {
+        restore::apply_clean_restore(self, plan, snapshots, expected_plan_digest, verification)
+            .await
     }
 
     async fn acquire_mutation(&self) -> UseResult<SnapshotLock> {

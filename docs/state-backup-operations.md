@@ -188,8 +188,11 @@ plan plus the exact catalog values. It builds and rescans a complete candidate,
 persists a plan-bound activation marker, and publishes into an absent target
 with a no-clobber directory move. Durable candidate/marker evidence is
 replayable after interruption; a different live inventory, foreign staged
-plan, or pending retention journal is rejected. Descriptor-snapshot restore
-and whole-installation Control coordination remain lifecycle responsibilities.
+plan, or pending retention journal is rejected. Descriptor snapshots now have
+the matching owner-native exact-set restore primitive; signed v2 replay still
+requires the current trust store and clock. Whole-installation Control
+coordination, cursor reopening, and lifecycle authority remain outside both
+payload stores.
 
 Absolute source or destination paths and creation time are absent. The payloads
 are the original files, however, and may contain configured paths, endpoints,
