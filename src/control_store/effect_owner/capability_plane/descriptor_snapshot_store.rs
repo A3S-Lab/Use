@@ -550,7 +550,7 @@ async fn acquire_lock(root: &Path, mode: LockMode) -> UseResult<SnapshotLock> {
     options.create(true).read(true).write(true).truncate(false);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::OpenOptionsExt as _;
         options.custom_flags(libc::O_NOFOLLOW);
     }
     #[cfg(windows)]
@@ -714,14 +714,37 @@ async fn path_ancestors_exist(path: &Path) -> UseResult<bool> {
     {
         return Err(path_invalid());
     }
+    let mut complete = true;
     for ancestor in path.ancestors() {
         if ancestor.as_os_str().is_empty() {
             continue;
         }
         match fs::symlink_metadata(ancestor).await {
-            Ok(metadata) if !metadata_is_link(&metadata) && metadata.is_dir() => {}
-            Ok(_) => return Err(path_invalid()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Ok(metadata) => {
+                if metadata_is_link(&metadata) {
+                    // A configured state root can be reached through an
+                    // operating-system alias (for example macOS `/var`).
+                    // Only a link at the configured path itself is invalid;
+                    // aliases outside that ownership boundary are resolved
+                    // and still required to denote directories.
+                    if ancestor == path {
+                        return Err(path_invalid());
+                    }
+                    let followed = fs::metadata(ancestor).await.map_err(|error| {
+                        path_error(
+                            "resolve descriptor snapshot state-root alias",
+                            ancestor,
+                            error,
+                        )
+                    })?;
+                    if !followed.is_dir() {
+                        return Err(path_invalid());
+                    }
+                } else if !metadata.is_dir() {
+                    return Err(path_invalid());
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => complete = false,
             Err(error) => {
                 return Err(path_error(
                     "inspect descriptor snapshot root",
@@ -731,7 +754,7 @@ async fn path_ancestors_exist(path: &Path) -> UseResult<bool> {
             }
         }
     }
-    Ok(true)
+    Ok(complete)
 }
 
 async fn validate_existing_directory(path: &Path) -> UseResult<bool> {
@@ -771,7 +794,7 @@ fn metadata_is_link(metadata: &std::fs::Metadata) -> bool {
 fn configure_no_follow(options: &mut fs::OpenOptions) {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::OpenOptionsExt as _;
         options.custom_flags(libc::O_NOFOLLOW);
     }
     #[cfg(windows)]

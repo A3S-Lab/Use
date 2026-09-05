@@ -544,6 +544,26 @@ async fn descriptor_snapshot_store_replays_the_exact_proof_set_after_restart() {
     assert_eq!(catalog.descriptors, vec![descriptor]);
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn descriptor_snapshot_store_accepts_an_ancestor_path_alias() {
+    use std::os::unix::fs::symlink;
+
+    let logical_parent = tempfile::tempdir().unwrap();
+    let physical_parent = tempfile::tempdir().unwrap();
+    let alias = logical_parent.path().join("state-alias");
+    symlink(physical_parent.path(), &alias).unwrap();
+    let state_root = alias.join("installation");
+    tokio::fs::create_dir_all(physical_parent.path().join("installation"))
+        .await
+        .unwrap();
+
+    let store =
+        ControlCapabilityDescriptorSnapshotStore::new(state_root, control_installation()).unwrap();
+
+    assert!(store.keys().await.unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn durable_descriptor_projection_defers_when_its_snapshot_is_not_yet_published() {
     let fixture =

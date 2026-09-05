@@ -319,6 +319,15 @@ Implementation evidence (2026-08-30; exit gate passed):
   commit the same digest concurrently and converge on that one complete tree,
   while their receipt, generation, visibility, and lease authority remain
   independent.
+- The authoritative per-installation `registry.json` snapshot has a bounded
+  4 MiB read/write boundary. Readers validate the complete configured state
+  directory chain, open the final file without following links or reparse
+  points, allocate only the measured bounded size, and recheck file identity
+  and length after reading. Writers create missing directories one component at
+  a time only inside the configured state root, flush and sync a bounded
+  temporary file, then atomically replace the snapshot. Oversized, linked,
+  redirected, or concurrently replaced authority fails closed before JSON
+  decoding or publication.
 - Artifact reads validate the complete owned directory chain and exact digest
   path before package integrity is rechecked. Link/reparse substitution fails
   closed. Interrupted writes use bounded `.artifact-staging-*` trees and are

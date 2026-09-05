@@ -61,6 +61,11 @@ The current architecture has five non-negotiable properties:
   trees are keyed only by digest in the global Artifact Store. Registry sources
   retain observations and partial downloads; installations own selections and
   lifecycle generations, never private copies of identical content.
+- **One bounded Registry authority boundary:** the installation's authoritative
+  `registry.json` snapshot is read and published only through an owned directory
+  chain, no-follow/reparse-safe file handles, a 4 MiB byte ceiling, and
+  atomic temporary-file replacement. A reader rechecks the opened file and
+  rejects same-path changes instead of parsing an unbounded or redirected file.
 - **One current protocol baseline:** pre-release formats are rejected rather
   than decoded, migrated, or silently defaulted.
 
@@ -104,6 +109,10 @@ The implementation and fixtures exercise the product model directly:
   bootstrap roots, planning targets, and package targets alike.
 - [`CognitivePackageManager`](src/cognitive_package/) binds signed catalog
   evidence, exact locks, reviewed plans, authorization, and crash replay.
+- [`ExtensionRegistry`](crates/extension/src/registry.rs) keeps the published
+  installation snapshot behind bounded, owned, cross-platform file IO so
+  malformed, oversized, linked, or concurrently replaced authority cannot be
+  admitted as a capability generation.
 - [`CognitivePackageHostManager`](src/cognitive_package/host_manager.rs)
   implements the typed host-protocol-v6 port for one exact managed-scope
   fence. It durably binds request IDs to Use-owned plans and terminal results,

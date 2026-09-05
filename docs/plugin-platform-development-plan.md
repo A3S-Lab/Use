@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Development Plan
 
 Status: active
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 ## Objective
 
@@ -79,6 +79,9 @@ Completed in the Use repository:
 - secret-free Package Manager MCP diagnostics that retain only validated
   contract error codes and bounded public messages (PR #197);
 - CLI diagnostics, package graph commands, Knowledge search/usage, and watchers;
+- bounded authoritative Extension Registry snapshot IO: owned state-directory
+  chains, no-follow/reparse-safe handles, a 4 MiB read/write limit, flush and
+  sync before atomic replacement, and post-read file identity/length checks;
 - current-schema fixtures, digest goldens, remote Registry tests, recovery
   tests, and GitHub Pages site.
 
