@@ -3,8 +3,8 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
-use a3s_use_core::{InstallationId, UseError, UseResult};
-use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
+use a3s_use_core::{InstallationId, SignedCapabilityDescription, UseError, UseResult};
+use a3s_use_extension::{CapabilityDescriptionTrustStore, ExtensionPaths, StateMaintenanceLock};
 use fs2::FileExt;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -133,6 +133,27 @@ impl ControlCapabilityDescriptorSnapshotStore {
         Ok(publication(snapshot, key_digest, snapshot_digest))
     }
 
+    /// Verify and publish a signed-description snapshot in one explicit
+    /// admission operation. The persisted record retains the canonical signed
+    /// envelopes; the derived proof list is never accepted from the caller.
+    pub(in crate::control_store) async fn publish_signed(
+        &self,
+        key: ControlCapabilityDescriptorSnapshotKey,
+        signed_descriptions: Vec<SignedCapabilityDescription>,
+        signer_policy: ControlCapabilitySignerPolicy,
+        trust_store: &CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+    ) -> UseResult<ControlCapabilityDescriptorSnapshotPublication> {
+        let snapshot = ControlCapabilityDescriptorSnapshot::new_signed(
+            key,
+            signed_descriptions,
+            signer_policy,
+            trust_store,
+            now_unix_seconds,
+        )?;
+        self.publish(&snapshot).await
+    }
+
     /// Read one exact snapshot. `None` means the key has not been published;
     /// malformed or substituted existing state is an error.
     pub(in crate::control_store) async fn get(
@@ -213,6 +234,7 @@ fn publication(
         key_digest,
         snapshot_digest,
         proof_set_digest: snapshot.proof_set_digest.clone(),
+        signed_description_set_digest: snapshot.signed_description_set_digest().map(str::to_owned),
         signer_policy_digest: snapshot.signer_policy_digest.clone(),
     }
 }

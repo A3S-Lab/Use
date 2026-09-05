@@ -36,7 +36,7 @@ execution; the Gateway exposes only an opaque, authorized projection.
 | Atomic lifecycle | Reviewed plan/apply service, six-surface lifecycle, cutover and retirement journals, subprocess recovery matrices | Qualified in inactive and managed-host test paths | Production Code/managed-host composition and the remaining platform/reboot fault matrix |
 | Provider isolation and resource ceilings | Runtime plans bind unit class, isolation, mounts, secrets, resources, provider build and semantics digest | Qualified for Runtime contracts | Production Runtime Service composition, actual host secret delivery, and provider admission under the live Control authority |
 | Agent-facing contract | Standard MCP Tools/Resources/Prompts, bounded closed JSON schemas, opaque references, consumer negotiation and cancellation | Contract-complete | A3S Flow/UI/Knowledge extension payloads and independent client interoperability |
-| Signed Tool description | `CapabilityDescriptionProof`, package signer allowlist, durable proof snapshots, exact descriptor digests, canonical Ed25519 envelopes, bounded public-key trust store with expiry/revocation, and signed Gateway composition constructors | Inactive qualification plus verifier/composition mechanism | Registry/TUF key-source binding, Control proof-snapshot admission, and production Registry-to-proof lifecycle wiring remain open; `from_verified` is still only a compatibility host assertion |
+| Signed Tool description | `CapabilityDescriptionProof`, package signer allowlist, durable signed v2 snapshots, exact descriptor and envelope digests, canonical Ed25519 envelopes, bounded public-key trust store with expiry/revocation, signed Gateway composition constructors, and replay-time re-verification | Inactive qualification plus verifier/composition mechanism | Registry/TUF key-source binding and production Registry-to-proof lifecycle wiring remain open; `from_verified` and proof-only v1 snapshots are still explicit compatibility host assertions |
 | Runtime contract continuity | Tool release input/output schemas and domain-separated `RuntimeToolSchemaAttestation` now flow through plans, task/service receipts, provisioning and Control evidence; verified payload admission and strict projection compare digests | Implemented in the inactive kernel (PR #238) | Production Control/Runtime/receipt/Grant composition and real schema-bearing release fixtures |
 | Live invocation authorization | Gateway resolver/factory seam, principal context, discovery policy, generation leases and provider `authorize` hook | Embedding mechanism qualified | A production resolver must bind the opaque reference to the exact scope, Grant, receipt and Runtime provider; no generic adapter can infer this safely |
 | Generation-safe upgrade and drain | Immutable session factory, snapshot leases, list-change hub, explicit retention plans and drain leases | Mechanism qualified | Lifecycle must publish the new catalog, replace sessions, retain old leases, and retire payloads in one production transition |
@@ -80,8 +80,12 @@ the remaining production trust boundary must:
 - expose only schema-bearing Tools to generic agents.
 
 The verifier must remain outside the universal Gateway protocol, but its
-result must be a typed, non-forgeable input to the Control owner. A caller
-supplied boolean or signer string is not sufficient evidence.
+result must be a typed, non-forgeable input to the Control owner. The inactive
+Control snapshot owner now admits canonical signed v2 envelopes, retains the
+envelopes as replay authority, and rejects the proof-only projector for those
+records. A caller-supplied boolean or signer string is not sufficient
+evidence. Production Registry/TUF key-source binding and lifecycle wiring are
+still required.
 
 ### P0 — Compose the real invocation path
 

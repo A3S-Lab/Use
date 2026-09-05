@@ -171,13 +171,18 @@ state now have an installation-owned qualification store. The store binds the
 exact normalized proof set and signer policy to the Control identity, addresses
 records by their canonical bytes, uses bounded no-follow staging and
 no-clobber publication, and verifies the canonical record and content digest on
-every read. A missing record is retryable; a substituted, duplicated, or
+every read. A signed v2 admission path now verifies each Ed25519 envelope
+before publication, retains the envelope as replay authority, and re-verifies
+it against the current trust policy and clock before projection. The proof-only
+v1 path is explicit compatibility code and cannot consume a signed v2 record.
+A missing record is retryable; a substituted, duplicated, expired, revoked, or
 tampered record is rejected. Runtime Tool release schemas are now carried as a
 canonical descriptor/input/output digest attestation through the inactive
 Runtime and Control evidence path, and verified payload admission compares the
 attestation before execution. The snapshot owner remains outside the Control
-aggregate and is not yet registered with backup/restore; key custody and
-production Control/Runtime wiring remain activation gates.
+aggregate and is not yet registered with backup/restore; official Registry/TUF
+key-source binding and production Control/Runtime wiring remain activation
+gates.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,
@@ -189,9 +194,9 @@ rotation, while replay must reverify the retained envelope against the current
 policy. The Gateway's signed-description constructors run this verification
 before acquiring the Control snapshot lease or constructing the provider
 resolver, so the ordinary composition path cannot accidentally skip the
-cryptographic hand-off. This qualifies the verifier mechanism; the official
-Registry/TUF key source, Control proof-snapshot admission, and production
-lifecycle wiring are still open.
+cryptographic hand-off. The signed v2 Control snapshot admission now closes
+the inactive proof-persistence gap; the official Registry/TUF key source and
+production Registry-to-Control lifecycle wiring are still open.
 
 Production lifecycle code does not construct it, so it neither mirrors nor
 replaces the current JSON authority. The first concrete post-commit adapter now

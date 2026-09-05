@@ -67,10 +67,20 @@ itself: restart and restore code must call reverify against the current
 Registry key policy. This re-checks expiry and revocation as well as the
 signature, so withdrawing a key cannot be bypassed by replaying old evidence.
 
+The inactive Control Capability Plane now has a signed descriptor snapshot v2
+path. Its `publish_signed` admission verifies every envelope before writing the
+content-addressed record and stores the canonical envelopes beside the derived
+proof projection. A signed snapshot projector re-verifies the retained
+envelopes at every replay, then projects only the newly derived proofs. The
+proof-only v1 projector rejects v2 records, preventing an accidental downgrade
+to the non-cryptographic compatibility path. Expiry, revocation, envelope or
+proof substitution, and canonical-byte tampering therefore fail closed.
+
 The mechanism is intentionally not a second Gateway protocol and does not
-choose package lifecycle state. The remaining activation work is to source
-signed description envelopes from the official Registry, persist them in the
-Control-bound proof snapshot, and route the live lifecycle and Gateway through
-that one authority. Until then CapabilityDescriptionProof::from_verified
+choose package lifecycle state. The remaining activation work is to source the
+trust store and signed envelopes from the official Registry/TUF authority,
+register the snapshot owner with backup/restore, and route the live lifecycle
+and Gateway through the A2 Control authority. Until then
+CapabilityDescriptionProof::from_verified
 remains a compatibility constructor for explicitly host-verified preview
 integrations and must not be treated as cryptographic evidence.

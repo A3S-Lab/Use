@@ -1781,6 +1781,7 @@ Only the following cognitive-package protocol line is accepted:
 | Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |
 | Capability descriptor | `a3s.use.capability-descriptor.v1` |
 | Signed capability description | `a3s.use.capability-description-signature.v1` (Ed25519) |
+| Control descriptor evidence snapshot | `a3s.use.control-capability-descriptor-snapshot.v1` (proof-only compatibility) / `v2` (signed envelope) |
 | Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
 | Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
 | Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
@@ -1900,20 +1901,24 @@ also consumes host-verified signed proofs under an explicit package-scoped
 signer allowlist, checks exact catalog surface dependencies, terminal
 owner-specific receipt evidence, active Grant coverage, and reviewed Tool/MCP
 workload shape before deriving opaque route references. It is intentionally a
-pure subset projection. An installation-owned descriptor snapshot store now
-captures the exact normalized proof set and signer policy under a key bound to
-the installation, both Control generation axes, and the candidate Control
-descriptor digest. Snapshot files are content-addressed by their canonical
-bytes (rather than by a mutable key), published with bounded no-follow
-staging/no-clobber replay, and revalidated on every restart read; a missing
-snapshot is a safe retry while substitution or tampering is rejected. This is
-still qualification code: cryptographic key custody, production
-Control/Runtime/receipt wiring, and backup/restore registration remain host
-gates. Runtime Tool release planning now carries a canonical input/output
-schema attestation through plans, binding receipts, and Control evidence;
-verified artifact admission and strict descriptor projection compare the same
-descriptor and schema digests. Production Control activation, backup/restore
-ownership, and retirement coordination remain separate gates.
+pure subset projection. The installation-owned descriptor snapshot store now
+supports a signed v2 admission path: it verifies each canonical Ed25519
+envelope before publication, retains the exact envelope beside its derived
+proof projection, and re-verifies the envelope against the current trust store
+and clock on restart projection. The legacy v1 proof-only path remains an
+explicit compatibility mode and cannot downgrade a signed v2 record. Snapshot
+files are content-addressed by their canonical bytes (rather than by a mutable
+key), published with bounded no-follow staging/no-clobber replay, and
+revalidated on every restart read; a missing snapshot is a safe retry while
+substitution, tampering, expiry, or revocation is rejected. This is still
+qualification code: cryptographic key-source binding to the official
+Registry/TUF metadata, production Control/Runtime/receipt wiring, and
+backup/restore registration remain host gates. Runtime Tool release planning
+now carries a canonical input/output schema attestation through plans, binding
+receipts, and Control evidence; verified artifact admission and strict
+descriptor projection compare the same descriptor and schema digests.
+Production Control activation, backup/restore ownership, and retirement
+coordination remain separate gates.
 
 The embedding boundary now also includes `CapabilityGatewaySessionFactory`:
 after durable publication, a host can replace immutable Gateway generations in
