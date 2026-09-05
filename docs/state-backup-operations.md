@@ -181,6 +181,16 @@ portable authority. The current trust policy for signed descriptors is
 revalidated by the owner during replay; offline backup verification does not
 invent or persist a new trust decision.
 
+The catalog half of that owner boundary now has a direct restore primitive.
+`CapabilityGatewayCatalogStore::plan_clean_restore` produces a canonical,
+digest-sorted inventory, and `apply_clean_restore` accepts only the confirmed
+plan plus the exact catalog values. It builds and rescans a complete candidate,
+persists a plan-bound activation marker, and publishes into an absent target
+with a no-clobber directory move. Durable candidate/marker evidence is
+replayable after interruption; a different live inventory, foreign staged
+plan, or pending retention journal is rejected. Descriptor-snapshot restore
+and whole-installation Control coordination remain lifecycle responsibilities.
+
 Absolute source or destination paths and creation time are absent. The payloads
 are the original files, however, and may contain configured paths, endpoints,
 or other sensitive operational data. Protect the complete archive as a secret

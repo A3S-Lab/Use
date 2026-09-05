@@ -183,9 +183,12 @@ attestation before execution. The snapshot owner remains outside the Control
 aggregate. The coordinated state inventory now admits and semantically checks
 its canonical descriptor-snapshot records alongside Gateway catalogs, while
 the descriptor owner now also provides plan-bound retention with a durable
-per-unlink journal and exact recovery. Owner-native clean-target
-restore/retention activation and official Registry/TUF key-source binding
-remain activation gates.
+per-unlink journal and exact recovery. The Gateway catalog owner additionally
+provides a plan-bound clean-target restore adapter: it verifies an exact
+digest-sorted set, records an activation marker, and publishes a complete
+candidate directory without clobbering an existing target. Descriptor restore,
+production owner registration/retention coordination, and official
+Registry/TUF key-source binding remain activation gates.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,

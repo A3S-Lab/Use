@@ -53,6 +53,12 @@ pub use crate::capability_catalog_store::{
     CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA, CAPABILITY_GATEWAY_CATALOG_STORE_SCHEMA,
     MAX_CAPABILITY_GATEWAY_CATALOG_BYTES, MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS,
 };
+#[cfg(feature = "extensions")]
+pub use crate::capability_catalog_store::{
+    CapabilityGatewayCatalogRestoreEntry, CapabilityGatewayCatalogRestorePlan,
+    CapabilityGatewayCatalogRestoreResult, CAPABILITY_GATEWAY_CATALOG_RESTORE_PLAN_SCHEMA,
+    CAPABILITY_GATEWAY_CATALOG_RESTORE_RESULT_SCHEMA,
+};
 pub use admission::CapabilityGatewayLimits;
 use admission::{AdmissionFailure, GatewayAdmission};
 pub use discovery::{AllowAllCapabilityGatewayDiscoveryPolicy, CapabilityGatewayDiscoveryPolicy};

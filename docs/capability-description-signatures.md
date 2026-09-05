@@ -83,8 +83,11 @@ installation/content-address binding, and rejects mutation staging or
 retention journals. The descriptor-snapshot owner also exposes explicit,
 plan-bound retention with per-unlink checkpoints and restart recovery; a
 pending journal blocks new publication until the exact plan is resumed. The
-remaining activation work is to source the trust store
-and signed envelopes from the official Registry/TUF authority, perform
+Gateway catalog owner now has a separate plan-bound clean-target restore
+adapter with durable candidate/activation replay and strict no-clobber target
+semantics; descriptor-snapshot restore is intentionally not inferred from it.
+The remaining activation work is to source the trust store and signed
+envelopes from the official Registry/TUF authority, perform descriptor
 owner-native clean-target restore/retention, and route the live lifecycle and
 Gateway through the A2 Control authority. Until then
 CapabilityDescriptionProof::from_verified

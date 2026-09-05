@@ -148,6 +148,32 @@ compiling the MCP transport adapter. The compatibility re-export at
 `a3s_use::capability_gateway::CapabilityGatewayCatalogStore` remains available
 when `mcp` is enabled.
 
+## Clean-target catalog restore
+
+An owner can restore an exact catalog set without giving the payload store a
+mutable “current” authority. First build and review a path-free plan, then
+confirm its canonical digest at the apply boundary:
+
+```rust,ignore
+let plan = store.plan_clean_restore(&catalogs)?;
+let plan_digest = plan.descriptor_digest()?;
+let result = store
+    .apply_clean_restore(&plan, &catalogs, &plan_digest)
+    .await?;
+```
+
+`apply_clean_restore` accepts only catalogs bound to the store's installation
+and to the reviewed digest-sorted inventory. It refuses an existing owner
+directory, stages and rescans the complete content-addressed tree, persists a
+plan-bound activation marker, and performs one no-clobber directory
+publication. A retry can finish a durable candidate/marker left by an
+interrupted process; an unrelated staged plan or retention journal fails
+closed. The result reports whether the exact owner directory changed and the
+restored byte/record counts. This is deliberately an owner-native primitive,
+not a lifecycle coordinator: Control cursor binding, signed descriptor
+reverification, session lease drain, and rollback authority remain outside the
+catalog store.
+
 ## Live endpoint cutover
 
 For a stateful endpoint, `CapabilityGatewaySessionFactory` is the host-owned

@@ -42,7 +42,8 @@ pub fn persist_temporary_noclobber_blocking(temporary: PathBuf, target: &Path) -
 /// This is reserved for fail-closed recovery sentinels whose absence would be
 /// less safe than an interrupted publication. Callers must validate and
 /// recover the retained path explicitly.
-pub(crate) fn persist_temporary_noclobber_retain_blocking(
+#[doc(hidden)]
+pub fn persist_temporary_noclobber_retain_blocking(
     temporary: PathBuf,
     target: &Path,
 ) -> io::Result<()> {
