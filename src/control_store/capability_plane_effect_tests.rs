@@ -549,6 +549,168 @@ async fn descriptor_snapshot_store_replays_the_exact_proof_set_after_restart() {
 }
 
 #[tokio::test]
+async fn descriptor_snapshot_retention_is_plan_bound_and_idempotent() {
+    let fixture =
+        prepared_capability_plane("operation:capability-plane:descriptor-snapshot-retention").await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-snapshot-retention",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let proof = CapabilityDescriptionProof::from_verified(descriptor.clone(), signer).unwrap();
+    let policy = signer_policy_for(descriptor.package_id.as_str(), signer);
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+
+    // Two keys deliberately point at the same verified evidence. Their
+    // content-addressed records still differ because the committed Control
+    // identity is part of each immutable snapshot.
+    let key_one = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let key_two = ControlCapabilityDescriptorSnapshotKey::new(
+        key_one.installation.clone(),
+        key_one.installation_generation + 1,
+        key_one.capability_generation + 1,
+        digest('a'),
+    )
+    .unwrap();
+    let snapshot_one = ControlCapabilityDescriptorSnapshot::new(
+        key_one.clone(),
+        vec![proof.clone()],
+        policy.clone(),
+    )
+    .unwrap();
+    let snapshot_two =
+        ControlCapabilityDescriptorSnapshot::new(key_two.clone(), vec![proof], policy).unwrap();
+    let publication_one = store.publish(&snapshot_one).await.unwrap();
+    let publication_two = store.publish(&snapshot_two).await.unwrap();
+
+    let plan = store
+        .plan_retention(std::slice::from_ref(&publication_two.snapshot_digest))
+        .await
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+    assert_eq!(plan.before_record_count, 2);
+    assert_eq!(plan.retain.len(), 1);
+    assert_eq!(plan.remove.len(), 1);
+    assert_eq!(plan.retain[0].digest, publication_two.snapshot_digest);
+    assert_eq!(plan.remove[0].digest, publication_one.snapshot_digest);
+
+    let result = store.apply_retention(&plan, &plan_digest).await.unwrap();
+    assert!(result.changed);
+    assert_eq!(result.plan_digest, plan_digest);
+    assert_eq!(result.removed.len(), 1);
+    assert_eq!(result.removed[0].digest, publication_one.snapshot_digest);
+    assert_eq!(result.retained_record_count, 1);
+    assert_eq!(store.get(&key_one).await.unwrap(), None);
+    assert_eq!(store.get(&key_two).await.unwrap(), Some(snapshot_two));
+    assert!(store.recover_retention().await.unwrap().is_none());
+
+    // Reapplying the exact reviewed plan is a no-op, which makes callers safe
+    // to retry after an acknowledged response or a transport interruption.
+    let replay = store.apply_retention(&plan, &plan_digest).await.unwrap();
+    assert!(!replay.changed);
+    assert!(replay.removed.is_empty());
+    assert_eq!(replay.retained_record_count, 1);
+}
+
+#[tokio::test]
+async fn descriptor_snapshot_retention_rejects_a_stale_inventory() {
+    let fixture =
+        prepared_capability_plane("operation:capability-plane:descriptor-snapshot-retention-stale")
+            .await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-snapshot-retention-stale",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let proof = CapabilityDescriptionProof::from_verified(descriptor.clone(), signer).unwrap();
+    let policy = signer_policy_for(descriptor.package_id.as_str(), signer);
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    let key_one = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let key_two = ControlCapabilityDescriptorSnapshotKey::new(
+        key_one.installation.clone(),
+        key_one.installation_generation + 1,
+        key_one.capability_generation + 1,
+        digest('a'),
+    )
+    .unwrap();
+    let key_three = ControlCapabilityDescriptorSnapshotKey::new(
+        key_one.installation.clone(),
+        key_one.installation_generation + 2,
+        key_one.capability_generation + 2,
+        digest('b'),
+    )
+    .unwrap();
+    let snapshot_one = ControlCapabilityDescriptorSnapshot::new(
+        key_one.clone(),
+        vec![proof.clone()],
+        policy.clone(),
+    )
+    .unwrap();
+    let snapshot_two = ControlCapabilityDescriptorSnapshot::new(
+        key_two.clone(),
+        vec![proof.clone()],
+        policy.clone(),
+    )
+    .unwrap();
+    let snapshot_three =
+        ControlCapabilityDescriptorSnapshot::new(key_three.clone(), vec![proof], policy).unwrap();
+    let publication_one = store.publish(&snapshot_one).await.unwrap();
+    let publication_two = store.publish(&snapshot_two).await.unwrap();
+    let plan = store
+        .plan_retention(std::slice::from_ref(&publication_two.snapshot_digest))
+        .await
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+
+    // A new immutable record invalidates the reviewed inventory. No record is
+    // removed, and the exact stale-plan error remains retryable by replanning.
+    store.publish(&snapshot_three).await.unwrap();
+    let error = store
+        .apply_retention(&plan, &plan_digest)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.control.capability_descriptor_snapshot_retention_stale"
+    );
+    assert_eq!(store.get(&key_one).await.unwrap(), Some(snapshot_one));
+    assert_eq!(store.get(&key_two).await.unwrap(), Some(snapshot_two));
+    assert_eq!(store.get(&key_three).await.unwrap(), Some(snapshot_three));
+    assert_eq!(
+        publication_one.key.installation,
+        publication_two.key.installation
+    );
+}
+
+#[tokio::test]
 async fn signed_descriptor_snapshot_replays_only_after_current_policy_verification() {
     let fixture =
         prepared_capability_plane("operation:capability-plane:signed-descriptor-snapshot").await;

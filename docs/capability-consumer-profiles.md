@@ -195,6 +195,13 @@ plan can be replayed read-only. The lifecycle authority must include all live
 and draining session generations in the protected set and must coordinate
 Control cursor/lease state separately.
 
+The inactive Control descriptor-snapshot owner follows the same rule. Its
+`plan_retention` call returns a complete protected/removal partition, and
+`apply_retention` accepts only the canonical plan digest. Each unlink is
+recorded in `a3s.use.control-capability-descriptor-snapshot-retention-journal.v1`;
+`recover_retention` resumes the embedded plan after interruption. A pending
+journal blocks new snapshot publication and reads until recovery completes.
+
 ## Request cancellation
 
 The standard MCP adapter also consumes rmcp's per-request

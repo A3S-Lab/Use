@@ -1787,6 +1787,9 @@ Only the following cognitive-package protocol line is accepted:
 | Capability descriptor | `a3s.use.capability-descriptor.v1` |
 | Signed capability description | `a3s.use.capability-description-signature.v1` (Ed25519) |
 | Control descriptor evidence snapshot | `a3s.use.control-capability-descriptor-snapshot.v1` (proof-only compatibility) / `v2` (signed envelope) |
+| Control descriptor snapshot retention plan | `a3s.use.control-capability-descriptor-snapshot-retention-plan.v1` |
+| Control descriptor snapshot retention result | `a3s.use.control-capability-descriptor-snapshot-retention-result.v1` |
+| Control descriptor snapshot retention journal | `a3s.use.control-capability-descriptor-snapshot-retention-journal.v1` (internal) |
 | Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
 | Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
 | Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
@@ -1944,6 +1947,14 @@ set, revalidates the canonical inventory under its mutation lock, and removes
 only the reviewed complement with durability checks. It never guesses which
 generation is current; active and draining session leases must remain in the
 protected set.
+
+Control descriptor snapshots expose the same owner-level contract through
+`plan_retention`, `apply_retention`, and `recover_retention`. The plan embeds
+the complete protected/removal partition, each unlink is checkpointed in a
+bounded canonical journal, pending journals block publication and reads, and a
+non-empty inventory must retain at least one snapshot. Production Control
+registration and clean-target restore activation still supply the lifecycle
+authority that chooses the protected generations.
 
 | Area | Status |
 | --- | --- |

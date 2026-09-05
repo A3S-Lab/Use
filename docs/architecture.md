@@ -182,8 +182,10 @@ Runtime and Control evidence path, and verified payload admission compares the
 attestation before execution. The snapshot owner remains outside the Control
 aggregate. The coordinated state inventory now admits and semantically checks
 its canonical descriptor-snapshot records alongside Gateway catalogs, while
-owner-native clean-target restore/retention and official Registry/TUF
-key-source binding remain activation gates.
+the descriptor owner now also provides plan-bound retention with a durable
+per-unlink journal and exact recovery. Owner-native clean-target
+restore/retention activation and official Registry/TUF key-source binding
+remain activation gates.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,

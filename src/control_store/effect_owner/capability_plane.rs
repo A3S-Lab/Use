@@ -37,7 +37,13 @@ pub(in crate::control_store) use descriptor_snapshot::{
     backup_installation as descriptor_snapshot_backup_installation,
     validate_backup_bytes as validate_descriptor_snapshot_backup_bytes,
     ControlCapabilityDescriptorSnapshot, ControlCapabilityDescriptorSnapshotKey,
-    ControlCapabilityDescriptorSnapshotPublication, ControlCapabilityDescriptorSnapshotStore,
+    ControlCapabilityDescriptorSnapshotPublication,
+    ControlCapabilityDescriptorSnapshotRetentionEntry,
+    ControlCapabilityDescriptorSnapshotRetentionPlan,
+    ControlCapabilityDescriptorSnapshotRetentionResult, ControlCapabilityDescriptorSnapshotStore,
+    CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_JOURNAL_SCHEMA,
+    CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_PLAN_SCHEMA,
+    CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_RESULT_SCHEMA,
 };
 use index::ControlCapabilityIndexStore;
 use lease::{ControlGenerationFileLease, ControlGenerationLeaseStore};

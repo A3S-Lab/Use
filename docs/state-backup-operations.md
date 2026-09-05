@@ -196,8 +196,8 @@ Creation rejects:
   Service provisioning evidence;
 - atomic `.tmp`, `.partial`, and other nonterminal state entries;
 - unknown Capability Gateway paths, mutation locks, staging files, or catalog
-  retention journals (the immutable payload family admits only canonical
-  records);
+  and descriptor-snapshot retention journals (the immutable payload family
+  admits only canonical records);
 - any installation data payload or unknown state family;
 - absolute, parent-traversing, non-UTF-8, Windows-reserved, case-colliding, or
   otherwise non-portable paths;

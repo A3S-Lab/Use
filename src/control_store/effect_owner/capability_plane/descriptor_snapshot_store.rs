@@ -11,9 +11,13 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::*;
 
+#[path = "descriptor_snapshot_retention.rs"]
+pub(in crate::control_store) mod retention;
+
 const SNAPSHOT_DIRECTORY: &str = "capability-gateway/descriptor-snapshots";
 const SNAPSHOT_LOCK: &str = ".mutation.lock";
 const SNAPSHOT_STAGING: &str = ".staging";
+pub(super) const SNAPSHOT_RETENTION_JOURNAL: &str = ".retention.journal";
 const MAX_DIRECTORY_ENTRIES: usize =
     MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RECORDS.saturating_mul(2);
 const MAX_STAGING_BYTES: u64 = 64 * 1024 * 1024;
@@ -115,6 +119,7 @@ impl ControlCapabilityDescriptorSnapshotStore {
             .await?;
         ensure_owned_directory_chain(&self.state_root, &self.root).await?;
         let _mutation = self.acquire_mutation().await?;
+        retention::ensure_no_pending_journal(&self.root).await?;
         let records = scan_records(&self.root, &self.installation).await?;
         if let Some(current) = records.iter().find(|record| record.key == snapshot.key) {
             if current != snapshot {
@@ -177,6 +182,7 @@ impl ControlCapabilityDescriptorSnapshotStore {
             return Ok(None);
         }
         let _lock = self.acquire_shared_lock().await?;
+        retention::ensure_no_pending_journal(&self.root).await?;
         let records = scan_records(&self.root, &self.installation).await?;
         let mut matches = records.into_iter().filter(|record| record.key == *key);
         let Some(snapshot) = matches.next() else {
@@ -206,6 +212,7 @@ impl ControlCapabilityDescriptorSnapshotStore {
             return Ok(Vec::new());
         }
         let _lock = self.acquire_shared_lock().await?;
+        retention::ensure_no_pending_journal(&self.root).await?;
         let mut keys = scan_records(&self.root, &self.installation)
             .await?
             .into_iter()
@@ -213,6 +220,49 @@ impl ControlCapabilityDescriptorSnapshotStore {
             .collect::<Vec<_>>();
         keys.sort();
         Ok(keys)
+    }
+
+    /// Build an exact, path-free retention plan for immutable descriptor
+    /// snapshots. The caller supplies the digests that must survive; every
+    /// other record is explicitly named for removal.
+    pub(in crate::control_store) async fn plan_retention(
+        &self,
+        retain_digests: &[String],
+    ) -> UseResult<retention::ControlCapabilityDescriptorSnapshotRetentionPlan> {
+        self.validate_configuration()?;
+        let retain_digests = retention::validate_requested_digests(retain_digests)?;
+        if !path_ancestors_exist(&self.state_root).await? {
+            return retention::build_plan(self.installation.clone(), Vec::new(), &retain_digests);
+        }
+        let _maintenance = StateMaintenanceLock::new(&self.state_root)
+            .acquire_shared()
+            .await?;
+        if !validate_existing_directory(&self.root).await? {
+            return retention::build_plan(self.installation.clone(), Vec::new(), &retain_digests);
+        }
+        let _lock = self.acquire_shared_lock().await?;
+        retention::ensure_no_pending_journal(&self.root).await?;
+        let records = scan_records(&self.root, &self.installation).await?;
+        retention::build_plan(self.installation.clone(), records, &retain_digests)
+    }
+
+    /// Apply one reviewed descriptor-snapshot retention plan under the owner
+    /// lock. Removal is journaled one record at a time so a restart can
+    /// distinguish an unstarted unlink from an already completed unlink.
+    pub(in crate::control_store) async fn apply_retention(
+        &self,
+        plan: &retention::ControlCapabilityDescriptorSnapshotRetentionPlan,
+        expected_plan_digest: &str,
+    ) -> UseResult<retention::ControlCapabilityDescriptorSnapshotRetentionResult> {
+        retention::apply_retention(self, plan, expected_plan_digest).await
+    }
+
+    /// Resume the exact descriptor-snapshot retention operation left by a
+    /// process interruption, if a durable owner journal is present.
+    pub(in crate::control_store) async fn recover_retention(
+        &self,
+    ) -> UseResult<Option<retention::ControlCapabilityDescriptorSnapshotRetentionResult>> {
+        retention::recover_retention(self).await
     }
 
     async fn acquire_mutation(&self) -> UseResult<SnapshotLock> {
@@ -464,6 +514,9 @@ async fn scan_records(
             .to_owned();
         match name.as_str() {
             SNAPSHOT_LOCK => validate_regular_file(&entry.path()).await?,
+            SNAPSHOT_RETENTION_JOURNAL => {
+                retention::validate_journal_file(&entry.path()).await?;
+            }
             SNAPSHOT_STAGING => validate_staging(&entry.path()).await?,
             _ if is_record_name(&name) => {
                 let digest = format!("sha256:{}", name.trim_end_matches(".json"));

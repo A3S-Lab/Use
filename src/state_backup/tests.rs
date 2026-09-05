@@ -155,6 +155,26 @@ async fn coordinated_backup_registers_and_verifies_capability_gateway_catalogs()
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.state_backup_nonterminal");
+    std::fs::remove_file(&journal).unwrap();
+
+    let descriptor_root = paths
+        .state_root()
+        .join("capability-gateway/descriptor-snapshots");
+    std::fs::create_dir_all(&descriptor_root).unwrap();
+    std::fs::write(
+        descriptor_root.join(".retention.journal"),
+        b"pending retention",
+    )
+    .unwrap();
+    let error = StateBackupManager::new(paths)
+        .backup(
+            temporary
+                .path()
+                .join("pending-descriptor-retention.a3s-use-state-backup"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_nonterminal");
 }
 
 #[tokio::test]
