@@ -26,6 +26,10 @@ mod descriptor_snapshot;
 mod index;
 mod lease;
 mod model;
+mod payload_restore;
+#[cfg(test)]
+#[path = "capability_plane/payload_restore_tests.rs"]
+mod payload_restore_tests;
 #[cfg(test)]
 mod tests;
 
@@ -54,6 +58,12 @@ pub(in crate::control_store) use descriptor_snapshot::{
 use index::ControlCapabilityIndexStore;
 use lease::{ControlGenerationFileLease, ControlGenerationLeaseStore};
 use model::ControlCapabilityIndexDocument;
+#[allow(unused_imports)]
+pub(in crate::control_store) use payload_restore::{
+    ControlCapabilityPayloadRestoreCoordinator, ControlCapabilityPayloadRestorePlan,
+    ControlCapabilityPayloadRestoreResult, CONTROL_CAPABILITY_PAYLOAD_RESTORE_PLAN_SCHEMA,
+    CONTROL_CAPABILITY_PAYLOAD_RESTORE_RESULT_SCHEMA,
+};
 
 const CATALOG_BINDING_ERROR: &str = "use.control.capability_catalog_binding_invalid";
 

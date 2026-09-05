@@ -190,9 +190,15 @@ with a no-clobber directory move. Durable candidate/marker evidence is
 replayable after interruption; a different live inventory, foreign staged
 plan, or pending retention journal is rejected. Descriptor snapshots now have
 the matching owner-native exact-set restore primitive; signed v2 replay still
-requires the current trust store and clock. Whole-installation Control
-coordination, cursor reopening, and lifecycle authority remain outside both
-payload stores.
+requires the current trust store and clock. `ControlCapabilityPayloadRestoreCoordinator`
+binds both owner plans to one canonical Capability-payload digest, acquires
+one installation-wide exclusive maintenance fence, preflights both source sets
+and clean targets, and activates catalog then descriptor snapshots in a fixed
+order. Each owner keeps its own durable no-clobber boundary, so a stop between
+owners is recovered by replaying the same plan and treating the already
+published owner as an exact no-op. This is recoverable ordered activation, not
+one cross-directory filesystem rename. Control cursor reopening, lease/retention
+policy, and lifecycle authority remain outside the payload owners.
 
 Absolute source or destination paths and creation time are absent. The payloads
 are the original files, however, and may contain configured paths, endpoints,

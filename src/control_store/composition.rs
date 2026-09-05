@@ -22,7 +22,10 @@ use super::dispatcher::{
     ControlEffectClock, ControlEffectDispatchRequest, ControlEffectDispatchResult,
     ControlEffectPorts, ControlEffectRuntime,
 };
-use super::effect_owner::capability_plane::ControlCapabilityPlaneEffectPort;
+use super::effect_owner::capability_plane::{
+    ControlCapabilityDescriptorSnapshotStore, ControlCapabilityPayloadRestoreCoordinator,
+    ControlCapabilityPlaneEffectPort,
+};
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_owner::runtime::{ControlRuntimeEffectPort, ControlRuntimeServiceReadinessPort};
 use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
@@ -78,6 +81,7 @@ pub(in crate::control_store) struct ControlStoreRuntimeComposition {
     store: ControlStore,
     plan_store: RuntimeSurfacePlanStore,
     catalog_store: CapabilityGatewayCatalogStore,
+    capability_payload_restore: ControlCapabilityPayloadRestoreCoordinator,
     artifact_store: ArtifactStore,
     effects: ControlEffectRuntime,
 }
@@ -90,6 +94,10 @@ impl std::fmt::Debug for ControlStoreRuntimeComposition {
             .field("state_root", &self.store.state_root)
             .field("runtime_plan_root", &self.plan_store.root())
             .field("catalog_root", &self.catalog_store.root())
+            .field(
+                "capability_payload_restore",
+                &self.capability_payload_restore,
+            )
             .finish_non_exhaustive()
     }
 }
@@ -112,6 +120,12 @@ impl ControlStoreRuntimeComposition {
             ));
         }
         let catalog_store = CapabilityGatewayCatalogStore::from_extension_paths(paths);
+        let descriptor_snapshot_store =
+            ControlCapabilityDescriptorSnapshotStore::from_extension_paths(paths);
+        let capability_payload_restore = ControlCapabilityPayloadRestoreCoordinator::new(
+            catalog_store.clone(),
+            descriptor_snapshot_store,
+        )?;
 
         let artifact_store = paths.artifact_store();
         let runtime_source = Arc::new(plan_store.clone());
@@ -152,6 +166,7 @@ impl ControlStoreRuntimeComposition {
             store,
             plan_store,
             catalog_store,
+            capability_payload_restore,
             artifact_store,
             effects,
         })
@@ -167,6 +182,15 @@ impl ControlStoreRuntimeComposition {
 
     pub(in crate::control_store) fn catalog_store(&self) -> &CapabilityGatewayCatalogStore {
         &self.catalog_store
+    }
+
+    /// Return the maintenance-fenced coordinator for the immutable Capability
+    /// catalog and descriptor-snapshot payload owners.
+    #[allow(dead_code)]
+    pub(in crate::control_store) fn capability_payload_restore(
+        &self,
+    ) -> &ControlCapabilityPayloadRestoreCoordinator {
+        &self.capability_payload_restore
     }
 
     pub(in crate::control_store) async fn initialize(&self) -> UseResult<ControlStoreMetadata> {

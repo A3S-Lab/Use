@@ -266,6 +266,41 @@ pub(super) async fn apply_clean_restore(
             "The confirmed descriptor snapshot restore plan digest differs from its payload.",
         ));
     }
+    ensure_directory_exists(&store.state_root).await?;
+    let _maintenance = StateMaintenanceLock::new(&store.state_root)
+        .acquire_exclusive()
+        .await?;
+    apply_clean_restore_under_maintenance(store, plan, snapshots, &plan_digest, verification).await
+}
+
+/// Apply a previously reviewed descriptor restore while the caller owns the
+/// installation-wide exclusive maintenance fence. The helper intentionally
+/// does not acquire a second state lock so multiple payload owners can share
+/// one preflight and publication fence.
+pub(super) async fn apply_clean_restore_under_maintenance(
+    store: &ControlCapabilityDescriptorSnapshotStore,
+    plan: &ControlCapabilityDescriptorSnapshotRestorePlan,
+    snapshots: &[ControlCapabilityDescriptorSnapshot],
+    plan_digest: &str,
+    verification: ControlCapabilityDescriptorSnapshotRestoreVerification<'_>,
+) -> UseResult<ControlCapabilityDescriptorSnapshotRestoreResult> {
+    store.validate_configuration()?;
+    plan.validate()?;
+    if !valid_digest(plan_digest) {
+        return Err(restore_invalid(
+            "The descriptor snapshot restore plan digest is invalid.",
+        ));
+    }
+    if plan.installation != store.installation {
+        return Err(restore_invalid(
+            "The descriptor snapshot restore plan belongs to another installation.",
+        ));
+    }
+    if plan.descriptor_digest()? != plan_digest {
+        return Err(restore_invalid(
+            "The descriptor snapshot restore plan digest differs from its payload.",
+        ));
+    }
     let prepared = prepare_snapshots(store, snapshots, Some(&verification))?;
     if prepared
         .iter()
@@ -278,35 +313,31 @@ pub(super) async fn apply_clean_restore(
     }
 
     ensure_directory_exists(&store.state_root).await?;
-    let _maintenance = StateMaintenanceLock::new(&store.state_root)
-        .acquire_exclusive()
-        .await?;
-    ensure_directory_exists(&store.state_root).await?;
     let parent = store.root.parent().ok_or_else(|| {
         restore_invalid("The descriptor snapshot restore target has no owned parent directory.")
     })?;
     ensure_owned_directory_chain(&store.state_root, parent).await?;
-    let staging = staging_directory(parent, &plan_digest)?;
+    let staging = staging_directory(parent, plan_digest)?;
     reject_foreign_staging(parent, &staging).await?;
 
     match inspect_live(store).await? {
         LiveSnapshotRoot::Absent => {}
         LiveSnapshotRoot::Owned(current) if current == plan.records => {
-            retire_completed_staging(store, &staging, plan, &plan_digest).await?;
-            return restore_result(plan, plan_digest, false);
+            retire_completed_staging(store, &staging, plan, plan_digest).await?;
+            return restore_result(plan, plan_digest.to_owned(), false);
         }
         LiveSnapshotRoot::Owned(_) => return Err(restore_target_not_empty()),
     }
     if plan.records.is_empty() {
         reject_unexpected_staging(&staging).await?;
-        return restore_result(plan, plan_digest, false);
+        return restore_result(plan, plan_digest.to_owned(), false);
     }
 
-    prepare_staging(store, &staging, &prepared, plan, &plan_digest).await?;
+    prepare_staging(store, &staging, &prepared, plan, plan_digest).await?;
     let candidate = staging.join(CANDIDATE_DIRECTORY);
     validate_candidate(store, &candidate, &plan.records).await?;
-    if !recover_activation_marker(&staging, plan, &plan_digest).await? {
-        create_activation_marker(&staging, plan, &plan_digest).await?;
+    if !recover_activation_marker(&staging, plan, plan_digest).await? {
+        create_activation_marker(&staging, plan, plan_digest).await?;
     }
     validate_candidate(store, &candidate, &plan.records).await?;
     if !matches!(inspect_live(store).await?, LiveSnapshotRoot::Absent) {
@@ -323,8 +354,81 @@ pub(super) async fn apply_clean_restore(
             "The activated descriptor snapshot inventory differs from its plan.",
         ));
     }
-    retire_staging(&staging, plan, &plan_digest).await?;
-    restore_result(plan, plan_digest, true)
+    retire_staging(&staging, plan, plan_digest).await?;
+    restore_result(plan, plan_digest.to_owned(), true)
+}
+
+/// Validate the reviewed descriptor source while an outer coordinator owns
+/// the installation-wide maintenance fence. Signed envelopes are reverified
+/// here, but no candidate or marker is written.
+pub(super) fn validate_clean_restore_source_under_maintenance(
+    store: &ControlCapabilityDescriptorSnapshotStore,
+    plan: &ControlCapabilityDescriptorSnapshotRestorePlan,
+    snapshots: &[ControlCapabilityDescriptorSnapshot],
+    plan_digest: &str,
+    verification: &ControlCapabilityDescriptorSnapshotRestoreVerification<'_>,
+) -> UseResult<()> {
+    store.validate_configuration()?;
+    plan.validate()?;
+    if !valid_digest(plan_digest) || plan.descriptor_digest()? != plan_digest {
+        return Err(restore_invalid(
+            "The descriptor snapshot restore plan digest differs from its payload.",
+        ));
+    }
+    if plan.installation != store.installation {
+        return Err(restore_invalid(
+            "The descriptor snapshot restore plan belongs to another installation.",
+        ));
+    }
+    let prepared = prepare_snapshots(store, snapshots, Some(verification))?;
+    if prepared
+        .iter()
+        .map(|snapshot| &snapshot.entry)
+        .ne(plan.records.iter())
+    {
+        return Err(restore_invalid(
+            "The supplied descriptor snapshot set differs from the reviewed plan.",
+        ));
+    }
+    Ok(())
+}
+
+/// Validate the descriptor owner target without writing payload bytes. This
+/// is the coordinator's all-owner preflight step: any known conflict is
+/// rejected before the first owner publishes.
+pub(super) async fn ensure_clean_restore_target_under_maintenance(
+    store: &ControlCapabilityDescriptorSnapshotStore,
+    plan: &ControlCapabilityDescriptorSnapshotRestorePlan,
+    plan_digest: &str,
+) -> UseResult<()> {
+    store.validate_configuration()?;
+    plan.validate()?;
+    if !valid_digest(plan_digest) || plan.descriptor_digest()? != plan_digest {
+        return Err(restore_invalid(
+            "The descriptor snapshot restore plan digest differs from its payload.",
+        ));
+    }
+    if plan.installation != store.installation {
+        return Err(restore_invalid(
+            "The descriptor snapshot restore plan belongs to another installation.",
+        ));
+    }
+    ensure_directory_exists(&store.state_root).await?;
+    let parent = store.root.parent().ok_or_else(|| {
+        restore_invalid("The descriptor snapshot restore target has no owned parent directory.")
+    })?;
+    ensure_owned_directory_chain(&store.state_root, parent).await?;
+    let staging = staging_directory(parent, plan_digest)?;
+    reject_foreign_staging(parent, &staging).await?;
+    match inspect_live(store).await? {
+        LiveSnapshotRoot::Absent => {}
+        LiveSnapshotRoot::Owned(current) if current == plan.records => {}
+        LiveSnapshotRoot::Owned(_) => return Err(restore_target_not_empty()),
+    }
+    if plan.records.is_empty() {
+        reject_unexpected_staging(&staging).await?;
+    }
+    Ok(())
 }
 
 #[derive(Debug)]

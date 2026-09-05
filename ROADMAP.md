@@ -657,7 +657,10 @@ accepted calls release it. Immutable publication is no-follow, no-replace, and
 crash-replayable. The Index and lease files remain derived operational state;
 the legacy coordinated inventory now registers and verifies the catalog and
 descriptor-snapshot payloads, while production owner-native restore/retention
-still remains open. A real
+still remains open. The owner-native restore boundary now also has a
+`ControlCapabilityPayloadRestoreCoordinator` that binds both plans under one
+exclusive fence, preflights both targets, and replays fixed-order activation.
+A real
 composition test joins Knowledge, Skill, catalog/Index publication, exact
 payload admission, stale admission, and same-key drain retry. The
 inactive ADR-003 step-3 qualification now also includes a committed-authority
@@ -1236,6 +1239,17 @@ without clobbering an existing owner. Durable candidate/marker evidence is
 replayable after interruption, while foreign staged plans and retention
 journals fail closed. The remaining gate is coordinated Control reopening and
 production Registry/TUF-to-owner authority, not another local payload writer.
+
+Implementation note (2026-09-06): the two immutable Capability owners now have
+one `ControlCapabilityPayloadRestoreCoordinator`. Its canonical plan binds the
+catalog and descriptor child digests, validates both source sets (including
+signed trust re-verification) and both clean targets before the first payload
+publication,
+and holds one installation-wide exclusive maintenance fence through fixed
+catalog-then-descriptor activation. A stop between owner boundaries is
+recoverable by replaying the same plan; the coordinator intentionally makes no
+cross-directory atomicity claim. Control cursor reopening, lease drain,
+retention activation, and Registry/TUF authority binding remain open.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
