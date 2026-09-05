@@ -429,7 +429,7 @@ fn read_published_capability_from(
         ));
     }
 
-    let mut receipt = None;
+    let mut publication = None;
     for effect in read_effects_from(connection, installation, &generation.operation_id)? {
         if !matches!(effect.intent.owner, ControlEffectOwner::CapabilityIndex) {
             continue;
@@ -458,23 +458,29 @@ fn read_published_capability_from(
         application.validate_for(&effect.intent).map_err(|_| {
             corruption_error("Published Capability Index application evidence is invalid.")
         })?;
-        let ControlAppliedEffectEvidence::CapabilityIndex { receipt_digest, .. } =
-            &application.evidence
+        let ControlAppliedEffectEvidence::CapabilityIndex {
+            catalog,
+            receipt_digest,
+            ..
+        } = &application.evidence
         else {
             return Err(corruption_error(
                 "A published Capability Index effect has another owner's evidence.",
             ));
         };
-        if receipt.replace(receipt_digest.clone()).is_some() {
+        if publication
+            .replace((receipt_digest.clone(), catalog.clone()))
+            .is_some()
+        {
             return Err(corruption_error(
                 "A published Control capability has more than one Index receipt.",
             ));
         }
     }
-    let receipt = receipt.ok_or_else(|| {
+    let (receipt, catalog) = publication.ok_or_else(|| {
         corruption_error("The published Control capability has no applied Index receipt.")
     })?;
-    ControlPublishedCapabilityCursor::from_generation(&generation, receipt)
+    ControlPublishedCapabilityCursor::from_generation(&generation, receipt, catalog)
         .map(Some)
         .map_err(|_| corruption_error("The published Control capability cursor is invalid."))
 }

@@ -1,6 +1,6 @@
 use a3s_use_core::{
-    InstallationId, InstallationKind, PluginOperationAction, PluginSurfaceKind, PluginSurfaceRef,
-    UseResult,
+    CapabilityGatewayCatalog, InstallationId, InstallationKind, PluginOperationAction,
+    PluginSurfaceKind, PluginSurfaceRef, UseResult,
 };
 use async_trait::async_trait;
 use semver::{Version, VersionReq};
@@ -8,7 +8,7 @@ use semver::{Version, VersionReq};
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
 use super::model::{
-    input_error, valid_error_code, valid_machine_id, valid_sha256,
+    input_error, valid_error_code, valid_machine_id, valid_sha256, ControlCapabilityCatalogBinding,
     ControlCapabilityEffectAuthority, ControlEffectIntent, ControlEffectKind, ControlEffectOwner,
     ControlEffectSubject, ControlPackageEffectAuthority, ControlRuntimeBindingObservation,
     ControlRuntimeEffectAuthority,
@@ -356,6 +356,43 @@ pub(in crate::control_store) struct ControlReceiptApplication {
     pub(in crate::control_store) receipt_digest: String,
 }
 
+/// Evidence produced by the concrete Capability Plane after both immutable
+/// payloads have reached durable storage.
+///
+/// The dispatcher records this value in the later observation transaction;
+/// that transaction is the only point at which the catalog binding becomes a
+/// published Control cursor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::control_store) struct ControlCapabilityCutoverApplication {
+    pub(in crate::control_store) receipt_digest: String,
+    pub(in crate::control_store) catalog: ControlCapabilityCatalogBinding,
+}
+
+impl ControlCapabilityCutoverApplication {
+    pub(in crate::control_store) fn new(
+        request: &ControlCapabilityCutoverRequest,
+        receipt_digest: impl Into<String>,
+        catalog: ControlCapabilityCatalogBinding,
+    ) -> UseResult<Self> {
+        let application = Self {
+            receipt_digest: receipt_digest.into(),
+            catalog,
+        };
+        if !valid_sha256(&application.receipt_digest)
+            || application.catalog.validate().is_err()
+            || !application.catalog.matches_generation(
+                &request.identity.installation,
+                request.capability_generation,
+            )
+        {
+            return Err(input_error(
+                "Capability cutover evidence does not bind its committed generation.",
+            ));
+        }
+        Ok(application)
+    }
+}
+
 impl ControlReceiptApplication {
     pub(in crate::control_store) fn new(receipt_digest: impl Into<String>) -> UseResult<Self> {
         let application = Self {
@@ -445,7 +482,28 @@ pub(in crate::control_store) trait ControlCapabilityIndexEffectPort:
     async fn cutover(
         &self,
         request: &ControlCapabilityCutoverRequest,
-    ) -> ControlEffectPortOutcome<ControlReceiptApplication>;
+    ) -> ControlEffectPortOutcome<ControlCapabilityCutoverApplication>;
+}
+
+/// Host-owned, side-effect-free and deterministic projection of one committed
+/// Control generation into its Agent-facing catalog.
+///
+/// Implementations must derive the result only from the supplied committed
+/// authority and immutable signed package/provider evidence. For a given
+/// authority and immutable evidence, retries with the same effect identity
+/// must produce byte-identical catalog data; nondeterministic host state must
+/// first be committed into that authority. `Applied` means projection
+/// completed; `Deferred` and `Rejected` must prove that no payload mutation
+/// occurred. The concrete Capability Plane owns durable publication after
+/// this port returns.
+#[async_trait]
+pub(in crate::control_store) trait ControlCapabilityCatalogProjectionPort:
+    Send + Sync
+{
+    async fn project(
+        &self,
+        authority: &ControlCapabilityEffectAuthority,
+    ) -> ControlEffectPortOutcome<CapabilityGatewayCatalog>;
 }
 
 #[async_trait]

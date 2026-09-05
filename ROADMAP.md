@@ -507,7 +507,7 @@ inventory prerequisite only. It neither activates the database nor completes
 an A2 checkbox.
 
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
-for a clean installation. Schema v10 binds one exact `InstallationId` and stores
+for a clean installation. Schema v11 binds one exact `InstallationId` and stores
 contiguous installation generations, canonical complete reviewed Plan
 envelopes, versioned authorization evidence, exact snapshots, full Workspace
 Grants, provider bindings, capability candidates, lifecycle checkpoints, and an
@@ -644,16 +644,20 @@ lifecycle publication: it is idempotent, revalidates prepared bytes, creates no
 installation receipt, and requires its reference-admission guard to span the
 separate authority commit. The third real post-commit adapter now implements
 Capability Index and invocation leases as one Capability Plane boundary. It
-materializes a canonical content-addressed Index document from the committed
-candidate and exact terminal surface evidence, while Control's applied cutover
-observation remains the only mutable publication cursor. Admission reads that
-cursor before and after acquiring shared locks for every exact package
-lifecycle incarnation; drain requires an unpublished prior incarnation and an
-exclusive lock, safely deferring until accepted calls release it. Immutable
-publication is no-follow, no-replace, and crash-replayable. The Index and lease
-files are derived operational state excluded from backup; restore must rebuild
-the Index from verified Control evidence. A real composition test joins
-Knowledge, Skill, publication, stale admission, and same-key drain retry. The
+accepts a host-owned pure Agent-catalog projector only after validating the
+committed candidate and exact terminal surface evidence. It rejects projected
+descriptors outside enabled, prepared package incarnations, durably publishes
+the catalog, and materializes a canonical content-addressed Index document
+that binds the publication. Control's applied cutover observation advances the
+only mutable cursor with that catalog digest/generation/revision in one
+transaction. Admission reopens and rehashes the exact catalog before reading
+the cursor around shared locks for every package incarnation; drain requires
+an unpublished prior incarnation and an exclusive lock, safely deferring until
+accepted calls release it. Immutable publication is no-follow, no-replace, and
+crash-replayable. The Index and lease files remain derived operational state;
+the catalog still needs registered backup/restore ownership. A real
+composition test joins Knowledge, Skill, catalog/Index publication, exact
+payload admission, stale admission, and same-key drain retry. The
 inactive ADR-003 step-3 qualification now also includes a committed-authority
 Flow owner. It consumes a path-free verified source snapshot, durably publishes
 a no-clobber content-addressed source in its own workspace, and invokes only
@@ -895,7 +899,11 @@ between graph siblings before their effects enter one installation outbox.
   path-free, and held under the same generation lease as Tool calls.
 - [ ] Materialize one immutable Capability Index at lifecycle cutover and emit
   generation-change notifications. Remove fixed-interval full filesystem
-  rescans and repeated asset hashing from the normal watch path.
+  rescans and repeated asset hashing from the normal watch path. The inactive
+  Control kernel now durably publishes and transactionally binds the exact
+  catalog/Index identities, while the notification hub and watcher mechanisms
+  are independently qualified. Complete descriptor projection and production
+  host wiring still keep this exit gate open.
 - [ ] Add CLI/service wiring, fail-closed trusted confirmation for management
   apply, bounded authentication, authorization, rate limits, and secret-free
   diagnostics for both endpoints. Gateway HTTP bearer authentication,
@@ -1048,10 +1056,10 @@ publication, and supports exact generation/revision reads after restart.
 Malformed top-level state, linked entries, tampered records, and over-bound
 inventories fail closed; incomplete regular staging artifacts can be replayed
 under the same digest. The store deliberately has no mutable current pointer,
-so this closes payload durability only. The Control Store still needs a single
-transactional cutover binding for the catalog digest, and the host still needs
-session replacement, lease drain, and retention/GC before the A3 catalog gate
-can be marked complete.
+so payload durability alone does not select a live generation. The inactive
+Control composition now supplies the transactional binding described below;
+production activation and host coordination of session replacement, lease
+drain, and retention remain required before the A3 catalog gate can close.
 
 Implementation note (2026-09-05): `CapabilityGatewaySessionFactory` now gives
 an embedding host a bounded live-endpoint cutover seam. It serializes
@@ -1061,8 +1069,9 @@ routes each MCP operation through a current-server snapshot. A replacement is
 made visible before the shared standard list-change fan-out; old in-flight
 operations retain their prior immutable server and lease, while subsequent
 operations on the same endpoint observe the new catalog. This is an adapter
-mechanism, not the lifecycle authority: Control cursor binding, receipt-owned
-provider composition, lease retirement, and catalog retention remain open.
+mechanism, not the lifecycle authority: production Control activation,
+receipt-owned provider composition, lease retirement, and catalog-retention
+coordination remain open.
 
 Implementation note (2026-09-05): the session factory now also offers
 `from_published` and `replace_published`. These paths read the exact
@@ -1070,8 +1079,8 @@ installation/generation/revision/digest from `CapabilityGatewayCatalogStore`,
 re-project it for the server's completed consumer negotiation, and reject a
 missing, forged, tampered, or unpersisted catalog before the in-memory swap.
 The unverified compatibility method remains available for hosts with another
-persistence authority; Control cursor binding and payload lease retirement
-remain lifecycle responsibilities.
+persistence authority; selecting the Control-bound publication and retiring
+payload leases remain lifecycle responsibilities.
 
 Implementation note (2026-09-05): catalog payload retention now has an
 explicit plan/apply protocol. The lifecycle owner supplies the protected
@@ -1089,7 +1098,22 @@ immutable inventory after restart, blocks conflicting publication/planning,
 and exposes `CapabilityGatewayCatalogStore::recover_retention` so a host can
 resume from the journal's stored reviewed plan. This hardens the payload-owner
 recovery boundary; it does not choose the protected generations or close the
-Control cursor/session-lease lifecycle gate.
+session-lease lifecycle gate.
+
+Implementation note (2026-09-05): inactive Control Store schema v11 now binds
+the immutable Agent-facing catalog to the actual capability publication
+transaction. A host-owned projection port receives only the committed
+candidate generation and terminal surface observations. The concrete
+Capability Plane rejects descriptors outside enabled, prepared package
+incarnations, durably publishes the catalog and canonical Capability Index,
+and returns their identities as one typed cutover application. Recording that
+applied observation stores the catalog digest/generation/revision and advances
+the published cursor in the same SQLite transaction. Admission reopens and
+rehashes the exact payload before taking package-generation leases; missing or
+tampered bytes fail closed. This closes the inactive-kernel cursor-binding
+mechanism, not production activation, complete receipt/Runtime/Grant-backed
+descriptor projection, payload backup/restore, or session drain/retention
+coordination.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning

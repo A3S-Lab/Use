@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use tokio::sync::Notify;
 
 use super::aggregate_tests::fixtures::{
-    control_installation, digest, initialized_store, operation, transition,
+    catalog_binding, control_installation, digest, initialized_store, operation, transition,
 };
 use super::dispatcher::{
     ControlEffectClock, ControlEffectDispatchRequest, ControlEffectDispatchResult,
@@ -18,12 +18,13 @@ use super::dispatcher::{
     SystemControlEffectClock,
 };
 use super::effect_port::{
-    ControlCapabilityCutoverRequest, ControlCapabilityIndexEffectPort, ControlEffectFailure,
-    ControlEffectPortOutcome, ControlFlowEffectPort, ControlInvocationDrainRequest,
-    ControlInvocationLeaseEffectPort, ControlKnowledgeEffectPort, ControlReceiptApplication,
-    ControlRuntimeApplication, ControlRuntimeEffectPort, ControlRuntimeEffectRequest,
-    ControlSkillEffectPort, ControlSurfaceApplication, ControlSurfaceEffectAction,
-    ControlSurfaceEffectRequest, ControlUiEffectPort,
+    ControlCapabilityCutoverApplication, ControlCapabilityCutoverRequest,
+    ControlCapabilityIndexEffectPort, ControlEffectFailure, ControlEffectPortOutcome,
+    ControlFlowEffectPort, ControlInvocationDrainRequest, ControlInvocationLeaseEffectPort,
+    ControlKnowledgeEffectPort, ControlReceiptApplication, ControlRuntimeApplication,
+    ControlRuntimeEffectPort, ControlRuntimeEffectRequest, ControlSkillEffectPort,
+    ControlSurfaceApplication, ControlSurfaceEffectAction, ControlSurfaceEffectRequest,
+    ControlUiEffectPort,
 };
 use super::model::{
     ClaimedControlEffect, ControlCapabilityEffectAuthority, ControlCapabilityStatus,
@@ -130,13 +131,23 @@ impl ControlCapabilityIndexEffectPort for RecordingPorts {
     async fn cutover(
         &self,
         request: &ControlCapabilityCutoverRequest,
-    ) -> ControlEffectPortOutcome<ControlReceiptApplication> {
+    ) -> ControlEffectPortOutcome<ControlCapabilityCutoverApplication> {
         self.before_call(
             "capability-index",
             request.authority.generation.snapshot.generation,
         )
         .await;
-        self.outcome(ControlReceiptApplication::new(digest('1')).unwrap())
+        self.outcome(
+            ControlCapabilityCutoverApplication::new(
+                request,
+                digest('1'),
+                catalog_binding(
+                    &request.identity.installation,
+                    request.capability_generation,
+                ),
+            )
+            .unwrap(),
+        )
     }
 }
 

@@ -252,16 +252,17 @@ Embedding hosts implement `CognitivePackageLifecycleFactory` to supply their exa
 
 [ADR-003](https://github.com/A3S-Lab/Use/blob/main/docs/adr-003-control-store-transaction-boundary.md) freezes the next Control Store boundary: one per-installation mutable authority, no JSON/SQLite dual writes, and an outbox around provider effects that cannot join the local transaction.
 
-The inactive schema-v10 kernel now derives that complete outbox inventory from
+The inactive schema-v11 kernel now derives that complete outbox inventory from
 the reviewed Plan and committed generation. It prepares dependency surfaces
 before dependants, cuts over once, drains accepted calls, and retires surfaces
 in reverse order through typed owners. Tool and MCP effects bind the exact
 reviewed Runtime selection; package state, Grants, lifecycle identity, and
 provider selection stay inside the aggregate rather than becoming duplicate
-effects. Applied outcomes persist canonical owner-specific Capability Index,
-lease, Runtime Task/opaque-Service readiness, Flow artifact, Knowledge
-projection, or Skill/UI content evidence. The applied cutover observation
-atomically advances publication before drain; a later required failure remains
+effects. Applied outcomes persist canonical owner-specific Capability Index plus
+its immutable Agent-catalog binding, lease, Runtime Task/opaque-Service
+readiness, Flow artifact, Knowledge projection, or Skill/UI content evidence.
+The applied cutover observation atomically advances publication and the catalog
+identity before drain; a later required failure remains
 pending for same-key reconciliation instead of rolling back visible state.
 The inactive one-effect dispatcher now retains one installation-wide shared
 maintenance fence from claim through durable observation, commits a claim,
@@ -296,16 +297,19 @@ claim through the dispatcher and back into durable Control evidence. Artifact
 admission is separately idempotent and creates no lifecycle authority; its
 reference guard spans the distinct Control commit. A third concrete Capability
 Plane adapter now implements Capability Index and invocation leases together.
-It writes one canonical content-addressed Index document from the committed
-candidate and exact terminal surface evidence, without a second SQLite store or
-mutable current file; Control's applied cutover observation is the sole
-publication cursor. Admission reads that cursor before and after taking shared
-locks for every exact package lifecycle incarnation. Drain requires the old
-incarnation to be unpublished and takes its exclusive lock, safely deferring
-while an accepted call is active. No-follow, no-replace publication and exact
-staging replay protect the immutable Index. Index and lease files are derived
-operational state excluded from backup; restore must rebuild the Index from
-verified Control evidence. A real composition test covers Knowledge, Skill,
+It asks a host-owned pure projector for the Agent catalog, rejects descriptors
+outside enabled and prepared package incarnations, publishes that catalog, and
+writes one canonical content-addressed Index document containing its immutable
+identity. There is no second SQLite store or mutable current file; Control's
+applied cutover observation is the sole publication cursor and binds the
+catalog identity in the same transaction. Admission reopens that exact catalog
+before reading the cursor and taking shared locks for every exact package
+lifecycle incarnation. Drain requires the old incarnation to be unpublished
+and takes its exclusive lock, safely deferring while an accepted call is
+active. No-follow, no-replace publication and exact staging replay protect both
+immutable payloads. Index and lease files are derived operational state
+excluded from backup; the catalog still needs registered backup/restore
+ownership. A real composition test covers Knowledge, Skill, catalog/Index
 cutover, stale admission, and same-key drain retry. The inactive Runtime owner
 is now qualified for release-backed Tool Task/Service and Streamable HTTP MCP.
 It consumes a path-free verified release payload on first prepare, binds the

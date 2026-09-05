@@ -2,7 +2,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::control_store::aggregate_tests::fixtures::{
-    claim, control_installation, initialized_store, observation, operation, transition,
+    catalog_binding, claim, control_installation, initialized_store, observation, operation,
+    transition,
 };
 use crate::control_store::effect_port::{
     ControlCapabilityCutoverRequest, ControlEffectRequestIdentity,
@@ -183,9 +184,13 @@ async fn candidate_index_fixture() -> CandidateIndexFixture {
         capability_generation: *capability_generation,
         descriptor_digest: descriptor_digest.clone(),
     };
+    let catalog = catalog_binding(
+        &request.identity.installation,
+        request.capability_generation,
+    );
     CandidateIndexFixture {
         state_root: store.state_root.clone(),
-        document: ControlCapabilityIndexDocument::from_request(&request).unwrap(),
+        document: ControlCapabilityIndexDocument::from_request(&request, catalog).unwrap(),
         _temporary: temporary,
     }
 }

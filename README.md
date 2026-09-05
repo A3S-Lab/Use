@@ -98,7 +98,9 @@ The implementation and fixtures exercise the product model directly:
   persists a bounded recovery journal so interrupted pruning can resume via
   `recover_retention()` without inventing lifecycle authority. The Gateway
   session factory's `from_published` and `replace_published` paths verify this
-  exact durable publication before exposing a live endpoint.
+  exact durable publication before exposing a live endpoint. The inactive
+  Control composition additionally binds the publication identity to the
+  applied capability cutover and published cursor in one transaction.
 - [`RegistryNetworkPolicy`](crates/extension/src/remote/network.rs) lets an
   embedding host select the strict public-Internet boundary for untrusted
   Registry endpoints. That mode requires HTTPS, pins checked DNS answers,
@@ -1401,7 +1403,7 @@ The machine-checked
 current state leaf, external owner, operational file, and consumer that must
 switch together; it explicitly keeps production activation inactive and
 forbids dual writes or legacy fallback reads.
-The private A2 Control Store kernel now qualifies its clean-state schema-v10
+The private A2 Control Store kernel now qualifies its clean-state schema-v11
 aggregate. Each operation stores the canonical complete reviewed Plan envelope
 and versioned authorization evidence, then derives and revalidates its operation
 ID, Plan and authorization digests, action, root package, installation scope,
@@ -1445,7 +1447,8 @@ effects. Canonical payload bytes, their domain-separated idempotency key,
 digest, and relational projection commit together and are verified again after
 restart and by offline export verification. Applied outcomes persist canonical,
 owner-specific evidence instead of an arbitrary success digest: Capability
-Index and invocation-lease receipts, exact Runtime selection plus portable
+Index receipts now bind the exact immutable Agent-facing catalog
+digest/generation/revision, invocation-lease receipts, exact Runtime selection plus portable
 Task or opaque `gateway:` Service binding/readiness evidence, Flow artifact
 digests, Knowledge projection digests, and immutable Skill/UI content digests.
 Every application rebinds the exact idempotency key and intent. Deferred,
@@ -1453,7 +1456,8 @@ rejected, and unknown outcomes retain diagnostic evidence only. Deferred is
 reserved for an owner that proves it accepted no effect; it persists a bounded
 not-before time for automatic retry with the same key. Recording an applied
 capability-cutover observation retires the prior publication, publishes the
-exact candidate, and advances the capability cursor in that same transaction,
+exact candidate, and advances the capability cursor with that catalog binding
+in the same transaction,
 before drain, retirement, or operation completion. A required post-cutover
 failure therefore remains reconciliation-pending and must reuse its original
 identity; it cannot roll back an already visible generation. Completion cannot
@@ -1516,20 +1520,24 @@ observation. Artifact admission is separately idempotent and revalidates the
 prepared source while creating no installation lifecycle receipt; callers must
 retain its global reference-admission guard through the separate authority
 commit. A third concrete Capability Plane adapter now owns both Capability
-Index publication and invocation drain. It materializes one canonical,
-content-addressed Index document from the committed candidate and exact
-terminal surface observations, without adding another SQLite database or
-mutable `current` file. The applied cutover observation remains the sole
-publication transaction in Control Store. Invocation admission verifies that
-document, reads the Control publication before and after acquiring shared
+Index publication and invocation drain. After validating committed authority,
+it calls a host-owned pure projector, rejects descriptors outside enabled and
+successfully prepared package incarnations, durably publishes the exact Agent
+catalog, and materializes one canonical content-addressed Index document that
+binds that publication. No second SQLite database or mutable `current` file is
+created. The applied cutover observation remains the sole publication
+transaction and advances the Control cursor with the catalog
+digest/generation/revision. Invocation admission reopens and rehashes those
+exact bytes, verifies the Index, reads the Control publication around shared
 locks for every exact package lifecycle incarnation, and returns stale if a
 cutover raced. Drain first proves that the old incarnation is no longer
 published, then safely defers while any accepted call retains its shared lock;
-the same effect key applies after release. Index publication is no-replace,
-no-follow, crash-replayable, and path-free. The Index is derived operational
-state excluded from backup and must be rebuilt from restored Control evidence;
-lease files are excluded as well. A real composition test joins Knowledge,
-Skill, Capability Index, Control publication, stale admission, and drain.
+the same effect key applies after release. Catalog and Index publication are
+no-replace, no-follow, crash-replayable, and path-free. The Index is derived
+operational state excluded from backup; the catalog still requires registered
+backup/restore ownership, while lease files remain excluded. A real
+composition test joins Knowledge, Skill, catalog/Index publication, exact
+payload admission, stale admission, and drain.
 The inactive composition now accepts the canonical cognitive-package Plan
 envelope, authorization evidence, and optional planned Grant transition at one
 lifecycle admission seam. It derives the prior installation and capability
@@ -1865,10 +1873,18 @@ canonical catalog bytes, stores records under a bounded SHA-256 content-
 addressed layout, uses no-follow file checks plus deterministic staging and
 hard-link publication, and exposes exact `get`, `get_exact`, and bounded
 inventory reads. The store has no mutable “current” pointer by design: a
-Control/lifecycle cutover must still bind the returned digest to its committed
-generation and retain the corresponding session lease. Durable payload storage
-therefore closes a storage gap, but does not by itself complete live host
-composition, catalog/session replacement, or garbage-collection policy.
+Control/lifecycle cutover must bind the returned digest to its committed
+generation and retain the corresponding session lease. The inactive Control
+composition now qualifies that hand-off: a host-owned, side-effect-free
+projector receives only committed capability authority; the concrete owner
+validates every projected descriptor against enabled package incarnations and
+terminal surface evidence, durably publishes the catalog and Capability Index,
+then returns both identities as one typed application. Recording that applied
+observation atomically advances the published Control cursor with the catalog
+digest, generation, and revision. Live admission reopens those exact bytes
+before taking package-generation leases. Production Control activation,
+complete host descriptor projection, backup/restore ownership, and retirement
+coordination remain separate gates.
 
 The embedding boundary now also includes `CapabilityGatewaySessionFactory`:
 after durable publication, a host can replace immutable Gateway generations in
@@ -1876,8 +1892,9 @@ order, retain one standard MCP notification hub, and keep old in-flight
 operations on their exact leases while later requests on the same endpoint
 observe the new catalog. Its `from_published` and `replace_published` paths
 re-read the exact store publication and verify the negotiated consumer
-projection before a source becomes visible. Lifecycle Control binding,
-provider composition, retirement, and retention remain host responsibilities.
+projection before a source becomes visible. Production Control activation,
+provider composition, retirement, and retention coordination remain host
+responsibilities.
 
 Catalog payload cleanup is now an explicit plan/apply operation as well:
 `CapabilityGatewayCatalogStore` requires a lifecycle-supplied protected digest
@@ -1892,7 +1909,7 @@ protected set.
 | MHS research-preview adapter profile | The A3S Use boundary, least-authority ceiling, exact managed-MCP publication gate, dependency graph, and no-implicit-write-retry rule are documented and contract-tested. This is not an MHS implementation or protocol-conformance claim |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, digest-only apply, exact operation observation/watch, and trusted pre-admission cancellation over one Host Manager. Its standard MCP adapter exposes the thirteen-tool v5 inventory and requires injected trusted confirmation evidence for mutation or cancellation. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all thirteen operations, exact typed results, explicit digest-bound `--yes` apply/cancellation, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, operation status, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
-| Capability Gateway contract and embedding MCP adapter | Implemented and contract-tested: immutable path-free descriptor/catalog contracts, opaque invocation/artifact/endpoint/resource references, exact snapshot-lease and publication/lifecycle-generation binding, typed generic-MCP/A3S consumer-profile negotiation with canonical digests and no-silent-downgrade semantics, negotiated `requiredExtensions` catalog projection before route compilation, and a standard MCP `CapabilityGatewayMcpServer` that routes only catalog-authorized Tools, Resources, and Prompts through an injected `CapabilityGatewayInvocationProvider`. Tool, resource, and prompt discovery is deterministic, bounded, and cursor-paginated; resource reads require the exact opaque URI; prompt arguments are closed against reviewed declarations; provider output is bounded, path-free, and catalog-linked. The host can inject a bounded `CapabilityGatewayDiscoveryPolicy` that freezes principal-scoped visibility across list and direct-access methods while retaining provider authorization as a separate gate. The host can expose Streamable HTTP at `/mcp` with bearer authentication, optional exact Origin policy, duplicate-header rejection, bounded in-flight/rolling-window admission, sanitized HTTP errors, explicit pre-operation authorization hooks, and a typed host-authenticated transport/principal context. `CapabilityGatewayInvocationResolver` and `CapabilityGatewayResolvedProvider` provide a single-resolution, lease-scoped host path for opaque references; the returned handle must retain the exact package-generation lease through every operation. `CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options` composes the verified catalog, same-cursor resolver, snapshot lease, negotiation, and admission policy as one fail-closed construction boundary. `CapabilityGatewayNotificationHub` bridges immutable publication changes to standard MCP list-change notifications, and `CapabilityGatewayCatalogStore` provides bounded, canonical, content-addressed, restart-safe payload ownership with exact reads and no mutable current pointer. An independent Rust client discovery/invocation check covers the path-free boundary. Production receipt/Runtime/Grant composition, lifecycle cutover binding, live catalog/session replacement, retention/GC, CLI wiring, TLS termination, and the TypeScript/Python client/recovery matrix remain open |
+| Capability Gateway contract and embedding MCP adapter | Implemented and contract-tested: immutable path-free descriptor/catalog contracts, opaque invocation/artifact/endpoint/resource references, exact snapshot-lease and publication/lifecycle-generation binding, typed generic-MCP/A3S consumer-profile negotiation with canonical digests and no-silent-downgrade semantics, negotiated `requiredExtensions` catalog projection before route compilation, and a standard MCP `CapabilityGatewayMcpServer` that routes only catalog-authorized Tools, Resources, and Prompts through an injected `CapabilityGatewayInvocationProvider`. Tool, resource, and prompt discovery is deterministic, bounded, and cursor-paginated; resource reads require the exact opaque URI; prompt arguments are closed against reviewed declarations; provider output is bounded, path-free, and catalog-linked. The host can inject a bounded `CapabilityGatewayDiscoveryPolicy` that freezes principal-scoped visibility across list and direct-access methods while retaining provider authorization as a separate gate. The host can expose Streamable HTTP at `/mcp` with bearer authentication, optional exact Origin policy, duplicate-header rejection, bounded in-flight/rolling-window admission, sanitized HTTP errors, explicit pre-operation authorization hooks, and a typed host-authenticated transport/principal context. `CapabilityGatewayInvocationResolver` and `CapabilityGatewayResolvedProvider` provide a single-resolution, lease-scoped host path for opaque references; the returned handle must retain the exact package-generation lease through every operation. `CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options` composes the verified catalog, same-cursor resolver, snapshot lease, negotiation, and admission policy as one fail-closed construction boundary. `CapabilityGatewayNotificationHub` bridges immutable publication changes to standard MCP list-change notifications, and `CapabilityGatewayCatalogStore` provides bounded, canonical, content-addressed, restart-safe payload ownership with exact reads and no mutable current pointer. The inactive Control kernel now atomically binds that payload identity to its applied capability cutover and exact published cursor. An independent Rust client discovery/invocation check covers the path-free boundary. Production Control activation, complete receipt/Runtime/Grant-backed descriptor projection, host coordination of session notification/drain/retention, CLI wiring, TLS termination, and the TypeScript/Python client/recovery matrix remain open |
 | Registry target observations, explicit offline install/upgrade, bounded source working set, resumable downloads, usage, and confirmed source cleanup | Implemented with interruption, range, tamper, and zero-network tests; cleanup never claims global blob reclamation |
 | Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive reference boundary prevents maintenance or whole-installation restore from racing durable reference publication. Physical, Registry-reference, global-reference, and joined-reachability v1 evidence covers canonical content, staging, every durable owner, expectation mismatches, and checked storage usage. Optional canonical hard quota, full digest audit, exact-plan logical quarantine, and verified zero-reference rehydration remain separate authorities. Confirmed GC now accepts only a bounded explicit Blob/expanded-package digest allowlist, repeats the complete zero-reference proof, binds physical and lifecycle evidence plus predecessor completion into one canonical plan, and persists a global fail-closed fence before same-shard atomic retirement and bounded tombstone deletion. Terminal replay is read-only and cannot delete a later recreated object. Source prune, scoped uninstall, audit, quarantine, rehydration, quota pressure, and unreachability never independently authorize global deletion |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |

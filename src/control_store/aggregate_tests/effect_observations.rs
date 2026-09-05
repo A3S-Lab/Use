@@ -40,6 +40,17 @@ fn applied_effect_evidence_is_typed_and_exactly_bound_to_its_intent() {
         "use.control_store.input_invalid"
     );
 
+    let mut wrong_catalog = application(capability, '8');
+    let ControlAppliedEffectEvidence::CapabilityIndex { catalog, .. } = &mut wrong_catalog.evidence
+    else {
+        panic!("the cutover must produce Capability Index evidence");
+    };
+    catalog.generation += 1;
+    assert_eq!(
+        wrong_catalog.validate_for(capability).unwrap_err().code,
+        "use.control_store.input_invalid"
+    );
+
     let knowledge = projected
         .effects
         .iter()

@@ -1,6 +1,7 @@
 use std::fmt;
+use std::sync::Arc;
 
-use a3s_use_core::PluginOperationAction;
+use a3s_use_core::{CapabilityGatewayCatalog, PluginOperationAction, UseError, UseResult};
 use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
 use async_trait::async_trait;
 use olpc_cjson::CanonicalFormatter;
@@ -8,12 +9,14 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use super::super::effect_port::{
+    ControlCapabilityCatalogProjectionPort, ControlCapabilityCutoverApplication,
     ControlCapabilityCutoverRequest, ControlCapabilityIndexEffectPort, ControlEffectFailure,
     ControlEffectPortOutcome, ControlInvocationDrainRequest, ControlInvocationLeaseEffectPort,
     ControlReceiptApplication,
 };
-use super::super::model::ControlPublishedCapabilityCursor;
+use super::super::model::{ControlCapabilityCatalogBinding, ControlPublishedCapabilityCursor};
 use super::super::ControlStore;
+use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
 mod index;
@@ -26,21 +29,39 @@ use index::ControlCapabilityIndexStore;
 use lease::{ControlGenerationFileLease, ControlGenerationLeaseStore};
 use model::ControlCapabilityIndexDocument;
 
-#[derive(Debug, Clone)]
+const CATALOG_BINDING_ERROR: &str = "use.control.capability_catalog_binding_invalid";
+
+#[derive(Clone)]
 pub(in crate::control_store) struct ControlCapabilityPlaneEffectPort {
     control: ControlStore,
     index: ControlCapabilityIndexStore,
     leases: ControlGenerationLeaseStore,
+    catalogs: CapabilityGatewayCatalogStore,
+    catalog_projection: Arc<dyn ControlCapabilityCatalogProjectionPort>,
 }
 
 impl ControlCapabilityPlaneEffectPort {
-    pub(in crate::control_store) fn new(control: ControlStore) -> Self {
+    pub(in crate::control_store) fn new(
+        control: ControlStore,
+        catalogs: CapabilityGatewayCatalogStore,
+        catalog_projection: Arc<dyn ControlCapabilityCatalogProjectionPort>,
+    ) -> UseResult<Self> {
+        if catalogs.installation() != &control.installation
+            || catalogs.state_root() != control.state_root
+        {
+            return Err(UseError::new(
+                CATALOG_BINDING_ERROR,
+                "The Control Store and catalog payload owner do not share one installation root.",
+            ));
+        }
         let state_root = control.state_root.clone();
-        Self {
+        Ok(Self {
             control,
             index: ControlCapabilityIndexStore::new(&state_root),
             leases: ControlGenerationLeaseStore::new(state_root),
-        }
+            catalogs,
+            catalog_projection,
+        })
     }
 
     /// Acquire one exact published capability generation for the complete
@@ -74,6 +95,18 @@ impl ControlCapabilityPlaneEffectPort {
                 "The published Capability Index differs from its Control cursor.",
             ));
         }
+        let catalog = self
+            .catalogs
+            .get_exact(
+                &expected.catalog.digest,
+                expected.catalog.generation,
+                &expected.catalog.revision,
+            )
+            .await?
+            .ok_or_else(catalog_payload_conflict)?;
+        if !document.matches_catalog(&catalog)? {
+            return Err(catalog_payload_conflict());
+        }
         let Some(generation_leases) = self.leases.try_acquire_shared(&expected.packages).await?
         else {
             return Ok(None);
@@ -85,6 +118,7 @@ impl ControlCapabilityPlaneEffectPort {
         Ok(Some(ControlCapabilitySnapshotLease {
             cursor: expected.clone(),
             document,
+            catalog,
             _generation_leases: generation_leases,
             _maintenance: maintenance,
         }))
@@ -93,18 +127,74 @@ impl ControlCapabilityPlaneEffectPort {
     async fn cutover(
         &self,
         request: &ControlCapabilityCutoverRequest,
-    ) -> ControlEffectPortOutcome<ControlReceiptApplication> {
-        let document = match ControlCapabilityIndexDocument::from_request(request) {
-            Ok(document) => document,
-            Err(error) => return rejected(request.identity.idempotency_key.as_str(), &error.code),
-        };
-        let receipt_digest = match document.receipt_digest() {
-            Ok(digest) => digest,
-            Err(error) => return rejected(request.identity.idempotency_key.as_str(), &error.code),
-        };
+    ) -> ControlEffectPortOutcome<ControlCapabilityCutoverApplication> {
+        if let Err(error) = ControlCapabilityIndexDocument::validate_request(request) {
+            return rejected(request.identity.idempotency_key.as_str(), &error.code);
+        }
         let current = match self.control.published_capability().await {
             Ok(current) => current,
             Err(error) => return deferred(request.identity.idempotency_key.as_str(), &error.code),
+        };
+        let generation_allowed = match current.as_ref() {
+            None => request.expected_capability_generation == 0,
+            Some(cursor) => {
+                cursor.capability_generation == request.expected_capability_generation
+                    || (cursor.capability_generation == request.capability_generation
+                        && cursor.descriptor_digest == request.descriptor_digest)
+            }
+        };
+        if !generation_allowed {
+            return rejected(
+                request.identity.idempotency_key.as_str(),
+                "use.control.capability_publication_conflict",
+            );
+        }
+
+        let catalog = match self.catalog_projection.project(&request.authority).await {
+            ControlEffectPortOutcome::Applied(catalog) => catalog,
+            ControlEffectPortOutcome::Deferred(failure) => {
+                return ControlEffectPortOutcome::Deferred(failure)
+            }
+            ControlEffectPortOutcome::Rejected(failure) => {
+                return ControlEffectPortOutcome::Rejected(failure)
+            }
+            ControlEffectPortOutcome::Unknown(failure) => {
+                return ControlEffectPortOutcome::Unknown(failure)
+            }
+        };
+        if let Err(error) =
+            ControlCapabilityIndexDocument::validate_catalog_for_request(request, &catalog)
+        {
+            return rejected(request.identity.idempotency_key.as_str(), &error.code);
+        }
+        let publication = match self.catalogs.publish(&catalog).await {
+            Ok(publication) => publication,
+            Err(error) => {
+                return catalog_publication_failure(
+                    request.identity.idempotency_key.as_str(),
+                    &error,
+                )
+            }
+        };
+        let catalog = match ControlCapabilityCatalogBinding::from_publication(&publication) {
+            Ok(catalog) => catalog,
+            // The payload owner has already accepted immutable bytes. Any
+            // failure after this point is acceptance ambiguity, not a proven
+            // no-effect rejection.
+            Err(error) => return unknown(request.identity.idempotency_key.as_str(), &error.code),
+        };
+        let document = match ControlCapabilityIndexDocument::from_request(request, catalog.clone())
+        {
+            Ok(document) => document,
+            Err(error) => return unknown(request.identity.idempotency_key.as_str(), &error.code),
+        };
+        let receipt_digest = match document.receipt_digest() {
+            Ok(digest) => digest,
+            Err(error) => return unknown(request.identity.idempotency_key.as_str(), &error.code),
+        };
+        let current = match self.control.published_capability().await {
+            Ok(current) => current,
+            Err(error) => return unknown(request.identity.idempotency_key.as_str(), &error.code),
         };
         let allowed = match current.as_ref() {
             None => request.expected_capability_generation == 0,
@@ -116,6 +206,7 @@ impl ControlCapabilityPlaneEffectPort {
             Some(cursor)
                 if cursor.capability_generation == request.capability_generation
                     && cursor.descriptor_digest == request.descriptor_digest
+                    && cursor.catalog == catalog
                     && cursor.receipt_digest == receipt_digest =>
             {
                 true
@@ -123,28 +214,21 @@ impl ControlCapabilityPlaneEffectPort {
             Some(_) => false,
         };
         if !allowed {
-            return rejected(
+            return unknown(
                 request.identity.idempotency_key.as_str(),
                 "use.control.capability_publication_conflict",
             );
         }
         match self.index.materialize(&document).await {
-            Ok(receipt_digest) => match ControlReceiptApplication::new(receipt_digest) {
-                Ok(application) => ControlEffectPortOutcome::applied(application),
-                Err(error) => rejected(request.identity.idempotency_key.as_str(), &error.code),
-            },
-            Err(error) if error.code == "use.control.capability_index_contended" => {
-                deferred(request.identity.idempotency_key.as_str(), &error.code)
+            Ok(receipt_digest) => {
+                match ControlCapabilityCutoverApplication::new(request, receipt_digest, catalog) {
+                    Ok(application) => ControlEffectPortOutcome::applied(application),
+                    Err(error) => unknown(request.identity.idempotency_key.as_str(), &error.code),
+                }
             }
-            Err(error)
-                if matches!(
-                    error.code.as_str(),
-                    "use.control.capability_index_path_invalid"
-                        | "use.control.capability_index_conflict"
-                ) =>
-            {
-                rejected(request.identity.idempotency_key.as_str(), &error.code)
-            }
+            // Catalog publication precedes Index materialization. Even
+            // contention or a path/conflict error here cannot prove that the
+            // earlier immutable catalog publication was absent.
             Err(error) => unknown(request.identity.idempotency_key.as_str(), &error.code),
         }
     }
@@ -206,7 +290,7 @@ impl ControlCapabilityIndexEffectPort for ControlCapabilityPlaneEffectPort {
     async fn cutover(
         &self,
         request: &ControlCapabilityCutoverRequest,
-    ) -> ControlEffectPortOutcome<ControlReceiptApplication> {
+    ) -> ControlEffectPortOutcome<ControlCapabilityCutoverApplication> {
         self.cutover(request).await
     }
 }
@@ -224,6 +308,7 @@ impl ControlInvocationLeaseEffectPort for ControlCapabilityPlaneEffectPort {
 pub(in crate::control_store) struct ControlCapabilitySnapshotLease {
     cursor: ControlPublishedCapabilityCursor,
     document: ControlCapabilityIndexDocument,
+    catalog: CapabilityGatewayCatalog,
     _generation_leases: Vec<ControlGenerationFileLease>,
     _maintenance: StateMaintenanceGuard,
 }
@@ -235,6 +320,10 @@ impl ControlCapabilitySnapshotLease {
 
     pub(in crate::control_store) fn package_count(&self) -> usize {
         self.cursor.packages.len()
+    }
+
+    pub(in crate::control_store) fn catalog(&self) -> &CapabilityGatewayCatalog {
+        &self.catalog
     }
 
     pub(in crate::control_store) fn document_receipt_digest(
@@ -250,7 +339,19 @@ impl fmt::Debug for ControlCapabilitySnapshotLease {
             .debug_struct("ControlCapabilitySnapshotLease")
             .field("cursor", &self.cursor)
             .field("package_count", &self.package_count())
+            .field("catalog_revision", &self.catalog.revision())
             .finish()
+    }
+}
+
+impl fmt::Debug for ControlCapabilityPlaneEffectPort {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ControlCapabilityPlaneEffectPort")
+            .field("installation", &self.control.installation)
+            .field("state_root", &self.control.state_root)
+            .field("catalog_root", &self.catalogs.root())
+            .finish_non_exhaustive()
     }
 }
 
@@ -298,6 +399,29 @@ fn drain_receipt_digest(
         )
     })?;
     Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
+}
+
+fn catalog_publication_failure<T>(key: &str, error: &UseError) -> ControlEffectPortOutcome<T> {
+    match error.code.as_str() {
+        "use.plugin.capability_gateway_catalog_store_invalid"
+        | "use.plugin.capability_gateway_catalog_store_conflict"
+        | "use.state.maintenance_path_invalid" => rejected(key, &error.code),
+        // The active marker is checked before the catalog mutation starts, so
+        // this classification proves that no payload was accepted.
+        "use.state.maintenance_restore_active" => deferred(key, &error.code),
+        // I/O may fail after an immutable link reached durable storage. The
+        // same content-addressed publication is replayable, but automatic
+        // retry would violate the generic owner contract without an explicit
+        // reconciliation decision.
+        _ => unknown(key, &error.code),
+    }
+}
+
+fn catalog_payload_conflict() -> UseError {
+    UseError::new(
+        CATALOG_BINDING_ERROR,
+        "The published Control cursor does not resolve to its exact immutable catalog payload.",
+    )
 }
 
 fn failure(key: &str, code: &str) -> ControlEffectFailure {
