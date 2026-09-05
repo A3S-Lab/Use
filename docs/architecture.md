@@ -52,7 +52,7 @@ ownership boundaries stabilize.
 | Package aggregate | One manifest generation owns Tool, MCP, OKF, Flow, Skill, and UI surfaces; dependency preparation and retirement are ordered around one cutover. | Correct foundation. A surface must not become an independently installed mini-package. |
 | Trust and planning | TUF provenance, exact SemVer locks, read-only planning, explicit confirmation, generation compare-and-swap, and crash replay are enforced. | Correct foundation. Keep source transport, trust evidence, and package identity separate. |
 | Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. One collection boundary covers bounded physical/reference inventory, checked usage, optional hard quota, full digest audit, logical quarantine, verified rehydration, and explicit confirmed GC without merging their authorities. GC requires a bounded exact target allowlist, a fresh zero-reference proof, a canonical physical/lifecycle plan, durable prepared/completed evidence, and same-shard atomic retirement before bounded tombstone deletion. Source observations and resumable partials remain source-scoped. | Correct A1 storage boundary. Keep source cleanup and scoped lifecycle retirement separate from global deletion, and never turn quota, audit, quarantine, rehydration, or unreachability into implicit GC authority. |
-| Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. `CapabilityGatewayCatalogStore` now durably owns canonical Agent-facing catalog payloads, but not the lifecycle cursor or a mutable current pointer. It is also available through the standalone `capability-catalog` feature so a headless package manager can publish the payload without compiling MCP transport code. | Critical debt. [ADR-003](adr-003-control-store-transaction-boundary.md) requires one coordinated Control Store cutover with no JSON/SQLite dual authority; the catalog payload store still needs a transactionally bound digest, session replacement, lease drain, and retention policy. Sagas remain only for external provider effects. |
+| Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. `CapabilityGatewayCatalogStore` now durably owns canonical Agent-facing catalog payloads, but not the lifecycle cursor or a mutable current pointer. It is also available through the standalone `capability-catalog` feature so a headless package manager can publish the payload without compiling MCP transport code. The coordinated backup inventory now recognizes this catalog and the Control descriptor-snapshot owner as one explicit immutable payload family. | Critical debt. [ADR-003](adr-003-control-store-transaction-boundary.md) requires one coordinated Control Store cutover with no JSON/SQLite dual authority; the catalog/snapshot payload stores still need transactionally bound digests, session replacement, lease drain, owner-native restore, and retention policy. Sagas remain only for external provider effects. |
 | Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
 | Identity | Registry ownership, accepted-call leases, cursors, and Tool/MCP host names use scoped package/generation/surface keys. The optional manifest `route` is retained only as a human alias; duplicates are legal and explicit alias lookup rejects ambiguity. | Qualified A1 boundary. Aliases may improve presentation but must never enter ownership or cursor identity. |
 | Observation cost | Registry watch polls at a fixed interval, and normal snapshot projection can reopen and rehash package assets. | High scalability debt. Materialize one immutable Capability Index at cutover, publish generation notifications, and reserve full hashing for admission, audit, or detected drift. |
@@ -180,9 +180,10 @@ tampered record is rejected. Runtime Tool release schemas are now carried as a
 canonical descriptor/input/output digest attestation through the inactive
 Runtime and Control evidence path, and verified payload admission compares the
 attestation before execution. The snapshot owner remains outside the Control
-aggregate and is not yet registered with backup/restore; official Registry/TUF
-key-source binding and production Control/Runtime wiring remain activation
-gates.
+aggregate. The coordinated state inventory now admits and semantically checks
+its canonical descriptor-snapshot records alongside Gateway catalogs, while
+owner-native clean-target restore/retention and official Registry/TUF
+key-source binding remain activation gates.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,
@@ -235,9 +236,11 @@ taking shared locks for every exact package lifecycle incarnation, and
 therefore either exposes one complete graph or returns stale. Drain proves the
 prior incarnation is not published and takes its exclusive lock; active calls
 produce a safe same-key deferral. No-follow, no-replace publication and exact
-staging replay protect both immutable payloads. The current backup registry
-still excludes the derived Index and does not yet own the catalog payload;
-production restore must preserve or reconstruct that external owner before
+staging replay protect both immutable payloads. The coordinated backup
+inventory excludes the derived Index and now owns the catalog and descriptor-
+snapshot records under one strict capability-payload family; it rejects
+unknown layout and incomplete owner staging. Production owner-native restore
+and retention must still preserve or reconstruct that external owner before
 readers switch. A real composition test covers Knowledge, Skill, catalog/Index
 cutover, exact payload admission, stale admission, and drain together. The Flow owner is now qualified
 on the same committed-authority boundary: it receives only a path-free,

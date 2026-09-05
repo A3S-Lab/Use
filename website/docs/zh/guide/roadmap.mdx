@@ -138,17 +138,17 @@ Index 与 invocation lease 现在由第三个真实的 Capability Plane adapter 
 Index document，applied Control observation 仍是唯一 publication cursor，并绑定不可变 Agent catalog 身份。Admission 在取得每个精确 package
 incarnation 的共享锁前后各读取一次 Control cursor，因此并发 cutover 会让 admission 返回 stale；排他 drain
 会在 accepted call 活跃时安全 deferred。发布具备 no-follow、no-replace 与精确崩溃重放语义。Index 和 lease
-文件都是备份排除的派生 operational state；catalog 仍需登记到 backup/restore owner 集合。真实组合测试覆盖
+文件都是备份排除的派生 operational state；coordinated legacy inventory 现在会把 canonical catalog 与 descriptor-snapshot 记录作为严格的 `CapabilityPayloads` family 校验，并拒绝 owner 的 staging/lock/journal 残留；生产 owner-native restore、retention 与 Control registry cutover 仍未完成。真实组合测试覆盖
 Knowledge、Skill、catalog/Index cutover、stale admission 与同一 key 的 drain 重试。严格的 descriptor projector
 现在只接受经过 host 验证的 `CapabilityDescriptionProof`，并要求显式的 package-scoped signer allowlist。它会在
 派生 opaque route reference 前核对精确的 package/lifecycle/catalog provenance、selected-surface dependency、
 prepared owner receipt、active Grant coverage，以及 reviewed Tool/MCP shape。这仍是确定性的 subset gate；key
 custody 仍未完成。安装级 descriptor snapshot store 现在会把精确规范化 proof set 与 signer policy
 绑定到 Control candidate identity，以 canonical bytes 做内容寻址，使用有界 no-follow staging、no-clobber
-发布并在重启读取时复验。缺失证据会安全 deferred，替换、重复 key 或篡改会 fail closed；该 store 仍是
-未激活且尚未登记 backup/restore 的 external owner。Runtime Tool release 规划现在会沿未激活的
+发布并在重启读取时复验。缺失证据会安全 deferred，替换、重复 key 或篡改会 fail closed；coordinated backup 会校验并归档该 canonical snapshot，但该 store 仍是
+未激活的 external owner。Runtime Tool release 规划现在会沿未激活的
 Runtime/Control 路径携带规范化 input/output schema attestation；生产 Control/Runtime wiring、key
-custody 与 backup/restore 登记仍未完成。core 现在定义了 domain-separated 的
+custody 与 owner-native clean-target restore/retention 仍未完成。core 现在定义了 domain-separated 的
 `SignedCapabilityDescription` envelope，extension boundary 使用有界 Ed25519
 trust store 校验 key rotation、expiry 与 revocation。Gateway facade 现在会在
 获取 Control snapshot lease 和构造 provider resolver 之前验证 signed envelope；
@@ -507,7 +507,9 @@ fail closed。生产 Grant 转换、Runtime/Flow dispatcher 组合、backup/rest
   已实现并通过 crash test；冲突或更新的 binding evidence 会 fail closed。
   确定性的 whole-installation inventory backup 现已在一个独占 fence 内覆盖所有
   allowlisted Use-owned family，绑定 Registry/receipt authority，拒绝非终结或不安全
-  state，并能不经提取离线校验全部 payload。精确匹配 version/OS/architecture 的
+  state，并能不经提取离线校验全部 payload。immutable Capability Gateway catalog 与
+  descriptor-snapshot 记录现在作为严格的 `CapabilityPayloads` family 做规范与内容寻址校验；
+  生产 owner-native restore/retention 仍未完成。精确匹配 version/OS/architecture 的
   reviewed whole-install restore 现已实现，包括无路径的精确 action plan、不变的 live
   Registry 与 Grant authority、外部 rollback archive、拒绝 link/reparse point 的
   candidate、七个 durable phase、15 个进程退出恢复边界、终态 replay，以及只读、

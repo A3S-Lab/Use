@@ -45,6 +45,14 @@ pub(crate) fn validate_terminal_restore_receipt_blocking(
     payload_owner::validate_terminal_receipt_blocking(attempt)
 }
 
+pub(crate) fn validate_capability_descriptor_snapshot_backup_bytes(
+    bytes: &[u8],
+    installation: &InstallationId,
+    expected_digest: &str,
+) -> UseResult<()> {
+    effect_owner::validate_descriptor_snapshot_backup_bytes(bytes, installation, expected_digest)
+}
+
 #[cfg(test)]
 use executor::MAX_QUEUED_CONTROL_STORE_OPERATIONS;
 #[cfg(test)]

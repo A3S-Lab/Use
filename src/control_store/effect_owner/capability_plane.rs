@@ -34,6 +34,7 @@ pub(in crate::control_store) use descriptor::{
 };
 #[allow(unused_imports)]
 pub(in crate::control_store) use descriptor_snapshot::{
+    validate_backup_bytes as validate_descriptor_snapshot_backup_bytes,
     ControlCapabilityDescriptorSnapshot, ControlCapabilityDescriptorSnapshotKey,
     ControlCapabilityDescriptorSnapshotPublication, ControlCapabilityDescriptorSnapshotStore,
 };

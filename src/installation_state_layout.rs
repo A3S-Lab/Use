@@ -5,6 +5,7 @@ pub(crate) const CONTROL_INSTALLATION_RESTORE_ATTEMPT_DIRECTORY: &str =
 
 const STATE_DIRECTORIES: &[&str] = &[
     "bindings",
+    "capability-gateway",
     "capability-index",
     "extension-generations",
     "extensions",

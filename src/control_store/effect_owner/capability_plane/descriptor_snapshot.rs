@@ -25,6 +25,29 @@ use super::descriptor::{ControlCapabilityDescriptorProjection, ControlCapability
 mod storage;
 pub(in crate::control_store) use storage::ControlCapabilityDescriptorSnapshotStore;
 
+/// Validate one descriptor-snapshot payload while it is being assembled into
+/// a coordinated state backup.  This checks the owner schema, canonical bytes,
+/// installation binding, and content address.  Signed envelopes are
+/// intentionally not checked against a live trust policy here; replay must
+/// call `reverify_signed` with the current Registry policy and clock.
+pub(in crate::control_store) fn validate_backup_bytes(
+    bytes: &[u8],
+    installation: &InstallationId,
+    expected_digest: &str,
+) -> UseResult<()> {
+    if bytes.is_empty() || bytes.len() > MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_BYTES {
+        return Err(snapshot_conflict());
+    }
+    let snapshot = storage::decode_snapshot(bytes)?;
+    installation
+        .ensure_same(&snapshot.key.installation)
+        .map_err(|_| snapshot_conflict())?;
+    if storage::encode_snapshot(&snapshot)? != bytes || snapshot.digest()? != expected_digest {
+        return Err(snapshot_conflict());
+    }
+    Ok(())
+}
+
 pub(in crate::control_store) const CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_SCHEMA: &str =
     "a3s.use.control-capability-descriptor-snapshot.v1";
 pub(in crate::control_store) const CONTROL_CAPABILITY_SIGNED_DESCRIPTOR_SNAPSHOT_SCHEMA: &str =

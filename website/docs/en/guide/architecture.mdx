@@ -308,8 +308,10 @@ lifecycle incarnation. Drain requires the old incarnation to be unpublished
 and takes its exclusive lock, safely deferring while an accepted call is
 active. No-follow, no-replace publication and exact staging replay protect both
 immutable payloads. Index and lease files are derived operational state
-excluded from backup; the catalog still needs registered backup/restore
-ownership. The strict descriptor projector at this boundary consumes only
+excluded from backup; coordinated legacy inventory now validates the catalog
+and descriptor-snapshot records as one strict `CapabilityPayloads` family.
+Production owner-registry cutover, clean-target activation, and retention
+coordination remain separate gates. The strict descriptor projector at this boundary consumes only
 host-verified `CapabilityDescriptionProof` values plus a package-scoped signer
 allowlist. It checks exact catalog provenance, dependency closure, prepared
 owner evidence, active Grants, and reviewed Tool/MCP shape before deriving
@@ -319,10 +321,12 @@ snapshot store now captures the exact normalized proof set and signer policy
 under the Control candidate identity. Its canonical bytes are content-
 addressed, published with bounded no-follow staging and no-clobber replay,
 and revalidated on every read; missing evidence defers while substitution,
-duplicate keys, or tampering fails closed. The store remains an inactive
-external owner and is not yet registered for backup/restore. Runtime Tool release
-schemas now travel through the inactive Runtime/Control path as canonical digest
-attestation; key custody and production Control/Runtime wiring remain open. A real composition test covers Knowledge, Skill, catalog/Index
+duplicate keys, or tampering fails closed. Coordinated backup validates and
+archives this canonical record, while the store remains an inactive external
+owner for production Control wiring. Runtime Tool release schemas now travel
+through the inactive Runtime/Control path as canonical digest attestation;
+key custody, owner-native clean-target restore/retention, and production
+Control/Runtime wiring remain open. A real composition test covers Knowledge, Skill, catalog/Index
 cutover, stale admission, and same-key drain retry. The inactive Runtime owner
 is now qualified for release-backed Tool Task/Service and Streamable HTTP MCP.
 It consumes a path-free verified release payload on first prepare, binds the

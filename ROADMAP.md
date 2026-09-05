@@ -655,7 +655,9 @@ the cursor around shared locks for every package incarnation; drain requires
 an unpublished prior incarnation and an exclusive lock, safely deferring until
 accepted calls release it. Immutable publication is no-follow, no-replace, and
 crash-replayable. The Index and lease files remain derived operational state;
-the catalog still needs registered backup/restore ownership. A real
+the legacy coordinated inventory now registers and verifies the catalog and
+descriptor-snapshot payloads, while production owner-native restore/retention
+still remains open. A real
 composition test joins Knowledge, Skill, catalog/Index publication, exact
 payload admission, stale admission, and same-key drain retry. The
 inactive ADR-003 step-3 qualification now also includes a committed-authority
@@ -1112,8 +1114,8 @@ the published cursor in the same SQLite transaction. Admission reopens and
 rehashes the exact payload before taking package-generation leases; missing or
 tampered bytes fail closed. This closes the inactive-kernel cursor-binding
 mechanism, not production activation, complete receipt/Runtime/Grant-backed
-descriptor projection, payload backup/restore, or session drain/retention
-coordination.
+descriptor projection, production payload-owner restore/retention activation,
+or session drain coordination.
 
 Implementation note (2026-09-05): the inactive Capability Plane now also has
 an explicit descriptor-evidence projector. It accepts only host-verified
@@ -1140,9 +1142,12 @@ content-addressed by its canonical bytes, with bounded no-follow staging,
 create-if-absent publication, cross-process locking, exact canonical/digest
 revalidation, and no mutable current pointer. A durable projector reads only
 the exact Control-bound key; absent evidence defers safely, while substitution,
-tampering, duplicate keys, and unknown layout fail closed. The store is still
-an inactive external payload owner: key custody, backup/restore registration,
-and production Control/Runtime/receipt wiring remain open. Runtime Tool release
+tampering, duplicate keys, and unknown layout fail closed. The coordinated
+state inventory now recognizes and semantically verifies its canonical
+descriptor-snapshot records alongside Gateway catalogs; locks, staging, and
+retention journals remain nonterminal. The store is still an inactive external
+payload owner: key custody, production owner-native restore/retention
+activation, and Control/Runtime/receipt wiring remain open. Runtime Tool release
 planning now carries a canonical input/output-schema attestation through plans,
 binding receipts, and Control evidence; verified artifact admission and strict
 descriptor projection compare the same descriptor and schema digests. The
@@ -1175,8 +1180,19 @@ expiry, revocation, substitution, and proof/envelope mismatch fail closed. The
 legacy v1 proof-only snapshot remains an explicit compatibility path and is
 not allowed to consume a signed v2 record. This closes the Control
 proof-snapshot admission mechanism in the inactive kernel; official
-Registry/TUF key-source binding, backup/restore registration, and production
-Registry-to-Control/Runtime/receipt wiring remain release gates.
+Registry/TUF key-source binding, production owner-native restore/retention
+activation, and Registry-to-Control/Runtime/receipt wiring remain release
+gates.
+
+Implementation note (2026-09-05): coordinated state backup now has an explicit
+`CapabilityPayloads` family for the two immutable Capability Gateway owners.
+The scanner admits only the catalog shard and descriptor-snapshot record
+layouts, verifies installation binding, canonical bytes, and content-addressed
+digests during inventory and archive verification, and rejects unknown paths,
+staging residue, mutation locks, and retention journals. This is a qualified
+legacy inventory/restore-plan boundary, not the A2 owner-registry cutover:
+production clean-target activation, owner retention policy, and current
+Registry/TUF trust revalidation on signed replay remain required.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning

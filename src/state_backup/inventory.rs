@@ -7,6 +7,7 @@ use a3s_use_core::{InstallationId, UseResult};
 use a3s_use_extension::{ExtensionPaths, ACTIVE_STATE_RESTORE_MARKER};
 use sha2::{Digest, Sha256};
 
+use super::capability_payload;
 use super::{
     canonical_json, sha256_digest, state_backup_invalid, state_backup_layout_unsupported,
     state_backup_limit, state_backup_nonterminal, state_backup_path_invalid, StateBackupEntry,
@@ -215,7 +216,12 @@ fn scan_root(
                 continue;
             }
             let family = expected_family(kind, &portable)?;
-            let (length, digest) = hash_file(&absolute, &metadata)?;
+            let (length, digest) = hash_file(
+                &absolute,
+                &metadata,
+                (family == StateBackupFamily::CapabilityPayloads)
+                    .then_some((&portable, installation)),
+            )?;
             files.push(ScannedFile {
                 entry: StateBackupEntry {
                     root: kind,
@@ -345,6 +351,10 @@ fn validate_layout(root: StateBackupRoot, relative: &Path, directory: bool) -> U
         .components()
         .map(|component| normal_component(Some(component)))
         .collect::<UseResult<Vec<_>>>()?;
+    let portable = parts.join("/");
+    if parts.first() == Some(&"capability-gateway") {
+        capability_payload::validate_layout(&portable, directory)?;
+    }
     if parts.first() == Some(&"operations")
         && parts.len() >= 2
         && !installation_state_layout::supported_operation_directory(parts[1])
@@ -426,6 +436,11 @@ fn is_nonterminal(
                 return Ok(false);
             }
             let portable = portable_path(relative)?;
+            if portable.starts_with("capability-gateway/")
+                && capability_payload::is_nonterminal(&portable, metadata.is_dir())
+            {
+                return Ok(true);
+            }
             let parts = portable.split('/').collect::<Vec<_>>();
             match parts.as_slice() {
                 ["operations", "plugins", .., "active.json"] => {
@@ -504,6 +519,10 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
             "The backup manifest cannot contain installation data payloads or global artifacts.",
         )),
         StateBackupRoot::State => match first {
+            "capability-gateway" => {
+                capability_payload::record_kind(path)?;
+                Ok(StateBackupFamily::CapabilityPayloads)
+            }
             "extensions" | "registry.json" => Ok(StateBackupFamily::Registry),
             "extension-generations" => Ok(StateBackupFamily::RetainedGenerations),
             "grants" => Ok(StateBackupFamily::Grants),
@@ -536,7 +555,11 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
     }
 }
 
-fn hash_file(path: &Path, expected: &std::fs::Metadata) -> UseResult<(u64, String)> {
+fn hash_file(
+    path: &Path,
+    expected: &std::fs::Metadata,
+    payload: Option<(&str, &InstallationId)>,
+) -> UseResult<(u64, String)> {
     if expected.len() > MAX_STATE_BACKUP_FILE_BYTES {
         return Err(state_backup_limit(
             "A Use-owned state file exceeds the per-file backup bound.",
@@ -557,6 +580,12 @@ fn hash_file(path: &Path, expected: &std::fs::Metadata) -> UseResult<(u64, Strin
     }
     let mut hasher = Sha256::new();
     let mut length = 0u64;
+    if payload.is_some() && expected.len() > capability_payload::MAX_RECORD_BYTES as u64 {
+        return Err(state_backup_limit(
+            "A Capability Gateway payload exceeds its bounded record size.",
+        ));
+    }
+    let mut payload_bytes = payload.map(|_| Vec::with_capacity(expected.len() as usize));
     let mut buffer = vec![0u8; READ_BUFFER_BYTES];
     loop {
         let read = file.read(&mut buffer).map_err(|error| {
@@ -574,6 +603,9 @@ fn hash_file(path: &Path, expected: &std::fs::Metadata) -> UseResult<(u64, Strin
             ));
         }
         hasher.update(&buffer[..read]);
+        if let Some(bytes) = payload_bytes.as_mut() {
+            bytes.extend_from_slice(&buffer[..read]);
+        }
     }
     if length != expected.len() {
         return Err(state_backup_nonterminal(
@@ -594,6 +626,15 @@ fn hash_file(path: &Path, expected: &std::fs::Metadata) -> UseResult<(u64, Strin
         return Err(state_backup_nonterminal(
             "A Use-owned state file changed while its inventory was read.",
         ));
+    }
+    if let Some((portable, installation)) = payload {
+        capability_payload::validate_bytes(
+            portable,
+            payload_bytes.as_deref().ok_or_else(|| {
+                state_backup_invalid("Capability payload bytes were not retained.")
+            })?,
+            installation,
+        )?;
     }
     Ok((length, format!("sha256:{:x}", hasher.finalize())))
 }
@@ -692,6 +733,9 @@ pub(super) fn validate_archived_path(root: StateBackupRoot, path: &str) -> UseRe
             return Err(state_backup_invalid(
                 "A backup manifest contains excluded lock or nonterminal evidence.",
             ));
+        }
+        if parts.first().copied() == Some("capability-gateway") {
+            capability_payload::record_kind(path)?;
         }
     }
     Ok(())

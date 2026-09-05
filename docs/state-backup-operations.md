@@ -171,6 +171,16 @@ The fixed `V1` header is the binary framing version. The current
 - the published Registry generation and projection digest; and
 - sorted installed package IDs with canonical receipt digests.
 
+The `CapabilityPayloads` family is reserved for the two immutable Capability
+Gateway owner layouts: sharded canonical catalog records under
+`capability-gateway/catalogs/sha256/` and content-addressed Control descriptor
+snapshots under `capability-gateway/descriptor-snapshots/`. Inventory and
+archive verification re-parse these records, enforce the installation binding,
+and recompute each content address. The derived Capability Index is not
+portable authority. The current trust policy for signed descriptors is
+revalidated by the owner during replay; offline backup verification does not
+invent or persist a new trust decision.
+
 Absolute source or destination paths and creation time are absent. The payloads
 are the original files, however, and may contain configured paths, endpoints,
 or other sensitive operational data. Protect the complete archive as a secret
@@ -185,6 +195,9 @@ Creation rejects:
 - pending package graph/download/resolution work, active enablement, or Runtime
   Service provisioning evidence;
 - atomic `.tmp`, `.partial`, and other nonterminal state entries;
+- unknown Capability Gateway paths, mutation locks, staging files, or catalog
+  retention journals (the immutable payload family admits only canonical
+  records);
 - any installation data payload or unknown state family;
 - absolute, parent-traversing, non-UTF-8, Windows-reserved, case-colliding, or
   otherwise non-portable paths;
