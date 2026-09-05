@@ -521,6 +521,59 @@ fn public_gateway_contracts_are_send_and_sync() {
     assert_send_sync::<ResourceRef>();
     assert_send_sync::<CapabilityPromptArgument>();
     assert_send_sync::<CapabilityDescriptionProof>();
+    assert_send_sync::<CapabilityDescriptionSignaturePayload>();
+    assert_send_sync::<SignedCapabilityDescription>();
     assert_send_sync::<CapabilityDescriptor>();
     assert_send_sync::<CapabilityGatewayCatalog>();
+}
+
+#[test]
+fn signed_description_payload_is_domain_separated_and_replayable() {
+    let payload = CapabilityDescriptionSignaturePayload::new(
+        tool(),
+        "registry/official",
+        "registry/official/2026-09",
+        CapabilityDescriptionSignatureAlgorithm::Ed25519,
+        1_000,
+        2_000,
+    )
+    .unwrap();
+    let signing_bytes = payload.canonical_bytes().unwrap();
+    assert!(signing_bytes.starts_with(b"a3s.use.capability-description-signature.v1\0"));
+
+    let envelope = SignedCapabilityDescription::from_parts(payload, "00".repeat(64)).unwrap();
+    let encoded = envelope.canonical_bytes().unwrap();
+    let decoded = SignedCapabilityDescription::from_json(&encoded).unwrap();
+    assert_eq!(decoded, envelope);
+    assert_eq!(decoded.signature_bytes().unwrap(), vec![0; 64]);
+    assert_eq!(decoded.signature_digest().unwrap().len(), 71);
+
+    let mut unknown = serde_json::to_value(&envelope).unwrap();
+    unknown["unexpected"] = serde_json::json!(true);
+    assert!(serde_json::from_value::<SignedCapabilityDescription>(unknown).is_err());
+}
+
+#[test]
+fn signed_description_rejects_invalid_window_and_signature_encoding() {
+    let too_long = CapabilityDescriptionSignaturePayload::new(
+        tool(),
+        "registry/official",
+        "registry/official/2026-09",
+        CapabilityDescriptionSignatureAlgorithm::Ed25519,
+        1,
+        1 + 31_536_001,
+    );
+    assert!(too_long.is_err());
+
+    let payload = CapabilityDescriptionSignaturePayload::new(
+        tool(),
+        "registry/official",
+        "registry/official/2026-09",
+        CapabilityDescriptionSignatureAlgorithm::Ed25519,
+        1_000,
+        2_000,
+    )
+    .unwrap();
+    assert!(SignedCapabilityDescription::from_parts(payload.clone(), "AA".repeat(64)).is_err());
+    assert!(SignedCapabilityDescription::from_parts(payload, "00".repeat(63)).is_err());
 }

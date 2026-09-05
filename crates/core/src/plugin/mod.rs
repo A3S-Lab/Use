@@ -46,10 +46,13 @@ pub use capability_consumer::{
 };
 pub(crate) use capability_gateway::validate_agent_schema;
 pub use capability_gateway::{
-    capability_schema_digest, ArtifactRef, CapabilityDescriptionProof, CapabilityDescriptor,
-    CapabilityDescriptorKind, CapabilityGatewayCatalog, CapabilityMcpTransport,
-    CapabilityPromptArgument, CapabilityPublicationEvidence, CapabilityToolAnnotations,
-    EndpointRef, InvocationRef, ResourceRef, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1,
+    capability_schema_digest, ArtifactRef, CapabilityDescriptionProof,
+    CapabilityDescriptionSignatureAlgorithm, CapabilityDescriptionSignaturePayload,
+    CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
+    CapabilityMcpTransport, CapabilityPromptArgument, CapabilityPublicationEvidence,
+    CapabilityToolAnnotations, EndpointRef, InvocationRef, ResourceRef,
+    SignedCapabilityDescription, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1,
+    CAPABILITY_DESCRIPTION_SIGNATURE_ALGORITHM_ED25519, CAPABILITY_DESCRIPTION_SIGNATURE_SCHEMA_V1,
     CAPABILITY_DESCRIPTOR_SCHEMA_V1, CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1,
     CAPABILITY_SCHEMA_DIGEST_SCHEMA_V1,
 };

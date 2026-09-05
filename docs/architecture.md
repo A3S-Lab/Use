@@ -179,6 +179,17 @@ attestation before execution. The snapshot owner remains outside the Control
 aggregate and is not yet registered with backup/restore; key custody and
 production Control/Runtime wiring remain activation gates.
 
+The signed-description boundary now has an explicit cryptographic contract as
+well. `SignedCapabilityDescription` defines domain-separated canonical bytes,
+an Ed25519 algorithm identifier, key and signer identities, and bounded issue
+and expiry times. The extension trust boundary owns a bounded public-key store
+and returns a private `VerifiedCapabilityDescription` only after signature,
+identity, validity, and revocation checks. Multiple keys for one signer support
+rotation, while replay must reverify the retained envelope against the current
+policy. This qualifies the verifier mechanism; the official Registry/TUF key
+source, Control proof-snapshot admission, and production lifecycle wiring are
+still open.
+
 Production lifecycle code does not construct it, so it neither mirrors nor
 replaces the current JSON authority. The first concrete post-commit adapter now
 qualifies immutable Skill/UI preparation. It re-derives the typed owner and
