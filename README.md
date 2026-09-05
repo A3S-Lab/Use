@@ -96,7 +96,9 @@ The implementation and fixtures exercise the product model directly:
   exact Agent-facing catalog payload for one installation. It publishes
   immutable canonical records, supports explicit protected-set retention, and
   persists a bounded recovery journal so interrupted pruning can resume via
-  `recover_retention()` without inventing lifecycle authority.
+  `recover_retention()` without inventing lifecycle authority. The Gateway
+  session factory's `from_published` and `replace_published` paths verify this
+  exact durable publication before exposing a live endpoint.
 - [`RegistryNetworkPolicy`](crates/extension/src/remote/network.rs) lets an
   embedding host select the strict public-Internet boundary for untrusted
   Registry endpoints. That mode requires HTTPS, pins checked DNS answers,
@@ -1872,8 +1874,10 @@ The embedding boundary now also includes `CapabilityGatewaySessionFactory`:
 after durable publication, a host can replace immutable Gateway generations in
 order, retain one standard MCP notification hub, and keep old in-flight
 operations on their exact leases while later requests on the same endpoint
-observe the new catalog. Lifecycle Control binding, provider composition,
-retirement, and retention remain host responsibilities.
+observe the new catalog. Its `from_published` and `replace_published` paths
+re-read the exact store publication and verify the negotiated consumer
+projection before a source becomes visible. Lifecycle Control binding,
+provider composition, retirement, and retention remain host responsibilities.
 
 Catalog payload cleanup is now an explicit plan/apply operation as well:
 `CapabilityGatewayCatalogStore` requires a lifecycle-supplied protected digest

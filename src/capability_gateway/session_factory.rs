@@ -19,12 +19,14 @@ use rmcp::model::{
 use rmcp::{ServerHandler, ServiceExt};
 
 use super::{
-    CapabilityGatewayMcpServer, CapabilityGatewayNotificationHub, CapabilityGatewayTransport,
+    CapabilityGatewayCatalogPublication, CapabilityGatewayCatalogStore, CapabilityGatewayMcpServer,
+    CapabilityGatewayNotificationHub, CapabilityGatewayTransport,
 };
 
 const SESSION_STALE_ERROR: &str = "use.plugin.capability_gateway_session_stale";
 const SESSION_INCOMPATIBLE_ERROR: &str = "use.plugin.capability_gateway_session_incompatible";
 const SESSION_STATE_ERROR: &str = "use.plugin.capability_gateway_session_state";
+const SESSION_PUBLICATION_ERROR: &str = "use.plugin.capability_gateway_session_publication";
 
 /// The immutable catalog identity selected by a live session factory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +82,22 @@ impl CapabilityGatewaySessionFactory {
             current: Arc::new(RwLock::new(server)),
             cutover: Arc::new(tokio::sync::Mutex::new(())),
         }
+    }
+
+    /// Start routing from a server whose catalog has been verified against a
+    /// durable payload-store publication.
+    ///
+    /// `CapabilityGatewayMcpServer::new` and [`Self::replace`] remain useful
+    /// for hosts that own another persistence boundary. Hosts using the
+    /// catalog payload store should prefer this constructor so a process
+    /// cannot make an unpersisted in-memory projection visible by accident.
+    pub async fn from_published(
+        store: &CapabilityGatewayCatalogStore,
+        publication: &CapabilityGatewayCatalogPublication,
+        server: CapabilityGatewayMcpServer,
+    ) -> UseResult<Self> {
+        verify_published_server(store, publication, &server).await?;
+        Ok(Self::new(server))
     }
 
     /// Snapshot the currently selected immutable server.
@@ -213,6 +231,22 @@ impl CapabilityGatewaySessionFactory {
         })
     }
 
+    /// Replace the live source only after proving that `next` is the exact
+    /// consumer projection of bytes durably published in `store`.
+    ///
+    /// The store read is performed before the in-memory swap. A missing,
+    /// tampered, cross-installation, or generation-mismatched payload is
+    /// rejected without changing the current session source.
+    pub async fn replace_published(
+        &self,
+        next: CapabilityGatewayMcpServer,
+        store: &CapabilityGatewayCatalogStore,
+        publication: &CapabilityGatewayCatalogPublication,
+    ) -> UseResult<CapabilityGatewaySessionReplacement> {
+        verify_published_server(store, publication, &next).await?;
+        self.replace(next).await
+    }
+
     /// Build a live adapter that resolves the current immutable server at the
     /// beginning of every MCP operation.  Existing operations retain the
     /// server snapshot they already acquired, so replacement is drain-safe.
@@ -333,6 +367,62 @@ fn session_key(catalog: &CapabilityGatewayCatalog) -> UseResult<CapabilityGatewa
         revision: catalog.revision().to_owned(),
         digest: catalog.descriptor_digest()?,
     })
+}
+
+async fn verify_published_server(
+    store: &CapabilityGatewayCatalogStore,
+    publication: &CapabilityGatewayCatalogPublication,
+    server: &CapabilityGatewayMcpServer,
+) -> UseResult<()> {
+    publication.validate().map_err(|_| {
+        UseError::new(
+            SESSION_PUBLICATION_ERROR,
+            "The catalog publication identity is invalid.",
+        )
+    })?;
+    if store.installation() != &publication.installation {
+        return Err(UseError::new(
+            SESSION_PUBLICATION_ERROR,
+            "The catalog publication belongs to another installation store.",
+        ));
+    }
+    let Some(published) = store
+        .get_exact(
+            &publication.digest,
+            publication.generation,
+            &publication.revision,
+        )
+        .await
+        .map_err(|_| {
+            UseError::new(
+                SESSION_PUBLICATION_ERROR,
+                "The durable catalog publication could not be verified.",
+            )
+        })?
+    else {
+        return Err(UseError::new(
+            SESSION_PUBLICATION_ERROR,
+            "The durable catalog publication is missing.",
+        ));
+    };
+    let projected = published
+        .for_consumer(server.consumer_negotiation())
+        .map_err(|_| {
+            UseError::new(
+                SESSION_PUBLICATION_ERROR,
+                "The durable catalog cannot be projected for this consumer.",
+            )
+        })?;
+    if projected != *server.catalog()
+        || server.catalog().installation() != &publication.installation
+        || server.catalog().generation() != publication.generation
+    {
+        return Err(UseError::new(
+            SESSION_PUBLICATION_ERROR,
+            "The live Gateway catalog does not match the durable publication.",
+        ));
+    }
+    Ok(())
 }
 
 const _: fn() = || {

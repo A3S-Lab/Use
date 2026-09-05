@@ -676,6 +676,109 @@ async fn gateway_session_factory_replaces_catalog_monotonically() {
     assert_eq!(stale.code, "use.plugin.capability_gateway_session_stale");
 }
 
+#[tokio::test]
+async fn gateway_session_factory_requires_a_durable_catalog_publication() {
+    let temporary = tempfile::tempdir().unwrap();
+    let initial = test_catalog(test_descriptor());
+    let next = CapabilityGatewayCatalog::new(
+        initial.installation().clone(),
+        initial.generation() + 1,
+        initial.descriptors().to_vec(),
+    )
+    .unwrap();
+    let store = CapabilityGatewayCatalogStore::new(
+        temporary.path().join("state"),
+        initial.installation().clone(),
+    )
+    .unwrap();
+    let initial_publication = store.publish(&initial).await.unwrap();
+    let factory = CapabilityGatewaySessionFactory::from_published(
+        &store,
+        &initial_publication,
+        CapabilityGatewayMcpServer::new(initial.clone(), Arc::new(RecordingProvider::default()))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let unpersisted =
+        CapabilityGatewayMcpServer::new(next.clone(), Arc::new(RecordingProvider::default()))
+            .unwrap();
+    let missing = CapabilityGatewayCatalogPublication {
+        digest: next.descriptor_digest().unwrap(),
+        installation: next.installation().clone(),
+        generation: next.generation(),
+        revision: next.revision().to_owned(),
+    };
+    let error = factory
+        .replace_published(unpersisted, &store, &missing)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_session_publication"
+    );
+    assert_eq!(factory.current().catalog(), &initial);
+
+    let next_publication = store.publish(&next).await.unwrap();
+    let replacement = factory
+        .replace_published(
+            CapabilityGatewayMcpServer::new(next.clone(), Arc::new(RecordingProvider::default()))
+                .unwrap(),
+            &store,
+            &next_publication,
+        )
+        .await
+        .unwrap();
+    assert_eq!(replacement.current.generation, next.generation());
+    assert_eq!(factory.current().catalog(), &next);
+}
+
+#[tokio::test]
+async fn gateway_session_factory_rejects_a_forged_publication_without_swapping() {
+    let temporary = tempfile::tempdir().unwrap();
+    let initial = test_catalog(test_descriptor());
+    let next = CapabilityGatewayCatalog::new(
+        initial.installation().clone(),
+        initial.generation() + 1,
+        initial.descriptors().to_vec(),
+    )
+    .unwrap();
+    let store = CapabilityGatewayCatalogStore::new(
+        temporary.path().join("state"),
+        initial.installation().clone(),
+    )
+    .unwrap();
+    let initial_publication = store.publish(&initial).await.unwrap();
+    let factory = CapabilityGatewaySessionFactory::from_published(
+        &store,
+        &initial_publication,
+        CapabilityGatewayMcpServer::new(initial.clone(), Arc::new(RecordingProvider::default()))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let publication = CapabilityGatewayCatalogPublication {
+        digest: next.descriptor_digest().unwrap(),
+        installation: next.installation().clone(),
+        generation: next.generation(),
+        revision: next.revision().to_owned(),
+    };
+    let error = factory
+        .replace_published(
+            CapabilityGatewayMcpServer::new(next, Arc::new(RecordingProvider::default())).unwrap(),
+            &store,
+            &publication,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_session_publication"
+    );
+    assert_eq!(factory.current().catalog(), &initial);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_gateway_session_routes_existing_client_after_cutover() {
     let initial = test_catalog(test_descriptor());
