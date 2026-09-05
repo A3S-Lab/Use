@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 
 use super::model::{
     runtime_contract_error, runtime_input_error, RuntimeSurfaceContext, RuntimeSurfaceContract,
-    RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeWorkloadPolicy,
+    RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeToolSchemaAttestation, RuntimeWorkloadPolicy,
 };
 
 const SEMANTICS_PROFILE_SCHEMA: &str = "a3s.use.runtime-semantics.v2";
@@ -121,7 +121,15 @@ pub fn plan_tool_task_release(
         outputs: Vec::new(),
         semantics_profile_digest: None,
     };
-    finish_plan(context, descriptor.descriptor_digest()?, spec, contract)
+    let descriptor_digest = descriptor.descriptor_digest()?;
+    let schema_attestation = RuntimeToolSchemaAttestation::from_release_descriptor(descriptor)?;
+    finish_plan(
+        context,
+        descriptor_digest,
+        spec,
+        contract,
+        schema_attestation,
+    )
 }
 
 pub fn plan_tool_service_release(
@@ -195,7 +203,15 @@ pub fn plan_tool_service_release(
         health.failure_threshold,
         startup_timeout_ms,
     );
-    finish_plan(context, descriptor.descriptor_digest()?, spec?, contract)
+    let descriptor_digest = descriptor.descriptor_digest()?;
+    let schema_attestation = RuntimeToolSchemaAttestation::from_release_descriptor(descriptor)?;
+    finish_plan(
+        context,
+        descriptor_digest,
+        spec?,
+        contract,
+        schema_attestation,
+    )
 }
 
 pub fn plan_mcp_service_release(
@@ -237,7 +253,13 @@ pub fn plan_mcp_service_release(
         service.health.failure_threshold,
         service.startup_timeout_ms,
     );
-    finish_plan(context, descriptor.descriptor_digest()?, spec?, contract)
+    finish_plan(
+        context,
+        descriptor.descriptor_digest()?,
+        spec?,
+        contract,
+        None,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -315,6 +337,7 @@ fn finish_plan(
     descriptor_digest: String,
     mut spec: RuntimeUnitSpec,
     contract: RuntimeSurfaceContract,
+    tool_schema_attestation: Option<RuntimeToolSchemaAttestation>,
 ) -> UseResult<RuntimeSurfacePlan> {
     spec.validate().map_err(runtime_contract_error)?;
     spec.semantics_profile_digest = Some(runtime_semantics_profile_digest(
@@ -322,6 +345,7 @@ fn finish_plan(
         &descriptor_digest,
         &spec,
         &contract,
+        tool_schema_attestation.as_ref(),
     )?);
     spec.validate().map_err(runtime_contract_error)?;
     Ok(RuntimeSurfacePlan {
@@ -329,6 +353,7 @@ fn finish_plan(
         descriptor_digest,
         spec,
         contract,
+        tool_schema_attestation,
     })
 }
 
@@ -404,6 +429,7 @@ pub(crate) fn runtime_semantics_profile_digest(
     descriptor_digest: &str,
     spec: &RuntimeUnitSpec,
     contract: &RuntimeSurfaceContract,
+    tool_schema_attestation: Option<&RuntimeToolSchemaAttestation>,
 ) -> UseResult<String> {
     let mut semantics_spec = spec.clone();
     semantics_spec.semantics_profile_digest = None;
@@ -422,6 +448,7 @@ pub(crate) fn runtime_semantics_profile_digest(
         descriptor_digest,
         runtime_spec: &semantics_spec,
         contract,
+        tool_schema_attestation,
     };
     let bytes = serde_json::to_vec(&profile).map_err(|error| {
         runtime_contract_error(format!(
@@ -444,4 +471,6 @@ struct RuntimeSemanticsProfile<'a> {
     descriptor_digest: &'a str,
     runtime_spec: &'a RuntimeUnitSpec,
     contract: &'a RuntimeSurfaceContract,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_schema_attestation: Option<&'a RuntimeToolSchemaAttestation>,
 }

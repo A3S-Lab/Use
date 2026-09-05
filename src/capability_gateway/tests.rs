@@ -2848,6 +2848,7 @@ fn test_descriptor() -> CapabilityDescriptor {
             input_schema: schema.clone(),
             output_schema,
             annotations: CapabilityToolAnnotations::new(true, false, true, false),
+            runtime_descriptor_digest: None,
         },
     }
 }

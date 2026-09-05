@@ -1117,9 +1117,9 @@ derives domain-separated opaque invocation, endpoint, artifact, and resource
 references. Optional degraded surfaces and substituted owner evidence remain
 unpublishable, and projection failures are safe deterministic rejections with
 no payload write. This is a strict subset gate: cryptographic key custody,
-runtime payload/schema attestation, a durable proof snapshot for crash retry,
-and production Control/Runtime/receipt wiring remain open before the complete
-A3 catalog exit gate can close.
+production Runtime payload admission/receipt wiring, a durable proof snapshot
+for crash retry, and production Control/Runtime/receipt wiring remain open
+before the complete A3 catalog exit gate can close.
 
 Implementation note (2026-09-05): the descriptor evidence boundary now has an
 installation-owned durable snapshot store for crash and restart replay. It
@@ -1131,9 +1131,13 @@ create-if-absent publication, cross-process locking, exact canonical/digest
 revalidation, and no mutable current pointer. A durable projector reads only
 the exact Control-bound key; absent evidence defers safely, while substitution,
 tampering, duplicate keys, and unknown layout fail closed. The store is still
-an inactive external payload owner: key custody, runtime payload/schema
-attestation, backup/restore registration, and production Control/Runtime/receipt
-wiring remain open.
+an inactive external payload owner: key custody, backup/restore registration,
+and production Control/Runtime/receipt wiring remain open. Runtime Tool release
+planning now carries a canonical input/output-schema attestation through plans,
+binding receipts, and Control evidence; verified artifact admission and strict
+descriptor projection compare the same descriptor and schema digests. The
+implementation is qualified in the inactive kernel, while production
+lifecycle activation remains open.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning

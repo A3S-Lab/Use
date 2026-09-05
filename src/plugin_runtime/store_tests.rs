@@ -97,6 +97,7 @@ fn service_receipt(observation_revision: u64) -> RuntimeBindingReceipt {
             shutdown_grace_ms: 30_000,
             api_contract_digest: None,
         },
+        tool_schema_attestation: None,
         readiness: RuntimeServiceReadinessEvidence::HttpHealthy,
     })
 }

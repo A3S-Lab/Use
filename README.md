@@ -1885,9 +1885,12 @@ descriptor digest. Snapshot files are content-addressed by their canonical
 bytes (rather than by a mutable key), published with bounded no-follow
 staging/no-clobber replay, and revalidated on every restart read; a missing
 snapshot is a safe retry while substitution or tampering is rejected. This is
-still qualification code: cryptographic key custody, runtime payload/schema
-attestation, production Control/Runtime/receipt wiring, and backup/restore
-registration remain host gates. Production Control activation, backup/restore
+still qualification code: cryptographic key custody, production
+Control/Runtime/receipt wiring, and backup/restore registration remain host
+gates. Runtime Tool release planning now carries a canonical input/output
+schema attestation through plans, binding receipts, and Control evidence;
+verified artifact admission and strict descriptor projection compare the same
+descriptor and schema digests. Production Control activation, backup/restore
 ownership, and retirement coordination remain separate gates.
 
 The embedding boundary now also includes `CapabilityGatewaySessionFactory`:

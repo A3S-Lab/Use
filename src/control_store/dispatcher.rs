@@ -304,6 +304,7 @@ impl ControlEffectDispatcher {
                             selection_digest: request.selection_digest,
                             receipt_digest: application.receipt_digest,
                             binding: application.binding,
+                            schema_attestation: application.schema_attestation,
                         },
                     )
                     .into())

@@ -17,7 +17,16 @@ pub(super) fn prepare_application(
         Ok(digest) => digest,
         Err(error) => return unknown(request, phase, error),
     };
-    match ControlRuntimeApplication::new(request, digest, Some(binding)) {
+    let schema_attestation = match schema_attestation(receipt) {
+        Ok(attestation) => attestation,
+        Err(error) => return unknown(request, phase, error),
+    };
+    match ControlRuntimeApplication::new_with_schema_attestation(
+        request,
+        digest,
+        Some(binding),
+        schema_attestation,
+    ) {
         Ok(application) => ControlEffectPortOutcome::applied(application),
         Err(error) => unknown(request, phase, error),
     }
@@ -79,6 +88,21 @@ fn binding_observation(
             },
         ),
     }
+}
+
+fn schema_attestation(
+    receipt: &RuntimeBindingReceipt,
+) -> UseResult<Option<super::super::super::model::ControlRuntimeSchemaAttestation>> {
+    receipt
+        .tool_schema_attestation()
+        .map(|attestation| {
+            super::super::super::model::ControlRuntimeSchemaAttestation::new(
+                attestation.descriptor_digest.clone(),
+                attestation.input_schema_digest.clone(),
+                attestation.output_schema_digest.clone(),
+            )
+        })
+        .transpose()
 }
 
 fn receipt_digest(

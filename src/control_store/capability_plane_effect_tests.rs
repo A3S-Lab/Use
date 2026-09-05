@@ -122,6 +122,7 @@ impl ControlCapabilityCatalogProjectionPort for UnauthorizedCatalogProjection {
                 input_schema: schema.clone(),
                 output_schema: schema,
                 annotations: CapabilityToolAnnotations::new(false, false, false, false),
+                runtime_descriptor_digest: None,
             },
         };
         ControlEffectPortOutcome::applied(

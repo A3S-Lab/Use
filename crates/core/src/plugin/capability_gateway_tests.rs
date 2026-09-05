@@ -56,6 +56,7 @@ fn tool() -> CapabilityDescriptor {
             input_schema: schema(),
             output_schema: schema(),
             annotations: CapabilityToolAnnotations::new(true, false, true, false),
+            runtime_descriptor_digest: None,
         },
     }
 }
@@ -158,6 +159,73 @@ fn descriptor_round_trips_without_private_authority_fields() {
 }
 
 #[test]
+fn tool_schema_digest_is_canonical_and_domain_separated() {
+    let first = schema();
+    let second = serde_json::json!({
+        "required": ["query"],
+        "properties": {
+            "query": {"type": "string", "maxLength": 128}
+        },
+        "additionalProperties": false,
+        "type": "object"
+    });
+    assert_eq!(
+        capability_schema_digest(&first).unwrap(),
+        "sha256:19c000fa987e47c2bd89c6271cc61a07d27d988c1db1fa911d1bf3d9121f04af"
+    );
+    assert_eq!(
+        capability_schema_digest(&first).unwrap(),
+        capability_schema_digest(&second).unwrap()
+    );
+    let mut changed = first;
+    changed["properties"]["query"]["maxLength"] = serde_json::json!(129);
+    assert_ne!(
+        capability_schema_digest(&changed).unwrap(),
+        "sha256:19c000fa987e47c2bd89c6271cc61a07d27d988c1db1fa911d1bf3d9121f04af"
+    );
+}
+
+#[test]
+fn tool_runtime_descriptor_digest_is_optional_but_strictly_formatted() {
+    let mut descriptor = tool();
+    descriptor.capability = match descriptor.capability {
+        CapabilityDescriptorKind::Tool {
+            name,
+            input_schema,
+            output_schema,
+            annotations,
+            ..
+        } => CapabilityDescriptorKind::Tool {
+            name,
+            input_schema,
+            output_schema,
+            annotations,
+            runtime_descriptor_digest: Some(digest('9')),
+        },
+        _ => unreachable!(),
+    };
+    descriptor.validate().unwrap();
+    let encoded = serde_json::to_value(&descriptor).unwrap();
+    assert_eq!(
+        encoded["runtimeDescriptorDigest"],
+        serde_json::json!(digest('9'))
+    );
+    assert_eq!(
+        serde_json::from_value::<CapabilityDescriptor>(encoded).unwrap(),
+        descriptor
+    );
+
+    if let CapabilityDescriptorKind::Tool {
+        runtime_descriptor_digest,
+        ..
+    } = &mut descriptor.capability
+    {
+        *runtime_descriptor_digest = Some("sha256:not-a-digest".to_owned());
+    }
+    assert!(descriptor.validate().is_err());
+}
+
+#[test]
 fn descriptor_rejects_executable_only_and_external_schema_authority() {
     let mut descriptor = tool();
     descriptor.capability = CapabilityDescriptorKind::Tool {
@@ -165,6 +233,7 @@ fn descriptor_rejects_executable_only_and_external_schema_authority() {
         input_schema: schema(),
         output_schema: schema(),
         annotations: CapabilityToolAnnotations::new(false, true, false, true),
+        runtime_descriptor_digest: None,
     };
     assert!(descriptor.validate().is_err());
 
@@ -178,6 +247,7 @@ fn descriptor_rejects_executable_only_and_external_schema_authority() {
         }),
         output_schema: schema(),
         annotations: CapabilityToolAnnotations::new(true, false, true, false),
+        runtime_descriptor_digest: None,
     };
     assert!(descriptor.validate().is_err());
 
@@ -195,6 +265,7 @@ fn descriptor_rejects_executable_only_and_external_schema_authority() {
             input_schema: Value::Object(input_schema),
             output_schema: schema(),
             annotations: CapabilityToolAnnotations::new(true, false, true, false),
+            runtime_descriptor_digest: None,
         };
         assert!(
             descriptor.validate().is_err(),

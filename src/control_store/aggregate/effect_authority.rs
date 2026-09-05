@@ -450,7 +450,7 @@ fn materializations_for(
                         )
                     })?;
                     ControlCapabilitySurfaceState::Prepared {
-                        application,
+                        application: Box::new(application),
                         observed_at_ms,
                     }
                 }

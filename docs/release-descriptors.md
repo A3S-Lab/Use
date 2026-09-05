@@ -163,6 +163,25 @@ depends. It does not mean an item returned by MCP `tools/list`. A3S preserves
 the Tool's native argv, exit status, and HTTP API; the descriptor does not
 define business operations or a universal action envelope.
 
+### Agent-facing JSON contract
+
+Tool v1 may carry an `inputSchema` and `outputSchema` pair. When present, both
+fields are required and each must be a bounded, closed JSON object schema: the
+top-level type is `object`, `additionalProperties` is `false`, local fragment
+references only are permitted, and the complete document is size/depth
+bounded. The schema bytes are part of the canonical release descriptor, so a
+change to either contract produces a new descriptor digest. A descriptor that
+omits both fields is a legacy host-only release; it can be run by Runtime but
+cannot be projected as an agent-visible Tool by the strict Control boundary.
+
+Runtime derives a `RuntimeToolSchemaAttestation` from the descriptor digest and
+the canonical input/output schema digests. The attestation is carried through
+the immutable Runtime plan, task/service binding receipt, and Control applied
+evidence. Before a verified artifact is executed, Runtime recomputes the
+attestation from the release bytes. Control then compares the same digests to
+the signed capability description before publication. This prevents a valid
+Tool name or route from being paired with a different runtime JSON contract.
+
 ### Task + CLI
 
 The Task contract declares:
@@ -255,10 +274,13 @@ The schema string is the compatibility boundary. A decoder:
 - never guesses a default for a future field; and
 - never reinterprets MCP, Skill, or Tool kinds or Tool workload classes.
 
-Changing field meaning, adding a field, adding a transport or binding target,
-or changing canonicalization requires a new schema identifier and new fixture
-digest. V1 is the only accepted descriptor line in the current development
-preview. If this contract changes before the first supported release, all
-producers, consumers, fixtures, and documentation change together and the
-superseded path is removed. Post-release evolution requires a separate,
-explicit product policy.
+Changing field meaning, adding a required field, adding a transport or binding
+target, or changing canonicalization requires a new schema identifier and new
+fixture digest. During this pre-release line, additive optional fields such as
+the Tool schema pair are accepted only when every producer and consumer keeps
+the old omission semantics and the strict projection gate remains fail-closed.
+V1 is the only accepted descriptor line in the current development preview.
+If this contract changes before the first supported release, all producers,
+consumers, fixtures, and documentation change together and the superseded path
+is removed. Post-release evolution requires a separate, explicit product
+policy.

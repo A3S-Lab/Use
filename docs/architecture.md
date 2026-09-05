@@ -172,10 +172,12 @@ exact normalized proof set and signer policy to the Control identity, addresses
 records by their canonical bytes, uses bounded no-follow staging and
 no-clobber publication, and verifies the canonical record and content digest on
 every read. A missing record is retryable; a substituted, duplicated, or
-tampered record is rejected. The snapshot owner remains outside the Control
-aggregate and is not yet registered with backup/restore; key custody, runtime
-payload/schema attestation, and production Control/Runtime wiring remain
-activation gates.
+tampered record is rejected. Runtime Tool release schemas are now carried as a
+canonical descriptor/input/output digest attestation through the inactive
+Runtime and Control evidence path, and verified payload admission compares the
+attestation before execution. The snapshot owner remains outside the Control
+aggregate and is not yet registered with backup/restore; key custody and
+production Control/Runtime wiring remain activation gates.
 
 Production lifecycle code does not construct it, so it neither mirrors nor
 replaces the current JSON authority. The first concrete post-commit adapter now

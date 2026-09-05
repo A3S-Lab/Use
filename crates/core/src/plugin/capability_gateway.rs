@@ -30,11 +30,15 @@ use super::{
 pub const CAPABILITY_DESCRIPTOR_SCHEMA_V1: &str = "a3s.use.capability-descriptor.v1";
 /// Current immutable index exchanged with a Capability Gateway host.
 pub const CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1: &str = "a3s.use.capability-gateway-catalog.v1";
+/// Domain-separated digest used to bind a Tool's JSON contract across the
+/// signed capability description and the Runtime payload.
+pub const CAPABILITY_SCHEMA_DIGEST_SCHEMA_V1: &str = "a3s.use.capability-schema-digest.v1";
 mod description_proof;
 pub use description_proof::{CapabilityDescriptionProof, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1};
 
 const CAPABILITY_ERROR: &str = "use.plugin.capability_gateway_invalid";
 const CAPABILITY_REF_DOMAIN: &[u8] = b"a3s.use.capability-ref.v1\0";
+const CAPABILITY_SCHEMA_DIGEST_DOMAIN: &[u8] = b"a3s.use.capability-schema-digest.v1\0";
 const MAX_CAPABILITY_TEXT_BYTES: usize = 4 * 1024;
 const MAX_CAPABILITY_PROTOCOL_BYTES: usize = 128;
 const MAX_CAPABILITY_DEPENDENCIES: usize = 64;
@@ -195,6 +199,12 @@ pub enum CapabilityDescriptorKind {
         input_schema: Value,
         output_schema: Value,
         annotations: CapabilityToolAnnotations,
+        /// Digest of the exact signed Runtime release descriptor that
+        /// supplies the Tool payload.  It is optional for compatibility with
+        /// host-only descriptors; the strict Control projector requires it
+        /// before exposing a Tool to an agent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runtime_descriptor_digest: Option<String>,
     },
     McpServer {
         server_name: String,
@@ -333,6 +343,8 @@ struct CapabilityDescriptorWire {
     #[serde(default)]
     annotations: Option<CapabilityToolAnnotations>,
     #[serde(default)]
+    runtime_descriptor_digest: Option<String>,
+    #[serde(default)]
     server_name: Option<String>,
     #[serde(default)]
     transport: Option<CapabilityMcpTransport>,
@@ -382,6 +394,7 @@ fn decode_capability_descriptor(value: Value) -> Result<CapabilityDescriptor, St
         "inputSchema",
         "outputSchema",
         "annotations",
+        "runtimeDescriptorDigest",
         "serverName",
         "transport",
         "protocolVersion",
@@ -426,6 +439,7 @@ fn decode_capability_descriptor(value: Value) -> Result<CapabilityDescriptor, St
                 annotations: wire
                     .annotations
                     .ok_or_else(|| "A Tool descriptor requires `annotations`.".to_owned())?,
+                runtime_descriptor_digest: wire.runtime_descriptor_digest,
             }
         }
         "mcp-server" => {
@@ -437,6 +451,7 @@ fn decode_capability_descriptor(value: Value) -> Result<CapabilityDescriptor, St
                 || wire.mime_type.is_some()
                 || wire.size.is_some()
                 || wire.arguments.is_some()
+                || wire.runtime_descriptor_digest.is_some()
             {
                 return Err(
                     "An MCP Server descriptor contains fields for another capability kind."
@@ -459,6 +474,7 @@ fn decode_capability_descriptor(value: Value) -> Result<CapabilityDescriptor, St
             if wire.input_schema.is_some()
                 || wire.output_schema.is_some()
                 || wire.annotations.is_some()
+                || wire.runtime_descriptor_digest.is_some()
                 || wire.server_name.is_some()
                 || wire.transport.is_some()
                 || wire.protocol_version.is_some()
@@ -483,6 +499,7 @@ fn decode_capability_descriptor(value: Value) -> Result<CapabilityDescriptor, St
             if wire.input_schema.is_some()
                 || wire.output_schema.is_some()
                 || wire.annotations.is_some()
+                || wire.runtime_descriptor_digest.is_some()
                 || wire.server_name.is_some()
                 || wire.transport.is_some()
                 || wire.protocol_version.is_some()
@@ -601,11 +618,15 @@ impl CapabilityDescriptor {
                 input_schema,
                 output_schema,
                 annotations: _,
+                runtime_descriptor_digest,
             } => {
                 if self.surface.kind != PluginSurfaceKind::Tool
                     || !valid_tool_name(name)
                     || validate_agent_schema(input_schema, true).is_err()
                     || validate_agent_schema(output_schema, true).is_err()
+                    || runtime_descriptor_digest
+                        .as_deref()
+                        .is_some_and(|digest| !valid_sha256(digest))
                 {
                     return Err(capability_error(
                         "A Tool descriptor must bind a schema-valid Tool surface.",
@@ -678,6 +699,24 @@ impl CapabilityDescriptor {
 
     pub fn descriptor_digest(&self) -> UseResult<String> {
         Ok(canonical_digest(&self.canonical_bytes()?))
+    }
+
+    /// Return the canonical digests of a Tool's input and output schemas.
+    /// Non-Tool descriptors have no schema contract.
+    pub fn tool_schema_digests(&self) -> UseResult<Option<(String, String)>> {
+        let CapabilityDescriptorKind::Tool {
+            input_schema,
+            output_schema,
+            ..
+        } = &self.capability
+        else {
+            return Ok(None);
+        };
+        self.validate()?;
+        Ok(Some((
+            capability_schema_digest(input_schema)?,
+            capability_schema_digest(output_schema)?,
+        )))
     }
 
     /// Return the optional consumer extensions required to understand this
@@ -1131,7 +1170,7 @@ fn surface_kind_name(kind: PluginSurfaceKind) -> &'static str {
     }
 }
 
-fn validate_agent_schema(schema: &Value, require_object: bool) -> UseResult<()> {
+pub(crate) fn validate_agent_schema(schema: &Value, require_object: bool) -> UseResult<()> {
     if !schema.is_object() {
         return Err(capability_error(
             "Agent input and output schemas must be JSON objects.",
@@ -1164,6 +1203,21 @@ fn validate_agent_schema(schema: &Value, require_object: bool) -> UseResult<()> 
         }
     }
     Ok(())
+}
+
+/// Compute the stable, domain-separated digest for one agent Tool schema.
+///
+/// The same helper is used by release planning and Control projection. It
+/// validates the bounded, closed object contract before hashing canonical JSON
+/// so a digest can never attest to an unsafe or merely equivalent-looking
+/// schema document.
+pub fn capability_schema_digest(schema: &Value) -> UseResult<String> {
+    validate_agent_schema(schema, true)?;
+    let bytes = canonical_json(schema, "agent JSON schema", CAPABILITY_ERROR)?;
+    let mut hasher = Sha256::new();
+    hasher.update(CAPABILITY_SCHEMA_DIGEST_DOMAIN);
+    hasher.update(bytes);
+    Ok(format!("sha256:{:x}", hasher.finalize()))
 }
 
 fn validate_schema_value(value: &Value, depth: usize) -> UseResult<()> {

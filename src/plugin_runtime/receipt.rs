@@ -97,6 +97,13 @@ impl RuntimeBindingReceipt {
             Self::Service(_) => RuntimeBindingReadiness::Healthy,
         }
     }
+
+    pub fn tool_schema_attestation(&self) -> Option<&super::model::RuntimeToolSchemaAttestation> {
+        match self {
+            Self::Task(receipt) => receipt.tool_schema_attestation.as_ref(),
+            Self::Service(receipt) => receipt.tool_schema_attestation.as_ref(),
+        }
+    }
 }
 
 fn validate_task(receipt: &RuntimePreparedTaskBinding) -> UseResult<()> {
@@ -126,6 +133,16 @@ fn validate_service(receipt: &RuntimeServiceBindingReceipt) -> UseResult<()> {
         ));
     }
     super::model::RuntimeEndpointRef::parse(receipt.endpoint_ref.as_str().to_string())?;
+    if let Some(attestation) = &receipt.tool_schema_attestation {
+        if receipt.surface.surface.kind != PluginSurfaceKind::Tool
+            || !matches!(receipt.contract, RuntimeSurfaceContract::ToolService { .. })
+        {
+            return Err(runtime_input_error(
+                "A Runtime schema attestation can bind only a Tool Service receipt.",
+            ));
+        }
+        attestation.validate_for_descriptor(&receipt.descriptor_digest)?;
+    }
     validate_service_contract(receipt)
 }
 

@@ -428,6 +428,7 @@ extension "acme/research" {
                 protocol_version: descriptor.service.protocol_version.clone(),
                 shutdown_grace_ms: descriptor.service.shutdown_grace_ms,
             },
+            tool_schema_attestation: None,
             readiness: RuntimeServiceReadinessEvidence::McpInitialized {
                 initialize: RuntimeMcpInitializeEvidence::new(
                     descriptor.service.protocol_version.clone(),

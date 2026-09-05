@@ -11,7 +11,7 @@ use super::model::{
     input_error, valid_error_code, valid_machine_id, valid_sha256, ControlCapabilityCatalogBinding,
     ControlCapabilityEffectAuthority, ControlEffectIntent, ControlEffectKind, ControlEffectOwner,
     ControlEffectSubject, ControlPackageEffectAuthority, ControlRuntimeBindingObservation,
-    ControlRuntimeEffectAuthority,
+    ControlRuntimeEffectAuthority, ControlRuntimeSchemaAttestation,
 };
 
 /// Classification returned by an external effect owner.
@@ -411,6 +411,7 @@ impl ControlReceiptApplication {
 pub(in crate::control_store) struct ControlRuntimeApplication {
     pub(in crate::control_store) receipt_digest: String,
     pub(in crate::control_store) binding: Option<ControlRuntimeBindingObservation>,
+    pub(in crate::control_store) schema_attestation: Option<ControlRuntimeSchemaAttestation>,
 }
 
 impl ControlRuntimeApplication {
@@ -419,9 +420,19 @@ impl ControlRuntimeApplication {
         receipt_digest: impl Into<String>,
         binding: Option<ControlRuntimeBindingObservation>,
     ) -> UseResult<Self> {
+        Self::new_with_schema_attestation(request, receipt_digest, binding, None)
+    }
+
+    pub(in crate::control_store) fn new_with_schema_attestation(
+        request: &ControlRuntimeEffectRequest,
+        receipt_digest: impl Into<String>,
+        binding: Option<ControlRuntimeBindingObservation>,
+        schema_attestation: Option<ControlRuntimeSchemaAttestation>,
+    ) -> UseResult<Self> {
         let application = Self {
             receipt_digest: receipt_digest.into(),
             binding,
+            schema_attestation,
         };
         let binding_matches = match request.surface.action {
             ControlSurfaceEffectAction::Prepare => application
@@ -429,10 +440,20 @@ impl ControlRuntimeApplication {
                 .as_ref()
                 .is_some_and(ControlRuntimeBindingObservation::validate),
             ControlSurfaceEffectAction::Stop | ControlSurfaceEffectAction::Remove => {
-                application.binding.is_none()
+                application.binding.is_none() && application.schema_attestation.is_none()
             }
         };
-        if !valid_sha256(&application.receipt_digest) || !binding_matches {
+        let attestation_matches = application
+            .schema_attestation
+            .as_ref()
+            .is_none_or(|attestation| attestation.validate().is_ok());
+        let attestation_kind_matches = application.schema_attestation.is_none()
+            || request.surface.surface.kind == PluginSurfaceKind::Tool;
+        if !valid_sha256(&application.receipt_digest)
+            || !binding_matches
+            || !attestation_matches
+            || !attestation_kind_matches
+        {
             return Err(input_error(
                 "Runtime effect application evidence does not match its typed request.",
             ));

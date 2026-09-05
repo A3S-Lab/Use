@@ -44,12 +44,14 @@ pub use capability_consumer::{
     CapabilityConsumerProfile, CAPABILITY_CONSUMER_NEGOTIATION_SCHEMA_V1,
     CAPABILITY_CONSUMER_PROFILE_SCHEMA_V1, MAX_CAPABILITY_CONSUMER_EXTENSIONS,
 };
+pub(crate) use capability_gateway::validate_agent_schema;
 pub use capability_gateway::{
-    ArtifactRef, CapabilityDescriptionProof, CapabilityDescriptor, CapabilityDescriptorKind,
-    CapabilityGatewayCatalog, CapabilityMcpTransport, CapabilityPromptArgument,
-    CapabilityPublicationEvidence, CapabilityToolAnnotations, EndpointRef, InvocationRef,
-    ResourceRef, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1, CAPABILITY_DESCRIPTOR_SCHEMA_V1,
-    CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1,
+    capability_schema_digest, ArtifactRef, CapabilityDescriptionProof, CapabilityDescriptor,
+    CapabilityDescriptorKind, CapabilityGatewayCatalog, CapabilityMcpTransport,
+    CapabilityPromptArgument, CapabilityPublicationEvidence, CapabilityToolAnnotations,
+    EndpointRef, InvocationRef, ResourceRef, CAPABILITY_DESCRIPTION_PROOF_SCHEMA_V1,
+    CAPABILITY_DESCRIPTOR_SCHEMA_V1, CAPABILITY_GATEWAY_CATALOG_SCHEMA_V1,
+    CAPABILITY_SCHEMA_DIGEST_SCHEMA_V1,
 };
 pub use catalog::{
     CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,
