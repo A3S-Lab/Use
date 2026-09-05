@@ -270,6 +270,8 @@ impl CapabilityGatewayCatalogStore {
             return Ok(None);
         }
         validate_store_layout(&root).await?;
+        let _mutation = self.acquire_shared_mutation(&state_root, &root).await?;
+        retention::ensure_no_pending_journal(&root).await?;
         let target = path_for_digest(&root, &digest)?;
         let Some(parent) = target.parent() else {
             return Err(path_invalid());
@@ -319,6 +321,8 @@ impl CapabilityGatewayCatalogStore {
             return Ok(Vec::new());
         }
         validate_store_layout(&root).await?;
+        let _mutation = self.acquire_shared_mutation(&state_root, &root).await?;
+        retention::ensure_no_pending_journal(&root).await?;
         self.scan_records(&root)
             .await?
             .into_iter()
@@ -344,10 +348,29 @@ impl CapabilityGatewayCatalogStore {
     }
 
     async fn acquire_mutation(&self, state_root: &Path, root: &Path) -> UseResult<MutationGuard> {
+        self.acquire_lock(state_root, root, MutationMode::Exclusive)
+            .await
+    }
+
+    async fn acquire_shared_mutation(
+        &self,
+        state_root: &Path,
+        root: &Path,
+    ) -> UseResult<MutationGuard> {
+        self.acquire_lock(state_root, root, MutationMode::Shared)
+            .await
+    }
+
+    async fn acquire_lock(
+        &self,
+        state_root: &Path,
+        root: &Path,
+        mode: MutationMode,
+    ) -> UseResult<MutationGuard> {
         ensure_owned_directory_chain(state_root, root).await?;
         let path = root.join(CATALOG_LOCK);
         let error_path = path.clone();
-        let file = tokio::task::spawn_blocking(move || acquire_lock_blocking(&path))
+        let file = tokio::task::spawn_blocking(move || acquire_lock_blocking(&path, mode))
             .await
             .map_err(|error| store_io(format!("Catalog mutation lock task failed: {error}")))?
             .map_err(|error| path_error("acquire catalog mutation lock", &error_path, error))?;
@@ -944,14 +967,24 @@ fn configure_no_follow_async(options: &mut fs::OpenOptions) {
     }
 }
 
-fn acquire_lock_blocking(path: &Path) -> io::Result<StdFile> {
+#[derive(Debug, Clone, Copy)]
+enum MutationMode {
+    Shared,
+    Exclusive,
+}
+
+fn acquire_lock_blocking(path: &Path, mode: MutationMode) -> io::Result<StdFile> {
     let started = std::time::Instant::now();
     let file = loop {
         let mut options = StdOpenOptions::new();
         options.create(true).truncate(false).read(true).write(true);
         configure_no_follow_blocking(&mut options);
         let file = options.open(path)?;
-        match FileExt::try_lock_exclusive(&file) {
+        let result = match mode {
+            MutationMode::Shared => FileExt::try_lock_shared(&file),
+            MutationMode::Exclusive => FileExt::try_lock_exclusive(&file),
+        };
+        match result {
             Ok(()) => break file,
             Err(error) if lock_is_contended(&error) && started.elapsed() < LOCK_WAIT => {
                 drop(file);
