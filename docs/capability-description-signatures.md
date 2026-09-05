@@ -80,7 +80,10 @@ The mechanism is intentionally not a second Gateway protocol and does not
 choose package lifecycle state. Coordinated state backup now registers the
 canonical descriptor-snapshot record alongside Gateway catalogs, validates its
 installation/content-address binding, and rejects mutation staging or
-retention journals. The remaining activation work is to source the trust store
+retention journals. The descriptor-snapshot owner also exposes explicit,
+plan-bound retention with per-unlink checkpoints and restart recovery; a
+pending journal blocks new publication until the exact plan is resumed. The
+remaining activation work is to source the trust store
 and signed envelopes from the official Registry/TUF authority, perform
 owner-native clean-target restore/retention, and route the live lifecycle and
 Gateway through the A2 Control authority. Until then

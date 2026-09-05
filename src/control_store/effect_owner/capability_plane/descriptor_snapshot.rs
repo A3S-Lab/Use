@@ -23,6 +23,14 @@ use super::descriptor::{ControlCapabilityDescriptorProjection, ControlCapability
 
 #[path = "descriptor_snapshot_store.rs"]
 mod storage;
+pub(in crate::control_store) use storage::retention::{
+    ControlCapabilityDescriptorSnapshotRetentionEntry,
+    ControlCapabilityDescriptorSnapshotRetentionPlan,
+    ControlCapabilityDescriptorSnapshotRetentionResult,
+    CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_JOURNAL_SCHEMA,
+    CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_PLAN_SCHEMA,
+    CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_RESULT_SCHEMA,
+};
 pub(in crate::control_store) use storage::ControlCapabilityDescriptorSnapshotStore;
 
 /// Validate one descriptor-snapshot payload while it is being assembled into

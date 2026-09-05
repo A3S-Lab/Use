@@ -1,6 +1,6 @@
 # A3S Use First-Principles Agent Package Manager Audit
 
-Status: development preview (2026-09-05)
+Status: development preview (2026-09-06)
 
 This document audits A3S Use against the job it must perform as an Agent
 Package Manager. It separates a mechanism that exists in the repository from a
@@ -86,8 +86,10 @@ envelopes as replay authority, and rejects the proof-only projector for those
 records. The coordinated backup inventory also validates and archives the
 canonical snapshot record, but intentionally leaves current trust-policy
 reverification to restore/replay. A caller-supplied boolean or signer string
-is not sufficient evidence. Production Registry/TUF key-source binding,
-owner-native restore/retention, and lifecycle wiring are still required.
+is not sufficient evidence. The snapshot owner now has plan-bound retention,
+per-unlink journal checkpoints, and exact restart recovery; production
+Registry/TUF key-source binding, owner registration, clean-target restore
+activation, and lifecycle wiring are still required.
 
 ### P0 — Compose the real invocation path
 

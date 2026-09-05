@@ -54,7 +54,7 @@ pub(crate) fn validate_layout(path: &str, directory: bool) -> UseResult<()> {
         [ROOT, CATALOGS, STAGING, _] if !directory => true,
         [ROOT, DESCRIPTOR_SNAPSHOTS] if directory => true,
         [ROOT, DESCRIPTOR_SNAPSHOTS, STAGING] if directory => true,
-        [ROOT, DESCRIPTOR_SNAPSHOTS, MUTATION_LOCK] if !directory => true,
+        [ROOT, DESCRIPTOR_SNAPSHOTS, MUTATION_LOCK | RETENTION_JOURNAL] if !directory => true,
         [ROOT, DESCRIPTOR_SNAPSHOTS, file] if !directory => valid_record_name(file),
         [ROOT, DESCRIPTOR_SNAPSHOTS, STAGING, _] if !directory => true,
         _ => false,
@@ -94,7 +94,11 @@ pub(crate) fn is_nonterminal(path: &str, directory: bool) -> bool {
         return false;
     }
     let parts = path.split('/').collect::<Vec<_>>();
-    parts.contains(&STAGING) || matches!(parts.as_slice(), [ROOT, CATALOGS, RETENTION_JOURNAL])
+    parts.contains(&STAGING)
+        || matches!(
+            parts.as_slice(),
+            [ROOT, CATALOGS, RETENTION_JOURNAL] | [ROOT, DESCRIPTOR_SNAPSHOTS, RETENTION_JOURNAL]
+        )
 }
 
 /// Validate canonical bytes for one immutable record.  The descriptor

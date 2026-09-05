@@ -321,8 +321,9 @@ replace existing content, and exact staging replay is crash-safe. The Index and
 lease families are derived operational state excluded from backup; coordinated
 legacy inventory now admits the bound catalog and descriptor snapshot as one
 strict `CapabilityPayloads` family with canonical/content-address checks. The
-production owner-registry cutover, clean-target activation, and retention
-coordination for those payloads remain required. The strict descriptor projector now provides a
+descriptor and catalog owners now expose plan-bound retention and durable
+recovery; production owner-registry cutover, clean-target activation, and
+retention coordination remain required. The strict descriptor projector now provides a
 second, side-effect-free gate at this boundary: it consumes host-verified
 description proofs under an explicit package-scoped signer policy and checks
 catalog provenance, dependency closure, prepared owner receipts, active Grant
