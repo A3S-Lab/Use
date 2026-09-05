@@ -633,7 +633,11 @@ now supplies the corresponding in-process endpoint seam: it serializes
 monotonic immutable-server replacement, preserves consumer negotiation and
 lease mode, shares the notification hub, and routes each operation through a
 current-server snapshot so old in-flight leases can drain. Durable Control
-cutover and retention remain outside this adapter.
+cutover remains outside this adapter. The store now exposes an explicit,
+canonical retention plan/apply protocol: the lifecycle owner names every
+protected digest, the apply step rechecks the inventory under the mutation
+lock, and only reviewed records are removed. This prevents payload GC from
+silently becoming a second lifecycle authority.
 
 The authoritative `registry.json` file is itself treated as a hostile mutable
 boundary. Its complete configured state-directory chain must be an owned,

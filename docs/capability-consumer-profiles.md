@@ -175,6 +175,26 @@ MCP session observe the replacement. Lifecycle code still owns the durable
 Control cursor, receipt/Runtime/Grant composition, lease retirement, and
 catalog retention policy.
 
+## Catalog retention
+
+The payload store does not infer liveness from filenames or a mutable
+`current` marker. A lifecycle owner supplies every protected digest, reviews a
+canonical `CapabilityGatewayCatalogRetentionPlan`, and applies it with the
+plan digest:
+
+```rust,ignore
+let plan = store.plan_retention(&[active_digest, draining_digest]).await?;
+let confirmed = plan.descriptor_digest()?;
+let result = store.apply_retention(&plan, &confirmed).await?;
+```
+
+The apply path revalidates installation scope, catalog metadata, inventory
+identity, no-follow file state, and shard durability before and after each
+removal. A non-empty inventory must retain at least one record; a completed
+plan can be replayed read-only. The lifecycle authority must include all live
+and draining session generations in the protected set and must coordinate
+Control cursor/lease state separately.
+
 ## Request cancellation
 
 The standard MCP adapter also consumes rmcp's per-request
