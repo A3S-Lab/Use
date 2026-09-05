@@ -637,6 +637,204 @@ async fn gateway_advertises_and_broadcasts_standard_catalog_notifications() {
 }
 
 #[tokio::test]
+async fn catalog_store_publishes_canonical_content_addressed_records() {
+    let temporary = tempfile::tempdir().unwrap();
+    let catalog = test_catalog(test_descriptor());
+    let store = CapabilityGatewayCatalogStore::new(
+        temporary.path().join("state"),
+        catalog.installation().clone(),
+    )
+    .unwrap();
+
+    let publication = store.publish(&catalog).await.unwrap();
+    assert_eq!(publication.digest, catalog.descriptor_digest().unwrap());
+    assert_eq!(publication.generation, catalog.generation());
+    assert_eq!(publication.revision, catalog.revision());
+    assert_eq!(
+        store.get(&publication.digest).await.unwrap(),
+        Some(catalog.clone())
+    );
+    assert_eq!(
+        store
+            .get_exact(
+                &publication.digest,
+                catalog.generation(),
+                catalog.revision()
+            )
+            .await
+            .unwrap(),
+        Some(catalog.clone())
+    );
+
+    // Replaying the same immutable payload is idempotent, including after a
+    // fresh store value (the restart/recovery boundary).
+    let restarted = CapabilityGatewayCatalogStore::new(
+        temporary.path().join("state"),
+        catalog.installation().clone(),
+    )
+    .unwrap();
+    assert_eq!(restarted.publish(&catalog).await.unwrap(), publication);
+    let inventory = restarted.list().await.unwrap();
+    assert_eq!(inventory, vec![publication]);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn catalog_store_resolves_an_ancestor_alias_before_no_follow_io() {
+    use std::os::unix::fs::symlink;
+
+    let logical_parent = tempfile::tempdir().unwrap();
+    let physical_parent = tempfile::tempdir().unwrap();
+    let alias = logical_parent.path().join("state-alias");
+    symlink(physical_parent.path(), &alias).unwrap();
+    let catalog = test_catalog(test_descriptor());
+    let state_root = alias.join("installation");
+    let store =
+        CapabilityGatewayCatalogStore::new(&state_root, catalog.installation().clone()).unwrap();
+
+    let publication = store.publish(&catalog).await.unwrap();
+
+    assert_eq!(store.get(&publication.digest).await.unwrap(), Some(catalog));
+    assert!(physical_parent
+        .path()
+        .join("installation/capability-gateway/catalogs")
+        .is_dir());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn catalog_store_rejects_a_linked_state_root() {
+    use std::os::unix::fs::symlink;
+
+    let logical_parent = tempfile::tempdir().unwrap();
+    let physical_parent = tempfile::tempdir().unwrap();
+    let state_root = logical_parent.path().join("state");
+    symlink(physical_parent.path(), &state_root).unwrap();
+    let catalog = test_catalog(test_descriptor());
+    let store =
+        CapabilityGatewayCatalogStore::new(&state_root, catalog.installation().clone()).unwrap();
+
+    let error = store.publish(&catalog).await.unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_catalog_store_invalid"
+    );
+}
+
+#[tokio::test]
+async fn catalog_store_rejects_scope_drift_and_tampered_records() {
+    let temporary = tempfile::tempdir().unwrap();
+    let catalog = test_catalog(test_descriptor());
+    let store = CapabilityGatewayCatalogStore::new(
+        temporary.path().join("state"),
+        catalog.installation().clone(),
+    )
+    .unwrap();
+    let publication = store.publish(&catalog).await.unwrap();
+
+    let foreign = CapabilityGatewayCatalog::new(
+        InstallationId::new(InstallationKind::User, "user/foreign-gateway-tests").unwrap(),
+        catalog.generation(),
+        catalog.descriptors().to_vec(),
+    )
+    .unwrap();
+    assert!(store.publish(&foreign).await.is_err());
+
+    let hex = publication.digest.strip_prefix("sha256:").unwrap();
+    let path = store
+        .root()
+        .join("sha256")
+        .join(&hex[..2])
+        .join(format!("{hex}.json"));
+    tokio::fs::write(&path, b"{}").await.unwrap();
+    let error = store.get(&publication.digest).await.unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_catalog_store_conflict"
+    );
+}
+
+#[tokio::test]
+async fn catalog_store_rejects_unowned_layout_entries() {
+    let temporary = tempfile::tempdir().unwrap();
+    let catalog = test_catalog(test_descriptor());
+    let store = CapabilityGatewayCatalogStore::new(
+        temporary.path().join("state"),
+        catalog.installation().clone(),
+    )
+    .unwrap();
+    store.publish(&catalog).await.unwrap();
+    tokio::fs::write(store.root().join("unexpected.json"), b"unowned")
+        .await
+        .unwrap();
+
+    let error = store.list().await.unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_catalog_store_invalid"
+    );
+    let error = store
+        .get(&catalog.descriptor_digest().unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_catalog_store_invalid"
+    );
+}
+
+#[tokio::test]
+async fn catalog_store_concurrent_identical_publications_converge() {
+    let temporary = tempfile::tempdir().unwrap();
+    let catalog = test_catalog(test_descriptor());
+    let store = Arc::new(
+        CapabilityGatewayCatalogStore::new(
+            temporary.path().join("state"),
+            catalog.installation().clone(),
+        )
+        .unwrap(),
+    );
+    let left = Arc::clone(&store);
+    let right = Arc::clone(&store);
+    let left_catalog = catalog.clone();
+    let right_catalog = catalog;
+    let (left, right) = tokio::join!(
+        async move { left.publish(&left_catalog).await },
+        async move { right.publish(&right_catalog).await },
+    );
+    assert!(left.is_ok(), "left publication failed: {left:?}");
+    assert!(right.is_ok(), "right publication failed: {right:?}");
+    assert_eq!(store.list().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn catalog_store_replays_incomplete_deterministic_staging() {
+    let temporary = tempfile::tempdir().unwrap();
+    let first = test_catalog(test_descriptor());
+    let second = CapabilityGatewayCatalog::new(
+        first.installation().clone(),
+        first.generation() + 1,
+        first.descriptors().to_vec(),
+    )
+    .unwrap();
+    let store = CapabilityGatewayCatalogStore::new(
+        temporary.path().join("state"),
+        first.installation().clone(),
+    )
+    .unwrap();
+    store.publish(&first).await.unwrap();
+
+    let digest = second.descriptor_digest().unwrap();
+    let hex = digest.strip_prefix("sha256:").unwrap();
+    let staging = store.root().join(".staging").join(format!(".{hex}.tmp"));
+    tokio::fs::write(&staging, b"incomplete").await.unwrap();
+
+    let publication = store.publish(&second).await.unwrap();
+    assert_eq!(publication.digest, digest);
+    assert_eq!(store.get(&digest).await.unwrap(), Some(second));
+}
+
+#[tokio::test]
 async fn discovery_policy_errors_are_sanitized_and_fail_closed() {
     let server = CapabilityGatewayMcpServer::new(
         test_catalog(test_descriptor()),

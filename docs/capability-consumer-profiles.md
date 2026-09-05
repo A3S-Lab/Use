@@ -115,6 +115,32 @@ Gateway from a refreshed immutable catalog/policy snapshot. Existing
 constructors use an allow-all compatibility policy, so a production
 multi-principal host must inject an explicit policy.
 
+## Durable catalog payloads
+
+The embedding host may persist the exact immutable catalog before exposing a
+new Gateway generation:
+
+```rust,ignore
+use a3s_use::capability_gateway::CapabilityGatewayCatalogStore;
+
+let store = CapabilityGatewayCatalogStore::new(state_root, catalog.installation().clone())?;
+let publication = store.publish(&catalog).await?;
+let recovered = store
+    .get_exact(&publication.digest, publication.generation, &publication.revision)
+    .await?;
+```
+
+`CapabilityGatewayCatalogStore` is an installation-scoped payload owner. It
+uses canonical SHA-256 content addressing, bounded records and bytes, no-follow
+filesystem checks, deterministic crash staging, and create-if-absent hard-link
+publication. Replaying equal bytes is idempotent; a record whose bytes,
+installation, generation, or revision do not match its address is rejected.
+There is intentionally no mutable `current` pointer: the Control/lifecycle
+authority must bind `publication.digest` to its committed cursor and keep the
+corresponding generation lease alive while old Gateway sessions drain. Hosts
+also need an explicit retention/GC policy before the bounded inventory is
+exhausted.
+
 ## Request cancellation
 
 The standard MCP adapter also consumes rmcp's per-request

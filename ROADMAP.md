@@ -1039,6 +1039,20 @@ leases through drain. The roadmap item remains open until the complete
 agent-facing catalog is materialized into the lifecycle Capability Index and
 product hosts connect that cutover to the hub.
 
+Implementation note (2026-09-05): `CapabilityGatewayCatalogStore` now gives
+the embedding host a durable owner for the exact Agent-facing catalog payload.
+It validates the installation scope and canonical bytes, stores bounded
+SHA-256-addressed records behind a cross-process mutation lock, uses
+no-follow checks plus deterministic staging and create-if-absent hard-link
+publication, and supports exact generation/revision reads after restart.
+Malformed top-level state, linked entries, tampered records, and over-bound
+inventories fail closed; incomplete regular staging artifacts can be replayed
+under the same digest. The store deliberately has no mutable current pointer,
+so this closes payload durability only. The Control Store still needs a single
+transactional cutover binding for the catalog digest, and the host still needs
+session replacement, lease drain, and retention/GC before the A3 catalog gate
+can be marked complete.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

@@ -91,6 +91,7 @@ mcp = [
     "dep:fs2",
     "dep:getrandom",
     "dep:jsonschema",
+    "dep:libc",
     "dep:rmcp",
     "dep:schemars",
     "dep:tokio-util",

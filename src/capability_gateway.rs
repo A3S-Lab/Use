@@ -37,6 +37,7 @@ use tokio_util::sync::CancellationToken;
 use crate::capability_registry::{CapabilitySnapshotCursor, CapabilitySnapshotLease};
 
 mod admission;
+mod catalog_store;
 mod discovery;
 mod http;
 mod notifications;
@@ -44,6 +45,11 @@ mod resolver;
 
 pub use admission::CapabilityGatewayLimits;
 use admission::{AdmissionFailure, GatewayAdmission};
+pub use catalog_store::{
+    CapabilityGatewayCatalogPublication, CapabilityGatewayCatalogStore,
+    CAPABILITY_GATEWAY_CATALOG_STORE_SCHEMA, MAX_CAPABILITY_GATEWAY_CATALOG_BYTES,
+    MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS,
+};
 pub use discovery::{AllowAllCapabilityGatewayDiscoveryPolicy, CapabilityGatewayDiscoveryPolicy};
 pub use http::CapabilityGatewayHttpConfig;
 pub use notifications::{CapabilityGatewayNotificationHub, CapabilityGatewayNotificationReport};
