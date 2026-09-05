@@ -10,9 +10,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{
-    ArtifactRef, CapabilityDescriptionProof, CapabilityDescriptor, CapabilityDescriptorKind,
-    CapabilityGatewayCatalog, EndpointRef, InstallationId, InvocationRef, PluginPackageId,
-    PluginSurfaceKind, PluginSurfaceRef, ResourceRef, ToolWorkloadClass, UseError, UseResult,
+    capability_schema_digest, ArtifactRef, CapabilityDescriptionProof, CapabilityDescriptor,
+    CapabilityDescriptorKind, CapabilityGatewayCatalog, EndpointRef, InstallationId, InvocationRef,
+    PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, ResourceRef, ToolWorkloadClass, UseError,
+    UseResult,
 };
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,7 @@ use super::super::super::effect_port::{
 use super::super::super::model::{
     valid_sha256, ControlAppliedEffectEvidence, ControlCapabilityEffectAuthority,
     ControlCapabilitySurfaceState, ControlEffectOwner, ControlEffectSubject,
+    ControlRuntimeSchemaAttestation,
 };
 use super::descriptor_snapshot::{
     ControlCapabilityDescriptorSnapshotKey, ControlCapabilityDescriptorSnapshotStore,
@@ -314,6 +316,8 @@ pub(in crate::control_store) struct ControlCapabilityRouteBinding {
     pub(in crate::control_store) endpoint_ref: Option<EndpointRef>,
     pub(in crate::control_store) artifact_ref: Option<ArtifactRef>,
     pub(in crate::control_store) resource_ref: ResourceRef,
+    pub(in crate::control_store) runtime_schema_attestation:
+        Option<ControlRuntimeSchemaAttestation>,
 }
 
 fn validate_descriptor_binding(
@@ -402,7 +406,12 @@ fn validate_descriptor_kind(
         &descriptor.surface,
     )?;
     match &descriptor.capability {
-        CapabilityDescriptorKind::Tool { .. } => {
+        CapabilityDescriptorKind::Tool {
+            input_schema,
+            output_schema,
+            runtime_descriptor_digest,
+            ..
+        } => {
             if descriptor.surface.kind != PluginSurfaceKind::Tool
                 || !matches!(owner, ControlEffectOwner::RuntimeProvider { .. })
             {
@@ -419,8 +428,36 @@ fn validate_descriptor_kind(
                     ))
                 }
             }
+            let attestation = route.runtime_schema_attestation.as_ref().ok_or_else(|| {
+                projection_error(
+                    "An agent-visible Tool requires Runtime schema attestation evidence.",
+                )
+            })?;
+            let runtime_descriptor_digest =
+                runtime_descriptor_digest.as_ref().ok_or_else(|| {
+                    projection_error(
+                        "An agent-visible Tool must bind its signed Runtime release descriptor.",
+                    )
+                })?;
+            let (expected_input, expected_output) = (
+                capability_schema_digest(input_schema)?,
+                capability_schema_digest(output_schema)?,
+            );
+            if attestation.descriptor_digest != *runtime_descriptor_digest
+                || attestation.input_schema_digest != expected_input
+                || attestation.output_schema_digest != expected_output
+            {
+                return Err(projection_error(
+                    "A Tool descriptor schema contract differs from Runtime attestation evidence.",
+                ));
+            }
         }
         CapabilityDescriptorKind::McpServer { .. } => {
+            if route.runtime_schema_attestation.is_some() {
+                return Err(projection_error(
+                    "MCP descriptors cannot carry Tool schema attestation evidence.",
+                ));
+            }
             if descriptor.surface.kind != PluginSurfaceKind::Mcp
                 || !matches!(
                     catalog_surface.mcp_transport,
@@ -435,6 +472,11 @@ fn validate_descriptor_kind(
             }
         }
         CapabilityDescriptorKind::Resource { .. } | CapabilityDescriptorKind::Prompt { .. } => {
+            if route.runtime_schema_attestation.is_some() {
+                return Err(projection_error(
+                    "Non-Tool descriptors cannot carry Runtime schema attestation evidence.",
+                ));
+            }
             // Resources and prompts may be projected by a static A3S surface
             // or by a Runtime surface.  The route/evidence checks above still
             // require a prepared owner and exact opaque references.
@@ -586,13 +628,17 @@ fn route_binding(
         .map(|lifecycle| lifecycle.lifecycle_generation)
         .ok_or_else(|| projection_error("A capability package has no lifecycle identity."))?;
     let application_digest = application.descriptor_digest()?;
-    let (has_endpoint, artifact_source) = match &application.evidence {
-        ControlAppliedEffectEvidence::RuntimeProvider { binding, .. } => match binding {
+    let (has_endpoint, artifact_source, runtime_schema_attestation) = match &application.evidence {
+        ControlAppliedEffectEvidence::RuntimeProvider {
+            binding,
+            schema_attestation,
+            ..
+        } => match binding {
             Some(super::super::super::model::ControlRuntimeBindingObservation::Service {
                 ..
-            }) => (true, None),
+            }) => (true, None, schema_attestation.clone()),
             Some(super::super::super::model::ControlRuntimeBindingObservation::Task) => {
-                (false, None)
+                (false, None, schema_attestation.clone())
             }
             None => {
                 return Err(projection_error(
@@ -602,13 +648,13 @@ fn route_binding(
         },
         ControlAppliedEffectEvidence::FlowHost {
             artifact_digest, ..
-        } => (false, artifact_digest.as_deref()),
+        } => (false, artifact_digest.as_deref(), None),
         ControlAppliedEffectEvidence::KnowledgeHost {
             projection_digest, ..
-        } => (false, projection_digest.as_deref()),
+        } => (false, projection_digest.as_deref(), None),
         ControlAppliedEffectEvidence::SkillHost { content_digest, .. }
         | ControlAppliedEffectEvidence::UiHost { content_digest, .. } => {
-            (false, content_digest.as_deref())
+            (false, content_digest.as_deref(), None)
         }
         ControlAppliedEffectEvidence::CapabilityIndex { .. }
         | ControlAppliedEffectEvidence::InvocationLeases { .. } => {
@@ -705,6 +751,7 @@ fn route_binding(
         endpoint_ref,
         artifact_ref,
         resource_ref,
+        runtime_schema_attestation,
     })
 }
 

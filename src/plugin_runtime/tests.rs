@@ -90,6 +90,48 @@ fn tool_task_plan_binds_invocation_and_release_semantics() {
         .unwrap()
         .starts_with("sha256:"));
     assert!(first.spec().validate().is_ok());
+    assert!(first.tool_schema_attestation().is_none());
+}
+
+#[test]
+fn schema_bearing_tool_plan_carries_the_release_schema_attestation() {
+    let mut descriptor = task_descriptor();
+    descriptor.input_schema = Some(serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {"query": {"type": "string", "maxLength": 128}},
+        "required": ["query"]
+    }));
+    descriptor.output_schema = Some(serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {"answer": {"type": "string", "maxLength": 256}},
+        "required": ["answer"]
+    }));
+    let plan = plan_tool_task_release(
+        context(PluginSurfaceKind::Tool, "convert"),
+        &task_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        RuntimeTaskInvocation::new("invoke-schema", Vec::new()).unwrap(),
+        policy(),
+        NetworkMode::None,
+    )
+    .unwrap();
+
+    let attestation = plan.tool_schema_attestation().unwrap();
+    assert!(attestation.matches_release_descriptor(&descriptor).unwrap());
+    let bytes = plan.to_canonical_bytes().unwrap();
+    let decoded = RuntimeSurfacePlan::from_canonical_bytes(&bytes).unwrap();
+    assert_eq!(decoded, plan);
+
+    let mut tampered: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    tampered["plan"]["toolSchemaAttestation"]["inputSchemaDigest"] = serde_json::json!(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    assert!(
+        RuntimeSurfacePlan::from_canonical_bytes(&serde_json::to_vec(&tampered).unwrap()).is_err()
+    );
 }
 
 #[test]

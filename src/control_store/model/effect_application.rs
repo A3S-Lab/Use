@@ -7,6 +7,50 @@ use super::*;
 pub(in crate::control_store) const CONTROL_APPLIED_EFFECT_SCHEMA: &str =
     "a3s.use.control-applied-effect.v2";
 pub(in crate::control_store) const MAX_CONTROL_APPLIED_EFFECT_BYTES: usize = 64 * 1024;
+pub(in crate::control_store) const CONTROL_RUNTIME_SCHEMA_ATTESTATION_SCHEMA: &str =
+    "a3s.use.control-runtime-schema-attestation.v1";
+
+/// Portable evidence that a Runtime owner carried the exact release Tool
+/// schema contract into its prepared binding. The full schema remains in the
+/// signed capability/release payload; Control stores only bounded digests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(in crate::control_store) struct ControlRuntimeSchemaAttestation {
+    pub(in crate::control_store) schema: String,
+    pub(in crate::control_store) descriptor_digest: String,
+    pub(in crate::control_store) input_schema_digest: String,
+    pub(in crate::control_store) output_schema_digest: String,
+}
+
+impl ControlRuntimeSchemaAttestation {
+    pub(in crate::control_store) fn new(
+        descriptor_digest: impl Into<String>,
+        input_schema_digest: impl Into<String>,
+        output_schema_digest: impl Into<String>,
+    ) -> UseResult<Self> {
+        let attestation = Self {
+            schema: CONTROL_RUNTIME_SCHEMA_ATTESTATION_SCHEMA.to_owned(),
+            descriptor_digest: descriptor_digest.into(),
+            input_schema_digest: input_schema_digest.into(),
+            output_schema_digest: output_schema_digest.into(),
+        };
+        attestation.validate()?;
+        Ok(attestation)
+    }
+
+    pub(in crate::control_store) fn validate(&self) -> UseResult<()> {
+        if self.schema != CONTROL_RUNTIME_SCHEMA_ATTESTATION_SCHEMA
+            || !valid_sha256(&self.descriptor_digest)
+            || !valid_sha256(&self.input_schema_digest)
+            || !valid_sha256(&self.output_schema_digest)
+        {
+            return Err(input_error(
+                "Runtime schema attestation evidence is invalid.",
+            ));
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -90,6 +134,8 @@ pub(in crate::control_store) enum ControlAppliedEffectEvidence {
         receipt_digest: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         binding: Option<ControlRuntimeBindingObservation>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        schema_attestation: Option<ControlRuntimeSchemaAttestation>,
     },
     FlowHost {
         state: ControlSurfaceObservationState,
@@ -166,12 +212,13 @@ impl ControlAppliedEffectEvidence {
                     selection_digest,
                     receipt_digest,
                     binding,
+                    schema_attestation,
                 },
                 ControlEffectOwner::RuntimeProvider {
                     provider_id: expected_provider,
                     selection_digest: expected_selection,
                 },
-                ControlEffectSubject::Surface { .. },
+                ControlEffectSubject::Surface { surface, .. },
                 kind,
             ) => {
                 state.matches(kind)
@@ -181,9 +228,14 @@ impl ControlAppliedEffectEvidence {
                     && match kind {
                         ControlEffectKind::SurfacePrepare => {
                             binding.as_ref().is_some_and(|binding| binding.validate())
+                                && (schema_attestation.is_none()
+                                    || surface.kind == PluginSurfaceKind::Tool)
+                                && schema_attestation
+                                    .as_ref()
+                                    .is_none_or(|attestation| attestation.validate().is_ok())
                         }
                         ControlEffectKind::SurfaceStop | ControlEffectKind::SurfaceRemove => {
-                            binding.is_none()
+                            binding.is_none() && schema_attestation.is_none()
                         }
                         ControlEffectKind::CapabilityCutover | ControlEffectKind::CallsDrain => {
                             false

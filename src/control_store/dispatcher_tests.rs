@@ -31,7 +31,8 @@ use super::model::{
     ControlEffectAuthority, ControlEffectIntent, ControlEffectKind, ControlEffectOutcome,
     ControlEffectOwner, ControlEffectStatus, ControlEffectSubject, ControlGeneration,
     ControlOperationStatus, ControlPackageEffectAuthority, ControlProviderSelection,
-    ControlRuntimeBindingObservation, ControlRuntimeEffectAuthority, MAX_EFFECT_DEFERRAL_MS,
+    ControlRuntimeBindingObservation, ControlRuntimeEffectAuthority,
+    ControlRuntimeSchemaAttestation, MAX_EFFECT_DEFERRAL_MS,
 };
 use super::ControlStore;
 use crate::plugin_lifecycle::PluginLifecycleAction;
@@ -919,6 +920,22 @@ fn owner_application_types_reject_action_incompatible_evidence() {
         &runtime,
         digest('1'),
         Some(ControlRuntimeBindingObservation::Task),
+    )
+    .is_err());
+
+    let mut mcp_runtime = runtime.clone();
+    mcp_runtime.surface =
+        surface_request(ControlSurfaceEffectAction::Prepare, PluginSurfaceKind::Mcp);
+    let attestation =
+        ControlRuntimeSchemaAttestation::new(digest('4'), digest('5'), digest('6')).unwrap();
+    assert!(ControlRuntimeApplication::new_with_schema_attestation(
+        &mcp_runtime,
+        digest('7'),
+        Some(ControlRuntimeBindingObservation::Service {
+            endpoint_ref: "gateway:mcp/service".to_owned(),
+            readiness_digest: digest('8'),
+        }),
+        Some(attestation),
     )
     .is_err());
     assert!(ControlSurfaceApplication::new(&request, digest('2'), Some(digest('3'))).is_err());

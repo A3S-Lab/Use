@@ -8,11 +8,13 @@ use std::collections::BTreeMap;
 
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::UseResult;
 
 use self::validation::{descriptor_error, validate_common, verify_resolution};
+use crate::plugin::validate_agent_schema;
 
 mod validation;
 
@@ -206,6 +208,14 @@ pub struct ToolReleaseDescriptor {
     pub compatibility: Vec<ReleaseCompatibility>,
     pub dependencies: Vec<ReleaseDependency>,
     pub workload: ToolWorkloadContract,
+    /// Optional agent-facing JSON contract. Legacy executable-only release
+    /// descriptors may omit both schemas and remain host-only; a descriptor
+    /// must provide the pair together when it participates in Agent-facing
+    /// publication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -330,7 +340,28 @@ impl ToolReleaseDescriptor {
                 "A Tool release must reference a digest-pinned OCI image manifest or index.",
             ));
         }
-        self.workload.validate()
+        self.workload.validate()?;
+        match (&self.input_schema, &self.output_schema) {
+            (Some(input), Some(output)) => {
+                validate_agent_schema(input, true).map_err(|_| {
+                    descriptor_error(
+                        "A Tool release input schema must be a bounded closed agent schema.",
+                    )
+                })?;
+                validate_agent_schema(output, true).map_err(|_| {
+                    descriptor_error(
+                        "A Tool release output schema must be a bounded closed agent schema.",
+                    )
+                })?;
+            }
+            (None, None) => {}
+            _ => {
+                return Err(descriptor_error(
+                    "A Tool release must provide input and output schemas together.",
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
@@ -340,6 +371,19 @@ impl ToolReleaseDescriptor {
 
     pub fn descriptor_digest(&self) -> UseResult<String> {
         Ok(digest(self.canonical_bytes()?))
+    }
+
+    /// Return the digests of the optional Agent-facing schemas. `None` marks
+    /// a legacy host-only release descriptor.
+    pub fn tool_schema_digests(&self) -> UseResult<Option<(String, String)>> {
+        self.validate()?;
+        let (Some(input), Some(output)) = (&self.input_schema, &self.output_schema) else {
+            return Ok(None);
+        };
+        Ok(Some((
+            crate::plugin::capability_schema_digest(input)?,
+            crate::plugin::capability_schema_digest(output)?,
+        )))
     }
 
     pub fn verify_resolution(&self, resolution: &ReleaseResolution) -> UseResult<()> {

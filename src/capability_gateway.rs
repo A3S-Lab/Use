@@ -1572,6 +1572,7 @@ fn mcp_tool(descriptor: &CapabilityDescriptor) -> UseResult<Tool> {
         input_schema,
         output_schema,
         annotations,
+        ..
     } = &descriptor.capability
     else {
         return Err(mcp_error("Only Tool descriptors can be exposed over MCP."));

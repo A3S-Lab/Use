@@ -79,6 +79,14 @@ pub(super) fn validate_tool_payload(
             "The verified Tool release does not match the reviewed Runtime plan.",
         ));
     }
+    let payload_attestation =
+        crate::plugin_runtime::RuntimeToolSchemaAttestation::from_release_descriptor(descriptor)?;
+    if payload_attestation != plan.tool_schema_attestation().cloned() {
+        return Err(runtime_error(
+            RUNTIME_PLAN_ERROR,
+            "The verified Tool schema contract does not match the reviewed Runtime plan.",
+        ));
+    }
     match (&payload.surface().workload, plan.contract()) {
         (
             ToolWorkload::Task(task),
@@ -327,6 +335,7 @@ pub(super) fn validate_receipt(
                 binding.enforcement,
             ) && binding.generation() == plan.context().generation()
                 && binding.contract == *plan.contract()
+                && binding.tool_schema_attestation == plan.tool_schema_attestation().cloned()
                 && plan.spec().class == RuntimeUnitClass::Task
         }
         RuntimeBindingReceipt::Service(binding) => {
@@ -343,6 +352,7 @@ pub(super) fn validate_receipt(
             ) && binding.generation == plan.context().generation()
                 && binding.spec_digest == expected_spec_digest
                 && binding.contract == *plan.contract()
+                && binding.tool_schema_attestation == plan.tool_schema_attestation().cloned()
                 && plan.spec().class == RuntimeUnitClass::Service
         }
     };

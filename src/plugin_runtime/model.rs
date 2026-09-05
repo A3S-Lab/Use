@@ -4,8 +4,9 @@ use a3s_runtime::contract::{
     IsolationLevel, RuntimeMount, RuntimeObservation, RuntimeUnitSpec, SecretReference,
 };
 use a3s_use_core::{
-    PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlanScope, PlannedProviderEvidence,
-    PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
+    capability_schema_digest, PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlanScope,
+    PlannedProviderEvidence, PluginSurfaceKind, PluginSurfaceRef, ToolReleaseDescriptor, UseError,
+    UseResult,
 };
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,98 @@ pub const RUNTIME_TASK_BINDING_SCHEMA: &str = "a3s.use.runtime-task-binding.v4";
 /// Canonical, path-free payload used to reconstruct one committed Runtime
 /// surface after a host restart.
 pub const RUNTIME_SURFACE_PLAN_SCHEMA: &str = "a3s.use.runtime-surface-plan.v1";
+pub const RUNTIME_TOOL_SCHEMA_ATTESTATION_SCHEMA: &str =
+    "a3s.use.runtime-tool-schema-attestation.v1";
 pub const MAX_RUNTIME_SURFACE_PLAN_BYTES: usize = 512 * 1024;
+
+/// The schema identity that a Runtime provider must preserve from a verified
+/// Tool release into its prepared binding.  Digests are used instead of
+/// copying schema documents into every receipt, keeping the Runtime evidence
+/// path bounded while still making substitution detectable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeToolSchemaAttestation {
+    pub schema: String,
+    pub descriptor_digest: String,
+    pub input_schema_digest: String,
+    pub output_schema_digest: String,
+}
+
+impl RuntimeToolSchemaAttestation {
+    pub fn new(
+        descriptor_digest: impl Into<String>,
+        input_schema_digest: impl Into<String>,
+        output_schema_digest: impl Into<String>,
+    ) -> UseResult<Self> {
+        let attestation = Self {
+            schema: RUNTIME_TOOL_SCHEMA_ATTESTATION_SCHEMA.to_owned(),
+            descriptor_digest: descriptor_digest.into(),
+            input_schema_digest: input_schema_digest.into(),
+            output_schema_digest: output_schema_digest.into(),
+        };
+        attestation.validate()?;
+        Ok(attestation)
+    }
+
+    /// Derive the attestation from the exact verified release descriptor. A
+    /// legacy descriptor without a schema pair intentionally returns `None`;
+    /// such a Runtime surface remains host-only and cannot pass the strict
+    /// Agent descriptor projector.
+    pub fn from_release_descriptor(descriptor: &ToolReleaseDescriptor) -> UseResult<Option<Self>> {
+        descriptor.validate()?;
+        let Some((input_schema_digest, output_schema_digest)) = descriptor.tool_schema_digests()?
+        else {
+            return Ok(None);
+        };
+        Self::new(
+            descriptor.descriptor_digest()?,
+            input_schema_digest,
+            output_schema_digest,
+        )
+        .map(Some)
+    }
+
+    pub fn validate(&self) -> UseResult<()> {
+        if self.schema != RUNTIME_TOOL_SCHEMA_ATTESTATION_SCHEMA
+            || !valid_sha256(&self.descriptor_digest)
+            || !valid_sha256(&self.input_schema_digest)
+            || !valid_sha256(&self.output_schema_digest)
+        {
+            return Err(runtime_input_error(
+                "The Runtime Tool schema attestation is invalid.",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) fn validate_for_descriptor(&self, descriptor_digest: &str) -> UseResult<()> {
+        self.validate()?;
+        if self.descriptor_digest != descriptor_digest {
+            return Err(runtime_contract_error(
+                "The Runtime Tool schema attestation does not bind its release descriptor.",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Verify the attestation against the concrete schemas in a release
+    /// descriptor. This is used at the Runtime artifact boundary, before a
+    /// provider can observe or execute the payload.
+    pub fn matches_release_descriptor(
+        &self,
+        descriptor: &ToolReleaseDescriptor,
+    ) -> UseResult<bool> {
+        self.validate()?;
+        let expected = Self::from_release_descriptor(descriptor)?;
+        Ok(expected.as_ref() == Some(self))
+    }
+
+    /// Compute a schema digest for hosts that have already verified the
+    /// schema bytes independently of the release descriptor.
+    pub fn schema_digest(schema: &serde_json::Value) -> UseResult<String> {
+        capability_schema_digest(schema)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -212,6 +304,8 @@ pub struct RuntimeSurfacePlan {
     pub(super) descriptor_digest: String,
     pub(super) spec: RuntimeUnitSpec,
     pub(super) contract: RuntimeSurfaceContract,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) tool_schema_attestation: Option<RuntimeToolSchemaAttestation>,
 }
 
 impl RuntimeSurfacePlan {
@@ -233,6 +327,10 @@ impl RuntimeSurfacePlan {
 
     pub fn contract(&self) -> &RuntimeSurfaceContract {
         &self.contract
+    }
+
+    pub fn tool_schema_attestation(&self) -> Option<&RuntimeToolSchemaAttestation> {
+        self.tool_schema_attestation.as_ref()
     }
 
     /// Validate the complete plan, including the semantics digest that binds
@@ -269,11 +367,20 @@ impl RuntimeSurfacePlan {
             &self.descriptor_digest,
             &self.spec,
             &self.contract,
+            self.tool_schema_attestation.as_ref(),
         )?;
         if semantics != expected {
             return Err(runtime_contract_error(
                 "Runtime surface semantics do not match the plan digest.",
             ));
+        }
+        if let Some(attestation) = &self.tool_schema_attestation {
+            if self.context.surface.kind != PluginSurfaceKind::Tool {
+                return Err(runtime_contract_error(
+                    "Only Tool Runtime plans may carry a schema attestation.",
+                ));
+            }
+            attestation.validate_for_descriptor(&self.descriptor_digest)?;
         }
         validate_contract(&self.context, &self.spec, &self.contract)
     }
@@ -465,6 +572,8 @@ pub struct RuntimePreparedTaskBinding {
     pub semantics_profile_digest: String,
     pub template_spec: Box<RuntimeUnitSpec>,
     pub contract: RuntimeSurfaceContract,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_schema_attestation: Option<RuntimeToolSchemaAttestation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -559,6 +668,7 @@ impl RuntimeServiceActivation {
             observation_revision: self.observation.observed_at_ms,
             last_healthy_at_ms,
             contract: self.plan.contract,
+            tool_schema_attestation: self.plan.tool_schema_attestation,
             readiness,
         };
         super::receipt::RuntimeBindingReceipt::Service(receipt.clone()).validate()?;
@@ -667,6 +777,8 @@ pub struct RuntimeServiceBindingReceipt {
     pub observation_revision: u64,
     pub last_healthy_at_ms: u64,
     pub contract: RuntimeSurfaceContract,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_schema_attestation: Option<RuntimeToolSchemaAttestation>,
     pub readiness: RuntimeServiceReadinessEvidence,
 }
 

@@ -35,9 +35,9 @@ pub use model::{
     RuntimeEndpointRef, RuntimeMcpInitializeEvidence, RuntimePreparedTaskBinding,
     RuntimeResourcePolicy, RuntimeServiceActivation, RuntimeServiceBindingReceipt,
     RuntimeServiceReadinessEvidence, RuntimeSurfaceContext, RuntimeSurfaceContract,
-    RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeWorkloadPolicy,
+    RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeToolSchemaAttestation, RuntimeWorkloadPolicy,
     MAX_RUNTIME_SURFACE_PLAN_BYTES, RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_SURFACE_PLAN_SCHEMA,
-    RUNTIME_TASK_BINDING_SCHEMA,
+    RUNTIME_TASK_BINDING_SCHEMA, RUNTIME_TOOL_SCHEMA_ATTESTATION_SCHEMA,
 };
 pub(crate) use plan_store::RuntimeSurfacePlanStoredRecord;
 pub use plan_store::{

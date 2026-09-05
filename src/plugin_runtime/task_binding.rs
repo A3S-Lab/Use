@@ -48,6 +48,7 @@ impl RuntimePreparedTaskBinding {
             semantics_profile_digest,
             template_spec: Box::new(template_spec),
             contract: plan.contract().clone(),
+            tool_schema_attestation: plan.tool_schema_attestation().cloned(),
         };
         binding.validate()?;
         Ok(binding)
@@ -73,6 +74,7 @@ impl RuntimePreparedTaskBinding {
             descriptor_digest: self.descriptor_digest.clone(),
             spec,
             contract: self.contract.clone(),
+            tool_schema_attestation: self.tool_schema_attestation.clone(),
         })
     }
 
@@ -91,6 +93,7 @@ impl RuntimePreparedTaskBinding {
             &self.descriptor_digest,
             self.template_spec.as_ref(),
             &self.contract,
+            self.tool_schema_attestation.as_ref(),
         )?;
         if self.schema != RUNTIME_TASK_BINDING_SCHEMA
             || self.surface.surface.kind != PluginSurfaceKind::Tool
@@ -111,6 +114,9 @@ impl RuntimePreparedTaskBinding {
             return Err(runtime_input_error(
                 "The prepared Runtime Task binding receipt is invalid.",
             ));
+        }
+        if let Some(attestation) = &self.tool_schema_attestation {
+            attestation.validate_for_descriptor(&self.descriptor_digest)?;
         }
         validate_task_capture_contract(&self.contract)?;
         Ok(())

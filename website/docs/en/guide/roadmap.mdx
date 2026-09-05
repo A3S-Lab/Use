@@ -183,8 +183,10 @@ normalized proof set and signer policy under the Control candidate identity;
 canonical bytes are content-addressed, bounded, no-follow, no-clobber, and
 revalidated on restart. Missing evidence safely defers, while substitution,
 duplicate keys, or tampering fails closed. The store is still an inactive
-external owner and is not registered for backup/restore. Runtime payload/schema
-attestation and production Control/Runtime wiring remain open. The inactive Flow owner now follows the
+external owner and is not registered for backup/restore. Runtime Tool release
+planning now carries canonical input/output-schema attestation through the
+inactive Runtime and Control path; production Control/Runtime wiring, key
+custody, and backup/restore registration remain open. The inactive Flow owner now follows the
 same boundary: it reads a path-free verified source payload, publishes a
 durable no-clobber content-addressed owner copy, and delegates Native
 TypeScript preflight only to `a3s-flow`. Package roots never cross the owner

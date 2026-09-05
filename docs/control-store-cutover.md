@@ -333,8 +333,11 @@ content-addressed by the snapshot bytes, published with bounded no-follow
 staging/no-clobber replay, and revalidated on every read; missing evidence is
 retryable while substitution, duplicate keys, and tampering fail closed. The
 store remains an external inactive owner and is not yet registered for
-backup/restore. Key custody, runtime payload/schema attestation, and production
-host wiring remain activation prerequisites. The Flow adapter is now
+backup/restore. Key custody and production host wiring remain activation
+prerequisites. Runtime Tool release planning now carries a canonical
+descriptor/input/output schema attestation through the inactive Runtime and
+Control evidence path; verified payload admission and strict descriptor
+projection compare those digests before publication. The Flow adapter is now
 qualified as a gate-3 owner: it accepts only a path-free verified source
 payload, publishes a durable no-clobber content-addressed copy in its own
 workspace, and delegates Native TypeScript preflight to `a3s-flow` without

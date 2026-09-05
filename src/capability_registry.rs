@@ -2835,6 +2835,7 @@ extension "acme/workflow" {
                 input_schema,
                 output_schema,
                 annotations: a3s_use_core::CapabilityToolAnnotations::new(true, false, true, false),
+                runtime_descriptor_digest: None,
             },
         }
     }

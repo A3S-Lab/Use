@@ -598,6 +598,7 @@ pub(super) fn application(intent: &ControlEffectIntent, seed: char) -> ControlAp
             receipt_digest,
             binding: (intent.kind == ControlEffectKind::SurfacePrepare)
                 .then_some(ControlRuntimeBindingObservation::Task),
+            schema_attestation: None,
         },
         (ControlEffectOwner::FlowHost, ControlEffectSubject::Surface { .. }) => {
             ControlAppliedEffectEvidence::FlowHost {

@@ -146,8 +146,9 @@ prepared owner receipt、active Grant coverage，以及 reviewed Tool/MCP shape�
 custody 仍未完成。安装级 descriptor snapshot store 现在会把精确规范化 proof set 与 signer policy
 绑定到 Control candidate identity，以 canonical bytes 做内容寻址，使用有界 no-follow staging、no-clobber
 发布并在重启读取时复验。缺失证据会安全 deferred，替换、重复 key 或篡改会 fail closed；该 store 仍是
-未激活且尚未登记 backup/restore 的 external owner。Runtime payload/schema attestation 和生产
-Control/Runtime wiring 仍未完成。Flow owner 现在也沿同一边界完成
+未激活且尚未登记 backup/restore 的 external owner。Runtime Tool release 规划现在会沿未激活的
+Runtime/Control 路径携带规范化 input/output schema attestation；生产 Control/Runtime wiring、key
+custody 与 backup/restore 登记仍未完成。Flow owner 现在也沿同一边界完成
 qualification：读取 path-free verified 源码 payload，以 durable no-clobber 内容寻址方式写入 owner
 workspace，并且只委托 `a3s-flow` 执行 Native TypeScript preflight。package root 不会跨越 owner 边界；
 源码替换或 preflight 失败不会写入 Control observation，Artifact Store 争用则沿同一个 key 安全延迟。

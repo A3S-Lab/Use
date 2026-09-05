@@ -50,7 +50,11 @@ pub(in crate::control_store) struct ControlRuntimeEffectAuthority {
 )]
 pub(in crate::control_store) enum ControlCapabilitySurfaceState {
     Prepared {
-        application: ControlAppliedEffect,
+        /// Applied evidence is boxed because its owner-specific payload is
+        /// intentionally richer than the compact degraded diagnostic. The
+        /// indirection keeps the authority enum small without changing the
+        /// canonical serialized shape.
+        application: Box<ControlAppliedEffect>,
         observed_at_ms: u64,
     },
     Degraded {

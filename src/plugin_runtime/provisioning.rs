@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use super::model::{
     runtime_contract_error, runtime_input_error, valid_machine_id, valid_sha256,
     RuntimeEndpointRef, RuntimeServiceBindingReceipt, RuntimeServiceReadinessEvidence,
-    RuntimeSurfaceContract, RuntimeSurfacePlan, RUNTIME_SERVICE_BINDING_SCHEMA,
+    RuntimeSurfaceContract, RuntimeSurfacePlan, RuntimeToolSchemaAttestation,
+    RUNTIME_SERVICE_BINDING_SCHEMA,
 };
 use super::receipt::RuntimeBindingReceipt;
 
@@ -53,6 +54,8 @@ pub struct RuntimeServiceProvisioningReceipt {
     pub spec_digest: String,
     pub semantics_profile_digest: String,
     pub contract: RuntimeSurfaceContract,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_schema_attestation: Option<RuntimeToolSchemaAttestation>,
     pub lifecycle_idempotency_key: String,
     pub apply_request_id: String,
     pub phase: RuntimeServiceProvisioningPhase,
@@ -111,6 +114,7 @@ impl RuntimeServiceProvisioningReceipt {
             spec_digest: plan.spec().digest().map_err(runtime_contract_error)?,
             semantics_profile_digest,
             contract: plan.contract().clone(),
+            tool_schema_attestation: plan.tool_schema_attestation().cloned(),
             lifecycle_idempotency_key: lifecycle_idempotency_key.into(),
             apply_request_id: apply_request_id.into(),
             phase: RuntimeServiceProvisioningPhase::Requested,
@@ -141,6 +145,14 @@ impl RuntimeServiceProvisioningReceipt {
             return Err(runtime_input_error(
                 "The Runtime Service provisioning receipt is invalid.",
             ));
+        }
+        if let Some(attestation) = &self.tool_schema_attestation {
+            if self.surface.surface.kind != PluginSurfaceKind::Tool {
+                return Err(runtime_input_error(
+                    "Only Tool Service provisioning may carry a schema attestation.",
+                ));
+            }
+            attestation.validate_for_descriptor(&self.descriptor_digest)?;
         }
 
         match self.phase {
@@ -194,6 +206,7 @@ impl RuntimeServiceProvisioningReceipt {
             && self.spec_digest == spec_digest
             && self.semantics_profile_digest == provider.semantics_profile_digest
             && self.contract == *plan.contract()
+            && self.tool_schema_attestation == plan.tool_schema_attestation().cloned()
             && self.lifecycle_idempotency_key == lifecycle_idempotency_key
             && self.apply_request_id == apply_request_id)
     }
@@ -291,6 +304,7 @@ impl RuntimeServiceProvisioningReceipt {
             observation_revision: observation.observed_at_ms,
             last_healthy_at_ms,
             contract: self.contract.clone(),
+            tool_schema_attestation: self.tool_schema_attestation.clone(),
             readiness,
         };
         RuntimeBindingReceipt::Service(receipt.clone()).validate()?;

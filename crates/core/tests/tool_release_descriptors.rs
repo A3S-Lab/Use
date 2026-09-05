@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use a3s_use_core::{
-    ReleaseDependency, ReleaseKind, ReleaseResolution, ToolReleaseDescriptor, ToolServiceInterface,
-    ToolServiceNetwork, ToolTaskInterface, ToolWorkloadContract,
+    capability_schema_digest, ReleaseDependency, ReleaseKind, ReleaseResolution,
+    ToolReleaseDescriptor, ToolServiceInterface, ToolServiceNetwork, ToolTaskInterface,
+    ToolWorkloadContract,
 };
 
 const TASK_FIXTURE: &[u8] = include_bytes!("../fixtures/releases/tool-task-release-v1.json");
@@ -14,6 +15,20 @@ const SERVICE_DESCRIPTOR_DIGEST: &str =
 
 fn canonical_fixture(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\n").unwrap_or(bytes)
+}
+
+fn agent_schema(property: &str) -> serde_json::Value {
+    let mut properties = serde_json::Map::new();
+    properties.insert(
+        property.to_owned(),
+        serde_json::json!({"type": "string", "maxLength": 128}),
+    );
+    serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": properties,
+        "required": [property]
+    })
 }
 
 #[test]
@@ -72,6 +87,36 @@ fn canonical_tool_fixtures_have_cross_sdk_digest_goldens() {
             "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string(),
     });
     with_tool_dependency.validate().unwrap();
+}
+
+#[test]
+fn schema_bearing_tool_releases_bind_a_canonical_input_output_pair() {
+    let mut task = ToolReleaseDescriptor::from_json(TASK_FIXTURE).unwrap();
+    let input = agent_schema("query");
+    let output = agent_schema("answer");
+    task.input_schema = Some(input.clone());
+    task.output_schema = Some(output.clone());
+
+    task.validate().unwrap();
+    let (input_digest, output_digest) = task.tool_schema_digests().unwrap().unwrap();
+    assert_eq!(input_digest, capability_schema_digest(&input).unwrap());
+    assert_eq!(output_digest, capability_schema_digest(&output).unwrap());
+
+    let encoded = task.canonical_bytes().unwrap();
+    let decoded = ToolReleaseDescriptor::from_json(&encoded).unwrap();
+    assert_eq!(decoded, task);
+
+    let mut missing_output = task.clone();
+    missing_output.output_schema = None;
+    assert!(missing_output.validate().is_err());
+
+    let mut external = task;
+    external.input_schema = Some(serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "$ref": "https://example.invalid/schema"
+    }));
+    assert!(external.validate().is_err());
 }
 
 #[test]
