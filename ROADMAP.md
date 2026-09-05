@@ -1226,6 +1226,17 @@ primitive, but descriptor-snapshot restore, Control owner registration,
 signed replay policy, session drain, and production rollback coordination
 remain release gates.
 
+Implementation note (2026-09-06): the Control descriptor-snapshot owner now
+has a matching plan-bound clean-target restore adapter. The reviewed inventory
+binds snapshot and key digests, Control generation identity, canonical byte
+counts, and signed/proof-only mode. Apply re-derives every snapshot, requires
+current trust-store verification for signed v2 evidence, stages and rescans a
+complete candidate, persists a plan-bound activation marker, and publishes
+without clobbering an existing owner. Durable candidate/marker evidence is
+replayable after interruption, while foreign staged plans and retention
+journals fail closed. The remaining gate is coordinated Control reopening and
+production Registry/TUF-to-owner authority, not another local payload writer.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must
@@ -1395,12 +1406,16 @@ are frozen.
 | Capability descriptor | `a3s.use.capability-descriptor.v1` |
 | Control descriptor evidence snapshot | `a3s.use.control-capability-descriptor-snapshot.v1` (proof-only compatibility) / `v2` (signed envelope) |
 | Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
+| Capability Gateway catalog restore plan | `a3s.use.capability-gateway-catalog-restore-plan.v1` |
+| Capability Gateway catalog restore result | `a3s.use.capability-gateway-catalog-restore-result.v1` |
 | Capability Gateway catalog retention plan | `a3s.use.capability-gateway-catalog-retention-plan.v1` |
 | Capability Gateway catalog retention result | `a3s.use.capability-gateway-catalog-retention-result.v1` |
 | Capability Gateway catalog retention journal | `a3s.use.capability-gateway-catalog-retention-journal.v1` (internal) |
 | Control descriptor snapshot retention plan | `a3s.use.control-capability-descriptor-snapshot-retention-plan.v1` |
 | Control descriptor snapshot retention result | `a3s.use.control-capability-descriptor-snapshot-retention-result.v1` |
 | Control descriptor snapshot retention journal | `a3s.use.control-capability-descriptor-snapshot-retention-journal.v1` (internal) |
+| Control descriptor snapshot restore plan | `a3s.use.control-capability-descriptor-snapshot-restore-plan.v1` |
+| Control descriptor snapshot restore result | `a3s.use.control-capability-descriptor-snapshot-restore-result.v1` |
 | Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
 | Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
 | Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |

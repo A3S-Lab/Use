@@ -675,11 +675,9 @@ async fn retire_completed_staging(
             if candidate_exists {
                 return retire_unmarked_staging(staging).await;
             }
-            {
-                return Err(restore_invalid(
-                    "The completed catalog restore has ambiguous staged evidence.",
-                ));
-            }
+            Err(restore_invalid(
+                "The completed catalog restore has ambiguous staged evidence.",
+            ))
         }
     }
 }
@@ -817,6 +815,18 @@ async fn read_exact_owned(path: &Path, expected_length: u64) -> UseResult<Vec<u8
     if bytes.len() as u64 != expected_length {
         return Err(restore_invalid(
             "A catalog restore marker changed while it was read.",
+        ));
+    }
+    let after = fs::symlink_metadata(path)
+        .await
+        .map_err(|error| restore_io("reinspect catalog restore marker", error))?;
+    if metadata_is_link_or_reparse_point(&after)
+        || !after.is_file()
+        || super::file_identity(&after) != before
+        || after.len() != expected_length
+    {
+        return Err(restore_invalid(
+            "A catalog restore marker changed after it was read.",
         ));
     }
     Ok(bytes)
