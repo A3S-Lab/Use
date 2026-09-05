@@ -175,8 +175,46 @@ async fn pending_retention_blocks_a_new_publication() {
         error.code,
         "use.plugin.capability_gateway_catalog_retention_stale"
     );
-    assert!(store.get(&first.digest).await.unwrap().is_some());
-    assert!(store.get(&second.digest).await.unwrap().is_some());
+    assert_eq!(
+        store.get(&first.digest).await.unwrap_err().code,
+        "use.plugin.capability_gateway_catalog_retention_stale"
+    );
+    assert_eq!(
+        store.get(&second.digest).await.unwrap_err().code,
+        "use.plugin.capability_gateway_catalog_retention_stale"
+    );
+}
+
+#[tokio::test]
+async fn pending_retention_blocks_catalog_reads_and_inventory_listing() {
+    let temporary = tempfile::tempdir().unwrap();
+    let installation = installation("retention-read-gate");
+    let store =
+        CapabilityGatewayCatalogStore::new(temporary.path().join("state"), installation.clone())
+            .unwrap();
+    let first = store.publish(&catalog(&installation, 0)).await.unwrap();
+    let second = store.publish(&catalog(&installation, 1)).await.unwrap();
+    let plan = store
+        .plan_retention(std::slice::from_ref(&second.digest))
+        .await
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+    let (_, root) = store.existing_physical_paths().await.unwrap().unwrap();
+    let journal = RetentionJournal::create(&root, &plan, &plan_digest)
+        .await
+        .unwrap();
+    drop(journal);
+
+    let list_error = store.list().await.unwrap_err();
+    assert_eq!(
+        list_error.code,
+        "use.plugin.capability_gateway_catalog_retention_stale"
+    );
+    let get_error = store.get(&first.digest).await.unwrap_err();
+    assert_eq!(
+        get_error.code,
+        "use.plugin.capability_gateway_catalog_retention_stale"
+    );
 }
 
 #[tokio::test]
@@ -223,6 +261,12 @@ async fn retention_rejects_a_noncanonical_recovery_journal() {
         error.code,
         "use.plugin.capability_gateway_catalog_retention_invalid"
     );
-    assert!(store.get(&first.digest).await.unwrap().is_some());
-    assert!(store.get(&second.digest).await.unwrap().is_some());
+    assert_eq!(
+        store.get(&first.digest).await.unwrap_err().code,
+        "use.plugin.capability_gateway_catalog_retention_invalid"
+    );
+    assert_eq!(
+        store.get(&second.digest).await.unwrap_err().code,
+        "use.plugin.capability_gateway_catalog_retention_invalid"
+    );
 }
