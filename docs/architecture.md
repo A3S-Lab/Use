@@ -167,7 +167,15 @@ domain-separated opaque invocation, endpoint, artifact, and resource refs.
 The adapter is side-effect free and may publish a subset, but it never treats
 an optional degraded surface as callable. Signature/key custody and the
 durable proof snapshot needed to make a crash retry independent of live host
-state remain outside this adapter and are still production activation gates.
+state now have an installation-owned qualification store. The store binds the
+exact normalized proof set and signer policy to the Control identity, addresses
+records by their canonical bytes, uses bounded no-follow staging and
+no-clobber publication, and verifies the canonical record and content digest on
+every read. A missing record is retryable; a substituted, duplicated, or
+tampered record is rejected. The snapshot owner remains outside the Control
+aggregate and is not yet registered with backup/restore; key custody, runtime
+payload/schema attestation, and production Control/Runtime wiring remain
+activation gates.
 
 Production lifecycle code does not construct it, so it neither mirrors nor
 replaces the current JSON authority. The first concrete post-commit adapter now

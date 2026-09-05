@@ -16,8 +16,9 @@ use super::dispatcher::{
     ControlEffectDispatcher, ControlEffectPorts, SystemControlEffectClock,
 };
 use super::effect_owner::capability_plane::{
-    ControlCapabilityDescriptorProjection, ControlCapabilityPlaneEffectPort,
-    ControlCapabilitySignerPolicy,
+    ControlCapabilityDescriptorProjection, ControlCapabilityDescriptorSnapshot,
+    ControlCapabilityDescriptorSnapshotKey, ControlCapabilityDescriptorSnapshotStore,
+    ControlCapabilityPlaneEffectPort, ControlCapabilitySignerPolicy,
 };
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
@@ -489,6 +490,182 @@ async fn strict_descriptor_projection_requires_the_package_signer_allowlist() {
         "use.control_store.capability_descriptor_projection_invalid"
     );
     assert_eq!(first_failure, second_failure);
+}
+
+#[tokio::test]
+async fn descriptor_snapshot_store_replays_the_exact_proof_set_after_restart() {
+    let fixture = prepared_capability_plane("operation:capability-plane:descriptor-snapshot").await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-snapshot",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let proof = CapabilityDescriptionProof::from_verified(descriptor.clone(), signer).unwrap();
+    let policy = signer_policy_for(descriptor.package_id.as_str(), signer);
+    let key = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let snapshot =
+        ControlCapabilityDescriptorSnapshot::new(key.clone(), vec![proof], policy).unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    let first_publication = store.publish(&snapshot).await.unwrap();
+    first_publication.validate().unwrap();
+
+    // Reconstruct both store and projector to model a process restart. The
+    // result must come from the immutable snapshot, not a live Registry view.
+    let reopened = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    assert_eq!(reopened.get(&key).await.unwrap(), Some(snapshot.clone()));
+    assert_eq!(reopened.get(&key).await.unwrap(), Some(snapshot.clone()));
+    let _plane = ControlCapabilityPlaneEffectPort::with_descriptor_snapshot_store(
+        fixture.store.clone(),
+        CapabilityGatewayCatalogStore::from_extension_paths(&fixture._owner_fixture.paths),
+        reopened.clone(),
+    )
+    .unwrap();
+    let projector = ControlCapabilityDescriptorProjection::from_snapshot_store(reopened).unwrap();
+    let ControlEffectPortOutcome::Applied(catalog) = projector.project(&authority).await else {
+        panic!("the exact durable proof snapshot must project");
+    };
+    assert_eq!(catalog.descriptors, vec![descriptor]);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn descriptor_snapshot_store_accepts_an_ancestor_path_alias() {
+    use std::os::unix::fs::symlink;
+
+    let logical_parent = tempfile::tempdir().unwrap();
+    let physical_parent = tempfile::tempdir().unwrap();
+    let alias = logical_parent.path().join("state-alias");
+    symlink(physical_parent.path(), &alias).unwrap();
+    let state_root = alias.join("installation");
+    tokio::fs::create_dir_all(physical_parent.path().join("installation"))
+        .await
+        .unwrap();
+
+    let store =
+        ControlCapabilityDescriptorSnapshotStore::new(state_root, control_installation()).unwrap();
+
+    assert!(store.keys().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn durable_descriptor_projection_defers_when_its_snapshot_is_not_yet_published() {
+    let fixture =
+        prepared_capability_plane("operation:capability-plane:descriptor-snapshot-missing").await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-snapshot-missing",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    let projector = ControlCapabilityDescriptorProjection::from_snapshot_store(store).unwrap();
+    let first = projector.project(&authority).await;
+    let second = projector.project(&authority).await;
+    let (first_failure, second_failure) = match (first, second) {
+        (ControlEffectPortOutcome::Deferred(first), ControlEffectPortOutcome::Deferred(second)) => {
+            (first, second)
+        }
+        _ => panic!("a missing immutable snapshot must remain safely retryable"),
+    };
+    assert_eq!(first_failure, second_failure);
+    assert_eq!(
+        first_failure.error_code,
+        "use.control_store.capability_descriptor_projection_invalid"
+    );
+}
+
+#[tokio::test]
+async fn descriptor_snapshot_store_rejects_replacement_and_tampering() {
+    let fixture =
+        prepared_capability_plane("operation:capability-plane:descriptor-snapshot-tamper").await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-snapshot-tamper",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let policy = signer_policy_for(descriptor.package_id.as_str(), signer);
+    let key = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let proof = CapabilityDescriptionProof::from_verified(descriptor.clone(), signer).unwrap();
+    let snapshot =
+        ControlCapabilityDescriptorSnapshot::new(key.clone(), vec![proof], policy.clone()).unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    store.publish(&snapshot).await.unwrap();
+
+    let mut substituted = descriptor;
+    substituted.title = "substituted after publication".to_owned();
+    let replacement = ControlCapabilityDescriptorSnapshot::new(
+        key.clone(),
+        vec![CapabilityDescriptionProof::from_verified(substituted, signer).unwrap()],
+        policy,
+    )
+    .unwrap();
+    let error = store.publish(&replacement).await.unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.control.capability_descriptor_snapshot_conflict"
+    );
+
+    let snapshot_digest = snapshot.digest().unwrap();
+    let path = fixture
+        ._owner_fixture
+        .paths
+        .installation_state_root()
+        .join("capability-gateway")
+        .join("descriptor-snapshots")
+        .join(format!(
+            "{}.json",
+            snapshot_digest.strip_prefix("sha256:").unwrap()
+        ));
+    let mut bytes = std::fs::read(&path).unwrap();
+    let index = bytes.len() / 2;
+    bytes[index] ^= 1;
+    std::fs::write(&path, bytes).unwrap();
+    let tamper = store.get(&key).await.unwrap_err();
+    assert_eq!(
+        tamper.code,
+        "use.control.capability_descriptor_snapshot_conflict"
+    );
 }
 
 #[tokio::test]

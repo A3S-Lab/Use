@@ -1130,6 +1130,20 @@ runtime payload/schema attestation, a durable proof snapshot for crash retry,
 and production Control/Runtime/receipt wiring remain open before the complete
 A3 catalog exit gate can close.
 
+Implementation note (2026-09-05): the descriptor evidence boundary now has an
+installation-owned durable snapshot store for crash and restart replay. It
+captures the exact normalized proof set and package-scoped signer policy under
+a key bound to the installation, installation generation, capability
+generation, and candidate Control descriptor digest. The record itself is
+content-addressed by its canonical bytes, with bounded no-follow staging,
+create-if-absent publication, cross-process locking, exact canonical/digest
+revalidation, and no mutable current pointer. A durable projector reads only
+the exact Control-bound key; absent evidence defers safely, while substitution,
+tampering, duplicate keys, and unknown layout fail closed. The store is still
+an inactive external payload owner: key custody, runtime payload/schema
+attestation, backup/restore registration, and production Control/Runtime/receipt
+wiring remain open.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

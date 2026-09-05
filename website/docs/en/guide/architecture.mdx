@@ -314,8 +314,14 @@ host-verified `CapabilityDescriptionProof` values plus a package-scoped signer
 allowlist. It checks exact catalog provenance, dependency closure, prepared
 owner evidence, active Grants, and reviewed Tool/MCP shape before deriving
 opaque route identities. The projector is side-effect free and subset-based;
-key custody, durable proof snapshots, and production Control/Runtime wiring
-remain separate activation gates. A real composition test covers Knowledge, Skill, catalog/Index
+key custody remains a separate activation gate. An installation-owned durable
+snapshot store now captures the exact normalized proof set and signer policy
+under the Control candidate identity. Its canonical bytes are content-
+addressed, published with bounded no-follow staging and no-clobber replay,
+and revalidated on every read; missing evidence defers while substitution,
+duplicate keys, or tampering fails closed. The store remains an inactive
+external owner and is not yet registered for backup/restore. Runtime payload/
+schema attestation and production Control/Runtime wiring remain open. A real composition test covers Knowledge, Skill, catalog/Index
 cutover, stale admission, and same-key drain retry. The inactive Runtime owner
 is now qualified for release-backed Tool Task/Service and Streamable HTTP MCP.
 It consumes a path-free verified release payload on first prepare, binds the

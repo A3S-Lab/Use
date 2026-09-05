@@ -326,9 +326,15 @@ description proofs under an explicit package-scoped signer policy and checks
 catalog provenance, dependency closure, prepared owner receipts, active Grant
 coverage, and reviewed Tool/MCP shape before deriving opaque route identities.
 It may intentionally publish a subset, but it does not make cryptographic key
-custody or a restart-stable proof snapshot part of the Control aggregate.
-Those inputs, plus production host wiring and backup/restore ownership, remain
-activation prerequisites. The Flow adapter is now
+custody part of the Control aggregate. An installation-owned descriptor
+snapshot store now captures the exact normalized proof set and signer policy
+under the installation and Control candidate identity. Its canonical record is
+content-addressed by the snapshot bytes, published with bounded no-follow
+staging/no-clobber replay, and revalidated on every read; missing evidence is
+retryable while substitution, duplicate keys, and tampering fail closed. The
+store remains an external inactive owner and is not yet registered for
+backup/restore. Key custody, runtime payload/schema attestation, and production
+host wiring remain activation prerequisites. The Flow adapter is now
 qualified as a gate-3 owner: it accepts only a path-free verified source
 payload, publishes a durable no-clobber content-addressed copy in its own
 workspace, and delegates Native TypeScript preflight to `a3s-flow` without

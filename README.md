@@ -1887,10 +1887,17 @@ also consumes host-verified signed proofs under an explicit package-scoped
 signer allowlist, checks exact catalog surface dependencies, terminal
 owner-specific receipt evidence, active Grant coverage, and reviewed Tool/MCP
 workload shape before deriving opaque route references. It is intentionally a
-pure subset projection: proof/key custody, durable proof snapshots for crash
-retries, and production Control/Runtime/receipt wiring remain host gates.
-Production Control activation, backup/restore ownership, and retirement
-coordination remain separate gates.
+pure subset projection. An installation-owned descriptor snapshot store now
+captures the exact normalized proof set and signer policy under a key bound to
+the installation, both Control generation axes, and the candidate Control
+descriptor digest. Snapshot files are content-addressed by their canonical
+bytes (rather than by a mutable key), published with bounded no-follow
+staging/no-clobber replay, and revalidated on every restart read; a missing
+snapshot is a safe retry while substitution or tampering is rejected. This is
+still qualification code: cryptographic key custody, runtime payload/schema
+attestation, production Control/Runtime/receipt wiring, and backup/restore
+registration remain host gates. Production Control activation, backup/restore
+ownership, and retirement coordination remain separate gates.
 
 The embedding boundary now also includes `CapabilityGatewaySessionFactory`:
 after durable publication, a host can replace immutable Gateway generations in
