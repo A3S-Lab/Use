@@ -24,6 +24,8 @@ mod browser_cli;
 mod browser_driver;
 #[cfg(all(feature = "browser", feature = "mcp"))]
 mod browser_session_cli;
+#[cfg(feature = "capability-catalog")]
+pub mod capability_catalog_store;
 pub mod capability_registry;
 pub mod cli;
 #[cfg(feature = "extensions")]

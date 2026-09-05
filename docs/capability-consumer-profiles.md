@@ -121,7 +121,7 @@ The embedding host may persist the exact immutable catalog before exposing a
 new Gateway generation:
 
 ```rust,ignore
-use a3s_use::capability_gateway::CapabilityGatewayCatalogStore;
+use a3s_use::capability_catalog_store::CapabilityGatewayCatalogStore;
 
 let store = CapabilityGatewayCatalogStore::new(state_root, catalog.installation().clone())?;
 let publication = store.publish(&catalog).await?;
@@ -140,6 +140,13 @@ authority must bind `publication.digest` to its committed cursor and keep the
 corresponding generation lease alive while old Gateway sessions drain. Hosts
 also need an explicit retention/GC policy before the bounded inventory is
 exhausted.
+
+The payload owner is exposed through the standalone `capability-catalog` Cargo
+feature and is included by both `mcp` and `extensions`. A headless package
+manager can therefore publish and verify an Agent-facing catalog without
+compiling the MCP transport adapter. The compatibility re-export at
+`a3s_use::capability_gateway::CapabilityGatewayCatalogStore` remains available
+when `mcp` is enabled.
 
 ## Request cancellation
 
