@@ -2,7 +2,9 @@ use std::fmt;
 use std::sync::Arc;
 
 use a3s_use_core::{CapabilityGatewayCatalog, PluginOperationAction, UseError, UseResult};
-use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
+use a3s_use_extension::{
+    CapabilityDescriptionTrustStore, StateMaintenanceGuard, StateMaintenanceLock,
+};
 use async_trait::async_trait;
 use olpc_cjson::CanonicalFormatter;
 use serde::Serialize;
@@ -106,6 +108,57 @@ impl ControlCapabilityPlaneEffectPort {
             ));
         }
         let projection = ControlCapabilityDescriptorProjection::from_snapshot_store(snapshots)?;
+        Self::new(control, catalogs, Arc::new(projection))
+    }
+
+    /// Compose the restart-stable Control projector that persists and
+    /// re-verifies signed capability-description envelopes. The trust store is
+    /// an immutable Registry policy for this port; replace the port when keys
+    /// rotate or are revoked.
+    #[allow(dead_code)]
+    pub(in crate::control_store) fn with_signed_descriptor_snapshot_store(
+        control: ControlStore,
+        catalogs: CapabilityGatewayCatalogStore,
+        snapshots: ControlCapabilityDescriptorSnapshotStore,
+        trust_store: CapabilityDescriptionTrustStore,
+    ) -> UseResult<Self> {
+        if snapshots.installation() != &control.installation
+            || snapshots.state_root() != control.state_root
+        {
+            return Err(UseError::new(
+                CATALOG_BINDING_ERROR,
+                "The Control Store and signed descriptor snapshot owner do not share one installation root.",
+            ));
+        }
+        let projection = ControlCapabilityDescriptorProjection::from_signed_snapshot_store(
+            snapshots,
+            trust_store,
+        )?;
+        Self::new(control, catalogs, Arc::new(projection))
+    }
+
+    /// Deterministic clock variant for replay tests.
+    #[allow(dead_code)]
+    pub(in crate::control_store) fn with_signed_descriptor_snapshot_store_at(
+        control: ControlStore,
+        catalogs: CapabilityGatewayCatalogStore,
+        snapshots: ControlCapabilityDescriptorSnapshotStore,
+        trust_store: CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+    ) -> UseResult<Self> {
+        if snapshots.installation() != &control.installation
+            || snapshots.state_root() != control.state_root
+        {
+            return Err(UseError::new(
+                CATALOG_BINDING_ERROR,
+                "The Control Store and signed descriptor snapshot owner do not share one installation root.",
+            ));
+        }
+        let projection = ControlCapabilityDescriptorProjection::from_signed_snapshot_store_at(
+            snapshots,
+            trust_store,
+            now_unix_seconds,
+        )?;
         Self::new(control, catalogs, Arc::new(projection))
     }
 

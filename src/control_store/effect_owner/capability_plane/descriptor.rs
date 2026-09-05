@@ -8,6 +8,7 @@
 //! and therefore can safely be retried before immutable catalog publication.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
     capability_schema_digest, ArtifactRef, CapabilityDescriptionProof, CapabilityDescriptor,
@@ -15,6 +16,7 @@ use a3s_use_core::{
     PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, ResourceRef, ToolWorkloadClass, UseError,
     UseResult,
 };
+use a3s_use_extension::CapabilityDescriptionTrustStore;
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -81,7 +83,7 @@ impl ControlCapabilitySignerPolicy {
         Ok(Self { package_signers })
     }
 
-    fn permits(&self, package_id: &str, signer_id: &str) -> bool {
+    pub(super) fn permits(&self, package_id: &str, signer_id: &str) -> bool {
         self.package_signers
             .get(package_id)
             .is_some_and(|signers| signers.contains(signer_id))
@@ -125,6 +127,34 @@ enum DescriptorProjectionSource {
         signer_policy: ControlCapabilitySignerPolicy,
     },
     Durable(ControlCapabilityDescriptorSnapshotStore),
+    SignedDurable {
+        store: ControlCapabilityDescriptorSnapshotStore,
+        trust_store: CapabilityDescriptionTrustStore,
+        clock: DescriptorVerificationClock,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DescriptorVerificationClock {
+    System,
+    Fixed(u64),
+}
+
+impl DescriptorVerificationClock {
+    fn now_unix_seconds(&self) -> UseResult<u64> {
+        match self {
+            Self::System => {
+                let elapsed = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_err(|_| projection_error("The system clock predates the Unix epoch."))?;
+                Ok(elapsed.as_secs())
+            }
+            Self::Fixed(value) if *value > 0 => Ok(*value),
+            Self::Fixed(_) => Err(projection_error(
+                "The signed descriptor verification time must be non-zero.",
+            )),
+        }
+    }
 }
 
 impl ControlCapabilityDescriptorProjection {
@@ -183,6 +213,55 @@ impl ControlCapabilityDescriptorProjection {
         })
     }
 
+    /// Compose the restart-stable projector backed by signed envelopes. The
+    /// trust store is cloned as immutable policy; hosts must construct a new
+    /// projector when Registry keys rotate or are revoked. Verification uses
+    /// the current system Unix clock for every projection attempt.
+    pub(in crate::control_store) fn from_signed_snapshot_store(
+        store: ControlCapabilityDescriptorSnapshotStore,
+        trust_store: CapabilityDescriptionTrustStore,
+    ) -> UseResult<Self> {
+        Self::from_signed_snapshot_store_with_clock(
+            store,
+            trust_store,
+            DescriptorVerificationClock::System,
+        )
+    }
+
+    /// Deterministic variant used by recovery tests and replay harnesses.
+    pub(in crate::control_store) fn from_signed_snapshot_store_at(
+        store: ControlCapabilityDescriptorSnapshotStore,
+        trust_store: CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+    ) -> UseResult<Self> {
+        Self::from_signed_snapshot_store_with_clock(
+            store,
+            trust_store,
+            DescriptorVerificationClock::Fixed(now_unix_seconds),
+        )
+    }
+
+    fn from_signed_snapshot_store_with_clock(
+        store: ControlCapabilityDescriptorSnapshotStore,
+        trust_store: CapabilityDescriptionTrustStore,
+        clock: DescriptorVerificationClock,
+    ) -> UseResult<Self> {
+        store.validate_configuration()?;
+        trust_store
+            .validate()
+            .map_err(|_| projection_error("The capability description trust store is invalid."))?;
+        // Validate a fixed test clock at construction so a bad caller cannot
+        // produce a projector that only fails after a cutover starts.
+        clock.now_unix_seconds()?;
+        Ok(Self {
+            source: DescriptorProjectionSource::SignedDurable {
+                store,
+                trust_store,
+                clock,
+            },
+        })
+    }
+
     pub(in crate::control_store) fn into_parts(
         self,
     ) -> UseResult<(
@@ -196,6 +275,9 @@ impl ControlCapabilityDescriptorProjection {
             } => Ok((proofs, signer_policy)),
             DescriptorProjectionSource::Durable(_) => Err(projection_error(
                 "A durable descriptor projector has no in-memory proof set.",
+            )),
+            DescriptorProjectionSource::SignedDurable { .. } => Err(projection_error(
+                "A signed durable descriptor projector has no in-memory proof set.",
             )),
         }
     }
@@ -237,7 +319,27 @@ impl ControlCapabilityDescriptorProjection {
                         "The committed capability descriptor proof snapshot is not present.",
                     )
                 })?;
+                if snapshot.signed_descriptions().is_some() {
+                    return Err(projection_error(
+                        "A signed descriptor snapshot requires the cryptographic projector.",
+                    ));
+                }
                 project_catalog_from_parts(authority, snapshot.proofs(), snapshot.signer_policy())
+            }
+            DescriptorProjectionSource::SignedDurable {
+                store,
+                trust_store,
+                clock,
+            } => {
+                let key = ControlCapabilityDescriptorSnapshotKey::from_authority(authority)?;
+                let snapshot = store.get(&key).await?.ok_or_else(|| {
+                    UseError::new(
+                        SNAPSHOT_MISSING,
+                        "The committed signed capability descriptor snapshot is not present.",
+                    )
+                })?;
+                let proofs = snapshot.reverify_signed(trust_store, clock.now_unix_seconds()?)?;
+                project_catalog_from_parts(authority, &proofs, snapshot.signer_policy())
             }
         }
     }

@@ -2,10 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use a3s_use_core::{
-    CapabilityDescriptionProof, CapabilityDescriptor, CapabilityDescriptorKind,
+    CapabilityDescriptionProof, CapabilityDescriptionSignatureAlgorithm,
+    CapabilityDescriptionSignaturePayload, CapabilityDescriptor, CapabilityDescriptorKind,
     CapabilityGatewayCatalog, CapabilityPublicationEvidence, CapabilityToolAnnotations,
     InvocationRef, PluginOperationAction, PluginPackageId, PluginSurfaceKind, PluginSurfaceRef,
+    SignedCapabilityDescription,
 };
+use a3s_use_extension::{CapabilityDescriptionTrustKey, CapabilityDescriptionTrustStore};
+use ring::signature::{Ed25519KeyPair, KeyPair};
 
 use super::aggregate_tests::fixtures::{
     apply_all_effects, claim, control_installation, digest, initialized_store, observation,
@@ -542,6 +546,174 @@ async fn descriptor_snapshot_store_replays_the_exact_proof_set_after_restart() {
         panic!("the exact durable proof snapshot must project");
     };
     assert_eq!(catalog.descriptors, vec![descriptor]);
+}
+
+#[tokio::test]
+async fn signed_descriptor_snapshot_replays_only_after_current_policy_verification() {
+    let fixture =
+        prepared_capability_plane("operation:capability-plane:signed-descriptor-snapshot").await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:signed-descriptor-snapshot",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let (signed, trust_store) = signed_descriptor_for(descriptor.clone(), signer, 1_000, 2_000);
+    let policy = signer_policy_for(descriptor.package_id.as_str(), signer);
+    let key = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+
+    // Admission verifies the signature before a durable record is created.
+    let publication = store
+        .publish_signed(key.clone(), vec![signed], policy, &trust_store, 1_500)
+        .await
+        .unwrap();
+    publication.validate().unwrap();
+    assert!(publication.signed_description_set_digest.is_some());
+
+    // A reconstructed projector ignores the retained proof projection and
+    // verifies the canonical signed envelope against the current policy.
+    let reopened = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    let snapshot = reopened.get(&key).await.unwrap().unwrap();
+    assert!(snapshot.signed_descriptions().is_some());
+    let projector = ControlCapabilityDescriptorProjection::from_signed_snapshot_store_at(
+        reopened.clone(),
+        trust_store.clone(),
+        1_500,
+    )
+    .unwrap();
+    let ControlEffectPortOutcome::Applied(catalog) = projector.project(&authority).await else {
+        panic!("the cryptographically verified snapshot must project");
+    };
+    assert_eq!(catalog.descriptors, vec![descriptor]);
+
+    // Expiry is checked at replay time, not only when the file was written.
+    let expired = ControlCapabilityDescriptorProjection::from_signed_snapshot_store_at(
+        reopened.clone(),
+        trust_store.clone(),
+        2_000,
+    )
+    .unwrap();
+    assert!(matches!(
+        expired.project(&authority).await,
+        ControlEffectPortOutcome::Rejected(_)
+    ));
+
+    // Revocation in the current trust policy also prevents projection.
+    let mut revoked_key = trust_store.keys()[0].clone();
+    revoked_key.revoked_at_unix_seconds = Some(1_600);
+    let revoked_store = CapabilityDescriptionTrustStore::new(vec![revoked_key]).unwrap();
+    let revoked = ControlCapabilityDescriptorProjection::from_signed_snapshot_store_at(
+        reopened,
+        revoked_store,
+        1_700,
+    )
+    .unwrap();
+    assert!(matches!(
+        revoked.project(&authority).await,
+        ControlEffectPortOutcome::Rejected(_)
+    ));
+}
+
+#[tokio::test]
+async fn signed_descriptor_snapshot_rejects_invalid_envelope_before_writing() {
+    let fixture =
+        prepared_capability_plane("operation:capability-plane:signed-descriptor-snapshot-invalid")
+            .await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:signed-descriptor-snapshot-invalid",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let (mut signed, trust_store) = signed_descriptor_for(descriptor.clone(), signer, 1_000, 2_000);
+    signed.signature.replace_range(0..2, "00");
+    let key = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    let error = store
+        .publish_signed(
+            key,
+            vec![signed],
+            signer_policy_for(descriptor.package_id.as_str(), signer),
+            &trust_store,
+            1_500,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.capability_description_untrusted");
+    assert!(store.keys().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn legacy_descriptor_projector_cannot_downgrade_a_signed_snapshot() {
+    let fixture = prepared_capability_plane(
+        "operation:capability-plane:signed-descriptor-snapshot-downgrade",
+    )
+    .await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:signed-descriptor-snapshot-downgrade",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let (signed, trust_store) = signed_descriptor_for(descriptor.clone(), signer, 1_000, 2_000);
+    let key = ControlCapabilityDescriptorSnapshotKey::from_authority(&authority).unwrap();
+    let snapshot = ControlCapabilityDescriptorSnapshot::new_signed(
+        key,
+        vec![signed],
+        signer_policy_for(descriptor.package_id.as_str(), signer),
+        &trust_store,
+        1_500,
+    )
+    .unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(
+        &fixture._owner_fixture.paths,
+    );
+    store.publish(&snapshot).await.unwrap();
+    let legacy = ControlCapabilityDescriptorProjection::from_snapshot_store(store).unwrap();
+    assert!(matches!(
+        legacy.project(&authority).await,
+        ControlEffectPortOutcome::Rejected(_)
+    ));
 }
 
 #[cfg(unix)]
@@ -1094,6 +1266,54 @@ fn signer_policy_for(package_id: &str, signer: &str) -> ControlCapabilitySignerP
     let mut package_signers = BTreeMap::new();
     package_signers.insert(package_id.to_owned(), BTreeSet::from([signer.to_owned()]));
     ControlCapabilitySignerPolicy::new(package_signers).unwrap()
+}
+
+fn signed_descriptor_for(
+    descriptor: CapabilityDescriptor,
+    signer: &str,
+    issued_at_unix_seconds: u64,
+    expires_at_unix_seconds: u64,
+) -> (SignedCapabilityDescription, CapabilityDescriptionTrustStore) {
+    let key_pair = Ed25519KeyPair::from_seed_unchecked(&[9_u8; 32]).unwrap();
+    let key_id = "registry/acme/descriptor";
+    let payload = CapabilityDescriptionSignaturePayload::new(
+        descriptor,
+        signer,
+        key_id,
+        CapabilityDescriptionSignatureAlgorithm::Ed25519,
+        issued_at_unix_seconds,
+        expires_at_unix_seconds,
+    )
+    .unwrap();
+    let signature = key_pair.sign(&payload.canonical_bytes().unwrap());
+    let signed = SignedCapabilityDescription::from_parts(
+        payload,
+        signature
+            .as_ref()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+    )
+    .unwrap();
+    let key = CapabilityDescriptionTrustKey::new(
+        key_id,
+        signer,
+        CapabilityDescriptionSignatureAlgorithm::Ed25519,
+        key_pair
+            .public_key()
+            .as_ref()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+        issued_at_unix_seconds.saturating_sub(100),
+        expires_at_unix_seconds.saturating_add(100),
+        None,
+    )
+    .unwrap();
+    (
+        signed,
+        CapabilityDescriptionTrustStore::new(vec![key]).unwrap(),
+    )
 }
 
 fn catalog_path(state_root: &std::path::Path, digest: &str) -> std::path::PathBuf {

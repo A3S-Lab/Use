@@ -1125,10 +1125,11 @@ coverage, and reviewed Tool/MCP workload or transport before the projector
 derives domain-separated opaque invocation, endpoint, artifact, and resource
 references. Optional degraded surfaces and substituted owner evidence remain
 unpublishable, and projection failures are safe deterministic rejections with
-no payload write. This is a strict subset gate: cryptographic key custody,
-production Runtime payload admission/receipt wiring, a durable proof snapshot
-for crash retry, and production Control/Runtime/receipt wiring remain open
-before the complete A3 catalog exit gate can close.
+no payload write. This was a strict subset gate at the time of that projector
+change; cryptographic key custody, a durable cryptographic snapshot, production
+Runtime payload admission/receipt wiring, and production Control/Runtime/
+receipt wiring remained open before the complete A3 catalog exit gate could
+close.
 
 Implementation note (2026-09-05): the descriptor evidence boundary now has an
 installation-owned durable snapshot store for crash and restart replay. It
@@ -1146,7 +1147,9 @@ planning now carries a canonical input/output-schema attestation through plans,
 binding receipts, and Control evidence; verified artifact admission and strict
 descriptor projection compare the same descriptor and schema digests. The
 implementation is qualified in the inactive kernel, while production
-lifecycle activation remains open.
+lifecycle activation remains open. The signed v2 admission path described
+below now makes the retained envelope, rather than the proof projection, the
+cryptographic replay authority.
 
 Implementation note (2026-09-05): the signed-description trust boundary now
 has a canonical `SignedCapabilityDescription` envelope in `a3s-use-core` and
@@ -1161,8 +1164,19 @@ description constructors that verify envelopes before snapshot lease and
 provider-resolver composition; the legacy proof constructors remain only for
 explicit preview hosts. This qualifies the cryptographic mechanism and its
 composition seam but does not mark the A3 checkbox: Registry/TUF key-source
-binding, Control proof-snapshot admission, and production lifecycle wiring
-remain open.
+binding and production Registry-to-Control lifecycle wiring remain open.
+
+Implementation note (2026-09-05): the Control descriptor snapshot owner now
+has a signed v2 admission path. `publish_signed` verifies every canonical
+Ed25519 envelope before content-addressed publication and stores the exact
+envelopes beside a derived proof projection. A signed projector re-verifies
+those envelopes against the current trust store and clock on every replay;
+expiry, revocation, substitution, and proof/envelope mismatch fail closed. The
+legacy v1 proof-only snapshot remains an explicit compatibility path and is
+not allowed to consume a signed v2 record. This closes the Control
+proof-snapshot admission mechanism in the inactive kernel; official
+Registry/TUF key-source binding, backup/restore registration, and production
+Registry-to-Control/Runtime/receipt wiring remain release gates.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
@@ -1331,6 +1345,7 @@ are frozen.
 | Extension Registry snapshot | schema version 3 |
 | Capability snapshot | schema version 5 |
 | Capability descriptor | `a3s.use.capability-descriptor.v1` |
+| Control descriptor evidence snapshot | `a3s.use.control-capability-descriptor-snapshot.v1` (proof-only compatibility) / `v2` (signed envelope) |
 | Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
 | Capability Gateway catalog retention plan | `a3s.use.capability-gateway-catalog-retention-plan.v1` |
 | Capability Gateway catalog retention result | `a3s.use.capability-gateway-catalog-retention-result.v1` |

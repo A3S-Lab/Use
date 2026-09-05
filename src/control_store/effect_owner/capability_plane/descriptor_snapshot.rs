@@ -10,7 +10,10 @@
 use std::io;
 use std::path::Path;
 
-use a3s_use_core::{CapabilityDescriptionProof, InstallationId, UseError, UseResult};
+use a3s_use_core::{
+    CapabilityDescriptionProof, InstallationId, SignedCapabilityDescription, UseError, UseResult,
+};
+use a3s_use_extension::CapabilityDescriptionTrustStore;
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -24,6 +27,8 @@ pub(in crate::control_store) use storage::ControlCapabilityDescriptorSnapshotSto
 
 pub(in crate::control_store) const CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_SCHEMA: &str =
     "a3s.use.control-capability-descriptor-snapshot.v1";
+pub(in crate::control_store) const CONTROL_CAPABILITY_SIGNED_DESCRIPTOR_SNAPSHOT_SCHEMA: &str =
+    "a3s.use.control-capability-descriptor-snapshot.v2";
 pub(in crate::control_store) const MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RECORDS: usize =
     4_096;
 pub(in crate::control_store) const MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_BYTES: usize =
@@ -38,7 +43,10 @@ pub(in crate::control_store) const SNAPSHOT_RETRYABLE_IO: &str = SNAPSHOT_IO;
 pub(in crate::control_store) const SNAPSHOT_RETRYABLE_BUSY: &str = SNAPSHOT_BUSY;
 const SNAPSHOT_KEY_DOMAIN: &[u8] = b"a3s.use.control-capability-descriptor-snapshot-key.v1\0";
 const SNAPSHOT_DOMAIN: &[u8] = b"a3s.use.control-capability-descriptor-snapshot.v1\0";
+const SIGNED_SNAPSHOT_DOMAIN: &[u8] = b"a3s.use.control-capability-descriptor-snapshot.v2\0";
 const PROOF_SET_DOMAIN: &[u8] = b"a3s.use.control-capability-proof-set.v1\0";
+const SIGNED_DESCRIPTION_SET_DOMAIN: &[u8] =
+    b"a3s.use.control-capability-signed-description-set.v1\0";
 const SIGNER_POLICY_DOMAIN: &[u8] = b"a3s.use.control-capability-signer-policy.v1\0";
 
 /// The immutable Control identity to which one proof snapshot is bound.
@@ -110,8 +118,10 @@ impl ControlCapabilityDescriptorSnapshotKey {
 pub(in crate::control_store) struct ControlCapabilityDescriptorSnapshot {
     key: ControlCapabilityDescriptorSnapshotKey,
     proofs: Vec<CapabilityDescriptionProof>,
+    signed_descriptions: Option<Vec<SignedCapabilityDescription>>,
     signer_policy: ControlCapabilitySignerPolicy,
     proof_set_digest: String,
+    signed_description_set_digest: Option<String>,
     signer_policy_digest: String,
 }
 
@@ -121,16 +131,68 @@ impl ControlCapabilityDescriptorSnapshot {
         proofs: Vec<CapabilityDescriptionProof>,
         signer_policy: ControlCapabilitySignerPolicy,
     ) -> UseResult<Self> {
+        Self::from_parts(key, proofs, None, signer_policy)
+    }
+
+    /// Construct a restart-safe snapshot from Registry-signed descriptions.
+    ///
+    /// The signed envelopes are the durable source of truth.  The derived
+    /// proofs are retained only as a deterministic projection for the legacy
+    /// descriptor projector; signed projection paths must call
+    /// [`Self::reverify_signed`] before using them again.
+    pub(in crate::control_store) fn new_signed(
+        key: ControlCapabilityDescriptorSnapshotKey,
+        mut signed_descriptions: Vec<SignedCapabilityDescription>,
+        signer_policy: ControlCapabilitySignerPolicy,
+        trust_store: &CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+    ) -> UseResult<Self> {
+        trust_store
+            .validate()
+            .map_err(|_| snapshot_error("The capability description trust store is invalid."))?;
+        signer_policy.validate()?;
+        if signed_descriptions.len() > MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RECORDS {
+            return Err(snapshot_error(
+                "The signed descriptor snapshot exceeds its proof bound.",
+            ));
+        }
+        signed_descriptions.sort_by(signed_description_ordering);
+        let mut proofs = Vec::with_capacity(signed_descriptions.len());
+        for signed in &signed_descriptions {
+            let verified = trust_store.verify(signed, now_unix_seconds)?;
+            let proof = verified.into_proof()?;
+            if !signer_policy.permits(proof.descriptor.package_id.as_str(), &proof.signer_id) {
+                return Err(snapshot_error(
+                    "A signed capability description signer is not authorized for its package.",
+                ));
+            }
+            proofs.push(proof);
+        }
+        Self::from_parts(key, proofs, Some(signed_descriptions), signer_policy)
+    }
+
+    fn from_parts(
+        key: ControlCapabilityDescriptorSnapshotKey,
+        proofs: Vec<CapabilityDescriptionProof>,
+        signed_descriptions: Option<Vec<SignedCapabilityDescription>>,
+        signer_policy: ControlCapabilitySignerPolicy,
+    ) -> UseResult<Self> {
         key.validate()?;
         let projection = ControlCapabilityDescriptorProjection::new(proofs, signer_policy)?;
         let (proofs, signer_policy) = projection.into_parts()?;
         let proof_set_digest = proof_set_digest(&proofs)?;
+        let signed_description_set_digest = signed_descriptions
+            .as_deref()
+            .map(signed_description_set_digest)
+            .transpose()?;
         let signer_policy_digest = signer_policy_digest(&signer_policy)?;
         let snapshot = Self {
             key,
             proofs,
+            signed_descriptions,
             signer_policy,
             proof_set_digest,
+            signed_description_set_digest,
             signer_policy_digest,
         };
         snapshot.validate()?;
@@ -141,13 +203,62 @@ impl ControlCapabilityDescriptorSnapshot {
         &self.proofs
     }
 
+    pub(in crate::control_store) fn signed_descriptions(
+        &self,
+    ) -> Option<&[SignedCapabilityDescription]> {
+        self.signed_descriptions.as_deref()
+    }
+
+    /// Re-verify the retained signed envelopes against the current Registry
+    /// trust policy and wall clock.  This intentionally does not trust the
+    /// serialized proof projection, so revocation and key rotation take effect
+    /// on restart/reconstruction.
+    pub(in crate::control_store) fn reverify_signed(
+        &self,
+        trust_store: &CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+    ) -> UseResult<Vec<CapabilityDescriptionProof>> {
+        let Some(signed_descriptions) = self.signed_descriptions() else {
+            return Err(snapshot_error(
+                "The descriptor snapshot contains no signed descriptions.",
+            ));
+        };
+        trust_store
+            .validate()
+            .map_err(|_| snapshot_error("The capability description trust store is invalid."))?;
+        let mut proofs = Vec::with_capacity(signed_descriptions.len());
+        for (signed, expected) in signed_descriptions.iter().zip(&self.proofs) {
+            let proof = trust_store.verify(signed, now_unix_seconds)?.into_proof()?;
+            if proof != *expected {
+                return Err(snapshot_conflict());
+            }
+            proofs.push(proof);
+        }
+        let (normalized, _) =
+            ControlCapabilityDescriptorProjection::new(proofs, self.signer_policy.clone())?
+                .into_parts()?;
+        if normalized != self.proofs {
+            return Err(snapshot_conflict());
+        }
+        Ok(normalized)
+    }
+
     pub(in crate::control_store) fn signer_policy(&self) -> &ControlCapabilitySignerPolicy {
         &self.signer_policy
     }
 
+    pub(in crate::control_store) fn signed_description_set_digest(&self) -> Option<&str> {
+        self.signed_description_set_digest.as_deref()
+    }
+
     pub(in crate::control_store) fn digest(&self) -> UseResult<String> {
         let bytes = storage::encode_snapshot(self)?;
-        Ok(digest_with_domain(SNAPSHOT_DOMAIN, &bytes))
+        let domain = if self.signed_descriptions.is_some() {
+            SIGNED_SNAPSHOT_DOMAIN
+        } else {
+            SNAPSHOT_DOMAIN
+        };
+        Ok(digest_with_domain(domain, &bytes))
     }
 
     pub(in crate::control_store) fn validate(&self) -> UseResult<()> {
@@ -174,6 +285,56 @@ impl ControlCapabilityDescriptorSnapshot {
                 "The descriptor proof snapshot digest does not match its evidence.",
             ));
         }
+        match (
+            &self.signed_descriptions,
+            &self.signed_description_set_digest,
+        ) {
+            (None, None) => {}
+            (Some(signed_descriptions), Some(expected_digest)) => {
+                if signed_descriptions.len() != self.proofs.len()
+                    || signed_descriptions.windows(2).any(|pair| {
+                        signed_description_ordering(&pair[0], &pair[1])
+                            == std::cmp::Ordering::Greater
+                    })
+                {
+                    return Err(snapshot_error(
+                        "The signed descriptor snapshot is not canonically ordered.",
+                    ));
+                }
+                for (signed, proof) in signed_descriptions.iter().zip(&self.proofs) {
+                    signed.validate().map_err(|_| {
+                        snapshot_error("A signed capability description is structurally invalid.")
+                    })?;
+                    let derived = CapabilityDescriptionProof::from_verified(
+                        signed.descriptor().clone(),
+                        signed.signer_id().to_owned(),
+                    )?;
+                    if !self
+                        .signer_policy
+                        .permits(derived.descriptor().package_id.as_str(), &derived.signer_id)
+                    {
+                        return Err(snapshot_error(
+                            "A signed capability description signer is not authorized for its package.",
+                        ));
+                    }
+                    if derived != *proof {
+                        return Err(snapshot_error(
+                            "A signed description does not match its retained proof projection.",
+                        ));
+                    }
+                }
+                if expected_digest != &signed_description_set_digest(signed_descriptions)? {
+                    return Err(snapshot_error(
+                        "The signed descriptor snapshot digest does not match its evidence.",
+                    ));
+                }
+            }
+            _ => {
+                return Err(snapshot_error(
+                    "The signed descriptor snapshot evidence is incomplete.",
+                ))
+            }
+        }
         Ok(())
     }
 }
@@ -184,19 +345,29 @@ struct SnapshotRecord {
     schema: String,
     key: ControlCapabilityDescriptorSnapshotKey,
     proofs: Vec<CapabilityDescriptionProof>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signed_descriptions: Option<Vec<SignedCapabilityDescription>>,
     signer_policy: ControlCapabilitySignerPolicy,
     proof_set_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signed_description_set_digest: Option<String>,
     signer_policy_digest: String,
 }
 
 impl From<ControlCapabilityDescriptorSnapshot> for SnapshotRecord {
     fn from(snapshot: ControlCapabilityDescriptorSnapshot) -> Self {
         Self {
-            schema: CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_SCHEMA.to_owned(),
+            schema: if snapshot.signed_descriptions.is_some() {
+                CONTROL_CAPABILITY_SIGNED_DESCRIPTOR_SNAPSHOT_SCHEMA.to_owned()
+            } else {
+                CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_SCHEMA.to_owned()
+            },
             key: snapshot.key,
             proofs: snapshot.proofs,
+            signed_descriptions: snapshot.signed_descriptions,
             signer_policy: snapshot.signer_policy,
             proof_set_digest: snapshot.proof_set_digest,
+            signed_description_set_digest: snapshot.signed_description_set_digest,
             signer_policy_digest: snapshot.signer_policy_digest,
         }
     }
@@ -206,16 +377,28 @@ impl TryFrom<SnapshotRecord> for ControlCapabilityDescriptorSnapshot {
     type Error = UseError;
 
     fn try_from(record: SnapshotRecord) -> Result<Self, Self::Error> {
-        if record.schema != CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_SCHEMA {
+        let signed = record.signed_descriptions.is_some();
+        let valid_schema = match (record.schema.as_str(), signed) {
+            (CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_SCHEMA, false) => {
+                record.signed_description_set_digest.is_none()
+            }
+            (CONTROL_CAPABILITY_SIGNED_DESCRIPTOR_SNAPSHOT_SCHEMA, true) => {
+                record.signed_description_set_digest.is_some()
+            }
+            _ => false,
+        };
+        if !valid_schema {
             return Err(snapshot_error(
-                "The descriptor proof snapshot schema is unsupported.",
+                "The descriptor proof snapshot schema or evidence mode is unsupported.",
             ));
         }
         let snapshot = Self {
             key: record.key,
             proofs: record.proofs,
+            signed_descriptions: record.signed_descriptions,
             signer_policy: record.signer_policy,
             proof_set_digest: record.proof_set_digest,
+            signed_description_set_digest: record.signed_description_set_digest,
             signer_policy_digest: record.signer_policy_digest,
         };
         snapshot.validate()?;
@@ -230,6 +413,7 @@ pub(in crate::control_store) struct ControlCapabilityDescriptorSnapshotPublicati
     pub(in crate::control_store) key_digest: String,
     pub(in crate::control_store) snapshot_digest: String,
     pub(in crate::control_store) proof_set_digest: String,
+    pub(in crate::control_store) signed_description_set_digest: Option<String>,
     pub(in crate::control_store) signer_policy_digest: String,
 }
 
@@ -239,6 +423,10 @@ impl ControlCapabilityDescriptorSnapshotPublication {
         if self.key.digest()? != self.key_digest
             || !valid_sha256(&self.snapshot_digest)
             || !valid_sha256(&self.proof_set_digest)
+            || self
+                .signed_description_set_digest
+                .as_deref()
+                .is_some_and(|digest| !valid_sha256(digest))
             || !valid_sha256(&self.signer_policy_digest)
         {
             return Err(snapshot_error(
@@ -262,6 +450,50 @@ fn canonical_json<T: Serialize>(value: &T, label: &str) -> UseResult<Vec<u8>> {
 fn proof_set_digest(proofs: &[CapabilityDescriptionProof]) -> UseResult<String> {
     let bytes = canonical_json(&ProofSetMaterial::new(proofs), "descriptor proof set")?;
     Ok(digest_with_domain(PROOF_SET_DOMAIN, &bytes))
+}
+
+fn signed_description_set_digest(
+    signed_descriptions: &[SignedCapabilityDescription],
+) -> UseResult<String> {
+    let bytes = canonical_json(
+        &SignedDescriptionSetMaterial::new(signed_descriptions),
+        "signed capability description set",
+    )?;
+    Ok(digest_with_domain(SIGNED_DESCRIPTION_SET_DOMAIN, &bytes))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SignedDescriptionSetMaterial<'a> {
+    schema: &'static str,
+    signed_descriptions: &'a [SignedCapabilityDescription],
+}
+
+impl<'a> SignedDescriptionSetMaterial<'a> {
+    fn new(signed_descriptions: &'a [SignedCapabilityDescription]) -> Self {
+        Self {
+            schema: CONTROL_CAPABILITY_SIGNED_DESCRIPTOR_SNAPSHOT_SCHEMA,
+            signed_descriptions,
+        }
+    }
+}
+
+fn signed_description_ordering(
+    left: &SignedCapabilityDescription,
+    right: &SignedCapabilityDescription,
+) -> std::cmp::Ordering {
+    left.descriptor()
+        .package_id
+        .to_string()
+        .cmp(&right.descriptor().package_id.to_string())
+        .then_with(|| left.descriptor().surface.cmp(&right.descriptor().surface))
+        .then_with(|| {
+            left.payload
+                .descriptor_digest
+                .cmp(&right.payload.descriptor_digest)
+        })
+        .then_with(|| left.signer_id().cmp(right.signer_id()))
+        .then_with(|| left.signature.cmp(&right.signature))
 }
 
 #[derive(Serialize)]
