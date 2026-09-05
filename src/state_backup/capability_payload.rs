@@ -21,7 +21,7 @@ const SHA256: &str = "sha256";
 const STAGING: &str = ".staging";
 const MUTATION_LOCK: &str = ".mutation.lock";
 const RETENTION_JOURNAL: &str = ".retention.journal";
-pub(super) const MAX_RECORD_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_RECORD_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Kind {
@@ -33,7 +33,7 @@ pub(super) enum Kind {
 /// Directories are accepted only when they are part of one of the two owner
 /// layouts; record and operational files are classified separately by the
 /// scanner after this check.
-pub(super) fn validate_layout(path: &str, directory: bool) -> UseResult<()> {
+pub(crate) fn validate_layout(path: &str, directory: bool) -> UseResult<()> {
     let parts = path.split('/').collect::<Vec<_>>();
     if parts.first().copied() != Some(ROOT) {
         return Ok(());
@@ -89,7 +89,7 @@ pub(super) fn record_kind(path: &str) -> UseResult<Kind> {
 /// Return whether a Capability Gateway file is operational evidence that must
 /// not enter a backup. Empty staging directories are harmless; a file inside
 /// one means a publication was interrupted and must be recovered first.
-pub(super) fn is_nonterminal(path: &str, directory: bool) -> bool {
+pub(crate) fn is_nonterminal(path: &str, directory: bool) -> bool {
     if directory {
         return false;
     }
@@ -100,7 +100,7 @@ pub(super) fn is_nonterminal(path: &str, directory: bool) -> bool {
 /// Validate canonical bytes for one immutable record.  The descriptor
 /// snapshot owner performs structural and canonical validation here; current
 /// trust-key/expiry verification remains an explicit replay-time operation.
-pub(super) fn validate_bytes(
+pub(crate) fn validate_bytes(
     path: &str,
     bytes: &[u8],
     installation: &InstallationId,

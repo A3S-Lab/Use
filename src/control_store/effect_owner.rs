@@ -4,4 +4,6 @@ pub(in crate::control_store) mod knowledge;
 pub(in crate::control_store) mod runtime;
 pub(in crate::control_store) mod static_surface;
 
-pub(in crate::control_store) use capability_plane::validate_descriptor_snapshot_backup_bytes;
+pub(in crate::control_store) use capability_plane::{
+    descriptor_snapshot_backup_installation, validate_descriptor_snapshot_backup_bytes,
+};

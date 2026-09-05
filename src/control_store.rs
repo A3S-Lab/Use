@@ -53,6 +53,12 @@ pub(crate) fn validate_capability_descriptor_snapshot_backup_bytes(
     effect_owner::validate_descriptor_snapshot_backup_bytes(bytes, installation, expected_digest)
 }
 
+pub(crate) fn capability_descriptor_snapshot_backup_installation(
+    bytes: &[u8],
+) -> UseResult<InstallationId> {
+    effect_owner::descriptor_snapshot_backup_installation(bytes)
+}
+
 #[cfg(test)]
 use executor::MAX_QUEUED_CONTROL_STORE_OPERATIONS;
 #[cfg(test)]

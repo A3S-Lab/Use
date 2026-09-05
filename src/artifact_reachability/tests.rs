@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use tokio::fs;
 
 use super::*;
+use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
 use crate::cognitive_package::InstallationSnapshotStore;
 use crate::plugin_lifecycle::{
     PluginLifecycleAction, PluginLifecycleIntent, PluginLifecycleIntentSpec,
@@ -511,6 +512,79 @@ async fn global_inventory_keeps_runtime_plan_artifacts_reachable() {
     assert_eq!(artifact.kind, ArtifactKind::Blob);
     assert_eq!(artifact.installation.as_ref(), Some(&installation));
     assert_eq!(artifact.reference_count, 1);
+}
+
+#[tokio::test]
+async fn global_inventory_validates_capability_gateway_payload_owner() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let installation = InstallationId::new(InstallationKind::User, "capability-owner").unwrap();
+    let paths = roots.for_installation(installation.clone()).unwrap();
+    let catalog = crate::core::CapabilityGatewayCatalog::new(installation, 0, Vec::new()).unwrap();
+    CapabilityGatewayCatalogStore::from_extension_paths(&paths)
+        .publish(&catalog)
+        .await
+        .unwrap();
+
+    let inventory = ArtifactReachabilityInspector::new(roots)
+        .inspect_references()
+        .await
+        .unwrap();
+    assert!(inventory.entries.is_empty());
+}
+
+#[tokio::test]
+async fn global_inventory_rejects_unknown_nested_capability_gateway_state() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let installation =
+        InstallationId::new(InstallationKind::Workspace, "capability-unknown").unwrap();
+    let paths = roots.for_installation(installation).unwrap();
+    let unknown = paths
+        .installation_state_root()
+        .join("capability-gateway/catalogs/sha256/aa/unknown.txt");
+    fs::create_dir_all(unknown.parent().unwrap()).await.unwrap();
+    fs::write(&unknown, b"unexpected").await.unwrap();
+
+    let error = ArtifactReachabilityInspector::new(roots)
+        .inspect_references()
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.artifact_reachability.reference_invalid");
+}
+
+#[tokio::test]
+async fn global_inventory_rejects_capability_gateway_retention_evidence() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let installation = InstallationId::new(InstallationKind::User, "capability-retention").unwrap();
+    let paths = roots.for_installation(installation.clone()).unwrap();
+    let catalog = crate::core::CapabilityGatewayCatalog::new(installation, 0, Vec::new()).unwrap();
+    let store = CapabilityGatewayCatalogStore::from_extension_paths(&paths);
+    store.publish(&catalog).await.unwrap();
+    fs::write(
+        paths
+            .installation_state_root()
+            .join("capability-gateway/catalogs/.retention.journal"),
+        b"pending",
+    )
+    .await
+    .unwrap();
+
+    let error = ArtifactReachabilityInspector::new(roots)
+        .inspect_references()
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.artifact_reachability.reference_invalid");
 }
 
 #[tokio::test]

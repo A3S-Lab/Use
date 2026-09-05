@@ -18,6 +18,7 @@ use crate::cognitive_package::{
 use crate::installation_state_layout;
 use crate::plugin_runtime::RuntimeSurfacePlanStore;
 
+mod capability;
 mod io;
 mod lifecycle;
 mod receipts;
@@ -117,6 +118,7 @@ async fn scan_installation(
     let mut pending_operations = None;
     let mut lifecycle_operations = None;
     let mut runtime_plans = None;
+    let mut capability_gateway = None;
     let mut entries = fs::read_dir(state_root)
         .await
         .map_err(|error| inventory_io("read installation state directory", state_root, error))?;
@@ -157,6 +159,7 @@ async fn scan_installation(
                 lifecycle_operations = operation_roots.plugins;
             }
             "runtime-plans" => runtime_plans = Some(path),
+            "capability-gateway" => capability_gateway = Some(path),
             _ => {}
         }
     }
@@ -204,6 +207,9 @@ async fn scan_installation(
         )
         .await?;
         facts.merge(scan_runtime_plans(records, location, budget).await?)?;
+    }
+    if let Some(root) = capability_gateway {
+        facts.merge(capability::scan(&root, location, budget).await?)?;
     }
     Ok(facts)
 }
