@@ -7,14 +7,15 @@ use a3s_use_core::UseResult;
 use a3s_use_extension::ExtensionPaths;
 use sha2::{Digest, Sha256};
 
+use super::capability_payload;
 use super::inventory::{
     expected_family, scan, scan_with_paths, summarize_families, validate_archived_path,
     validate_inventory_bounds,
 };
 use super::{
     canonical_json, sha256_digest, state_backup_exists, state_backup_invalid, state_backup_io,
-    state_backup_limit, valid_digest, StateBackupAuthority, StateBackupEntry, StateBackupManifest,
-    StateBackupRoot, A3S_USE_STATE_BACKUP_SCHEMA, MAX_STATE_BACKUP_FILES,
+    state_backup_limit, valid_digest, StateBackupAuthority, StateBackupEntry, StateBackupFamily,
+    StateBackupManifest, StateBackupRoot, A3S_USE_STATE_BACKUP_SCHEMA, MAX_STATE_BACKUP_FILES,
     MAX_STATE_BACKUP_MANIFEST_BYTES,
 };
 
@@ -87,7 +88,7 @@ pub(super) fn create_backup(
                 state_backup_io(format!("The backup header cannot be written: {error}"))
             })?;
         for (entry, path) in &scanned {
-            copy_verified_file(&mut writer, path, entry)?;
+            copy_verified_file(&mut writer, path, entry, &manifest.installation)?;
         }
         writer.flush().map_err(|error| {
             state_backup_io(format!(
@@ -199,11 +200,24 @@ pub(super) fn verify_backup(path: &Path) -> UseResult<StateBackupManifest> {
     for entry in &manifest.entries {
         let mut remaining = entry.length;
         let mut hasher = Sha256::new();
+        let mut payload_bytes = if entry.family == StateBackupFamily::CapabilityPayloads {
+            if entry.length > capability_payload::MAX_RECORD_BYTES as u64 {
+                return Err(state_backup_invalid(
+                    "A Capability Gateway payload exceeds its bounded record size.",
+                ));
+            }
+            Some(Vec::with_capacity(entry.length as usize))
+        } else {
+            None
+        };
         while remaining > 0 {
             let requested = usize::try_from(remaining.min(buffer.len() as u64))
                 .map_err(|_| state_backup_invalid("A state backup payload length is invalid."))?;
             read_exact_invalid(&mut reader, &mut buffer[..requested])?;
             hasher.update(&buffer[..requested]);
+            if let Some(bytes) = payload_bytes.as_mut() {
+                bytes.extend_from_slice(&buffer[..requested]);
+            }
             remaining -= requested as u64;
         }
         let digest = format!("sha256:{:x}", hasher.finalize());
@@ -211,6 +225,9 @@ pub(super) fn verify_backup(path: &Path) -> UseResult<StateBackupManifest> {
             return Err(state_backup_invalid(
                 "A state backup payload digest does not match its manifest entry.",
             ));
+        }
+        if let Some(bytes) = payload_bytes {
+            capability_payload::validate_bytes(&entry.path, &bytes, &manifest.installation)?;
         }
     }
     let mut trailing = [0u8; 1];
@@ -550,6 +567,7 @@ fn copy_verified_file(
     writer: &mut impl Write,
     path: &Path,
     entry: &StateBackupEntry,
+    installation: &a3s_use_core::InstallationId,
 ) -> UseResult<()> {
     let metadata = std::fs::symlink_metadata(path).map_err(|error| {
         state_backup_io(format!(
@@ -571,6 +589,16 @@ fn copy_verified_file(
     })?);
     let mut remaining = entry.length;
     let mut hasher = Sha256::new();
+    let mut payload_bytes = if entry.family == StateBackupFamily::CapabilityPayloads {
+        if entry.length > capability_payload::MAX_RECORD_BYTES as u64 {
+            return Err(state_backup_invalid(
+                "A Capability Gateway payload exceeds its bounded record size.",
+            ));
+        }
+        Some(Vec::with_capacity(entry.length as usize))
+    } else {
+        None
+    };
     let mut buffer = vec![0u8; COPY_BUFFER_BYTES];
     while remaining > 0 {
         let requested = remaining.min(buffer.len() as u64) as usize;
@@ -588,6 +616,9 @@ fn copy_verified_file(
             state_backup_io(format!("A backup payload cannot be written: {error}"))
         })?;
         hasher.update(&buffer[..read]);
+        if let Some(bytes) = payload_bytes.as_mut() {
+            bytes.extend_from_slice(&buffer[..read]);
+        }
         remaining -= read as u64;
     }
     let mut trailing = [0u8; 1];
@@ -606,6 +637,9 @@ fn copy_verified_file(
         return Err(super::state_backup_nonterminal(
             "A Use-owned backup payload changed while it was copied.",
         ));
+    }
+    if let Some(bytes) = payload_bytes {
+        capability_payload::validate_bytes(&entry.path, &bytes, installation)?;
     }
     Ok(())
 }

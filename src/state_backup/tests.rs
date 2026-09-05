@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
+use crate::core::CapabilityGatewayCatalog;
 use sha2::{Digest, Sha256};
 
 use super::*;
@@ -104,6 +106,94 @@ async fn coordinated_backup_accepts_only_terminal_durable_operation_records() {
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.state_backup_nonterminal");
+}
+
+#[tokio::test]
+async fn coordinated_backup_registers_and_verifies_capability_gateway_catalogs() {
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = fixture_paths(temporary.path());
+    let catalog =
+        CapabilityGatewayCatalog::new(paths.installation().clone(), 0, Vec::new()).unwrap();
+    let store = CapabilityGatewayCatalogStore::from_extension_paths(&paths);
+    let publication = store.publish(&catalog).await.unwrap();
+
+    let destination = temporary
+        .path()
+        .join("capability-payloads.a3s-use-state-backup");
+    let manifest = StateBackupManager::new(paths.clone())
+        .backup(&destination)
+        .await
+        .unwrap();
+    let hex = publication.digest.strip_prefix("sha256:").unwrap();
+    let expected_path = format!(
+        "capability-gateway/catalogs/sha256/{}/{hex}.json",
+        &hex[..2]
+    );
+    let entry = manifest
+        .entries
+        .iter()
+        .find(|entry| entry.path == expected_path)
+        .unwrap();
+    assert_eq!(entry.family, StateBackupFamily::CapabilityPayloads);
+    assert_eq!(manifest.families.len(), 1);
+    assert_eq!(
+        StateBackupManager::verify_backup(&destination)
+            .await
+            .unwrap(),
+        manifest
+    );
+
+    // Retention recovery evidence is operational state, never a portable
+    // payload. A pending journal blocks backup instead of being silently
+    // copied or discarded.
+    let journal = paths
+        .state_root()
+        .join("capability-gateway/catalogs/.retention.journal");
+    std::fs::write(&journal, b"pending retention").unwrap();
+    let error = StateBackupManager::new(paths.clone())
+        .backup(temporary.path().join("pending.a3s-use-state-backup"))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_nonterminal");
+}
+
+#[tokio::test]
+async fn coordinated_backup_rejects_capability_payload_layout_or_content_drift() {
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = fixture_paths(temporary.path());
+    let root = paths.state_root().join("capability-gateway");
+    std::fs::create_dir_all(root.join("catalogs/unknown")).unwrap();
+    std::fs::write(root.join("catalogs/unknown/record.json"), b"{}").unwrap();
+    let error = StateBackupManager::new(paths.clone())
+        .backup(
+            temporary
+                .path()
+                .join("unknown-capability-path.a3s-use-state-backup"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_layout_unsupported");
+
+    std::fs::remove_dir_all(&root).unwrap();
+    let catalog =
+        CapabilityGatewayCatalog::new(paths.installation().clone(), 0, Vec::new()).unwrap();
+    let store = CapabilityGatewayCatalogStore::from_extension_paths(&paths);
+    let publication = store.publish(&catalog).await.unwrap();
+    let hex = publication.digest.strip_prefix("sha256:").unwrap();
+    let record = paths.state_root().join(format!(
+        "capability-gateway/catalogs/sha256/{}/{hex}.json",
+        &hex[..2]
+    ));
+    std::fs::write(record, b"{}").unwrap();
+    let error = StateBackupManager::new(paths)
+        .backup(
+            temporary
+                .path()
+                .join("tampered-capability-record.a3s-use-state-backup"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_invalid");
 }
 
 #[tokio::test]

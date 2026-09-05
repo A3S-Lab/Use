@@ -77,10 +77,13 @@ to the non-cryptographic compatibility path. Expiry, revocation, envelope or
 proof substitution, and canonical-byte tampering therefore fail closed.
 
 The mechanism is intentionally not a second Gateway protocol and does not
-choose package lifecycle state. The remaining activation work is to source the
-trust store and signed envelopes from the official Registry/TUF authority,
-register the snapshot owner with backup/restore, and route the live lifecycle
-and Gateway through the A2 Control authority. Until then
+choose package lifecycle state. Coordinated state backup now registers the
+canonical descriptor-snapshot record alongside Gateway catalogs, validates its
+installation/content-address binding, and rejects mutation staging or
+retention journals. The remaining activation work is to source the trust store
+and signed envelopes from the official Registry/TUF authority, perform
+owner-native clean-target restore/retention, and route the live lifecycle and
+Gateway through the A2 Control authority. Until then
 CapabilityDescriptionProof::from_verified
 remains a compatibility constructor for explicitly host-verified preview
 integrations and must not be treated as cryptographic evidence.

@@ -343,6 +343,7 @@ control_store_cutover {
   consumer "state-backup" {
     implementation = [
       "src/state_backup.rs",
+      "src/state_backup/capability_payload.rs",
       "src/state_backup/inventory.rs",
     ]
     required_change = "Replace the manual mutable-state allowlist with a Control Store snapshot and registered external-owner snapshots."

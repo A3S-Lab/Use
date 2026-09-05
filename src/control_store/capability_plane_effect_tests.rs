@@ -584,6 +584,36 @@ async fn signed_descriptor_snapshot_replays_only_after_current_policy_verificati
     publication.validate().unwrap();
     assert!(publication.signed_description_set_digest.is_some());
 
+    // The coordinated state inventory recognizes the descriptor snapshot as
+    // a durable Capability Gateway payload. The owner-specific byte validator
+    // is exercised by the archive scanner; this path check also protects the
+    // public restore-plan classification from accidental downgrades.
+    let snapshot_hex = publication.snapshot_digest.strip_prefix("sha256:").unwrap();
+    let snapshot_path = format!("capability-gateway/descriptor-snapshots/{snapshot_hex}.json");
+    assert_eq!(
+        crate::state_backup::validate_state_backup_entry_path(
+            crate::state_backup::StateBackupRoot::State,
+            &snapshot_path,
+        )
+        .unwrap(),
+        crate::state_backup::StateBackupFamily::CapabilityPayloads
+    );
+    let snapshot_bytes = tokio::fs::read(
+        fixture
+            ._owner_fixture
+            .paths
+            .installation_state_root()
+            .join(&snapshot_path),
+    )
+    .await
+    .unwrap();
+    crate::control_store::validate_capability_descriptor_snapshot_backup_bytes(
+        &snapshot_bytes,
+        fixture._owner_fixture.paths.installation(),
+        &publication.snapshot_digest,
+    )
+    .unwrap();
+
     // A reconstructed projector ignores the retained proof projection and
     // verifies the canonical signed envelope against the current policy.
     let reopened = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(

@@ -171,7 +171,10 @@ for every exact package incarnation makes racing admission stale; exclusive
 drain safely defers while an accepted call is active. Publication is no-follow,
 no-replace, and crash-replayable. Index and lease files are derived operational
 state excluded from backup and the Index must be rebuilt from restored Control
-evidence. A real composition test covers Knowledge, Skill, cutover, stale
+evidence. Coordinated legacy inventory now admits canonical catalog and
+descriptor-snapshot records as the strict `CapabilityPayloads` family and
+rejects owner staging/lock/journal residue; production owner-native restore,
+retention, and Control registry cutover remain open. A real composition test covers Knowledge, Skill, cutover, stale
 admission, and same-key drain retry. The strict descriptor projector now
 consumes host-verified `CapabilityDescriptionProof` values under an explicit
 package-scoped signer allowlist. It checks exact package/lifecycle/catalog
@@ -182,11 +185,12 @@ open. An installation-owned descriptor snapshot store now captures the exact
 normalized proof set and signer policy under the Control candidate identity;
 canonical bytes are content-addressed, bounded, no-follow, no-clobber, and
 revalidated on restart. Missing evidence safely defers, while substitution,
-duplicate keys, or tampering fails closed. The store is still an inactive
-external owner and is not registered for backup/restore. Runtime Tool release
-planning now carries canonical input/output-schema attestation through the
-inactive Runtime and Control path; production Control/Runtime wiring, key
-custody, and backup/restore registration remain open. The core now defines a
+duplicate keys, or tampering fails closed. Coordinated backup validates and
+archives the canonical snapshot, while the store remains an inactive external
+owner. Runtime Tool release planning now carries canonical input/output-schema
+attestation through the inactive Runtime and Control path; production
+Control/Runtime wiring, key custody, owner-native clean-target restore/retention
+remain open. The core now defines a
 domain-separated `SignedCapabilityDescription` envelope, and the extension
 boundary verifies it with a bounded Ed25519 trust store that checks key
 rotation, expiry, and revocation. The Gateway facade now verifies signed
@@ -660,7 +664,11 @@ coordinated authority cutover remain open; no A2 roadmap item is complete yet.
   newer binding evidence fails closed. Deterministic whole-installation
   inventory backup now covers every allowlisted Use-owned family under one
   exclusive fence, binds Registry/receipt authority, rejects nonterminal or
-  unsafe state, and verifies all payloads offline without extraction. Reviewed
+  unsafe state, and verifies all payloads offline without extraction. The
+  immutable Capability Gateway catalog and descriptor-snapshot records are
+  admitted as the strict `CapabilityPayloads` family with canonical and
+  content-address checks; production owner-native restore/retention remains
+  open. Reviewed
   same-version/OS/architecture whole-install restore is now implemented with an
   exact path-free action plan, unchanged live Registry and Grant authority, an
   external rollback archive, link/reparse-safe candidates, seven durable

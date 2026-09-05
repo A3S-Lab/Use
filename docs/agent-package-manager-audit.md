@@ -41,7 +41,7 @@ execution; the Gateway exposes only an opaque, authorized projection.
 | Live invocation authorization | Gateway resolver/factory seam, principal context, discovery policy, generation leases and provider `authorize` hook | Embedding mechanism qualified | A production resolver must bind the opaque reference to the exact scope, Grant, receipt and Runtime provider; no generic adapter can infer this safely |
 | Generation-safe upgrade and drain | Immutable session factory, snapshot leases, list-change hub, explicit retention plans and drain leases | Mechanism qualified | Lifecycle must publish the new catalog, replace sessions, retain old leases, and retire payloads in one production transition |
 | Crash/restart convergence | Durable journals, exact-key replay, no-generation-inflation tests across package, Grant, Runtime, Gateway and restore paths | Broad preview coverage | Code/Runtime product-host kill tests, reboot and remaining Windows contention/reparse races |
-| Backup/restore authority | Whole-installation inventory, offline verification, reviewed restore plan, rollback archive and bounded recovery journal | Qualified for listed legacy/Use-owned families | Capability catalog/proof payload registration, Control database cutover, clean-machine recovery and operational drills |
+| Backup/restore authority | Whole-installation inventory, offline verification, reviewed restore plan, rollback archive and bounded recovery journal; canonical Capability Gateway catalog and descriptor-snapshot records are now admitted as the `CapabilityPayloads` family with owner-byte/content-address validation | Qualified for listed legacy/Use-owned families and the capability payload inventory boundary | Production Control owner registration, owner-native clean-target restore/retention activation, clean-machine recovery and operational drills |
 | Cross-language/remote use | Standard Streamable HTTP, bearer/Origin/admission controls and an independent Rust contract test | Partial | TypeScript and Python clients, remote/container client with no shared filesystem, and install/upgrade/drain/restart/denied-scope matrix |
 | Extensible package surfaces | Typed Flow, OKF/Knowledge, Skill and UI owners plus consumer profile negotiation | Partial | Negotiated Flow/UI/Knowledge metadata projection, distributed Flow identity and reviewed UI backend/rendering |
 | Supply chain and operations | Reproducible five-target preview archives, Cosign/Sigstore checks, SBOMs, installers and bounded diagnostics | Preview-qualified | External witness, official Use-Registry, key/incident response, retention/repair runbooks and exercised support procedures |
@@ -83,9 +83,11 @@ The verifier must remain outside the universal Gateway protocol, but its
 result must be a typed, non-forgeable input to the Control owner. The inactive
 Control snapshot owner now admits canonical signed v2 envelopes, retains the
 envelopes as replay authority, and rejects the proof-only projector for those
-records. A caller-supplied boolean or signer string is not sufficient
-evidence. Production Registry/TUF key-source binding and lifecycle wiring are
-still required.
+records. The coordinated backup inventory also validates and archives the
+canonical snapshot record, but intentionally leaves current trust-policy
+reverification to restore/replay. A caller-supplied boolean or signer string
+is not sufficient evidence. Production Registry/TUF key-source binding,
+owner-native restore/retention, and lifecycle wiring are still required.
 
 ### P0 — Compose the real invocation path
 
@@ -142,7 +144,7 @@ independent iterations rather than one final feature:
 | Control activation, live Runtime/Gateway/Grant composition and legacy-path deletion | 5–10 working days | A3S Code/host integration and migration review |
 | Cryptographic description verification and key policy | 3–6 working days | Registry key format, rotation and security review |
 | Extension projection plus real client/recovery matrix | 5–10 working days | TypeScript/Python clients and all supported platforms |
-| Backup/restore payload registration, official Registry and runbooks | 5–10 working days | Operations ownership and external witness |
+| Production owner-native payload restore/retention, official Registry and runbooks | 5–10 working days | Operations ownership and external witness |
 | Final MHS/release-candidate qualification | 3–7 working days | CI capacity, virtual lab and release sign-off |
 
 The first three rows describe the A3 Agent Gateway/capability-plane critical

@@ -253,7 +253,7 @@ pub(super) fn encode_snapshot(
     Ok(bytes)
 }
 
-fn decode_snapshot(bytes: &[u8]) -> UseResult<ControlCapabilityDescriptorSnapshot> {
+pub(super) fn decode_snapshot(bytes: &[u8]) -> UseResult<ControlCapabilityDescriptorSnapshot> {
     if bytes.is_empty() || bytes.len() > MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_BYTES {
         return Err(snapshot_conflict());
     }

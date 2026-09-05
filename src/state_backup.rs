@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod archive;
+mod capability_payload;
 mod inventory;
 mod retention;
 #[cfg(test)]
@@ -58,6 +59,7 @@ pub enum StateBackupFamily {
     Enablement,
     HostManager,
     RuntimePlans,
+    CapabilityPayloads,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

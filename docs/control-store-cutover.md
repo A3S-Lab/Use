@@ -318,9 +318,11 @@ before cursor double-read plus exact shared package-incarnation locks makes a
 racing cutover stale; exclusive drain safely defers for an active call. Catalog,
 Index, and lease paths reject substitution, immutable publication cannot
 replace existing content, and exact staging replay is crash-safe. The Index and
-lease families are derived operational state excluded from backup; the bound
-catalog must still join the registered external-owner snapshot/restore set
-before production activation. The strict descriptor projector now provides a
+lease families are derived operational state excluded from backup; coordinated
+legacy inventory now admits the bound catalog and descriptor snapshot as one
+strict `CapabilityPayloads` family with canonical/content-address checks. The
+production owner-registry cutover, clean-target activation, and retention
+coordination for those payloads remain required. The strict descriptor projector now provides a
 second, side-effect-free gate at this boundary: it consumes host-verified
 description proofs under an explicit package-scoped signer policy and checks
 catalog provenance, dependency closure, prepared owner receipts, active Grant
@@ -332,9 +334,10 @@ under the installation and Control candidate identity. Its canonical record is
 content-addressed by the snapshot bytes, published with bounded no-follow
 staging/no-clobber replay, and revalidated on every read; missing evidence is
 retryable while substitution, duplicate keys, and tampering fail closed. The
-store remains an external inactive owner and is not yet registered for
-backup/restore. Key custody and production host wiring remain activation
-prerequisites. Runtime Tool release planning now carries a canonical
+coordinated inventory validates and archives this canonical record, while the
+store remains an external inactive owner for production Control wiring. Key
+custody, owner-native clean-target restore/retention, and production host wiring
+remain activation prerequisites. Runtime Tool release planning now carries a canonical
 descriptor/input/output schema attestation through the inactive Runtime and
 Control evidence path; verified payload admission and strict descriptor
 projection compare those digests before publication. The Flow adapter is now
@@ -375,7 +378,7 @@ Production activation is blocked until all gates below are true:
 | External ownership | Every retained payload family is registered, bounded, digest-bound, and unable to select desired state. |
 | Atomic visibility | Every observable combination corresponds to one committed Control generation plus explicit external-effect observations. |
 | Recovery | Restart reuses exact operation and effect identities without network access, reauthorization, or generation inflation where replay should be local. |
-| Backup and restore | Store-owned snapshot/export and registered owner snapshots round-trip offline; WAL, SHM, locks, leases, staging, and active journals are excluded. |
+| Backup and restore | Store-owned snapshot/export and registered owner snapshots round-trip offline; the legacy inventory now validates immutable Capability Gateway catalog/snapshot payloads as `CapabilityPayloads`, while WAL, SHM, locks, leases, staging, and active journals are excluded. Production owner-native clean-target activation and retention remain gates. |
 | Portability | Linux, macOS, and Windows process-exit matrices pass from product entry points. |
 
 Freezing this inventory is a prerequisite, not completion of an A2 roadmap
