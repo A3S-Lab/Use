@@ -20,6 +20,7 @@ use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
 mod descriptor;
+mod descriptor_snapshot;
 mod index;
 mod lease;
 mod model;
@@ -28,6 +29,11 @@ mod tests;
 
 pub(in crate::control_store) use descriptor::{
     ControlCapabilityDescriptorProjection, ControlCapabilitySignerPolicy,
+};
+#[allow(unused_imports)]
+pub(in crate::control_store) use descriptor_snapshot::{
+    ControlCapabilityDescriptorSnapshot, ControlCapabilityDescriptorSnapshotKey,
+    ControlCapabilityDescriptorSnapshotPublication, ControlCapabilityDescriptorSnapshotStore,
 };
 use index::ControlCapabilityIndexStore;
 use lease::{ControlGenerationFileLease, ControlGenerationLeaseStore};
@@ -79,6 +85,27 @@ impl ControlCapabilityPlaneEffectPort {
         signer_policy: ControlCapabilitySignerPolicy,
     ) -> UseResult<Self> {
         let projection = ControlCapabilityDescriptorProjection::new(proofs, signer_policy)?;
+        Self::new(control, catalogs, Arc::new(projection))
+    }
+
+    /// Compose the restart-stable projector backed by an installation-owned
+    /// proof snapshot store. The caller must publish the exact snapshot before
+    /// the corresponding Control capability cutover is dispatched.
+    #[allow(dead_code)]
+    pub(in crate::control_store) fn with_descriptor_snapshot_store(
+        control: ControlStore,
+        catalogs: CapabilityGatewayCatalogStore,
+        snapshots: ControlCapabilityDescriptorSnapshotStore,
+    ) -> UseResult<Self> {
+        if snapshots.installation() != &control.installation
+            || snapshots.state_root() != control.state_root
+        {
+            return Err(UseError::new(
+                CATALOG_BINDING_ERROR,
+                "The Control Store and descriptor snapshot owner do not share one installation root.",
+            ));
+        }
+        let projection = ControlCapabilityDescriptorProjection::from_snapshot_store(snapshots)?;
         Self::new(control, catalogs, Arc::new(projection))
     }
 

@@ -15,7 +15,7 @@ use a3s_use_core::{
     PluginSurfaceKind, PluginSurfaceRef, ResourceRef, ToolWorkloadClass, UseError, UseResult,
 };
 use olpc_cjson::CanonicalFormatter;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::super::super::effect_port::{
@@ -24,6 +24,10 @@ use super::super::super::effect_port::{
 use super::super::super::model::{
     valid_sha256, ControlAppliedEffectEvidence, ControlCapabilityEffectAuthority,
     ControlCapabilitySurfaceState, ControlEffectOwner, ControlEffectSubject,
+};
+use super::descriptor_snapshot::{
+    ControlCapabilityDescriptorSnapshotKey, ControlCapabilityDescriptorSnapshotStore,
+    SNAPSHOT_MISSING, SNAPSHOT_RETRYABLE_BUSY, SNAPSHOT_RETRYABLE_IO,
 };
 
 /// Fixed error exposed by the owner port.  Detailed proof and package data
@@ -43,7 +47,8 @@ const MAX_TRUSTED_SIGNERS: usize = 4_096;
 /// key store or a trust root.  The Control projector therefore requires an
 /// immutable, package-scoped allowlist at construction time.  A missing entry
 /// is a rejection, never an implicit allow.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(in crate::control_store) struct ControlCapabilitySignerPolicy {
     package_signers: BTreeMap<String, BTreeSet<String>>,
 }
@@ -79,6 +84,23 @@ impl ControlCapabilitySignerPolicy {
             .get(package_id)
             .is_some_and(|signers| signers.contains(signer_id))
     }
+
+    pub(in crate::control_store) fn validate(&self) -> UseResult<()> {
+        Self::new(self.package_signers.clone()).map(|_| ())
+    }
+
+    pub(in crate::control_store) fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
+        self.validate()?;
+        let mut bytes = Vec::new();
+        let mut serializer =
+            serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
+        self.serialize(&mut serializer).map_err(|error| {
+            projection_error(format!(
+                "Failed to encode the capability signer policy: {error}"
+            ))
+        })?;
+        Ok(bytes)
+    }
 }
 
 /// Host-owned, deterministic projection from verified descriptions to one
@@ -91,8 +113,16 @@ impl ControlCapabilitySignerPolicy {
 /// pretending that an unreviewed descriptor is available.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::control_store) struct ControlCapabilityDescriptorProjection {
-    proofs: Vec<CapabilityDescriptionProof>,
-    signer_policy: ControlCapabilitySignerPolicy,
+    source: DescriptorProjectionSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DescriptorProjectionSource {
+    InMemory {
+        proofs: Vec<CapabilityDescriptionProof>,
+        signer_policy: ControlCapabilitySignerPolicy,
+    },
+    Durable(ControlCapabilityDescriptorSnapshotStore),
 }
 
 impl ControlCapabilityDescriptorProjection {
@@ -100,6 +130,7 @@ impl ControlCapabilityDescriptorProjection {
         mut proofs: Vec<CapabilityDescriptionProof>,
         signer_policy: ControlCapabilitySignerPolicy,
     ) -> UseResult<Self> {
+        signer_policy.validate()?;
         if proofs.len() > MAX_DESCRIPTION_PROOFS {
             return Err(projection_error(
                 "The capability description proof set exceeds its bound.",
@@ -134,9 +165,37 @@ impl ControlCapabilityDescriptorProjection {
                 .then_with(|| left.descriptor_digest.cmp(&right.descriptor_digest))
         });
         Ok(Self {
-            proofs,
-            signer_policy,
+            source: DescriptorProjectionSource::InMemory {
+                proofs,
+                signer_policy,
+            },
         })
+    }
+
+    pub(in crate::control_store) fn from_snapshot_store(
+        store: ControlCapabilityDescriptorSnapshotStore,
+    ) -> UseResult<Self> {
+        store.validate_configuration()?;
+        Ok(Self {
+            source: DescriptorProjectionSource::Durable(store),
+        })
+    }
+
+    pub(in crate::control_store) fn into_parts(
+        self,
+    ) -> UseResult<(
+        Vec<CapabilityDescriptionProof>,
+        ControlCapabilitySignerPolicy,
+    )> {
+        match self.source {
+            DescriptorProjectionSource::InMemory {
+                proofs,
+                signer_policy,
+            } => Ok((proofs, signer_policy)),
+            DescriptorProjectionSource::Durable(_) => Err(projection_error(
+                "A durable descriptor projector has no in-memory proof set.",
+            )),
+        }
     }
 
     /// Project and validate all supplied proofs against one committed target
@@ -147,29 +206,38 @@ impl ControlCapabilityDescriptorProjection {
         &self,
         authority: &ControlCapabilityEffectAuthority,
     ) -> UseResult<CapabilityGatewayCatalog> {
-        let mut descriptors = Vec::with_capacity(self.proofs.len());
-        for proof in &self.proofs {
-            proof
-                .validate()
-                .map_err(|_| projection_error("A capability description proof is invalid."))?;
-            let descriptor = proof.descriptor();
-            if !self
-                .signer_policy
-                .permits(descriptor.package_id.as_str(), &proof.signer_id)
-            {
-                return Err(projection_error(
-                    "A capability description signer is not authorized for its package.",
-                ));
+        let DescriptorProjectionSource::InMemory {
+            proofs,
+            signer_policy,
+        } = &self.source
+        else {
+            return Err(projection_error(
+                "A durable descriptor projector must be awaited before projection.",
+            ));
+        };
+        project_catalog_from_parts(authority, proofs, signer_policy)
+    }
+
+    async fn project_catalog_async(
+        &self,
+        authority: &ControlCapabilityEffectAuthority,
+    ) -> UseResult<CapabilityGatewayCatalog> {
+        match &self.source {
+            DescriptorProjectionSource::InMemory {
+                proofs,
+                signer_policy,
+            } => project_catalog_from_parts(authority, proofs, signer_policy),
+            DescriptorProjectionSource::Durable(store) => {
+                let key = ControlCapabilityDescriptorSnapshotKey::from_authority(authority)?;
+                let snapshot = store.get(&key).await?.ok_or_else(|| {
+                    UseError::new(
+                        SNAPSHOT_MISSING,
+                        "The committed capability descriptor proof snapshot is not present.",
+                    )
+                })?;
+                project_catalog_from_parts(authority, snapshot.proofs(), snapshot.signer_policy())
             }
-            validate_descriptor_binding(authority, descriptor)?;
-            descriptors.push(descriptor.clone());
         }
-        CapabilityGatewayCatalog::new(
-            authority.generation.snapshot.installation.clone(),
-            authority.generation.capability.generation,
-            descriptors,
-        )
-        .map_err(|_| projection_error("The projected capability catalog is invalid."))
     }
 
     /// Return the deterministic route identities that a host must place in a
@@ -184,17 +252,54 @@ impl ControlCapabilityDescriptorProjection {
     }
 }
 
+fn project_catalog_from_parts(
+    authority: &ControlCapabilityEffectAuthority,
+    proofs: &[CapabilityDescriptionProof],
+    signer_policy: &ControlCapabilitySignerPolicy,
+) -> UseResult<CapabilityGatewayCatalog> {
+    let mut descriptors = Vec::with_capacity(proofs.len());
+    for proof in proofs {
+        proof
+            .validate()
+            .map_err(|_| projection_error("A capability description proof is invalid."))?;
+        let descriptor = proof.descriptor();
+        if !signer_policy.permits(descriptor.package_id.as_str(), &proof.signer_id) {
+            return Err(projection_error(
+                "A capability description signer is not authorized for its package.",
+            ));
+        }
+        validate_descriptor_binding(authority, descriptor)?;
+        descriptors.push(descriptor.clone());
+    }
+    CapabilityGatewayCatalog::new(
+        authority.generation.snapshot.installation.clone(),
+        authority.generation.capability.generation,
+        descriptors,
+    )
+    .map_err(|_| projection_error("The projected capability catalog is invalid."))
+}
+
 #[async_trait::async_trait]
 impl ControlCapabilityCatalogProjectionPort for ControlCapabilityDescriptorProjection {
     async fn project(
         &self,
         authority: &ControlCapabilityEffectAuthority,
     ) -> ControlEffectPortOutcome<CapabilityGatewayCatalog> {
-        match self.project_catalog(authority) {
+        match self.project_catalog_async(authority).await {
             Ok(catalog) => ControlEffectPortOutcome::applied(catalog),
+            Err(error) if is_retryable_snapshot_error(&error.code) => {
+                ControlEffectPortOutcome::deferred(projection_failure(&error.code))
+            }
             Err(error) => ControlEffectPortOutcome::rejected(projection_failure(&error.code)),
         }
     }
+}
+
+fn is_retryable_snapshot_error(code: &str) -> bool {
+    matches!(
+        code,
+        SNAPSHOT_MISSING | SNAPSHOT_RETRYABLE_IO | SNAPSHOT_RETRYABLE_BUSY
+    )
 }
 
 /// Opaque references derived from one exact prepared owner receipt.

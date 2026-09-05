@@ -255,7 +255,12 @@ mutable current 文件；Control 中 applied cutover observation 是唯一 publi
 incarnation 取得排他锁，并在 accepted call 仍活跃时安全 deferred。No-follow、no-replace 发布与精确 staging
 重放保护 immutable catalog/Index。Index 与 lease 文件都是不进入备份的派生 operational state；catalog 仍需登记到 backup/restore owner 集合。该边界的严格 descriptor projector 只接受经过 host 验证的
 `CapabilityDescriptionProof` 与 package-scoped signer allowlist，并在派生 opaque route identity 前核对精确 catalog provenance、dependency closure、prepared owner evidence、active Grant 与 reviewed Tool/MCP shape。
-它是无副作用的 subset projection；key custody、durable proof snapshot 以及生产 Control/Runtime wiring 仍是独立的 activation gate。真实组合测试已经覆盖 Knowledge、Skill、catalog/Index cutover、stale admission 与
+它是无副作用的 subset projection；key custody 仍是独立的 activation gate。安装级 durable
+descriptor snapshot store 现在会把精确规范化 proof set 与 signer policy 绑定到 Control candidate
+identity，以 snapshot canonical bytes 做内容寻址，使用有界 no-follow staging、no-clobber 发布和
+重启时的 canonical/digest 复验。缺失证据会安全 deferred，替换、重复 key 或篡改会 fail closed。
+该 store 仍是未激活的 external owner，尚未登记到 backup/restore；Runtime payload/schema
+attestation 与生产 Control/Runtime wiring 仍未完成。真实组合测试已经覆盖 Knowledge、Skill、catalog/Index cutover、stale admission 与
 同一 key 的 drain 重试。非激活 Runtime owner 现在已完成 release-backed Tool Task/Service 与 Streamable
 HTTP MCP 验收。首次 prepare 只消费无路径、已验证的 release payload，把完整 plan semantics 绑定到已提交
 provider evidence，持久化单调 Runtime/Gateway recovery state，并在不依赖 Artifact 路径的情况下重放或退休
