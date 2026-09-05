@@ -140,8 +140,15 @@ independent iterations rather than one final feature:
 | Backup/restore payload registration, official Registry and runbooks | 5–10 working days | Operations ownership and external witness |
 | Final MHS/release-candidate qualification | 3–7 working days | CI capacity, virtual lab and release sign-off |
 
-These ranges overlap only if the corresponding owners work in parallel. For a
-single implementation stream, the honest overall range is roughly **3–6
-weeks**, followed by any schedule imposed by external Registry, host and
-security reviews. The current PR #238 reduces one P0 mechanism but does not
-shorten those external gates to zero.
+The first three rows describe the A3 Agent Gateway/capability-plane critical
+path. They overlap only when the corresponding owners work in parallel; on a
+single implementation stream, that slice is roughly **3–6 focused weeks**.
+That is not an estimate for the complete A3S-USE product. Backup/restore and
+the official Registry, A2 production activation, A4 host/provider adoption,
+MHS qualification, cross-platform recovery, and security/operations sign-off
+remain separate product gates. A production-ready release therefore needs at
+least **6–12 additional focused weeks** of engineering and verification (about
+2–3 months of calendar time in a dedicated stream), with no fixed date until
+the external Registry, host, platform, and security dependencies are staffed
+and accepted. The current PR #238 reduces one P0 mechanism but does not close
+those gates.
