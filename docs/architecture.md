@@ -157,6 +157,18 @@ crash boundary. A concurrent whole-installation restore cannot acquire its
 exclusive maintenance fence until the provider observation is durable and any
 detached in-process effect future has actually finished.
 
+The Capability Index projection boundary now has a strict descriptor adapter
+as well. It accepts only host-verified `CapabilityDescriptionProof` values and
+an explicit package-scoped signer allowlist. For each supplied proof it checks
+the exact enabled package incarnation, catalog-record provenance, selected
+surface and dependency graph, terminal prepared owner receipt, active Grant,
+and owner-specific Tool/MCP workload or transport before deriving
+domain-separated opaque invocation, endpoint, artifact, and resource refs.
+The adapter is side-effect free and may publish a subset, but it never treats
+an optional degraded surface as callable. Signature/key custody and the
+durable proof snapshot needed to make a crash retry independent of live host
+state remain outside this adapter and are still production activation gates.
+
 Production lifecycle code does not construct it, so it neither mirrors nor
 replaces the current JSON authority. The first concrete post-commit adapter now
 qualifies immutable Skill/UI preparation. It re-derives the typed owner and

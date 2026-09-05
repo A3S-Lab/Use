@@ -1873,8 +1873,14 @@ terminal surface evidence, durably publishes the catalog and Capability Index,
 then returns both identities as one typed application. Recording that applied
 observation atomically advances the published Control cursor with the catalog
 digest, generation, and revision. Live admission reopens those exact bytes
-before taking package-generation leases. Production Control activation,
-complete host descriptor projection, backup/restore ownership, and retirement
+before taking package-generation leases. The strict descriptor projector now
+also consumes host-verified signed proofs under an explicit package-scoped
+signer allowlist, checks exact catalog surface dependencies, terminal
+owner-specific receipt evidence, active Grant coverage, and reviewed Tool/MCP
+workload shape before deriving opaque route references. It is intentionally a
+pure subset projection: proof/key custody, durable proof snapshots for crash
+retries, and production Control/Runtime/receipt wiring remain host gates.
+Production Control activation, backup/restore ownership, and retirement
 coordination remain separate gates.
 
 The embedding boundary now also includes `CapabilityGatewaySessionFactory`:

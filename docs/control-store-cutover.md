@@ -320,7 +320,15 @@ Index, and lease paths reject substitution, immutable publication cannot
 replace existing content, and exact staging replay is crash-safe. The Index and
 lease families are derived operational state excluded from backup; the bound
 catalog must still join the registered external-owner snapshot/restore set
-before production activation. The Flow adapter is now
+before production activation. The strict descriptor projector now provides a
+second, side-effect-free gate at this boundary: it consumes host-verified
+description proofs under an explicit package-scoped signer policy and checks
+catalog provenance, dependency closure, prepared owner receipts, active Grant
+coverage, and reviewed Tool/MCP shape before deriving opaque route identities.
+It may intentionally publish a subset, but it does not make cryptographic key
+custody or a restart-stable proof snapshot part of the Control aggregate.
+Those inputs, plus production host wiring and backup/restore ownership, remain
+activation prerequisites. The Flow adapter is now
 qualified as a gate-3 owner: it accepts only a path-free verified source
 payload, publishes a durable no-clobber content-addressed copy in its own
 workspace, and delegates Native TypeScript preflight to `a3s-flow` without

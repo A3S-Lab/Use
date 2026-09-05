@@ -19,12 +19,16 @@ use super::super::ControlStore;
 use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
 use crate::plugin_lifecycle::PluginLifecycleAction;
 
+mod descriptor;
 mod index;
 mod lease;
 mod model;
 #[cfg(test)]
 mod tests;
 
+pub(in crate::control_store) use descriptor::{
+    ControlCapabilityDescriptorProjection, ControlCapabilitySignerPolicy,
+};
 use index::ControlCapabilityIndexStore;
 use lease::{ControlGenerationFileLease, ControlGenerationLeaseStore};
 use model::ControlCapabilityIndexDocument;
@@ -62,6 +66,20 @@ impl ControlCapabilityPlaneEffectPort {
             catalogs,
             catalog_projection,
         })
+    }
+
+    /// Compose the strict host projector for a fixed set of verified signed
+    /// descriptions.  The proof set and signer policy are immutable for the
+    /// lifetime of the port; callers must replace the port when a Registry
+    /// publication or trust policy changes.
+    pub(in crate::control_store) fn with_verified_descriptions(
+        control: ControlStore,
+        catalogs: CapabilityGatewayCatalogStore,
+        proofs: Vec<a3s_use_core::CapabilityDescriptionProof>,
+        signer_policy: ControlCapabilitySignerPolicy,
+    ) -> UseResult<Self> {
+        let projection = ControlCapabilityDescriptorProjection::new(proofs, signer_policy)?;
+        Self::new(control, catalogs, Arc::new(projection))
     }
 
     /// Acquire one exact published capability generation for the complete

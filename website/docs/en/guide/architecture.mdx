@@ -309,7 +309,13 @@ and takes its exclusive lock, safely deferring while an accepted call is
 active. No-follow, no-replace publication and exact staging replay protect both
 immutable payloads. Index and lease files are derived operational state
 excluded from backup; the catalog still needs registered backup/restore
-ownership. A real composition test covers Knowledge, Skill, catalog/Index
+ownership. The strict descriptor projector at this boundary consumes only
+host-verified `CapabilityDescriptionProof` values plus a package-scoped signer
+allowlist. It checks exact catalog provenance, dependency closure, prepared
+owner evidence, active Grants, and reviewed Tool/MCP shape before deriving
+opaque route identities. The projector is side-effect free and subset-based;
+key custody, durable proof snapshots, and production Control/Runtime wiring
+remain separate activation gates. A real composition test covers Knowledge, Skill, catalog/Index
 cutover, stale admission, and same-key drain retry. The inactive Runtime owner
 is now qualified for release-backed Tool Task/Service and Streamable HTTP MCP.
 It consumes a path-free verified release payload on first prepare, binds the

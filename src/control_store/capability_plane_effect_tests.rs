@@ -1,9 +1,10 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use a3s_use_core::{
-    CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
-    CapabilityPublicationEvidence, CapabilityToolAnnotations, InvocationRef, PluginOperationAction,
-    PluginPackageId, PluginSurfaceKind, PluginSurfaceRef,
+    CapabilityDescriptionProof, CapabilityDescriptor, CapabilityDescriptorKind,
+    CapabilityGatewayCatalog, CapabilityPublicationEvidence, CapabilityToolAnnotations,
+    InvocationRef, PluginOperationAction, PluginPackageId, PluginSurfaceKind, PluginSurfaceRef,
 };
 
 use super::aggregate_tests::fixtures::{
@@ -14,7 +15,10 @@ use super::dispatcher::{
     ControlEffectClock, ControlEffectDispatchRequest, ControlEffectDispatchResult,
     ControlEffectDispatcher, ControlEffectPorts, SystemControlEffectClock,
 };
-use super::effect_owner::capability_plane::ControlCapabilityPlaneEffectPort;
+use super::effect_owner::capability_plane::{
+    ControlCapabilityDescriptorProjection, ControlCapabilityPlaneEffectPort,
+    ControlCapabilitySignerPolicy,
+};
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
 use super::effect_port::{
@@ -24,8 +28,9 @@ use super::effect_port::{
 };
 use super::knowledge_effect_test_support::{knowledge_owner_fixture_for, KnowledgeOwnerFixture};
 use super::model::{
-    ControlAppliedEffectEvidence, ControlCapabilityEffectAuthority, ControlEffectOutcome,
-    ControlEffectOwner, ControlEffectStatus, ControlProjectionHistory, ReviewedControlOperation,
+    ControlAppliedEffectEvidence, ControlCapabilityEffectAuthority, ControlEffectAuthority,
+    ControlEffectOutcome, ControlEffectOwner, ControlEffectStatus, ControlProjectionHistory,
+    ReviewedControlOperation,
 };
 use super::ControlStore;
 use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
@@ -317,6 +322,173 @@ async fn catalog_projection_cannot_publish_an_unreviewed_surface() {
 
     assert!(store.published_capability().await.unwrap().is_none());
     assert!(catalogs.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn strict_descriptor_projection_binds_a_description_to_committed_owner_evidence() {
+    let fixture =
+        prepared_capability_plane("operation:capability-plane:descriptor-projector").await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-projector",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let proof = CapabilityDescriptionProof::from_verified(descriptor.clone(), signer).unwrap();
+    let projector = ControlCapabilityDescriptorProjection::new(
+        vec![proof.clone()],
+        signer_policy_for(descriptor.package_id.as_str(), signer),
+    )
+    .unwrap();
+    ControlCapabilityPlaneEffectPort::with_verified_descriptions(
+        fixture.store.clone(),
+        CapabilityGatewayCatalogStore::from_extension_paths(&fixture._owner_fixture.paths),
+        vec![proof],
+        signer_policy_for(descriptor.package_id.as_str(), signer),
+    )
+    .unwrap();
+
+    let first = projector.project_catalog(&authority).unwrap();
+    let second = projector.project_catalog(&authority).unwrap();
+    assert_eq!(first, second);
+    assert_eq!(first.descriptors, vec![descriptor.clone()]);
+    assert_eq!(
+        first.descriptor_digest().unwrap(),
+        second.descriptor_digest().unwrap()
+    );
+    assert!(matches!(
+        projector.project(&authority).await,
+        ControlEffectPortOutcome::Applied(_)
+    ));
+}
+
+#[tokio::test]
+async fn strict_descriptor_projection_rejects_route_and_dependency_substitution() {
+    let fixture = prepared_capability_plane("operation:capability-plane:descriptor-tamper").await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-tamper",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let signer = "registry/acme";
+    let policy = signer_policy_for(descriptor.package_id.as_str(), signer);
+
+    let mut route_tampered = descriptor.clone();
+    route_tampered.invocation_ref = InvocationRef::derive(
+        &route_tampered.package_id,
+        &route_tampered.surface,
+        route_tampered.generation,
+        &digest('0'),
+    )
+    .unwrap();
+    let route_projector = ControlCapabilityDescriptorProjection::new(
+        vec![CapabilityDescriptionProof::from_verified(route_tampered, signer).unwrap()],
+        policy.clone(),
+    )
+    .unwrap();
+    let route_error = route_projector.project_catalog(&authority).unwrap_err();
+    assert_eq!(
+        route_error.code,
+        "use.control_store.capability_descriptor_projection_invalid"
+    );
+
+    let mut dependency_tampered = descriptor.clone();
+    dependency_tampered.dependencies = vec![PluginSurfaceRef {
+        kind: PluginSurfaceKind::Skill,
+        id: "substituted-dependency".to_owned(),
+    }];
+    let dependency_projector = ControlCapabilityDescriptorProjection::new(
+        vec![CapabilityDescriptionProof::from_verified(dependency_tampered, signer).unwrap()],
+        policy,
+    )
+    .unwrap();
+    let dependency_error = dependency_projector
+        .project_catalog(&authority)
+        .unwrap_err();
+    assert_eq!(
+        dependency_error.code,
+        "use.control_store.capability_descriptor_projection_invalid"
+    );
+
+    let mut forged_authority = authority.clone();
+    let super::model::ControlEffectSubject::Surface { package_digest, .. } =
+        &mut forged_authority.materializations[0].intent.subject
+    else {
+        panic!("the fixture's first materialization must be a surface");
+    };
+    *package_digest = digest('0');
+    let forged_projector = ControlCapabilityDescriptorProjection::new(
+        vec![CapabilityDescriptionProof::from_verified(descriptor, signer).unwrap()],
+        signer_policy_for("acme/knowledge", signer),
+    )
+    .unwrap();
+    assert!(forged_projector.project_catalog(&forged_authority).is_err());
+}
+
+#[tokio::test]
+async fn strict_descriptor_projection_requires_the_package_signer_allowlist() {
+    let fixture = prepared_capability_plane("operation:capability-plane:descriptor-signer").await;
+    let claimed = fixture
+        .store
+        .claim_next_effect(claim(
+            fixture.installed.operation_id(),
+            "claim:capability-plane:descriptor-signer",
+            100,
+            110,
+            false,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let ControlEffectAuthority::CapabilityIndex(authority) = claimed.authority else {
+        panic!("the third effect must carry Capability Index authority");
+    };
+    let descriptor = exact_resource_descriptor(&authority);
+    let projector = ControlCapabilityDescriptorProjection::new(
+        vec![CapabilityDescriptionProof::from_verified(
+            descriptor.clone(),
+            "registry/unauthorized",
+        )
+        .unwrap()],
+        signer_policy_for(descriptor.package_id.as_str(), "registry/acme"),
+    )
+    .unwrap();
+
+    let first = projector.project(&authority).await;
+    let second = projector.project(&authority).await;
+    let (first_failure, second_failure) = match (first, second) {
+        (ControlEffectPortOutcome::Rejected(first), ControlEffectPortOutcome::Rejected(second)) => {
+            (first, second)
+        }
+        _ => panic!("an unauthorized signer must be rejected before publication"),
+    };
+    assert_eq!(
+        first_failure.error_code,
+        "use.control_store.capability_descriptor_projection_invalid"
+    );
+    assert_eq!(first_failure, second_failure);
 }
 
 #[tokio::test]
@@ -650,6 +822,100 @@ async fn assert_dispatch(
             && observed_attempt == attempt
             && outcome == expected_outcome
     ));
+}
+
+fn exact_resource_descriptor(authority: &ControlCapabilityEffectAuthority) -> CapabilityDescriptor {
+    let (package_id, surface) = authority
+        .materializations
+        .iter()
+        .find_map(|materialization| {
+            let super::model::ControlEffectSubject::Surface {
+                package_id,
+                surface,
+                ..
+            } = &materialization.intent.subject
+            else {
+                return None;
+            };
+            (surface.kind == PluginSurfaceKind::Okf).then(|| (package_id.clone(), surface.clone()))
+        })
+        .expect("the capability fixture must prepare an OKF surface");
+    let package = authority
+        .generation
+        .snapshot
+        .package_selection(&package_id)
+        .expect("the descriptor package must be selected");
+    let lifecycle_generation = authority
+        .generation
+        .package_lifecycles
+        .iter()
+        .find(|lifecycle| lifecycle.package_id == package_id)
+        .expect("the descriptor package must have a lifecycle")
+        .lifecycle_generation;
+    let route = ControlCapabilityDescriptorProjection::route_binding(
+        authority,
+        &PluginPackageId::parse(package_id.clone()).unwrap(),
+        &surface,
+    )
+    .unwrap();
+    let catalog_surface = package
+        .package
+        .catalog
+        .record
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.reference() == surface)
+        .expect("the descriptor surface must be in the package catalog");
+    CapabilityDescriptor {
+        schema: a3s_use_core::CAPABILITY_DESCRIPTOR_SCHEMA_V1.to_owned(),
+        package_id: PluginPackageId::parse(package_id).unwrap(),
+        surface,
+        generation: lifecycle_generation,
+        package_digest: package
+            .package
+            .catalog
+            .record
+            .package
+            .sha256
+            .clone()
+            .unwrap(),
+        manifest_digest: package
+            .package
+            .catalog
+            .record
+            .package
+            .manifest_sha256
+            .clone()
+            .unwrap(),
+        title: "A3S Knowledge Resource".to_owned(),
+        description: "A resource projected from committed OKF evidence.".to_owned(),
+        invocation_ref: route.invocation_ref.clone(),
+        artifact_ref: route.artifact_ref.clone(),
+        endpoint_ref: route.endpoint_ref.clone(),
+        dependencies: catalog_surface.requires.clone(),
+        required_extensions: Vec::new(),
+        publication: CapabilityPublicationEvidence {
+            catalog_record_digest: package
+                .package
+                .catalog
+                .provenance
+                .catalog_record_digest
+                .clone(),
+            signature_digest: digest('e'),
+        },
+        capability: CapabilityDescriptorKind::Resource {
+            name: "domain-knowledge".to_owned(),
+            uri: route.resource_ref,
+            mime_type: Some("text/plain".to_owned()),
+            size: Some(1),
+        },
+    }
+}
+
+fn signer_policy_for(package_id: &str, signer: &str) -> ControlCapabilitySignerPolicy {
+    let mut package_signers = BTreeMap::new();
+    package_signers.insert(package_id.to_owned(), BTreeSet::from([signer.to_owned()]));
+    ControlCapabilitySignerPolicy::new(package_signers).unwrap()
 }
 
 fn catalog_path(state_root: &std::path::Path, digest: &str) -> std::path::PathBuf {
