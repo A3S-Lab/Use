@@ -1073,6 +1073,15 @@ The store refuses an empty protection set for a non-empty inventory and never
 infers liveness from a mutable pointer. Control cursor and session-lease
 coordination remain the authority that chooses the protected set.
 
+Implementation note (2026-09-05): retention apply now persists a bounded,
+canonical append-only recovery journal before each destructive unlink. It
+repairs a torn final record, reconciles an in-flight unlink against the
+immutable inventory after restart, blocks conflicting publication/planning,
+and exposes `CapabilityGatewayCatalogStore::recover_retention` so a host can
+resume from the journal's stored reviewed plan. This hardens the payload-owner
+recovery boundary; it does not choose the protected generations or close the
+Control cursor/session-lease lifecycle gate.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must
@@ -1241,6 +1250,9 @@ are frozen.
 | Capability snapshot | schema version 5 |
 | Capability descriptor | `a3s.use.capability-descriptor.v1` |
 | Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
+| Capability Gateway catalog retention plan | `a3s.use.capability-gateway-catalog-retention-plan.v1` |
+| Capability Gateway catalog retention result | `a3s.use.capability-gateway-catalog-retention-result.v1` |
+| Capability Gateway catalog retention journal | `a3s.use.capability-gateway-catalog-retention-journal.v1` (internal) |
 | Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
 | Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
 | Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |

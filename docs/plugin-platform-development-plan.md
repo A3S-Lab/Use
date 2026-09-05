@@ -263,16 +263,19 @@ Acceptance:
   deterministic crash staging, and create-if-absent hard-link
   publication, and supports exact digest/generation/revision reads after
  restart. The store intentionally has no mutable current pointer; Control
- cutover binding, session replacement/drain, and retention/GC remain open.
+ cutover binding and session replacement/drain remain open.
 The store is exposed through the standalone `capability-catalog` Cargo feature
 and included by both `mcp` and `extensions`, so a headless manager can own the
 durable payload before composing an MCP endpoint.
 - [x] Add explicit catalog retention/GC planning. The payload store accepts a
   lifecycle-supplied protected digest set, emits a canonical inventory
   partition, rechecks the exact plan under its mutation lock, removes only
-  reviewed regular records with shard fsync, and supports terminal replay.
-  It never invents a current pointer or assumes that an unlisted generation is
-  safe to delete; Control cursor and session-lease ownership remain external.
+  reviewed regular records with shard fsync, persists an append-only
+  crash-recovery journal, resumes an in-flight unlink (including torn-tail
+  repair), blocks conflicting publication, and exposes `recover_retention()`
+  for restart recovery. It never invents a current pointer or assumes that an
+  unlisted generation is safe to delete; Control cursor and session-lease
+  ownership remain external.
 - [x] Provide a live Gateway session factory for host cutover. The factory
   rejects cross-installation, stale-generation, and consumer-contract changes;
   swaps immutable servers under serialized ownership; retains one standard MCP
