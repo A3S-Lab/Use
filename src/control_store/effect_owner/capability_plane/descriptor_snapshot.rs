@@ -48,6 +48,13 @@ pub(in crate::control_store) fn validate_backup_bytes(
     Ok(())
 }
 
+/// Extract the installation identity embedded in one canonical descriptor
+/// snapshot. Callers must still run [`validate_backup_bytes`] before treating
+/// the returned identity as trusted payload evidence.
+pub(in crate::control_store) fn backup_installation(bytes: &[u8]) -> UseResult<InstallationId> {
+    Ok(storage::decode_snapshot(bytes)?.key.installation)
+}
+
 pub(in crate::control_store) const CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_SCHEMA: &str =
     "a3s.use.control-capability-descriptor-snapshot.v1";
 pub(in crate::control_store) const CONTROL_CAPABILITY_SIGNED_DESCRIPTOR_SNAPSHOT_SCHEMA: &str =

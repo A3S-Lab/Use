@@ -1194,6 +1194,14 @@ legacy inventory/restore-plan boundary, not the A2 owner-registry cutover:
 production clean-target activation, owner retention policy, and current
 Registry/TUF trust revalidation on signed replay remain required.
 
+Implementation note (2026-09-05): Artifact Reachability now traverses the
+same Capability Gateway payload-owner tree instead of silently ignoring the
+new root. Catalog and descriptor-snapshot records are revalidated against
+their installation and content address; unknown nested paths, links, staging
+residue, and retention journals fail closed before a garbage-collection view
+is returned. The scanner intentionally emits no Artifact Store references for
+these opaque projections; lifecycle receipts remain the artifact authority.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must
