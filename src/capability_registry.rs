@@ -368,6 +368,29 @@ impl CapabilityRegistrySnapshot {
         self.capability_gateway_catalog(descriptors)
     }
 
+    /// Materialize a Gateway catalog from signed descriptions after the
+    /// extension trust boundary has verified every envelope. This adapter is
+    /// the preferred production hand-off: callers supply public-key policy,
+    /// never a signer string or a forged core proof. The trust-store source is
+    /// still host-owned and must come from the Registry/TUF authority.
+    #[cfg(feature = "extensions")]
+    pub fn capability_gateway_catalog_from_signed_descriptions(
+        &self,
+        signed: Vec<a3s_use_core::SignedCapabilityDescription>,
+        trust_store: &a3s_use_extension::CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+    ) -> UseResult<CapabilityGatewayCatalog> {
+        let proofs = signed
+            .into_iter()
+            .map(|envelope| {
+                trust_store
+                    .verify(&envelope, now_unix_seconds)?
+                    .into_proof()
+            })
+            .collect::<UseResult<Vec<_>>>()?;
+        self.capability_gateway_catalog_from_verified_descriptions(proofs)
+    }
+
     #[cfg(feature = "extensions")]
     pub(crate) fn knowledge_projections(&self) -> Vec<OkfCapabilityProjection> {
         let mut projections = self

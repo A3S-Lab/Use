@@ -11,6 +11,8 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
 
+#[cfg(feature = "extensions")]
+use a3s_use_core::SignedCapabilityDescription;
 use a3s_use_core::{
     CapabilityConsumerNegotiation, CapabilityConsumerProfile, CapabilityDescriptionProof,
     CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
@@ -677,6 +679,55 @@ impl CapabilityGatewayMcpServer {
             .map(Some)
     }
 
+    /// Build and bind a Gateway from cryptographically verified signed
+    /// descriptions. The trust store is supplied by the host's Registry/TUF
+    /// authority; this constructor never accepts a caller-provided signer
+    /// assertion as evidence.
+    #[cfg(feature = "extensions")]
+    pub async fn from_signed_registry_snapshot(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        signed: Vec<SignedCapabilityDescription>,
+        trust_store: &a3s_use_extension::CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+    ) -> UseResult<Option<Self>> {
+        let snapshot = registry.snapshot().await?;
+        let catalog = snapshot.capability_gateway_catalog_from_signed_descriptions(
+            signed,
+            trust_store,
+            now_unix_seconds,
+        )?;
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        Self::with_snapshot_lease(catalog, provider, lease).map(Some)
+    }
+
+    /// Build and bind a signed-description Gateway for an explicit consumer
+    /// negotiation.
+    #[cfg(feature = "extensions")]
+    pub async fn from_signed_registry_snapshot_with_consumer_negotiation(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        signed: Vec<SignedCapabilityDescription>,
+        trust_store: &a3s_use_extension::CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        negotiation: CapabilityConsumerNegotiation,
+    ) -> UseResult<Option<Self>> {
+        negotiation.validate()?;
+        let snapshot = registry.snapshot().await?;
+        let catalog = snapshot.capability_gateway_catalog_from_signed_descriptions(
+            signed,
+            trust_store,
+            now_unix_seconds,
+        )?;
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        Self::with_snapshot_lease_and_consumer_negotiation(catalog, provider, lease, negotiation)
+            .map(Some)
+    }
+
     /// Build a production Gateway from host-verified descriptions and a live
     /// invocation factory.
     ///
@@ -700,6 +751,69 @@ impl CapabilityGatewayMcpServer {
             CapabilityGatewayCompositionOptions::default(),
         )
         .await
+    }
+
+    /// Build a Gateway from signed descriptions and a live invocation factory.
+    /// Every description crosses the Ed25519 trust boundary before the
+    /// Control-bound snapshot and provider lease are acquired.
+    #[cfg(feature = "extensions")]
+    pub async fn from_signed_registry_snapshot_with_factory(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        signed: Vec<SignedCapabilityDescription>,
+        trust_store: &a3s_use_extension::CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+        factory: Arc<dyn CapabilityGatewayInvocationFactory>,
+    ) -> UseResult<Option<Self>> {
+        Self::from_signed_registry_snapshot_with_factory_and_options(
+            registry,
+            signed,
+            trust_store,
+            now_unix_seconds,
+            factory,
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+    }
+
+    /// Build a signed-description Gateway with explicit consumer negotiation
+    /// and bounded admission policy.
+    #[cfg(feature = "extensions")]
+    pub async fn from_signed_registry_snapshot_with_factory_and_options(
+        registry: &crate::capability_registry::CapabilityRegistry,
+        signed: Vec<SignedCapabilityDescription>,
+        trust_store: &a3s_use_extension::CapabilityDescriptionTrustStore,
+        now_unix_seconds: u64,
+        factory: Arc<dyn CapabilityGatewayInvocationFactory>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> UseResult<Option<Self>> {
+        options.negotiation.validate()?;
+        let snapshot = registry.snapshot().await?;
+        let catalog = snapshot.capability_gateway_catalog_from_signed_descriptions(
+            signed,
+            trust_store,
+            now_unix_seconds,
+        )?;
+        let resolver = CapabilityGatewayRegistryResolver::new(
+            registry.clone(),
+            snapshot.cursor().clone(),
+            factory,
+        )?;
+        let provider = Arc::new(CapabilityGatewayResolvedProvider::new(Arc::new(resolver)));
+        let Some(lease) = registry.acquire_snapshot_lease(snapshot.cursor()).await? else {
+            return Ok(None);
+        };
+        let CapabilityGatewayCompositionOptions {
+            negotiation,
+            limits,
+        } = options;
+        Self::with_snapshot_lease_and_consumer_negotiation_and_limits(
+            catalog,
+            provider,
+            lease,
+            negotiation,
+            limits,
+        )
+        .map(Some)
     }
 
     /// Build a production Gateway with explicit negotiation and admission

@@ -11,6 +11,15 @@ use a3s_use_core::{
     PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, ResourceRef,
     CAPABILITY_DESCRIPTOR_SCHEMA_V1,
 };
+#[cfg(feature = "extensions")]
+use a3s_use_core::{
+    CapabilityDescriptionSignatureAlgorithm, CapabilityDescriptionSignaturePayload,
+    SignedCapabilityDescription,
+};
+#[cfg(feature = "extensions")]
+use a3s_use_extension::{CapabilityDescriptionTrustKey, CapabilityDescriptionTrustStore};
+#[cfg(feature = "extensions")]
+use ring::signature::{Ed25519KeyPair, KeyPair};
 use rmcp::model::{
     CallToolRequestParam, GetPromptRequestParam, GetPromptResult, PaginatedRequestParam,
     PromptMessage, PromptMessageRole, ReadResourceRequestParam, ResourceContents,
@@ -2768,6 +2777,93 @@ async fn verified_factory_composition_cursor() {
     assert_eq!(server.snapshot_cursor(), Some(&expected));
     assert_eq!(server.consumer_negotiation(), &negotiation);
     assert!(server.catalog().descriptors().is_empty());
+}
+
+#[cfg(feature = "extensions")]
+#[test]
+fn signed_gateway_constructor_rejects_a_legacy_host_only_tool_before_projection() {
+    std::thread::Builder::new()
+        .name("capability-gateway-signed-admission".to_owned())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    let temporary = tempfile::tempdir().unwrap();
+                    let installation =
+                        InstallationId::new(InstallationKind::Workspace, "signed-admission")
+                            .unwrap();
+                    let registry = a3s_use_extension::ExtensionRegistry::new(
+                        a3s_use_extension::ExtensionPaths::new(
+                            temporary.path().join("data"),
+                            temporary.path().join("state"),
+                            installation.clone(),
+                        )
+                        .unwrap(),
+                    );
+                    let capability_registry =
+                        crate::capability_registry::CapabilityRegistry::new(registry);
+                    let (signed, trust_store) = signed_test_description();
+                    let error = CapabilityGatewayMcpServer::from_signed_registry_snapshot(
+                        &capability_registry,
+                        vec![signed],
+                        &trust_store,
+                        1_500,
+                        Arc::new(RecordingProvider::default()),
+                    )
+                    .await
+                    .unwrap_err();
+                    assert_eq!(error.code, "use.extension.capability_description_untrusted");
+                });
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[cfg(feature = "extensions")]
+fn signed_test_description() -> (SignedCapabilityDescription, CapabilityDescriptionTrustStore) {
+    let key_pair = Ed25519KeyPair::from_seed_unchecked(&[7_u8; 32]).unwrap();
+    let payload = CapabilityDescriptionSignaturePayload::new(
+        test_descriptor(),
+        "registry/official",
+        "registry/official/test",
+        CapabilityDescriptionSignatureAlgorithm::Ed25519,
+        1_000,
+        2_000,
+    )
+    .unwrap();
+    let signature = key_pair.sign(&payload.canonical_bytes().unwrap());
+    let signed = SignedCapabilityDescription::from_parts(
+        payload,
+        signature
+            .as_ref()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+    )
+    .unwrap();
+    let key = CapabilityDescriptionTrustKey::new(
+        "registry/official/test",
+        "registry/official",
+        CapabilityDescriptionSignatureAlgorithm::Ed25519,
+        key_pair
+            .public_key()
+            .as_ref()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+        900,
+        2_500,
+        None,
+    )
+    .unwrap();
+    (
+        signed,
+        CapabilityDescriptionTrustStore::new(vec![key]).unwrap(),
+    )
 }
 
 fn test_catalog(descriptor: CapabilityDescriptor) -> CapabilityGatewayCatalog {

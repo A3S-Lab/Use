@@ -15,6 +15,8 @@ separates the portable contract from the cryptographic trust boundary:
 3. The verifier returns VerifiedCapabilityDescription, whose fields are
    private. Only that value can be converted into the existing
    CapabilityDescriptionProof hand-off used by the inactive Capability Plane.
+4. The root Gateway facade provides signed-description constructors that run
+   verification before taking a snapshot lease or creating a provider resolver.
 
 ## Signed bytes
 

@@ -189,9 +189,11 @@ inactive Runtime and Control path; production Control/Runtime wiring, key
 custody, and backup/restore registration remain open. The core now defines a
 domain-separated `SignedCapabilityDescription` envelope, and the extension
 boundary verifies it with a bounded Ed25519 trust store that checks key
-rotation, expiry, and revocation. This is a qualified mechanism only: the
-Registry/TUF key source, Control proof admission, and production lifecycle
-wiring remain open. The inactive Flow owner now follows the
+rotation, expiry, and revocation. The Gateway facade now verifies signed
+envelopes before acquiring its Control snapshot lease or provider resolver.
+This is a qualified mechanism/composition seam only: the Registry/TUF key
+source, Control proof admission, and production lifecycle wiring remain open.
+The inactive Flow owner now follows the
 same boundary: it reads a path-free verified source payload, publishes a
 durable no-clobber content-addressed owner copy, and delegates Native
 TypeScript preflight only to `a3s-flow`. Package roots never cross the owner

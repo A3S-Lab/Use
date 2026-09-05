@@ -186,9 +186,12 @@ and expiry times. The extension trust boundary owns a bounded public-key store
 and returns a private `VerifiedCapabilityDescription` only after signature,
 identity, validity, and revocation checks. Multiple keys for one signer support
 rotation, while replay must reverify the retained envelope against the current
-policy. This qualifies the verifier mechanism; the official Registry/TUF key
-source, Control proof-snapshot admission, and production lifecycle wiring are
-still open.
+policy. The Gateway's signed-description constructors run this verification
+before acquiring the Control snapshot lease or constructing the provider
+resolver, so the ordinary composition path cannot accidentally skip the
+cryptographic hand-off. This qualifies the verifier mechanism; the official
+Registry/TUF key source, Control proof-snapshot admission, and production
+lifecycle wiring are still open.
 
 Production lifecycle code does not construct it, so it neither mirrors nor
 replaces the current JSON authority. The first concrete post-commit adapter now
