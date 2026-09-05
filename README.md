@@ -1863,10 +1863,12 @@ Agent-visible descriptions can also cross an explicit cryptographic trust
 boundary. `a3s-use-core` defines the canonical, domain-separated
 `SignedCapabilityDescription` envelope; `a3s-use-extension` verifies Ed25519
 signatures with a bounded public-key trust store that enforces key rotation,
-expiry, and revocation. The private `VerifiedCapabilityDescription` wrapper
-retains exact replay bytes and must be reverified after restore. This mechanism
-is qualified but not yet wired to the official Registry/TUF source or the
-production Control lifecycle. See
+expiry, and revocation. The Gateway now exposes signed-description composition
+constructors that verify every envelope before taking the Control snapshot
+lease or provider resolver. The private `VerifiedCapabilityDescription`
+wrapper retains exact replay bytes and must be reverified after restore. The
+trust-store source is still host-supplied and this path is not yet wired to the
+official Registry/TUF source or the production Control lifecycle. See
 [Capability description signatures](docs/capability-description-signatures.md).
 
 The Gateway also exposes a shared, bounded

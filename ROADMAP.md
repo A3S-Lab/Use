@@ -1156,9 +1156,13 @@ and bounded validity window. The verifier owns no private keys, rejects
 identity, expiry, revocation, canonical-byte, and signature mismatches, and
 returns a private replay wrapper that must be reverified after restart. Multiple
 keys for one signer are supported for rotation, and schema-bearing Runtime
-Tool descriptors are required. This qualifies the cryptographic mechanism but
-does not mark the A3 checkbox: Registry/TUF key-source binding, Control
-proof-snapshot admission, and production lifecycle wiring remain open.
+Tool descriptors are required. The root Gateway facade now has signed-
+description constructors that verify envelopes before snapshot lease and
+provider-resolver composition; the legacy proof constructors remain only for
+explicit preview hosts. This qualifies the cryptographic mechanism and its
+composition seam but does not mark the A3 checkbox: Registry/TUF key-source
+binding, Control proof-snapshot admission, and production lifecycle wiring
+remain open.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
