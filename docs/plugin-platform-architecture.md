@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Architecture
 
 Status: development preview
-Last updated: 2026-09-03
+Last updated: 2026-09-05
 
 ## Executive decision
 
@@ -634,6 +634,16 @@ monotonic immutable-server replacement, preserves consumer negotiation and
 lease mode, shares the notification hub, and routes each operation through a
 current-server snapshot so old in-flight leases can drain. Durable Control
 cutover and retention remain outside this adapter.
+
+The authoritative `registry.json` file is itself treated as a hostile mutable
+boundary. Its complete configured state-directory chain must be an owned,
+non-link directory; the final file is opened with no-follow/reparse protection,
+is limited to 4 MiB before allocation and JSON decoding, and is revalidated for
+file identity and length after the read. Publication creates missing directories
+one component at a time inside the configured state root, flushes and syncs a
+bounded temporary file, and atomically replaces the target. A linked,
+oversized, redirected, or concurrently replaced snapshot fails closed rather
+than becoming lifecycle or capability authority.
 
 ## Storage model
 
