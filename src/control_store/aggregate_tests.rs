@@ -16,14 +16,14 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use super::model::{
-    ControlAppliedEffect, ControlAppliedEffectEvidence, ControlCapabilitySelection,
-    ControlCapabilityStatus, ControlCapabilitySurfaceState, ControlEffectAuthority,
-    ControlEffectClaim, ControlEffectIntent, ControlEffectKind, ControlEffectObservation,
-    ControlEffectOutcome, ControlEffectOwner, ControlEffectStatus, ControlEffectSubject,
-    ControlGeneration, ControlGrantSelection, ControlOperationStatus, ControlPackageLifecycle,
-    ControlProjectionHistory, ControlProviderSelection, ControlRuntimeBindingObservation,
-    ControlSurfaceObservationState, ControlTransition, ProjectedControlGeneration,
-    ReviewedControlOperation, MAX_EFFECT_DEFERRAL_MS,
+    ControlAppliedEffect, ControlAppliedEffectEvidence, ControlCapabilityCatalogBinding,
+    ControlCapabilitySelection, ControlCapabilityStatus, ControlCapabilitySurfaceState,
+    ControlEffectAuthority, ControlEffectClaim, ControlEffectIntent, ControlEffectKind,
+    ControlEffectObservation, ControlEffectOutcome, ControlEffectOwner, ControlEffectStatus,
+    ControlEffectSubject, ControlGeneration, ControlGrantSelection, ControlOperationStatus,
+    ControlPackageLifecycle, ControlProjectionHistory, ControlProviderSelection,
+    ControlRuntimeBindingObservation, ControlSurfaceObservationState, ControlTransition,
+    ProjectedControlGeneration, ReviewedControlOperation, MAX_EFFECT_DEFERRAL_MS,
 };
 use super::*;
 use crate::plugin_lifecycle::PluginLifecycleAction;

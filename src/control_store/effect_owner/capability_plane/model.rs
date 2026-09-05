@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use a3s_use_core::{PluginOperationAction, PluginSurfaceRef, UseResult};
+use a3s_use_core::{CapabilityGatewayCatalog, PluginOperationAction, PluginSurfaceRef, UseResult};
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -8,12 +8,17 @@ use sha2::{Digest, Sha256};
 use crate::control_store::effect_port::ControlCapabilityCutoverRequest;
 use crate::control_store::model::{
     input_error, valid_error_code, valid_machine_id, valid_sha256, validate_grant_selections,
-    validate_provider_selections, ControlCapabilityEffectAuthority, ControlCapabilityStatus,
-    ControlCapabilitySurfaceState, ControlEffectIntent, ControlEffectKind, ControlEffectOwner,
-    ControlEffectSubject, ControlPublishedCapabilityCursor, ControlPublishedCapabilityPackage,
+    validate_provider_selections, ControlCapabilityCatalogBinding,
+    ControlCapabilityEffectAuthority, ControlCapabilityStatus, ControlCapabilitySurfaceState,
+    ControlEffectIntent, ControlEffectKind, ControlEffectOwner, ControlEffectSubject,
+    ControlPublishedCapabilityCursor, ControlPublishedCapabilityPackage,
 };
 
-const CONTROL_CAPABILITY_INDEX_SCHEMA: &str = "a3s.use.control-capability-index.v1";
+mod catalog;
+
+use catalog::validate_projected_catalog;
+
+const CONTROL_CAPABILITY_INDEX_SCHEMA: &str = "a3s.use.control-capability-index.v2";
 const MAX_CONTROL_CAPABILITY_INDEX_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,13 +31,16 @@ pub(in crate::control_store) struct ControlCapabilityIndexDocument {
     sequence: u32,
     idempotency_key: String,
     expected_capability_generation: u64,
+    catalog: ControlCapabilityCatalogBinding,
     pub(in crate::control_store) authority: ControlCapabilityEffectAuthority,
 }
 
 impl ControlCapabilityIndexDocument {
     pub(in crate::control_store) fn from_request(
         request: &ControlCapabilityCutoverRequest,
+        catalog: ControlCapabilityCatalogBinding,
     ) -> UseResult<Self> {
+        Self::validate_request(request)?;
         let document = Self {
             schema: CONTROL_CAPABILITY_INDEX_SCHEMA.to_owned(),
             operation_id: request.identity.operation_id.clone(),
@@ -41,24 +49,51 @@ impl ControlCapabilityIndexDocument {
             sequence: request.identity.sequence,
             idempotency_key: request.identity.idempotency_key.clone(),
             expected_capability_generation: request.expected_capability_generation,
+            catalog,
             authority: request.authority.clone(),
         };
         document.validate()?;
+        Ok(document)
+    }
+
+    /// Validate committed authority before invoking the host projection port.
+    /// This prevents a malformed internal request from reaching host-owned
+    /// artifact or provider readers.
+    pub(in crate::control_store) fn validate_request(
+        request: &ControlCapabilityCutoverRequest,
+    ) -> UseResult<()> {
+        validate_authority_document(
+            CONTROL_CAPABILITY_INDEX_SCHEMA,
+            &request.identity.operation_id,
+            &request.identity.plan_digest,
+            request.identity.operation_action,
+            request.identity.sequence,
+            &request.identity.idempotency_key,
+            request.expected_capability_generation,
+            &request.authority,
+        )?;
+        let generation = &request.authority.generation;
         if request.identity.attempt == 0
             || request.identity.deadline_at_ms == 0
             || !request.identity.required
-            || document.authority.generation.snapshot.installation != request.identity.installation
-            || document.authority.generation.snapshot.generation
-                != request.identity.installation_generation
-            || document.authority.generation.capability.generation != request.capability_generation
-            || document.authority.generation.capability.descriptor_digest
-                != request.descriptor_digest
+            || generation.snapshot.installation != request.identity.installation
+            || generation.snapshot.generation != request.identity.installation_generation
+            || generation.capability.generation != request.capability_generation
+            || generation.capability.descriptor_digest != request.descriptor_digest
         {
             return Err(index_error(
-                "The Capability Index document differs from its committed request.",
+                "The Capability Index authority differs from its committed request.",
             ));
         }
-        Ok(document)
+        Ok(())
+    }
+
+    pub(in crate::control_store) fn validate_catalog_for_request(
+        request: &ControlCapabilityCutoverRequest,
+        catalog: &CapabilityGatewayCatalog,
+    ) -> UseResult<()> {
+        Self::validate_request(request)?;
+        validate_projected_catalog(&request.authority, catalog)
     }
 
     pub(in crate::control_store) fn from_bytes(bytes: &[u8]) -> UseResult<Self> {
@@ -157,51 +192,92 @@ impl ControlCapabilityIndexDocument {
             && cursor.installation_generation == generation.snapshot.generation
             && cursor.capability_generation == generation.capability.generation
             && cursor.descriptor_digest == generation.capability.descriptor_digest
+            && cursor.catalog == self.catalog
             && cursor.receipt_digest == self.receipt_digest()?
             && cursor.packages == packages)
     }
 
+    pub(in crate::control_store) fn matches_catalog(
+        &self,
+        catalog: &CapabilityGatewayCatalog,
+    ) -> UseResult<bool> {
+        self.validate()?;
+        validate_projected_catalog(&self.authority, catalog)?;
+        self.catalog.matches_catalog(catalog)
+    }
+
     fn validate(&self) -> UseResult<()> {
-        let generation = &self.authority.generation;
-        generation.snapshot.validate()?;
-        let expected_intent = ControlEffectIntent::new(
-            self.sequence,
-            generation.snapshot.installation.clone(),
-            self.plan_digest.clone(),
+        validate_authority_document(
+            &self.schema,
+            &self.operation_id,
+            &self.plan_digest,
             self.operation_action,
-            generation.snapshot.generation,
-            ControlEffectSubject::Installation {
-                expected_capability_generation: self.expected_capability_generation,
-                capability_generation: generation.capability.generation,
-                descriptor_digest: generation.capability.descriptor_digest.clone(),
-            },
-            ControlEffectOwner::CapabilityIndex,
-            ControlEffectKind::CapabilityCutover,
-            true,
+            self.sequence,
+            &self.idempotency_key,
+            self.expected_capability_generation,
+            &self.authority,
         )?;
-        if self.schema != CONTROL_CAPABILITY_INDEX_SCHEMA
-            || !valid_machine_id(&self.operation_id)
-            || !valid_sha256(&self.plan_digest)
-            || self.operation_id != generation.operation_id
-            || self.idempotency_key != expected_intent.idempotency_key
-            || self.expected_capability_generation.checked_add(1)
-                != Some(generation.capability.generation)
-            || !valid_sha256(&generation.capability.descriptor_digest)
-            || generation.capability_status != ControlCapabilityStatus::Candidate
-            || generation.capability_published_at_ms.is_some()
-            || generation.committed_at_ms == 0
-            || generation.snapshot.descriptor_digest()? != generation.snapshot_digest
-        {
+        self.catalog.validate()?;
+        if !self.catalog.matches_generation(
+            &self.authority.generation.snapshot.installation,
+            self.authority.generation.capability.generation,
+        ) {
             return Err(index_error(
-                "The Capability Index document does not bind one candidate Control generation.",
+                "The Capability Index catalog does not bind its candidate generation.",
             ));
         }
-        validate_lifecycles(generation)?;
-        validate_grant_selections(&generation.grants, &generation.snapshot)?;
-        validate_provider_selections(&generation.provider_selections, &generation.snapshot)?;
-        validate_materializations(&self.authority)?;
         Ok(())
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_authority_document(
+    schema: &str,
+    operation_id: &str,
+    plan_digest: &str,
+    operation_action: PluginOperationAction,
+    sequence: u32,
+    idempotency_key: &str,
+    expected_capability_generation: u64,
+    authority: &ControlCapabilityEffectAuthority,
+) -> UseResult<()> {
+    let generation = &authority.generation;
+    generation.snapshot.validate()?;
+    let expected_intent = ControlEffectIntent::new(
+        sequence,
+        generation.snapshot.installation.clone(),
+        plan_digest.to_owned(),
+        operation_action,
+        generation.snapshot.generation,
+        ControlEffectSubject::Installation {
+            expected_capability_generation,
+            capability_generation: generation.capability.generation,
+            descriptor_digest: generation.capability.descriptor_digest.clone(),
+        },
+        ControlEffectOwner::CapabilityIndex,
+        ControlEffectKind::CapabilityCutover,
+        true,
+    )?;
+    if schema != CONTROL_CAPABILITY_INDEX_SCHEMA
+        || !valid_machine_id(operation_id)
+        || !valid_sha256(plan_digest)
+        || operation_id != generation.operation_id
+        || idempotency_key != expected_intent.idempotency_key
+        || expected_capability_generation.checked_add(1) != Some(generation.capability.generation)
+        || !valid_sha256(&generation.capability.descriptor_digest)
+        || generation.capability_status != ControlCapabilityStatus::Candidate
+        || generation.capability_published_at_ms.is_some()
+        || generation.committed_at_ms == 0
+        || generation.snapshot.descriptor_digest()? != generation.snapshot_digest
+    {
+        return Err(index_error(
+            "The Capability Index document does not bind one candidate Control generation.",
+        ));
+    }
+    validate_lifecycles(generation)?;
+    validate_grant_selections(&generation.grants, &generation.snapshot)?;
+    validate_provider_selections(&generation.provider_selections, &generation.snapshot)?;
+    validate_materializations(authority)
 }
 
 fn validate_lifecycles(

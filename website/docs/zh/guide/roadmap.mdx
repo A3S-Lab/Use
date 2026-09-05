@@ -75,7 +75,7 @@ diagnostic、backup 与 restore 的读取方必须一起切换。
 禁止旧状态回退读取的前提下同步切换的消费者。这只冻结了实现边界；生产启用仍保持关闭，
 也尚未完成任何 A2 项。
 
-当前检入的 Control Store 内核仍刻意保持未启用状态。其 clean-state schema-v10
+当前检入的 Control Store 内核仍刻意保持未启用状态。其 clean-state schema-v11
 聚合会持久化每个规范化的完整 reviewed Plan envelope 与带版本的 authorization
 evidence，并从中推导 operation identity、Plan/authorization digest、action、root
 package、installation scope 与 generation cursor；重启、离线导出验证和 staged restore
@@ -134,12 +134,12 @@ prepare 使用经过验证的无路径字节，先保存 staged receipt 再 prom
 并可仅凭保留 receipt 重放；任何可能已被接受的外部 effect 或后续 receipt 写入歧义都保持 unknown。真实
 SQLite 组合测试覆盖已提交 claim 到持久化 Control observation。Artifact-only admission 具备幂等性、会重验
 prepared source、不创建 lifecycle receipt，并让 reference admission 跨越独立 Control commit。Capability
-Index 与 invocation lease 现在由第三个真实的 Capability Plane adapter 共同实现。它只写规范、内容寻址的
-Index document，applied Control observation 仍是唯一 publication cursor。Admission 在取得每个精确 package
+Index 与 invocation lease 现在由第三个真实的 Capability Plane adapter 共同实现。它先调用 host-owned 的纯 Agent catalog projector，拒绝不属于 enabled 且已准备 surface incarnation 的 descriptor，再写规范、内容寻址的
+Index document，applied Control observation 仍是唯一 publication cursor，并绑定不可变 Agent catalog 身份。Admission 在取得每个精确 package
 incarnation 的共享锁前后各读取一次 Control cursor，因此并发 cutover 会让 admission 返回 stale；排他 drain
 会在 accepted call 活跃时安全 deferred。发布具备 no-follow、no-replace 与精确崩溃重放语义。Index 和 lease
-文件都是备份排除的派生 operational state，restore 必须从 Control evidence 重建 Index。真实组合测试覆盖
-Knowledge、Skill、cutover、stale admission 与同一 key 的 drain 重试。Flow owner 现在也沿同一边界完成
+文件都是备份排除的派生 operational state；catalog 仍需登记到 backup/restore owner 集合。真实组合测试覆盖
+Knowledge、Skill、catalog/Index cutover、stale admission 与同一 key 的 drain 重试。Flow owner 现在也沿同一边界完成
 qualification：读取 path-free verified 源码 payload，以 durable no-clobber 内容寻址方式写入 owner
 workspace，并且只委托 `a3s-flow` 执行 Native TypeScript preflight。package root 不会跨越 owner 边界；
 源码替换或 preflight 失败不会写入 Control observation，Artifact Store 争用则沿同一个 key 安全延迟。

@@ -101,7 +101,7 @@ transaction, outbox, backup, and migration boundaries: the SQLite/WAL backend
 may be qualified before activation, but every authoritative reader switches as
 one cutover and live WAL files are never copied as backup payloads.
 The current private Control Store kernel qualifies an installation-bound
-schema-v10 aggregate, bounded blocking executor, typed transitions and outbox,
+schema-v11 aggregate, bounded blocking executor, typed transitions and outbox,
 and canonical offline-verifiable export plus staged restore on otherwise clean
 state. It persists each complete canonical reviewed Plan envelope and versioned
 authorization record, while relational columns remain validated projections of
@@ -128,7 +128,8 @@ effects. Canonical payload bytes, domain-separated idempotency key, digest, and
 relational projection commit together. Applied outcomes retain a canonical
 owner-specific descriptor that binds the exact intent to portable Runtime
 Task/opaque `gateway:` Service readiness, Flow artifact, Knowledge projection,
-Skill/UI content, Capability Index, or invocation-lease receipt evidence;
+Skill/UI content, Capability Index plus immutable Agent-catalog binding, or
+invocation-lease receipt evidence;
 deferred, rejected, and unknown outcomes cannot carry applied state. Deferred
 is valid only when the owner proves it accepted no effect and carries a bounded
 durable not-before time for automatic same-key retry. The applied cutover
@@ -180,19 +181,24 @@ lifecycle publication: admission is idempotent, revalidates the source, creates
 no installation receipt, and its global reference guard must span the separate
 Control reference commit. The Capability Plane is the third concrete
 post-commit adapter and implements both Capability Index and invocation-lease
-ports. Cutover writes one canonical content-addressed Index document from the
-committed candidate generation and its exact terminal surface observations;
-it deliberately has no second database or mutable current pointer. Control's
-applied cutover observation is the only publication transaction. Admission
-checks that Control cursor before and after taking shared locks for every exact
-package lifecycle incarnation, so a racing cutover either sees the lease during
-drain or makes admission return stale. Drain proves the prior incarnation is
-not published and takes its exclusive lock; active calls produce a safe
-same-key deferral. No-follow, no-replace publication and exact staging replay
-protect the immutable Index. Because the Index is fully derived from Control
-evidence, backup excludes both it and lease files; restore must reconstruct it
-before readers switch. A real composition test covers Knowledge, Skill,
-cutover, stale admission, and drain together. The Flow owner is now qualified
+ports. A host-owned, side-effect-free projection port receives the committed
+candidate generation and exact terminal surface observations. The owner
+rejects catalog descriptors outside enabled, prepared package incarnations,
+durably publishes the immutable Agent catalog, and writes one canonical
+content-addressed Index document containing that publication identity. It
+deliberately has no second database or mutable current pointer. Control's
+applied cutover observation stores the catalog digest/generation/revision and
+advances the published cursor in the same transaction. Admission reopens and
+rehashes those exact payload bytes, checks the Control cursor before and after
+taking shared locks for every exact package lifecycle incarnation, and
+therefore either exposes one complete graph or returns stale. Drain proves the
+prior incarnation is not published and takes its exclusive lock; active calls
+produce a safe same-key deferral. No-follow, no-replace publication and exact
+staging replay protect both immutable payloads. The current backup registry
+still excludes the derived Index and does not yet own the catalog payload;
+production restore must preserve or reconstruct that external owner before
+readers switch. A real composition test covers Knowledge, Skill, catalog/Index
+cutover, exact payload admission, stale admission, and drain together. The Flow owner is now qualified
 on the same committed-authority boundary: it receives only a path-free,
 verified Native TypeScript snapshot, publishes a durable no-clobber
 content-addressed copy in its own workspace, and delegates preflight only to

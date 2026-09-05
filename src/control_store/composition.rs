@@ -26,13 +26,14 @@ use super::effect_owner::capability_plane::ControlCapabilityPlaneEffectPort;
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_owner::runtime::{ControlRuntimeEffectPort, ControlRuntimeServiceReadinessPort};
 use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
-use super::effect_port::ControlFlowEffectPort;
+use super::effect_port::{ControlCapabilityCatalogProjectionPort, ControlFlowEffectPort};
 use super::model::{
     ControlEffectKind, ControlEffectOwner, ControlEffectSubject, ControlGeneration,
     ControlOperationRecord, ControlTransition, ReviewedControlOperation,
 };
 use super::operation_admission::reviewed_cognitive_package_operation;
 use super::{ControlStore, ControlStoreMetadata};
+use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
 use crate::cognitive_package::{
     CognitivePackageAuthorizationEvidence, PlannedWorkspaceGrantOperation,
 };
@@ -55,6 +56,8 @@ const PUBLICATION_ERROR: &str = "use.control_store.runtime_plan_publication_inva
 pub(in crate::control_store) struct ControlEffectCompositionDependencies {
     pub(in crate::control_store) runtime_registry: Arc<RuntimeClientRegistry>,
     pub(in crate::control_store) runtime_readiness: Arc<dyn ControlRuntimeServiceReadinessPort>,
+    pub(in crate::control_store) catalog_projection:
+        Arc<dyn ControlCapabilityCatalogProjectionPort>,
     pub(in crate::control_store) flow: Arc<dyn ControlFlowEffectPort>,
     pub(in crate::control_store) clock: Arc<dyn ControlEffectClock>,
 }
@@ -74,6 +77,7 @@ pub(in crate::control_store) struct ControlEffectCompositionDependencies {
 pub(in crate::control_store) struct ControlStoreRuntimeComposition {
     store: ControlStore,
     plan_store: RuntimeSurfacePlanStore,
+    catalog_store: CapabilityGatewayCatalogStore,
     artifact_store: ArtifactStore,
     effects: ControlEffectRuntime,
 }
@@ -85,6 +89,7 @@ impl std::fmt::Debug for ControlStoreRuntimeComposition {
             .field("installation", &self.store.installation)
             .field("state_root", &self.store.state_root)
             .field("runtime_plan_root", &self.plan_store.root())
+            .field("catalog_root", &self.catalog_store.root())
             .finish_non_exhaustive()
     }
 }
@@ -106,6 +111,7 @@ impl ControlStoreRuntimeComposition {
                 "The Control Store and Runtime plan store do not share one installation root.",
             ));
         }
+        let catalog_store = CapabilityGatewayCatalogStore::from_extension_paths(paths);
 
         let artifact_store = paths.artifact_store();
         let runtime_source = Arc::new(plan_store.clone());
@@ -119,7 +125,11 @@ impl ControlStoreRuntimeComposition {
             RuntimeBindingStore::from_extension_paths(paths),
             dependencies.runtime_readiness,
         ));
-        let capability = Arc::new(ControlCapabilityPlaneEffectPort::new(store.clone()));
+        let capability = Arc::new(ControlCapabilityPlaneEffectPort::new(
+            store.clone(),
+            catalog_store.clone(),
+            dependencies.catalog_projection,
+        )?);
         let knowledge = Arc::new(ControlOkfKnowledgeEffectPort::new(
             artifact_store.clone(),
             OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths(
@@ -141,6 +151,7 @@ impl ControlStoreRuntimeComposition {
         Ok(Self {
             store,
             plan_store,
+            catalog_store,
             artifact_store,
             effects,
         })
@@ -152,6 +163,10 @@ impl ControlStoreRuntimeComposition {
 
     pub(in crate::control_store) fn plan_store(&self) -> &RuntimeSurfacePlanStore {
         &self.plan_store
+    }
+
+    pub(in crate::control_store) fn catalog_store(&self) -> &CapabilityGatewayCatalogStore {
+        &self.catalog_store
     }
 
     pub(in crate::control_store) async fn initialize(&self) -> UseResult<ControlStoreMetadata> {

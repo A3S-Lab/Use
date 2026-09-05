@@ -132,6 +132,15 @@ impl CapabilityGatewayCatalogStore {
         &self.installation
     }
 
+    /// Return the installation-owned logical state root used by this store.
+    ///
+    /// Composition boundaries use this identity to reject a catalog payload
+    /// owner assembled from another installation root before any publication
+    /// is attempted.
+    pub fn state_root(&self) -> &Path {
+        &self.state_root
+    }
+
     /// Return the implementation path for diagnostics and maintenance. The
     /// path is never serialized into a Gateway contract.
     pub fn root(&self) -> &Path {

@@ -238,7 +238,7 @@ to a committed transaction plus explicit external-effect observations.
 ### Current qualification status
 
 The checked-in inactive kernel implements most of the local Control Store work
-in step 2, not the authority cutover. Schema v10 binds one exact installation
+in step 2, not the authority cutover. Schema v11 binds one exact installation
 and stores the complete generation history, canonical reviewed Plan envelopes,
 versioned authorization evidence, exact installation snapshots and relational
 graph projections, canonical full Workspace Grants, provider bindings,
@@ -274,8 +274,9 @@ projection commit together. Package, Grant, lifecycle, and reviewed provider
 facts do not reappear as pseudo effects. Typed transactions
 enforce cursor compare-and-swap, root/action semantics, exact replay,
 required-effect failure, and capability retirement. Applied observations store
-canonical owner-specific application descriptors: Capability Index and
-invocation-lease receipts, exact Runtime selection plus portable Task or opaque
+canonical owner-specific application descriptors: Capability Index receipts
+plus the immutable Agent-catalog digest/generation/revision, invocation-lease
+receipts, exact Runtime selection plus portable Task or opaque
 `gateway:` Service readiness evidence, Flow artifact digests, Knowledge
 projection digests, and immutable Skill/UI content digests. Rejected and
 unknown outcomes cannot carry applied state and retain only bounded diagnostic
@@ -332,18 +333,24 @@ it revalidates and idempotently materializes prepared bytes without creating an
 installation receipt, while the caller retains global reference admission
 through the distinct Control commit. The third concrete adapter implements the
 Capability Index and invocation-lease ports as one consistency boundary. It
-materializes a canonical content-addressed document from the committed
-candidate generation and exact terminal surface observations, but creates no
-second mutable publication store: the applied Control cutover observation is
-the only current cursor. Admission reads that cursor before and after acquiring
-shared locks for every exact package lifecycle incarnation. Drain requires the
-old incarnation to be absent from the current cursor and then acquires its
-exclusive lock, safely deferring under an active call. Immutable Index files
-publish with no-replace/no-follow semantics and exact crash staging replay.
-They and the lease files are derived operational state excluded from backup;
-restore must rebuild the Index from verified Control evidence before consumer
-cutover. A real composition fixture covers Knowledge and Skill preparation,
-Index publication, stale admission, and same-key drain retry. Inactive Flow and
+calls a host-owned side-effect-free catalog projector only after validating the
+committed candidate generation and exact terminal surface observations. The
+owner rejects descriptors outside enabled, prepared package incarnations,
+durably publishes the immutable catalog, and materializes a canonical
+content-addressed Index document that binds its publication identity. It
+creates no second mutable publication store: the applied Control cutover
+observation records that catalog binding and advances the only current cursor
+in one transaction. Admission reopens and rehashes the exact catalog, then
+reads the cursor before and after acquiring shared locks for every exact
+package lifecycle incarnation. Drain requires the old incarnation to be absent
+from the current cursor and then acquires its exclusive lock, safely deferring
+under an active call. Immutable catalog and Index files publish with
+no-replace/no-follow semantics and exact crash staging replay. The Index and
+lease files are derived operational state excluded from backup; the current
+owner registry does not yet snapshot the bound catalog payload. Production
+restore must preserve or reconstruct it before consumer cutover. A real
+composition fixture covers Knowledge and Skill preparation, catalog/Index
+publication, exact payload admission, stale admission, and same-key drain retry. Inactive Flow and
 Runtime owner adapters are now qualified. The Runtime owner covers
 release-backed Tool Task/Service and Streamable HTTP MCP, consumes only a
 verified path-free Artifact payload on first prepare, persists monotonic

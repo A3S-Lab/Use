@@ -1,10 +1,24 @@
 use super::*;
+use crate::capability_catalog_store::CapabilityGatewayCatalogPublication;
 
 pub(super) const CATALOG: &[u8] =
     include_bytes!("../../../crates/core/fixtures/plugins/catalog-record-okf-v3.json");
 
 pub(in crate::control_store) fn digest(seed: char) -> String {
     format!("sha256:{}", seed.to_string().repeat(64))
+}
+
+pub(in crate::control_store) fn catalog_binding(
+    installation: &InstallationId,
+    generation: u64,
+) -> ControlCapabilityCatalogBinding {
+    ControlCapabilityCatalogBinding::from_publication(&CapabilityGatewayCatalogPublication {
+        digest: digest('8'),
+        installation: installation.clone(),
+        generation,
+        revision: digest('9'),
+    })
+    .unwrap()
 }
 
 pub(in crate::control_store) fn operation(id: &str) -> ReviewedControlOperation {
@@ -556,6 +570,7 @@ pub(super) fn application(intent: &ControlEffectIntent, seed: char) -> ControlAp
         ) => ControlAppliedEffectEvidence::CapabilityIndex {
             capability_generation: *capability_generation,
             descriptor_digest: descriptor_digest.clone(),
+            catalog: catalog_binding(&intent.installation, *capability_generation),
             receipt_digest,
         },
         (

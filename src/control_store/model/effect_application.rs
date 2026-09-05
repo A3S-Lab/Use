@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use super::*;
 
 pub(in crate::control_store) const CONTROL_APPLIED_EFFECT_SCHEMA: &str =
-    "a3s.use.control-applied-effect.v1";
+    "a3s.use.control-applied-effect.v2";
 pub(in crate::control_store) const MAX_CONTROL_APPLIED_EFFECT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +75,7 @@ pub(in crate::control_store) enum ControlAppliedEffectEvidence {
     CapabilityIndex {
         capability_generation: u64,
         descriptor_digest: String,
+        catalog: ControlCapabilityCatalogBinding,
         receipt_digest: String,
     },
     InvocationLeases {
@@ -123,6 +124,7 @@ impl ControlAppliedEffectEvidence {
                 Self::CapabilityIndex {
                     capability_generation,
                     descriptor_digest,
+                    catalog,
                     receipt_digest,
                 },
                 ControlEffectOwner::CapabilityIndex,
@@ -135,6 +137,8 @@ impl ControlAppliedEffectEvidence {
             ) => {
                 capability_generation == expected_generation
                     && descriptor_digest == expected_descriptor
+                    && catalog.validate().is_ok()
+                    && catalog.matches_generation(&intent.installation, *expected_generation)
                     && valid_sha256(receipt_digest)
             }
             (

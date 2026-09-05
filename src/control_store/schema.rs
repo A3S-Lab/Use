@@ -8,7 +8,7 @@ mod definition;
 
 use definition::{CREATE_SCHEMA, EXPECTED_SCHEMA};
 
-pub(super) const CONTROL_STORE_SCHEMA_VERSION: u32 = 10;
+pub(super) const CONTROL_STORE_SCHEMA_VERSION: u32 = 11;
 pub(super) const SQLITE_SYNCHRONOUS_FULL: u32 = 2;
 const CONTROL_STORE_APPLICATION_ID: u32 = 0x4133_5355;
 const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);

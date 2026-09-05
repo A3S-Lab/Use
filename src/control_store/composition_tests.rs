@@ -1,6 +1,7 @@
 use a3s_runtime::contract::NetworkMode;
 use a3s_use_core::{
-    PlanScope, PlanScopeKind, PluginOperationAction, PluginSurfaceKind, PluginSurfaceRef,
+    CapabilityGatewayCatalog, PlanScope, PlanScopeKind, PluginOperationAction, PluginSurfaceKind,
+    PluginSurfaceRef,
 };
 use a3s_use_extension::{ExtensionPaths, PluginMcpSurface, ToolSurface};
 use async_trait::async_trait;
@@ -11,12 +12,12 @@ use super::composition::{ControlEffectCompositionDependencies, ControlStoreRunti
 use super::dispatcher::SystemControlEffectClock;
 use super::effect_owner::runtime::ControlRuntimeServiceReadinessPort;
 use super::effect_port::{
-    ControlEffectFailure, ControlEffectPortOutcome, ControlFlowEffectPort,
-    ControlSurfaceApplication, ControlSurfaceEffectRequest,
+    ControlCapabilityCatalogProjectionPort, ControlEffectFailure, ControlEffectPortOutcome,
+    ControlFlowEffectPort, ControlSurfaceApplication, ControlSurfaceEffectRequest,
 };
 use super::model::{
-    ControlCapabilitySelection, ControlEffectIntent, ControlEffectKind, ControlEffectOwner,
-    ControlEffectSubject, ControlTransition,
+    ControlCapabilityEffectAuthority, ControlCapabilitySelection, ControlEffectIntent,
+    ControlEffectKind, ControlEffectOwner, ControlEffectSubject, ControlTransition,
 };
 use crate::plugin_runtime::test_support::{
     artifact, capabilities, context, evidence, policy, task_descriptor, task_surface,
@@ -51,6 +52,25 @@ fn planned_grants(
 }
 
 struct RejectingFlow;
+
+struct EmptyCatalogProjection;
+
+#[async_trait]
+impl ControlCapabilityCatalogProjectionPort for EmptyCatalogProjection {
+    async fn project(
+        &self,
+        authority: &ControlCapabilityEffectAuthority,
+    ) -> ControlEffectPortOutcome<CapabilityGatewayCatalog> {
+        ControlEffectPortOutcome::applied(
+            CapabilityGatewayCatalog::new(
+                authority.generation.snapshot.installation.clone(),
+                authority.generation.capability.generation,
+                Vec::new(),
+            )
+            .unwrap(),
+        )
+    }
+}
 
 #[async_trait]
 impl ControlFlowEffectPort for RejectingFlow {
@@ -338,6 +358,7 @@ async fn composition_initializes_one_root_and_commits_without_runtime_payloads()
         ControlEffectCompositionDependencies {
             runtime_registry: std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
             runtime_readiness: std::sync::Arc::new(RejectingReadiness),
+            catalog_projection: std::sync::Arc::new(EmptyCatalogProjection),
             flow: std::sync::Arc::new(RejectingFlow),
             clock: std::sync::Arc::new(SystemControlEffectClock),
         },
@@ -398,6 +419,7 @@ async fn lifecycle_admission_checks_global_reference_fence_before_registering() 
         ControlEffectCompositionDependencies {
             runtime_registry: std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
             runtime_readiness: std::sync::Arc::new(RejectingReadiness),
+            catalog_projection: std::sync::Arc::new(EmptyCatalogProjection),
             flow: std::sync::Arc::new(RejectingFlow),
             clock: std::sync::Arc::new(SystemControlEffectClock),
         },
@@ -442,6 +464,7 @@ async fn lifecycle_admission_retains_reviewed_operation_when_runtime_payloads_ar
         ControlEffectCompositionDependencies {
             runtime_registry: std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
             runtime_readiness: std::sync::Arc::new(RejectingReadiness),
+            catalog_projection: std::sync::Arc::new(EmptyCatalogProjection),
             flow: std::sync::Arc::new(RejectingFlow),
             clock: std::sync::Arc::new(SystemControlEffectClock),
         },
@@ -504,6 +527,7 @@ async fn composition_is_fenced_by_global_artifact_reference_admission() {
         ControlEffectCompositionDependencies {
             runtime_registry: std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
             runtime_readiness: std::sync::Arc::new(RejectingReadiness),
+            catalog_projection: std::sync::Arc::new(EmptyCatalogProjection),
             flow: std::sync::Arc::new(RejectingFlow),
             clock: std::sync::Arc::new(SystemControlEffectClock),
         },
@@ -553,6 +577,7 @@ async fn composition_projects_a_reviewed_operation_without_caller_graph_fields()
         ControlEffectCompositionDependencies {
             runtime_registry: std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
             runtime_readiness: std::sync::Arc::new(RejectingReadiness),
+            catalog_projection: std::sync::Arc::new(EmptyCatalogProjection),
             flow: std::sync::Arc::new(RejectingFlow),
             clock: std::sync::Arc::new(SystemControlEffectClock),
         },

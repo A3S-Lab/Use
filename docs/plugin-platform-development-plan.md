@@ -259,8 +259,11 @@ Acceptance:
   checks (including physical resolution of platform ancestor aliases),
   deterministic crash staging, and create-if-absent hard-link
   publication, and supports exact digest/generation/revision reads after
- restart. The store intentionally has no mutable current pointer; Control
- cutover binding and session replacement/drain remain open.
+ restart. The store intentionally has no mutable current pointer. The inactive
+ Control kernel now binds the published payload identity to its applied
+ capability cutover and advances that binding with the Control cursor in one
+ transaction; production activation and session replacement/drain
+ coordination remain open.
 The store is exposed through the standalone `capability-catalog` Cargo feature
 and included by both `mcp` and `extensions`, so a headless manager can own the
 durable payload before composing an MCP endpoint.
@@ -271,8 +274,9 @@ durable payload before composing an MCP endpoint.
   crash-recovery journal, resumes an in-flight unlink (including torn-tail
   repair), blocks conflicting publication, and exposes `recover_retention()`
   for restart recovery. It never invents a current pointer or assumes that an
-  unlisted generation is safe to delete; Control cursor and session-lease
-  ownership remain external.
+  unlisted generation is safe to delete; the Control cursor now supplies one
+  protected publication identity, while draining session-lease ownership and
+  complete backup/restore coordination remain external.
 - [x] Provide a live Gateway session factory for host cutover. The factory
   rejects cross-installation, stale-generation, and consumer-contract changes;
   swaps immutable servers under serialized ownership; retains one standard MCP
@@ -281,9 +285,9 @@ durable payload before composing an MCP endpoint.
   requests on the same endpoint observe the new catalog. The
   `from_published`/`replace_published` paths additionally verify the exact
   consumer projection against a durable `CapabilityGatewayCatalogStore`
-  publication before exposing it. Binding that publication to the durable
-  Control cursor and implementing lease retirement remain lifecycle
-  responsibilities.
+  publication before exposing it. The inactive Control kernel now provides the
+  durable cursor binding; selecting it in production and implementing lease
+  retirement remain lifecycle responsibilities.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
   client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
   authentication, optional exact Origin checking, duplicate-header rejection,

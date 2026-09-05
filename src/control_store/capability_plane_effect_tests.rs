@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use a3s_use_core::PluginOperationAction;
+use a3s_use_core::{
+    CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
+    CapabilityPublicationEvidence, CapabilityToolAnnotations, InvocationRef, PluginOperationAction,
+    PluginPackageId, PluginSurfaceKind, PluginSurfaceRef,
+};
 
 use super::aggregate_tests::fixtures::{
     apply_all_effects, claim, control_installation, digest, initialized_store, observation,
@@ -14,16 +18,116 @@ use super::effect_owner::capability_plane::ControlCapabilityPlaneEffectPort;
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
 use super::effect_port::{
-    ControlEffectPortOutcome, ControlFlowEffectPort, ControlRuntimeApplication,
-    ControlRuntimeEffectPort, ControlRuntimeEffectRequest, ControlSurfaceApplication,
-    ControlSurfaceEffectRequest,
+    ControlCapabilityCatalogProjectionPort, ControlEffectPortOutcome, ControlFlowEffectPort,
+    ControlRuntimeApplication, ControlRuntimeEffectPort, ControlRuntimeEffectRequest,
+    ControlSurfaceApplication, ControlSurfaceEffectRequest,
 };
 use super::knowledge_effect_test_support::{knowledge_owner_fixture_for, KnowledgeOwnerFixture};
 use super::model::{
-    ControlAppliedEffectEvidence, ControlEffectOutcome, ControlEffectOwner, ControlEffectStatus,
-    ControlProjectionHistory, ReviewedControlOperation,
+    ControlAppliedEffectEvidence, ControlCapabilityEffectAuthority, ControlEffectOutcome,
+    ControlEffectOwner, ControlEffectStatus, ControlProjectionHistory, ReviewedControlOperation,
 };
 use super::ControlStore;
+use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
+
+struct EmptyCatalogProjection;
+
+struct UnauthorizedCatalogProjection;
+
+#[async_trait::async_trait]
+impl ControlCapabilityCatalogProjectionPort for EmptyCatalogProjection {
+    async fn project(
+        &self,
+        authority: &ControlCapabilityEffectAuthority,
+    ) -> ControlEffectPortOutcome<CapabilityGatewayCatalog> {
+        ControlEffectPortOutcome::applied(
+            CapabilityGatewayCatalog::new(
+                authority.generation.snapshot.installation.clone(),
+                authority.generation.capability.generation,
+                Vec::new(),
+            )
+            .unwrap(),
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl ControlCapabilityCatalogProjectionPort for UnauthorizedCatalogProjection {
+    async fn project(
+        &self,
+        authority: &ControlCapabilityEffectAuthority,
+    ) -> ControlEffectPortOutcome<CapabilityGatewayCatalog> {
+        let package = &authority.generation.snapshot.packages[0];
+        let package_id = PluginPackageId::parse(package.package_id()).unwrap();
+        let surface = PluginSurfaceRef {
+            kind: PluginSurfaceKind::Tool,
+            id: "unreviewed-tool".to_owned(),
+        };
+        let lifecycle_generation = authority.generation.package_lifecycles[0].lifecycle_generation;
+        let schema = serde_json::json!({
+            "type": "object",
+            "additionalProperties": false
+        });
+        let descriptor = CapabilityDescriptor {
+            schema: a3s_use_core::CAPABILITY_DESCRIPTOR_SCHEMA_V1.to_owned(),
+            package_id: package_id.clone(),
+            surface: surface.clone(),
+            generation: lifecycle_generation,
+            package_digest: package
+                .package
+                .catalog
+                .record
+                .package
+                .sha256
+                .clone()
+                .unwrap(),
+            manifest_digest: package
+                .package
+                .catalog
+                .record
+                .package
+                .manifest_sha256
+                .clone()
+                .unwrap(),
+            title: "Unreviewed Tool".to_owned(),
+            description: "A valid descriptor outside committed surface authority.".to_owned(),
+            invocation_ref: InvocationRef::derive(
+                &package_id,
+                &surface,
+                lifecycle_generation,
+                &digest('7'),
+            )
+            .unwrap(),
+            artifact_ref: None,
+            endpoint_ref: None,
+            dependencies: Vec::new(),
+            required_extensions: Vec::new(),
+            publication: CapabilityPublicationEvidence {
+                catalog_record_digest: package
+                    .package
+                    .catalog
+                    .provenance
+                    .catalog_record_digest
+                    .clone(),
+                signature_digest: digest('6'),
+            },
+            capability: CapabilityDescriptorKind::Tool {
+                name: "unreviewed-tool".to_owned(),
+                input_schema: schema.clone(),
+                output_schema: schema,
+                annotations: CapabilityToolAnnotations::new(false, false, false, false),
+            },
+        };
+        ControlEffectPortOutcome::applied(
+            CapabilityGatewayCatalog::new(
+                authority.generation.snapshot.installation.clone(),
+                authority.generation.capability.generation,
+                vec![descriptor],
+            )
+            .unwrap(),
+        )
+    }
+}
 
 struct UnexpectedDynamicSurfacePort;
 
@@ -72,6 +176,8 @@ async fn published_cursor_exists_only_after_the_applied_capability_cutover() {
     assert_eq!(cursor.installation, control_installation());
     assert_eq!(cursor.installation_generation, 1);
     assert_eq!(cursor.capability_generation, 1);
+    assert_eq!(cursor.catalog.installation, control_installation());
+    assert_eq!(cursor.catalog.generation, 1);
     let effects = store.effects(reviewed.operation_id()).await.unwrap();
     let capability = effects
         .iter()
@@ -83,6 +189,12 @@ async fn published_cursor_exists_only_after_the_applied_capability_cutover() {
         panic!("the published capability effect must retain its Index receipt");
     };
     assert_eq!(&cursor.receipt_digest, receipt_digest);
+    let ControlAppliedEffectEvidence::CapabilityIndex { catalog, .. } =
+        &capability.application.as_ref().unwrap().evidence
+    else {
+        panic!("the published capability effect must retain its catalog binding");
+    };
+    assert_eq!(&cursor.catalog, catalog);
     assert_eq!(cursor.packages.len(), 1);
     assert_eq!(cursor.packages[0].package_id, "acme/knowledge");
     assert_eq!(cursor.packages[0].lifecycle_generation, 1);
@@ -108,6 +220,11 @@ async fn real_surface_owners_publish_one_immutable_index_and_admit_its_exact_sna
 
     assert_eq!(lease.cursor(), &cursor);
     assert_eq!(lease.package_count(), 1);
+    assert_eq!(lease.catalog().generation(), cursor.catalog.generation);
+    assert_eq!(
+        lease.catalog().descriptor_digest().unwrap(),
+        cursor.catalog.digest
+    );
     assert_eq!(
         lease.document_receipt_digest().unwrap(),
         cursor.receipt_digest
@@ -126,6 +243,178 @@ async fn real_surface_owners_publish_one_immutable_index_and_admit_its_exact_sna
             ControlEffectStatus::Applied,
             ControlEffectStatus::Applied,
         ]
+    );
+}
+
+#[tokio::test]
+async fn catalog_projection_cannot_publish_an_unreviewed_surface() {
+    let installation = control_installation();
+    let (owner_fixture, artifact_admission) =
+        knowledge_owner_fixture_for(installation.clone()).await;
+    let store = ControlStore::from_extension_paths(&owner_fixture.paths).unwrap();
+    store.initialize().await.unwrap();
+    let installed = operation("operation:capability-plane:unauthorized-catalog");
+    store.register_operation(installed.clone()).await.unwrap();
+    store
+        .commit_transition(transition(installation, &installed))
+        .await
+        .unwrap();
+    drop(artifact_admission);
+
+    let catalogs = CapabilityGatewayCatalogStore::from_extension_paths(&owner_fixture.paths);
+    let plane = Arc::new(
+        ControlCapabilityPlaneEffectPort::new(
+            store.clone(),
+            catalogs.clone(),
+            Arc::new(UnauthorizedCatalogProjection),
+        )
+        .unwrap(),
+    );
+    let knowledge = Arc::new(ControlOkfKnowledgeEffectPort::new(
+        owner_fixture.paths.artifact_store(),
+        owner_fixture.client.clone(),
+        owner_fixture.bindings.clone(),
+    ));
+    let static_surfaces = Arc::new(ControlStaticSurfaceEffectPort::new(
+        owner_fixture.paths.artifact_store(),
+    ));
+    let unexpected = Arc::new(UnexpectedDynamicSurfacePort);
+    let dispatcher = ControlEffectDispatcher::new(
+        store.clone(),
+        ControlEffectPorts::new(
+            plane.clone(),
+            plane,
+            unexpected.clone(),
+            unexpected,
+            knowledge,
+            static_surfaces.clone(),
+            static_surfaces,
+        ),
+        Arc::new(SystemControlEffectClock),
+    );
+    for sequence in 0..2_u32 {
+        assert_dispatch(
+            &dispatcher,
+            &installed,
+            &format!("claim:capability-plane:unauthorized:{sequence}"),
+            sequence,
+            1,
+            ControlEffectOutcome::Applied,
+            false,
+        )
+        .await;
+    }
+    assert_dispatch(
+        &dispatcher,
+        &installed,
+        "claim:capability-plane:unauthorized:cutover",
+        2,
+        1,
+        ControlEffectOutcome::Rejected,
+        false,
+    )
+    .await;
+
+    assert!(store.published_capability().await.unwrap().is_none());
+    assert!(catalogs.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn capability_plane_rejects_a_catalog_owner_from_another_state_root() {
+    let (temporary, store) = initialized_store().await;
+    let foreign = CapabilityGatewayCatalogStore::new(
+        temporary.path().join("foreign-state"),
+        control_installation(),
+    )
+    .unwrap();
+
+    let error =
+        ControlCapabilityPlaneEffectPort::new(store, foreign, Arc::new(EmptyCatalogProjection))
+            .unwrap_err();
+
+    assert_eq!(error.code, "use.control.capability_catalog_binding_invalid");
+}
+
+#[tokio::test]
+async fn published_lease_requires_the_exact_bound_catalog_payload() {
+    let fixture = installed_capability_plane("operation:capability-plane:missing-catalog").await;
+    let cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    let path = catalog_path(
+        &fixture._owner_fixture.paths.installation_state_root(),
+        &cursor.catalog.digest,
+    );
+    tokio::fs::remove_file(path).await.unwrap();
+
+    let error = fixture.plane.acquire_published(&cursor).await.unwrap_err();
+
+    assert_eq!(error.code, "use.control.capability_catalog_binding_invalid");
+}
+
+#[tokio::test]
+async fn published_lease_rejects_tampered_bound_catalog_payload() {
+    let fixture = installed_capability_plane("operation:capability-plane:tampered-catalog").await;
+    let cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    let path = catalog_path(
+        &fixture._owner_fixture.paths.installation_state_root(),
+        &cursor.catalog.digest,
+    );
+    tokio::fs::write(path, b"{}").await.unwrap();
+
+    let error = fixture.plane.acquire_published(&cursor).await.unwrap_err();
+
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_catalog_store_conflict"
+    );
+}
+
+#[tokio::test]
+async fn index_failure_after_catalog_publication_is_unknown_not_safe_rejection() {
+    let fixture = prepared_capability_plane("operation:capability-plane:index-failure").await;
+    // Force the later Index owner phase to fail after the catalog payload has
+    // been accepted. The owner must not misclassify that accepted payload as
+    // a proven no-effect rejection or deferral.
+    let index_root = fixture
+        ._owner_fixture
+        .paths
+        .installation_state_root()
+        .join("capability-index");
+    tokio::fs::write(&index_root, b"not-a-directory")
+        .await
+        .unwrap();
+
+    assert_dispatch(
+        &fixture.dispatcher,
+        &fixture.installed,
+        "claim:capability-plane:index-failure:cutover",
+        2,
+        1,
+        ControlEffectOutcome::Unknown,
+        false,
+    )
+    .await;
+    assert_eq!(
+        fixture
+            .store
+            .effects(fixture.installed.operation_id())
+            .await
+            .unwrap()[2]
+            .error_code
+            .as_deref(),
+        Some("use.control.capability_index_path_invalid")
+    );
+    assert!(fixture
+        .store
+        .published_capability()
+        .await
+        .unwrap()
+        .is_none());
+    assert!(
+        !CapabilityGatewayCatalogStore::from_extension_paths(&fixture._owner_fixture.paths)
+            .list()
+            .await
+            .unwrap()
+            .is_empty()
     );
 }
 
@@ -240,6 +529,31 @@ async fn published_snapshot_lease_blocks_prior_generation_drain_until_the_call_r
 }
 
 async fn installed_capability_plane(operation_id: &str) -> InstalledCapabilityPlaneFixture {
+    let fixture = prepared_capability_plane(operation_id).await;
+    assert_dispatch(
+        &fixture.dispatcher,
+        &fixture.installed,
+        "claim:capability-plane:install:2",
+        2,
+        1,
+        ControlEffectOutcome::Applied,
+        false,
+    )
+    .await;
+    fixture
+        .store
+        .complete_operation(
+            fixture.installed.operation_id(),
+            fixture.installed.plan_digest(),
+            &digest('f'),
+            SystemControlEffectClock.now_ms().unwrap(),
+        )
+        .await
+        .unwrap();
+    fixture
+}
+
+async fn prepared_capability_plane(operation_id: &str) -> InstalledCapabilityPlaneFixture {
     let installation = control_installation();
     let (owner_fixture, artifact_admission) =
         knowledge_owner_fixture_for(installation.clone()).await;
@@ -253,7 +567,14 @@ async fn installed_capability_plane(operation_id: &str) -> InstalledCapabilityPl
         .unwrap();
     drop(artifact_admission);
 
-    let plane = Arc::new(ControlCapabilityPlaneEffectPort::new(store.clone()));
+    let plane = Arc::new(
+        ControlCapabilityPlaneEffectPort::new(
+            store.clone(),
+            CapabilityGatewayCatalogStore::from_extension_paths(&owner_fixture.paths),
+            Arc::new(EmptyCatalogProjection),
+        )
+        .unwrap(),
+    );
     let knowledge = Arc::new(ControlOkfKnowledgeEffectPort::new(
         owner_fixture.paths.artifact_store(),
         owner_fixture.client.clone(),
@@ -274,7 +595,7 @@ async fn installed_capability_plane(operation_id: &str) -> InstalledCapabilityPl
     );
     let dispatcher =
         ControlEffectDispatcher::new(store.clone(), ports, Arc::new(SystemControlEffectClock));
-    for sequence in 0..3_u32 {
+    for sequence in 0..2_u32 {
         assert_dispatch(
             &dispatcher,
             &installed,
@@ -286,15 +607,6 @@ async fn installed_capability_plane(operation_id: &str) -> InstalledCapabilityPl
         )
         .await;
     }
-    store
-        .complete_operation(
-            installed.operation_id(),
-            installed.plan_digest(),
-            &digest('f'),
-            SystemControlEffectClock.now_ms().unwrap(),
-        )
-        .await
-        .unwrap();
     InstalledCapabilityPlaneFixture {
         _owner_fixture: owner_fixture,
         store,
@@ -338,4 +650,14 @@ async fn assert_dispatch(
             && observed_attempt == attempt
             && outcome == expected_outcome
     ));
+}
+
+fn catalog_path(state_root: &std::path::Path, digest: &str) -> std::path::PathBuf {
+    let hex = digest.strip_prefix("sha256:").unwrap();
+    state_root
+        .join("capability-gateway")
+        .join("catalogs")
+        .join("sha256")
+        .join(&hex[..2])
+        .join(format!("{hex}.json"))
 }

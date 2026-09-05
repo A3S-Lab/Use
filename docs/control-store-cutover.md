@@ -267,11 +267,12 @@ selection, the candidate capability descriptor, and the complete ordered
 effect-intent inventory for all five lifecycle actions. Provider selection is
 derived only for Tool and MCP surfaces; it is not an applied binding
 observation. Package, Grant, lifecycle, and selection facts stay inside the
-transaction instead of becoming pseudo effects. Schema v10 also persists and
-offline-verifies typed Capability Index, invocation-lease, Runtime
-Task/opaque-Service readiness, Flow artifact, Knowledge projection, and
-Skill/UI content application evidence. The cutover observation advances
-publication before drain; post-cutover required failure remains pending for
+transaction instead of becoming pseudo effects. Schema v11 also persists and
+offline-verifies typed Capability Index plus immutable Agent-catalog binding,
+invocation-lease, Runtime Task/opaque-Service readiness, Flow artifact,
+Knowledge projection, and Skill/UI content application evidence. The cutover
+observation advances publication and the catalog digest/generation/revision in
+one transaction before drain; post-cutover required failure remains pending for
 same-key reconciliation. Real owner ports and the dispatcher that produce
 those observations now receive committed owner-shaped context derived inside
 the claim transaction. Static, lease, and Flow/Knowledge/Skill/UI owners see
@@ -307,14 +308,19 @@ application observation while the dispatcher maintenance fence remains held.
 Artifact-only package admission creates no lifecycle authority and its global
 reference-admission guard is retained through the separate Control reference
 commit. Capability Index and invocation leases now share one concrete
-Capability Plane adapter. It writes only immutable content-addressed Index
-documents; Control's applied observation is the sole mutable publication
-cursor. Cursor double-read plus exact shared package-incarnation locks makes
-admission stale on a racing cutover, while exclusive drain safely defers for an
-active call. Index and lease paths reject links, Index publication cannot
-replace an existing receipt, and exact staging replay is crash-safe. Both
-families are derived operational state excluded from backup; restore must
-rebuild the Index from verified Control evidence. The Flow adapter is now
+Capability Plane adapter. A host-owned pure port projects the Agent catalog
+from committed authority; the adapter rejects descriptors outside enabled,
+prepared package incarnations, publishes the catalog payload first, and writes
+an immutable content-addressed Index document containing its identity.
+Control's applied observation is the sole mutable publication cursor and binds
+both payloads transactionally. Admission reopens and rehashes the exact catalog
+before cursor double-read plus exact shared package-incarnation locks makes a
+racing cutover stale; exclusive drain safely defers for an active call. Catalog,
+Index, and lease paths reject substitution, immutable publication cannot
+replace existing content, and exact staging replay is crash-safe. The Index and
+lease families are derived operational state excluded from backup; the bound
+catalog must still join the registered external-owner snapshot/restore set
+before production activation. The Flow adapter is now
 qualified as a gate-3 owner: it accepts only a path-free verified source
 payload, publishes a durable no-clobber content-addressed copy in its own
 workspace, and delegates Native TypeScript preflight to `a3s-flow` without

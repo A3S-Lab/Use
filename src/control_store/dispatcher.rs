@@ -232,6 +232,7 @@ impl ControlEffectDispatcher {
                         |application| ControlAppliedEffectEvidence::CapabilityIndex {
                             capability_generation: request.capability_generation,
                             descriptor_digest: request.descriptor_digest,
+                            catalog: application.catalog,
                             receipt_digest: application.receipt_digest,
                         },
                     )

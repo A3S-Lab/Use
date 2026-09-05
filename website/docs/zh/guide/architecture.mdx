@@ -219,14 +219,14 @@ Embedding host 实现 `CognitivePackageLifecycleFactory`，提供精确的 Runti
 
 [ADR-003](https://github.com/A3S-Lab/Use/blob/main/docs/adr-003-control-store-transaction-boundary.md) 冻结了下一阶段的 Control Store 边界：每个安装只有一个可变权威，不允许 JSON/SQLite 双写，并通过 outbox 隔离无法加入本地事务的 provider 副作用。
 
-未启用的 schema-v10 内核现已从 reviewed Plan 与已提交 generation 推导完整 outbox
+未启用的 schema-v11 内核现已从 reviewed Plan 与已提交 generation 推导完整 outbox
 inventory：依赖 surface 先于 dependant 准备，只切换一次 capability，随后排空已接受调用，
 再通过类型化 owner 反向退休 surface。Tool 与 MCP effect 绑定精确的 reviewed Runtime
 selection；package state、Grant、lifecycle identity 与 provider selection 继续留在聚合事务内，
-不会成为重复 effect。Applied outcome 会持久化规范化、owner-specific 的 Capability Index、
+不会成为重复 effect。Applied outcome 会持久化规范化、owner-specific 的 Capability Index 及其不可变 Agent catalog 绑定、
 invocation lease、Runtime Task/不透明 Service readiness、Flow artifact、Knowledge projection
 或 Skill/UI content evidence。记录 applied cutover observation 的事务会在 drain 之前原子推进
-publication；之后的必需 effect 失败会保留为使用相同 key 显式 reconciliation 的 pending 状态，
+publication 及 catalog 身份；之后的必需 effect 失败会保留为使用相同 key 显式 reconciliation 的 pending 状态，
 而不会回滚已可见 generation。未启用的单 effect dispatcher 现在会在 `claim → owner I/O → observation`
 全过程持有 installation 级共享 maintenance fence，然后提交 claim，并在 owner I/O 前释放 SQLite 事务与有界
 executor，再把精确 identity 路由到彼此独立的 Capability Index、invocation lease、
@@ -248,13 +248,12 @@ stage、promote、remove 或 effect 后 receipt 写入的歧义都保持 unknown
 reconciliation。Stop 不修改 Knowledge payload，remove 只使用保留 receipt。真实 SQLite 组合测试已覆盖
 已提交 claim、dispatcher、Knowledge materialization 与持久化 Control observation。独立 Artifact admission
 具备幂等性，不创建 lifecycle authority，并让 reference guard 跨越单独的 Control commit。Capability Index
-与 invocation lease 现在由第三个真实的 Capability Plane adapter 共同实现。它根据已提交
-candidate 与精确的终态 surface evidence 生成规范、内容寻址的 Index document，不增加第二个 SQLite 或
-mutable current 文件；Control 中 applied cutover observation 是唯一 publication cursor。Admission 会在取得
+与 invocation lease 现在由第三个真实的 Capability Plane adapter 共同实现。它先调用 host-owned 的纯 Agent catalog projector，拒绝不属于 enabled 且已准备 surface incarnation 的 descriptor，再根据已提交
+candidate 与精确的终态 surface evidence 生成包含 catalog 身份的规范、内容寻址 Index document，不增加第二个 SQLite 或
+mutable current 文件；Control 中 applied cutover observation 是唯一 publication cursor，并在同一事务绑定 catalog 身份。Admission 会在取得
 每个精确 package lifecycle incarnation 的共享锁前后各读取一次该 cursor；drain 仅允许已经不再发布的旧
 incarnation 取得排他锁，并在 accepted call 仍活跃时安全 deferred。No-follow、no-replace 发布与精确 staging
-重放保护 immutable Index。Index 与 lease 文件都是不进入备份的派生 operational state；restore 必须从已
-验证 Control evidence 重建 Index。真实组合测试已经覆盖 Knowledge、Skill、cutover、stale admission 与
+重放保护 immutable catalog/Index。Index 与 lease 文件都是不进入备份的派生 operational state；catalog 仍需登记到 backup/restore owner 集合。真实组合测试已经覆盖 Knowledge、Skill、catalog/Index cutover、stale admission 与
 同一 key 的 drain 重试。非激活 Runtime owner 现在已完成 release-backed Tool Task/Service 与 Streamable
 HTTP MCP 验收。首次 prepare 只消费无路径、已验证的 release payload，把完整 plan semantics 绑定到已提交
 provider evidence，持久化单调 Runtime/Gateway recovery state，并在不依赖 Artifact 路径的情况下重放或退休

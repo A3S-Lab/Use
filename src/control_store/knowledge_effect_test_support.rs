@@ -11,12 +11,13 @@ use a3s_use_extension::ExtensionLifecyclePackage;
 use super::dispatcher::ControlEffectPorts;
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_port::{
-    ControlCapabilityCutoverRequest, ControlCapabilityIndexEffectPort, ControlEffectPortOutcome,
-    ControlEffectRequestIdentity, ControlFlowEffectPort, ControlInvocationDrainRequest,
-    ControlInvocationLeaseEffectPort, ControlKnowledgeEffectPort, ControlReceiptApplication,
-    ControlRuntimeApplication, ControlRuntimeEffectPort, ControlRuntimeEffectRequest,
-    ControlSkillEffectPort, ControlSurfaceApplication, ControlSurfaceEffectAction,
-    ControlSurfaceEffectRequest, ControlUiEffectPort,
+    ControlCapabilityCutoverApplication, ControlCapabilityCutoverRequest,
+    ControlCapabilityIndexEffectPort, ControlEffectPortOutcome, ControlEffectRequestIdentity,
+    ControlFlowEffectPort, ControlInvocationDrainRequest, ControlInvocationLeaseEffectPort,
+    ControlKnowledgeEffectPort, ControlReceiptApplication, ControlRuntimeApplication,
+    ControlRuntimeEffectPort, ControlRuntimeEffectRequest, ControlSkillEffectPort,
+    ControlSurfaceApplication, ControlSurfaceEffectAction, ControlSurfaceEffectRequest,
+    ControlUiEffectPort,
 };
 use super::model::{
     ControlEffectIntent, ControlEffectKind, ControlEffectOwner, ControlEffectSubject,
@@ -57,7 +58,7 @@ impl ControlCapabilityIndexEffectPort for UnexpectedEffectPort {
     async fn cutover(
         &self,
         _request: &ControlCapabilityCutoverRequest,
-    ) -> ControlEffectPortOutcome<ControlReceiptApplication> {
+    ) -> ControlEffectPortOutcome<ControlCapabilityCutoverApplication> {
         unexpected_effect()
     }
 }
