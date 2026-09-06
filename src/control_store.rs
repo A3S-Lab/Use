@@ -347,6 +347,22 @@ impl ControlStore {
             .await
     }
 
+    /// Resolve the graph cutover key bound to the exact durable generation
+    /// selected by the published capability cursor.  This is intentionally a
+    /// single aggregate read so callers do not derive authority from a
+    /// process-local or merely current installation generation.
+    async fn published_capability_cutover_key(&self) -> UseResult<Option<String>> {
+        let _maintenance = StateMaintenanceLock::new(&self.state_root)
+            .acquire_shared()
+            .await?;
+        filesystem::require_initialized(&self.state_root, &self.database_path).await?;
+        let database_path =
+            filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
+        self.executor
+            .published_capability_cutover_key(database_path, self.installation.clone())
+            .await
+    }
+
     /// Read the published cursor while the caller owns the exact
     /// installation maintenance guard.  Coordinated destructive operations
     /// use this seam after taking an exclusive guard; reacquiring a shared

@@ -25,6 +25,7 @@ use super::model::{
     MAX_CONTROL_HISTORY_PACKAGES,
 };
 use super::schema;
+use crate::plugin_lifecycle::operation_cutover_key;
 
 mod effect_authority;
 mod generation;
@@ -390,6 +391,84 @@ pub(super) fn published_capability(
         schema::sqlite_error("finish published Control capability snapshot", error)
     })?;
     Ok(cursor)
+}
+
+/// Resolve the graph cutover key for the exact Control generation that owns
+/// the currently published capability cursor.
+///
+/// A lifecycle callback receives only an opaque graph key.  Looking at the
+/// current installation generation is insufficient because enable/disable
+/// operations can advance that generation without replacing the published
+/// package graph.  The published cursor therefore determines the owning
+/// generation, and this helper follows its durable operation binding before
+/// deriving the key from the reviewed plan.
+pub(super) fn published_capability_cutover_key(
+    path: &Path,
+    installation: &InstallationId,
+) -> UseResult<Option<String>> {
+    let connection = schema::open_verified_read(path, installation)?;
+    let transaction = connection.unchecked_transaction().map_err(|error| {
+        schema::sqlite_error(
+            "begin consistent published Control capability cutover key read",
+            error,
+        )
+    })?;
+    let Some(cursor) = read_published_capability_from(&transaction, installation)? else {
+        transaction.commit().map_err(|error| {
+            schema::sqlite_error(
+                "finish published Control capability cutover key read",
+                error,
+            )
+        })?;
+        return Ok(None);
+    };
+
+    let operation_id: String = transaction
+        .query_row(
+            "SELECT operation_id FROM control_generation WHERE generation = ?1",
+            [to_i64(cursor.installation_generation)?],
+            |row| row.get(0),
+        )
+        .map_err(|error| {
+            schema::sqlite_error("read published Control capability operation binding", error)
+        })?;
+    let operation =
+        read_operation_from(&transaction, installation, &operation_id)?.ok_or_else(|| {
+            corruption_error("The published Control capability operation is missing.")
+        })?;
+    if operation.reviewed.target_generation()? != cursor.installation_generation
+        || operation.reviewed.target_capability_generation()? != cursor.capability_generation
+    {
+        return Err(corruption_error(
+            "The published Control capability operation does not bind its cursor generations.",
+        ));
+    }
+
+    // Enablement changes do not have a package-graph publication/hide key;
+    // they are coordinated by the dedicated enablement lifecycle.  Returning
+    // no graph key makes a graph callback fail closed instead of accepting an
+    // unrelated opaque key.
+    let key = if matches!(
+        operation.reviewed.action(),
+        a3s_use_core::PluginOperationAction::Enable | a3s_use_core::PluginOperationAction::Disable
+    ) {
+        None
+    } else {
+        Some(
+            operation_cutover_key(&operation.reviewed.envelope).map_err(|_| {
+                corruption_error(
+                    "The published Control capability operation has no valid graph cutover key.",
+                )
+            })?,
+        )
+    };
+    transaction.commit().map_err(|error| {
+        schema::sqlite_error(
+            "finish published Control capability cutover key read",
+            error,
+        )
+    })?;
+    Ok(key)
 }
 
 fn read_published_capability_from(

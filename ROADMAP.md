@@ -1296,6 +1296,12 @@ fence. Production hosts still need to attach this adapter, add any
 independently managed rollback identities, and retire payloads in one host
 transition.
 
+The adapter now binds the callback's opaque key to the reviewed operation that
+owns the published cursor (following that cursor's installation generation,
+not the merely current generation). Stale graph replays and callbacks against
+enablement-only publications therefore fail closed instead of activating an
+unrelated endpoint.
+
 Implementation note (2026-09-06): the inactive Control composition now also
 provides a Control-backed opaque invocation resolver. Each operation reopens
 the durable published cursor, validates the complete descriptor against the

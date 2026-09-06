@@ -86,6 +86,11 @@ enum ControlStoreRequest {
         installation: InstallationId,
         response: oneshot::Sender<UseResult<Option<ControlPublishedCapabilityCursor>>>,
     },
+    PublishedCapabilityCutoverKey {
+        database_path: PathBuf,
+        installation: InstallationId,
+        response: oneshot::Sender<UseResult<Option<String>>>,
+    },
     Effects {
         database_path: PathBuf,
         installation: InstallationId,
@@ -311,6 +316,21 @@ impl ControlStoreExecutor {
     ) -> UseResult<Option<ControlPublishedCapabilityCursor>> {
         let (response, receiver) = oneshot::channel();
         self.send(ControlStoreRequest::PublishedCapability {
+            database_path,
+            installation,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn published_capability_cutover_key(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+    ) -> UseResult<Option<String>> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::PublishedCapabilityCutoverKey {
             database_path,
             installation,
             response,
@@ -550,6 +570,16 @@ fn run_worker(mut receiver: mpsc::Receiver<ControlStoreRequest>) {
                 response,
             } => {
                 let _ = response.send(aggregate::published_capability(
+                    &database_path,
+                    &installation,
+                ));
+            }
+            ControlStoreRequest::PublishedCapabilityCutoverKey {
+                database_path,
+                installation,
+                response,
+            } => {
+                let _ = response.send(aggregate::published_capability_cutover_key(
                     &database_path,
                     &installation,
                 ));

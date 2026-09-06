@@ -568,12 +568,64 @@ async fn control_gateway_reconciliation_is_idempotent_for_the_current_cursor() {
         Arc::new(EmptyGatewayProvider),
         CapabilityGatewayCompositionOptions::default(),
     );
+    let wrong_key = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let error = crate::plugin_lifecycle::PluginGraphCapabilityCutoverActivation::activate_capability_cutover(
+        activation.as_ref(),
+        wrong_key,
+    )
+    .await
+    .expect_err("a replay from another graph operation must be rejected");
+    assert_eq!(
+        error.code,
+        "use.control.capability_gateway_activation_key_mismatch"
+    );
+    let key = crate::plugin_lifecycle::operation_cutover_key(&fixture.installed.envelope).unwrap();
     crate::plugin_lifecycle::PluginGraphCapabilityCutoverActivation::activate_capability_cutover(
         activation.as_ref(),
-        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        &key,
     )
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn published_cutover_key_follows_the_published_generation_not_current_generation() {
+    let fixture =
+        installed_capability_plane("operation:capability-plane:gateway-key-lineage").await;
+    let prior = fixture.store.current_generation().await.unwrap().unwrap();
+    let mut history = ControlProjectionHistory::default();
+    history.observe(&prior).unwrap();
+
+    // Enablement advances the installation generation but does not replace
+    // the package-graph publication that still owns the live capability
+    // cursor.  The callback key must remain bound to the published install.
+    let disable = operation_at(
+        "operation:capability-plane:gateway-key-disable",
+        PluginOperationAction::Disable,
+        prior.snapshot.generation,
+        prior.capability.generation,
+    );
+    fixture
+        .store
+        .register_operation(disable.clone())
+        .await
+        .unwrap();
+    fixture
+        .store
+        .commit_transition(projected_transition(&disable, &prior, &history))
+        .await
+        .unwrap();
+
+    let expected =
+        crate::plugin_lifecycle::operation_cutover_key(&fixture.installed.envelope).unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .published_capability_cutover_key()
+            .await
+            .unwrap(),
+        Some(expected)
+    );
 }
 
 #[cfg(feature = "mcp")]

@@ -113,6 +113,12 @@ derives the durable current protection set and its apply path rechecks that
 set under an exclusive maintenance fence; independently managed rollback or
 legacy endpoint payloads remain explicit caller inputs.
 
+The adapter now also verifies the opaque lifecycle key against the reviewed
+operation that owns the published cursor. It follows the cursor's immutable
+installation generation rather than the merely current generation, so a stale
+graph replay cannot activate a newer enablement or unrelated publication. A
+non-graph enablement cursor fails closed instead of accepting an arbitrary key.
+
 Implementation note (2026-09-06): the inactive Control composition now also
 provides a Control-backed opaque invocation resolver. It reopens the durable
 published cursor for each operation, compares the complete descriptor against

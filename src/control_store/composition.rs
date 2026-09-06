@@ -772,7 +772,41 @@ impl ControlStoreRuntimeComposition {
 #[cfg(feature = "mcp")]
 #[async_trait]
 impl PluginGraphCapabilityCutoverActivation for ControlCapabilityGatewayCutoverActivation {
-    async fn activate_capability_cutover(&self, _idempotency_key: &str) -> UseResult<()> {
+    async fn activate_capability_cutover(&self, idempotency_key: &str) -> UseResult<()> {
+        // The graph callback carries an opaque key derived from the reviewed
+        // package plan.  Bind it to the exact durable Control operation that
+        // owns the published cursor before reconciling the live endpoint;
+        // otherwise a stale replay could accidentally activate a newer
+        // publication simply because one exists.
+        if self
+            .composition
+            .store
+            .published_capability()
+            .await?
+            .is_none()
+        {
+            return Err(UseError::new(
+                "use.control.capability_gateway_publication_missing",
+                "The lifecycle cutover has no durable Control Gateway publication to activate.",
+            ));
+        }
+        let Some(expected_key) = self
+            .composition
+            .store
+            .published_capability_cutover_key()
+            .await?
+        else {
+            return Err(UseError::new(
+                "use.control.capability_gateway_activation_key_mismatch",
+                "The durable Control capability publication is not owned by a package-graph cutover.",
+            ));
+        };
+        if expected_key != idempotency_key {
+            return Err(UseError::new(
+                "use.control.capability_gateway_activation_key_mismatch",
+                "The lifecycle cutover key does not match the durable Control capability publication.",
+            ));
+        }
         self.composition
             .reconcile_published_capability_gateway(
                 &self.factory,
