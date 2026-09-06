@@ -196,10 +196,13 @@ This is recoverable ordered activation, not a cross-directory atomic rename.
 The paired `ControlCapabilityPayloadRetentionCoordinator` binds both owner
 retention plans to one canonical digest, preflights inventories and exact
 pending journals under the same exclusive fence, and replays catalog-then-
-descriptor deletion. This is recoverable ordered deletion, not a
-cross-directory atomic transaction. Production owner registration, lifecycle
-retention policy, coordinated cursor reopening, and official Registry/TUF
-key-source binding remain activation gates.
+descriptor deletion. A bounded canonical coordinator journal records the
+reviewed pair and the catalog-complete phase before the first unlink; restart
+recovery resumes that exact pair, while backup and reachability reject the
+nonterminal marker. This is recoverable ordered deletion, not a cross-directory
+atomic transaction. Production owner registration, lifecycle retention policy,
+coordinated cursor reopening, and official Registry/TUF key-source binding
+remain activation gates.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,

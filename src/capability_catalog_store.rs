@@ -227,6 +227,9 @@ impl CapabilityGatewayCatalogStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        #[cfg(feature = "extensions")]
+        crate::control_store::ensure_capability_payload_retention_quiescent(&self.state_root)
+            .await?;
         let (state_root, root) = self.physical_paths().await?;
         let target = path_for_digest(&root, &digest)?;
         let _mutation = self.acquire_mutation(&state_root, &root).await?;
@@ -270,6 +273,9 @@ impl CapabilityGatewayCatalogStore {
         #[cfg(feature = "extensions")]
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
+            .await?;
+        #[cfg(feature = "extensions")]
+        crate::control_store::ensure_capability_payload_retention_quiescent(&self.state_root)
             .await?;
         let Some((state_root, root)) = self.existing_physical_paths().await? else {
             return Ok(None);
@@ -321,6 +327,9 @@ impl CapabilityGatewayCatalogStore {
         #[cfg(feature = "extensions")]
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
+            .await?;
+        #[cfg(feature = "extensions")]
+        crate::control_store::ensure_capability_payload_retention_quiescent(&self.state_root)
             .await?;
         let Some((state_root, root)) = self.existing_physical_paths().await? else {
             return Ok(Vec::new());

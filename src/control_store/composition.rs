@@ -24,7 +24,8 @@ use super::dispatcher::{
 };
 use super::effect_owner::capability_plane::{
     ControlCapabilityDescriptorSnapshotStore, ControlCapabilityPayloadRestoreCoordinator,
-    ControlCapabilityPayloadRetentionCoordinator, ControlCapabilityPlaneEffectPort,
+    ControlCapabilityPayloadRetentionCoordinator, ControlCapabilityPayloadRetentionResult,
+    ControlCapabilityPlaneEffectPort,
 };
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_owner::runtime::{ControlRuntimeEffectPort, ControlRuntimeServiceReadinessPort};
@@ -210,6 +211,16 @@ impl ControlStoreRuntimeComposition {
         &self,
     ) -> &ControlCapabilityPayloadRetentionCoordinator {
         &self.capability_payload_retention
+    }
+
+    /// Resume a cross-owner Capability payload retention operation left by a
+    /// process interruption. The durable coordinator journal supplies the
+    /// exact reviewed plan; callers cannot substitute a new one during
+    /// recovery.
+    pub(in crate::control_store) async fn recover_capability_payload_retention(
+        &self,
+    ) -> UseResult<Option<ControlCapabilityPayloadRetentionResult>> {
+        self.capability_payload_retention.recover_retention().await
     }
 
     pub(in crate::control_store) async fn initialize(&self) -> UseResult<ControlStoreMetadata> {

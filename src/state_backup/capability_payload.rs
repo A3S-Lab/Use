@@ -21,6 +21,10 @@ const SHA256: &str = "sha256";
 const STAGING: &str = ".staging";
 const MUTATION_LOCK: &str = ".mutation.lock";
 const RETENTION_JOURNAL: &str = ".retention.journal";
+/// Durable cross-owner retention intent. It is operational evidence, never a
+/// portable payload record.
+pub(crate) const COORDINATOR_RETENTION_JOURNAL: &str =
+    crate::control_store::CAPABILITY_PAYLOAD_RETENTION_COORDINATOR_JOURNAL;
 pub(crate) const MAX_RECORD_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,8 +35,9 @@ pub(super) enum Kind {
 
 /// Validate one live filesystem entry in the Capability Gateway namespace.
 /// Directories are accepted only when they are part of one of the two owner
-/// layouts; record and operational files are classified separately by the
-/// scanner after this check.
+/// layouts. The root-level coordinator journal is accepted as operational
+/// evidence so the nonterminal pass can reject it explicitly; record and
+/// other operational files are classified separately by the scanner.
 pub(crate) fn validate_layout(path: &str, directory: bool) -> UseResult<()> {
     let parts = path.split('/').collect::<Vec<_>>();
     if parts.first().copied() != Some(ROOT) {
@@ -41,6 +46,7 @@ pub(crate) fn validate_layout(path: &str, directory: bool) -> UseResult<()> {
 
     let valid = match parts.as_slice() {
         [ROOT] if directory => true,
+        [ROOT, COORDINATOR_RETENTION_JOURNAL] if !directory => true,
         [ROOT, CATALOGS] if directory => true,
         [ROOT, CATALOGS, SHA256] if directory => true,
         [ROOT, CATALOGS, STAGING] if directory => true,
@@ -97,7 +103,9 @@ pub(crate) fn is_nonterminal(path: &str, directory: bool) -> bool {
     parts.contains(&STAGING)
         || matches!(
             parts.as_slice(),
-            [ROOT, CATALOGS, RETENTION_JOURNAL] | [ROOT, DESCRIPTOR_SNAPSHOTS, RETENTION_JOURNAL]
+            [ROOT, COORDINATOR_RETENTION_JOURNAL]
+                | [ROOT, CATALOGS, RETENTION_JOURNAL]
+                | [ROOT, DESCRIPTOR_SNAPSHOTS, RETENTION_JOURNAL]
         )
 }
 

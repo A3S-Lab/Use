@@ -354,6 +354,7 @@ pub(super) async fn apply_retention(
     let _maintenance = StateMaintenanceLock::new(&store.state_root)
         .acquire_shared()
         .await?;
+    super::super::super::ensure_capability_payload_retention_quiescent(&store.state_root).await?;
     apply_retention_under_maintenance(store, plan, expected_plan_digest).await
 }
 
@@ -605,6 +606,8 @@ pub(super) async fn recover_retention(
     let pending = {
         let _maintenance = StateMaintenanceLock::new(&store.state_root)
             .acquire_shared()
+            .await?;
+        super::super::super::ensure_capability_payload_retention_quiescent(&store.state_root)
             .await?;
         if !super::path_ancestors_exist(&store.state_root).await?
             || !super::validate_existing_directory(&store.root).await?

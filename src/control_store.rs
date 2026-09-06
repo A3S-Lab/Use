@@ -34,6 +34,22 @@ use model::{
 use payload_owner::{ControlPayloadOwnerRegistry, ControlPayloadSnapshotSession};
 use schema::{ControlStoreInspection, ControlStoreMetadata};
 
+/// Root-level operational marker shared by the Capability retention
+/// coordinator and state scanners. Keeping the filename in the Control layer
+/// avoids a backup implementation silently accepting a different marker.
+pub(crate) const CAPABILITY_PAYLOAD_RETENTION_COORDINATOR_JOURNAL: &str =
+    ".retention-coordinator.journal";
+pub(crate) const CAPABILITY_PAYLOAD_RETENTION_COORDINATOR_JOURNAL_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Shared quiescence gate for the two Capability payload owners. The catalog
+/// crate is also usable without the Control Store (`capability-catalog`
+/// feature), so the bridge lives here and is compiled only with extensions.
+pub(crate) async fn ensure_capability_payload_retention_quiescent(
+    state_root: &std::path::Path,
+) -> UseResult<()> {
+    effect_owner::ensure_capability_payload_retention_quiescent(state_root).await
+}
+
 #[allow(unused_imports)]
 pub(in crate::control_store) use composition::{
     ControlEffectCompositionDependencies, ControlStoreRuntimeComposition,

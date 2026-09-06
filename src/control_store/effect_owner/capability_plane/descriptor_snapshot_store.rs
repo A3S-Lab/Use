@@ -119,6 +119,7 @@ impl ControlCapabilityDescriptorSnapshotStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        super::super::ensure_capability_payload_retention_quiescent(&self.state_root).await?;
         ensure_owned_directory_chain(&self.state_root, &self.root).await?;
         let _mutation = self.acquire_mutation().await?;
         retention::ensure_no_pending_journal(&self.root).await?;
@@ -180,6 +181,7 @@ impl ControlCapabilityDescriptorSnapshotStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        super::super::ensure_capability_payload_retention_quiescent(&self.state_root).await?;
         if !validate_existing_directory(&self.root).await? {
             return Ok(None);
         }
@@ -210,6 +212,7 @@ impl ControlCapabilityDescriptorSnapshotStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        super::super::ensure_capability_payload_retention_quiescent(&self.state_root).await?;
         if !validate_existing_directory(&self.root).await? {
             return Ok(Vec::new());
         }
@@ -239,6 +242,7 @@ impl ControlCapabilityDescriptorSnapshotStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        super::super::ensure_capability_payload_retention_quiescent(&self.state_root).await?;
         if !validate_existing_directory(&self.root).await? {
             return retention::build_plan(self.installation.clone(), Vec::new(), &retain_digests);
         }

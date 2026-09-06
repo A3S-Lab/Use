@@ -259,6 +259,7 @@ impl ControlCapabilityPayloadRestoreCoordinator {
         let _maintenance = StateMaintenanceLock::new(self.state_root())
             .acquire_exclusive()
             .await?;
+        super::payload_retention::ensure_no_pending_journal(self.state_root()).await?;
 
         // Validate both source sets and both clean targets before either owner
         // can publish payload bytes. This is the key cross-owner invariant; a

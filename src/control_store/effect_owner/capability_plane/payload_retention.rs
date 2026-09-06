@@ -5,8 +5,9 @@
 //! the other owner is already stale. This coordinator binds both child plans
 //! to one digest, preflights both inventories under one exclusive maintenance
 //! fence, and then applies them in a deterministic catalog → descriptor
-//! order. The child journals remain the crash boundary; retrying the same
-//! coordinator plan is therefore safe if a process stops between owners.
+//! order. A small durable coordinator journal records the cross-owner phase;
+//! retrying after a process stop therefore resumes the reviewed operation
+//! without asking a caller to guess which owner may already have changed.
 
 use std::path::Path;
 
@@ -15,6 +16,9 @@ use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+#[path = "payload_retention_journal.rs"]
+mod journal;
 
 use super::descriptor_snapshot::{
     ControlCapabilityDescriptorSnapshotRetentionPlan,
@@ -29,8 +33,12 @@ pub(in crate::control_store) const CONTROL_CAPABILITY_PAYLOAD_RETENTION_PLAN_SCH
     "a3s.use.control-capability-payload-retention-plan.v1";
 pub(in crate::control_store) const CONTROL_CAPABILITY_PAYLOAD_RETENTION_RESULT_SCHEMA: &str =
     "a3s.use.control-capability-payload-retention-result.v1";
+pub(in crate::control_store) const CONTROL_CAPABILITY_PAYLOAD_RETENTION_JOURNAL_SCHEMA: &str =
+    "a3s.use.control-capability-payload-retention-journal.v1";
 const DIGEST_DOMAIN: &[u8] = b"a3s.use.control-capability-payload-retention.v1\0";
 const ERROR_INVALID: &str = "use.control.capability_payload_retention_invalid";
+const ERROR_STALE: &str = "use.control.capability_payload_retention_stale";
+const ERROR_JOURNAL_IO: &str = "use.control.capability_payload_retention_journal_io";
 const MAX_PLAN_BYTES: usize = 8 * 1024 * 1024;
 
 /// Canonical binding of the exact catalog and descriptor-snapshot retention
@@ -224,6 +232,7 @@ impl ControlCapabilityPayloadRetentionCoordinator {
         catalog_retain_digests: &[String],
         descriptor_snapshot_retain_digests: &[String],
     ) -> UseResult<ControlCapabilityPayloadRetentionPlan> {
+        ensure_no_pending_journal(self.state_root()).await?;
         let catalog_plan = self
             .catalog_store
             .plan_retention(catalog_retain_digests)
@@ -246,8 +255,9 @@ impl ControlCapabilityPayloadRetentionCoordinator {
 
     /// Preflight both child inventories while holding one exclusive
     /// installation fence, then delete in deterministic catalog → descriptor
-    /// order. If the process stops between owners, retrying this exact plan
-    /// treats the completed child as an idempotent no-op and resumes the other.
+    /// order. The coordinator journal is created before the first unlink and
+    /// advanced after catalog completion, so a restart can resume either
+    /// phase using the exact reviewed plan.
     pub(in crate::control_store) async fn apply_retention(
         &self,
         plan: &ControlCapabilityPayloadRetentionPlan,
@@ -269,9 +279,65 @@ impl ControlCapabilityPayloadRetentionCoordinator {
             .acquire_exclusive()
             .await?;
 
-        // Both target inventories and any existing journals are checked
-        // before the first unlink. A stale second owner therefore cannot leave
-        // a newly-pruned first owner behind.
+        let existing_journal =
+            journal::RetentionCoordinatorJournal::load_unbound(self.state_root()).await?;
+        self.apply_retention_under_maintenance(plan, expected_plan_digest, existing_journal)
+            .await
+    }
+
+    /// Resume a pending cross-owner retention journal, if one exists. The
+    /// journal itself is the authority for the exact plan after a restart;
+    /// callers do not supply a replacement plan.
+    pub(in crate::control_store) async fn recover_retention(
+        &self,
+    ) -> UseResult<Option<ControlCapabilityPayloadRetentionResult>> {
+        let _maintenance = StateMaintenanceLock::new(self.state_root())
+            .acquire_exclusive()
+            .await?;
+        let Some(journal) =
+            journal::RetentionCoordinatorJournal::load_unbound(self.state_root()).await?
+        else {
+            return Ok(None);
+        };
+        let plan = journal.plan().clone();
+        let digest = journal.plan_digest().to_owned();
+        self.apply_retention_under_maintenance(&plan, &digest, Some(journal))
+            .await
+            .map(Some)
+    }
+
+    async fn apply_retention_under_maintenance(
+        &self,
+        plan: &ControlCapabilityPayloadRetentionPlan,
+        expected_plan_digest: &str,
+        existing_journal: Option<journal::RetentionCoordinatorJournal>,
+    ) -> UseResult<ControlCapabilityPayloadRetentionResult> {
+        plan.validate()?;
+        if !valid_sha256(expected_plan_digest) || plan.descriptor_digest()? != expected_plan_digest
+        {
+            return Err(coordinator_invalid(
+                "The confirmed Capability payload retention plan differs from its payload.",
+            ));
+        }
+
+        // Bind an already-persisted coordinator journal before touching either
+        // child journal. A caller cannot use a different plan to advance a
+        // recovery left by an earlier process.
+        let mut journal = match existing_journal {
+            Some(journal) => {
+                if journal.plan() != plan || journal.plan_digest() != expected_plan_digest {
+                    return Err(coordinator_stale(
+                        "The durable Capability payload retention journal belongs to another plan.",
+                    ));
+                }
+                Some(journal)
+            }
+            None => None,
+        };
+
+        // Both target inventories are checked before the first unlink. A
+        // stale second owner therefore cannot leave a newly-pruned first owner
+        // behind.
         self.catalog_store
             .ensure_retention_target_under_maintenance(
                 &plan.catalog_plan,
@@ -285,10 +351,29 @@ impl ControlCapabilityPayloadRetentionCoordinator {
             )
             .await?;
 
+        if journal.is_none()
+            && (!plan.catalog_plan.remove.is_empty()
+                || !plan.descriptor_snapshot_plan.remove.is_empty())
+        {
+            journal = Some(
+                journal::RetentionCoordinatorJournal::create(
+                    self.state_root(),
+                    plan,
+                    expected_plan_digest,
+                )
+                .await?,
+            );
+        }
+
         let catalog = self
             .catalog_store
             .apply_retention_under_maintenance(&plan.catalog_plan, plan.catalog_plan_digest.clone())
             .await?;
+        if let Some(progress) = journal.as_mut() {
+            if progress.is_prepared() {
+                progress.mark_catalog_applied().await?;
+            }
+        }
         let descriptor_snapshot = self
             .descriptor_snapshot_store
             .apply_retention_under_maintenance(
@@ -305,6 +390,9 @@ impl ControlCapabilityPayloadRetentionCoordinator {
             descriptor_snapshot,
         };
         result.validate(plan, expected_plan_digest)?;
+        if let Some(progress) = journal {
+            progress.retire().await?;
+        }
         Ok(result)
     }
 }
@@ -332,4 +420,40 @@ fn valid_sha256(value: &str) -> bool {
 
 fn coordinator_invalid(message: impl Into<String>) -> UseError {
     UseError::new(ERROR_INVALID, message)
+}
+
+fn coordinator_stale(message: impl Into<String>) -> UseError {
+    UseError::new(ERROR_STALE, message)
+}
+
+fn coordinator_journal_io(message: impl Into<String>) -> UseError {
+    UseError::new(ERROR_JOURNAL_IO, message)
+}
+
+/// Reject ordinary owner planning and publication while a cross-owner
+/// retention operation is recoverable from disk. This check is made while a
+/// caller holds its shared maintenance guard, so a coordinator cannot create
+/// the journal concurrently with a permitted mutation.
+pub(super) async fn ensure_no_pending_journal(state_root: &Path) -> UseResult<()> {
+    if journal::RetentionCoordinatorJournal::has_pending(state_root).await? {
+        return Err(coordinator_stale(
+            "A Capability payload retention coordination journal is pending; resume that exact plan before another mutation.",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub(super) async fn seed_test_journal(
+    state_root: &Path,
+    plan: &ControlCapabilityPayloadRetentionPlan,
+    plan_digest: &str,
+    catalog_applied: bool,
+) -> UseResult<()> {
+    let mut journal =
+        journal::RetentionCoordinatorJournal::create(state_root, plan, plan_digest).await?;
+    if catalog_applied {
+        journal.mark_catalog_applied().await?;
+    }
+    Ok(())
 }
