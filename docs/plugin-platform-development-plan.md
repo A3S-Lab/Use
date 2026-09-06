@@ -287,8 +287,9 @@ durable payload before composing an MCP endpoint.
   snapshot so old in-flight operations keep their exact lease while later
   requests on the same endpoint observe the new catalog. The
   `from_published`/`replace_published` paths additionally verify the exact
-  consumer projection against a durable `CapabilityGatewayCatalogStore`
-  publication before exposing it. The inactive Control kernel now provides the
+  consumer projection and complete source catalog against a durable
+  `CapabilityGatewayCatalogStore` publication before exposing it; replacement
+  uses a conditional source swap. The inactive Control kernel now provides the
   durable cursor binding; selecting it in production and implementing lease
   retirement remain lifecycle responsibilities.
 - [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python

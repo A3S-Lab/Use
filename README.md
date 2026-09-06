@@ -1981,7 +1981,9 @@ admission, waits for already-admitted operations under a deadline, and
 releases the factory's source lease so a lifecycle owner can enter an
 exclusive retention or restore fence. Its `from_published` and `replace_published` paths
 re-read the exact store publication and verify the negotiated consumer
-projection before a source becomes visible. The inactive Control composition
+projection and complete source catalog before a source becomes visible. Their
+replacement uses a conditional source swap, so a concurrent local cutover
+cannot be overwritten after publication verification. The inactive Control composition
 also provides `reopen_published_capability_gateway` and
 `replace_published_capability_gateway`: both derive the lease from durable
 Control authority, retain it inside the immutable Gateway server, and reject

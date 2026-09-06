@@ -31,6 +31,7 @@ const SESSION_STALE_ERROR: &str = "use.plugin.capability_gateway_session_stale";
 const SESSION_INCOMPATIBLE_ERROR: &str = "use.plugin.capability_gateway_session_incompatible";
 const SESSION_STATE_ERROR: &str = "use.plugin.capability_gateway_session_state";
 const SESSION_PUBLICATION_ERROR: &str = "use.plugin.capability_gateway_session_publication";
+const SESSION_CUTOVER_RACE_ERROR: &str = "use.plugin.capability_gateway_session_cutover_race";
 const SESSION_DRAIN_TIMEOUT_ERROR: &str = "use.plugin.capability_gateway_session_drain_timeout";
 
 const SESSION_RUNNING: u8 = 0;
@@ -520,8 +521,20 @@ impl CapabilityGatewaySessionFactory {
         store: &CapabilityGatewayCatalogStore,
         publication: &CapabilityGatewayCatalogPublication,
     ) -> UseResult<CapabilityGatewaySessionReplacement> {
+        // Capture the source before reading the durable payload. A concurrent
+        // local cutover during verification must win over this build rather
+        // than being overwritten by a stale same-generation server.
+        let expected = self.current_key()?;
         verify_published_server(store, publication, &next).await?;
-        self.replace(next).await
+        self
+            .replace_if_current(&expected, next)
+            .await?
+            .ok_or_else(|| {
+                UseError::new(
+                    SESSION_CUTOVER_RACE_ERROR,
+                    "The live Capability Gateway changed while its durable publication was being verified; retry the replacement.",
+                )
+            })
     }
 
     /// Build a live adapter that resolves the current immutable server at the
@@ -719,13 +732,19 @@ async fn verify_published_server(
                 "The durable catalog cannot be projected for this consumer.",
             )
         })?;
-    if projected != *server.catalog()
+    // Verify both layers: the visible catalog must be the exact negotiated
+    // projection, and the retained source must be the complete durable
+    // publication. Checking only the visible subset would allow an optional
+    // descriptor to be smuggled into the source and then influence lifecycle
+    // identity after negotiation filters it from discovery.
+    if *server.source_catalog() != published
+        || projected != *server.catalog()
         || server.catalog().installation() != &publication.installation
         || server.catalog().generation() != publication.generation
     {
         return Err(UseError::new(
             SESSION_PUBLICATION_ERROR,
-            "The live Gateway catalog does not match the durable publication.",
+            "The live Gateway source or negotiated catalog does not match the durable publication.",
         ));
     }
     Ok(())

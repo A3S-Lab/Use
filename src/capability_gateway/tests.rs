@@ -746,6 +746,30 @@ async fn gateway_session_factory_requires_a_durable_catalog_publication() {
     .await
     .unwrap();
 
+    // A generic consumer would not see an optional descriptor, but the
+    // source publication still must be exact. Otherwise a caller could hide
+    // extra source bytes behind negotiation and alter lifecycle identity.
+    let mut optional = test_named_tool_descriptor("optional", "Optional", '8');
+    optional.required_extensions = vec![CapabilityConsumerExtension::Flow];
+    let forged_source = CapabilityGatewayCatalog::new(
+        initial.installation().clone(),
+        initial.generation(),
+        vec![initial.descriptors()[0].clone(), optional],
+    )
+    .unwrap();
+    let error = CapabilityGatewaySessionFactory::from_published(
+        &store,
+        &initial_publication,
+        CapabilityGatewayMcpServer::new(forged_source, Arc::new(RecordingProvider::default()))
+            .unwrap(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_session_publication"
+    );
+
     let unpersisted =
         CapabilityGatewayMcpServer::new(next.clone(), Arc::new(RecordingProvider::default()))
             .unwrap();

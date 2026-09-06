@@ -1085,6 +1085,9 @@ Implementation note (2026-09-05): the session factory now also offers
 installation/generation/revision/digest from `CapabilityGatewayCatalogStore`,
 re-project it for the server's completed consumer negotiation, and reject a
 missing, forged, tampered, or unpersisted catalog before the in-memory swap.
+The check covers the complete source catalog as well as its negotiated view,
+and replacement uses a conditional source swap so a concurrent local cutover
+cannot be overwritten after verification.
 The unverified compatibility method remains available for hosts with another
 persistence authority; selecting the Control-bound publication and retiring
 payload leases remain lifecycle responsibilities.
