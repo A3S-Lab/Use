@@ -713,14 +713,15 @@ async fn control_gateway_reconciliation_swaps_from_the_prior_control_lease() {
 
     let prior_cursor = fixture.store.published_capability().await.unwrap().unwrap();
     let prior_lease = fixture.plane.reopen_published().await.unwrap().unwrap();
-    let factory = CapabilityGatewaySessionFactory::new(
+    let prior_server =
         super::composition::ControlStoreRuntimeComposition::gateway_server_from_control_lease(
             prior_lease,
             Arc::new(EmptyGatewayProvider),
             CapabilityGatewayCompositionOptions::default(),
         )
-        .unwrap(),
-    );
+        .unwrap();
+    let factory = CapabilityGatewaySessionFactory::new(prior_server.clone());
+    let explicit_replace_factory = CapabilityGatewaySessionFactory::new(prior_server);
     let prior_key = factory.current_key().unwrap();
 
     let prior = fixture.store.current_generation().await.unwrap().unwrap();
@@ -809,6 +810,27 @@ async fn control_gateway_reconciliation_swaps_from_the_prior_control_lease() {
     assert_eq!(replacement.current.revision, target_cursor.catalog.revision);
     assert_eq!(replacement.current.digest, target_cursor.catalog.digest);
     assert_eq!(factory.current_key().unwrap(), replacement.current);
+
+    let explicit = composition
+        .replace_published_capability_gateway(
+            &explicit_replace_factory,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap()
+        .expect("the confirmed target publication must replace the prior source");
+    assert_eq!(explicit.previous, prior_key);
+    assert_eq!(
+        explicit.current.generation,
+        target_cursor.capability_generation
+    );
+    assert_eq!(explicit.current.revision, target_cursor.catalog.revision);
+    assert_eq!(explicit.current.digest, target_cursor.catalog.digest);
+    assert_eq!(
+        explicit_replace_factory.current_key().unwrap(),
+        explicit.current
+    );
 }
 
 #[tokio::test]
