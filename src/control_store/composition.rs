@@ -13,15 +13,19 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use a3s_runtime::RuntimeClientRegistry;
-use a3s_use_core::{PluginOperationPlanEnvelope, PluginSurfaceRef, UseError, UseResult};
+use a3s_use_core::{
+    CapabilityGatewayCatalog, PluginOperationPlanEnvelope, PluginSurfaceRef, UseError, UseResult,
+};
 use a3s_use_extension::{
     ArtifactStore, ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock,
 };
+use async_trait::async_trait;
 
 #[cfg(feature = "mcp")]
 use crate::capability_gateway::{
-    CapabilityGatewayCompositionOptions, CapabilityGatewayInvocationProvider,
-    CapabilityGatewayMcpServer, CapabilityGatewaySessionFactory,
+    CapabilityGatewayCompositionOptions, CapabilityGatewayGenerationLeaseMode,
+    CapabilityGatewayInvocationProvider, CapabilityGatewayMcpServer,
+    CapabilityGatewaySessionFactory, CapabilityGatewaySessionKey,
     CapabilityGatewaySessionReplacement,
 };
 
@@ -40,7 +44,8 @@ use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
 use super::effect_port::{ControlCapabilityCatalogProjectionPort, ControlFlowEffectPort};
 use super::model::{
     ControlEffectKind, ControlEffectOwner, ControlEffectSubject, ControlGeneration,
-    ControlOperationRecord, ControlTransition, ReviewedControlOperation,
+    ControlOperationRecord, ControlPublishedCapabilityCursor, ControlTransition,
+    ReviewedControlOperation,
 };
 use super::operation_admission::reviewed_cognitive_package_operation;
 use super::{ControlStore, ControlStoreMetadata};
@@ -51,6 +56,7 @@ use crate::cognitive_package::{
 use crate::okf_knowledge::{
     OkfKnowledgeBindingStore, OkfKnowledgeClient, SqliteOkfKnowledgeAdapter,
 };
+use crate::plugin_lifecycle::PluginGraphCapabilityCutoverActivation;
 use crate::plugin_runtime::{
     CommittedRuntimeSurfaceResolver, RuntimeBindingStore, RuntimeSurfacePlanPublication,
     RuntimeSurfacePlanStore,
@@ -94,6 +100,32 @@ pub(in crate::control_store) struct ControlStoreRuntimeComposition {
     capability_plane: Arc<ControlCapabilityPlaneEffectPort>,
     artifact_store: ArtifactStore,
     effects: ControlEffectRuntime,
+}
+
+/// Result of reconciling a live Gateway endpoint with the durable Control
+/// publication.  An unchanged endpoint is reported separately so recovery
+/// does not acquire a second package-generation lease or emit a redundant
+/// list-change notification.
+#[cfg(feature = "mcp")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::control_store) enum ControlCapabilityGatewayReconciliation {
+    Unchanged(CapabilityGatewaySessionKey),
+    Replaced(CapabilityGatewaySessionReplacement),
+}
+
+/// Lifecycle activation adapter that binds the graph coordinator's
+/// post-publication hook to the Control-owned Gateway session factory.
+///
+/// The factory must already be seeded from Control authority.  Activation
+/// then reopens the current durable cursor and swaps the endpoint before the
+/// graph coordinator starts draining prior package generations.
+#[cfg(feature = "mcp")]
+#[derive(Clone)]
+pub(in crate::control_store) struct ControlCapabilityGatewayCutoverActivation {
+    composition: ControlStoreRuntimeComposition,
+    factory: CapabilityGatewaySessionFactory,
+    provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+    options: CapabilityGatewayCompositionOptions,
 }
 
 impl std::fmt::Debug for ControlStoreRuntimeComposition {
@@ -276,6 +308,82 @@ impl ControlStoreRuntimeComposition {
         Ok(Some(factory.replace(server).await?))
     }
 
+    /// Reconcile a live Control-bound Gateway endpoint with the durable
+    /// publication, without replacing an endpoint that already serves the
+    /// exact same immutable catalog.  A newer in-memory endpoint is rejected
+    /// rather than silently moving the durable authority backwards; callers
+    /// can retry after refreshing their Control view.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) async fn reconcile_published_capability_gateway(
+        &self,
+        factory: &CapabilityGatewaySessionFactory,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> UseResult<Option<ControlCapabilityGatewayReconciliation>> {
+        let Some(cursor) = self.store.published_capability().await? else {
+            return Ok(None);
+        };
+        let expected = gateway_session_key_from_cursor(&cursor)?;
+        let current = factory.current_key()?;
+        if factory.current().generation_lease_mode()
+            != CapabilityGatewayGenerationLeaseMode::External
+        {
+            return Err(UseError::new(
+                "use.control.capability_gateway_activation_invalid",
+                "The live Gateway endpoint is not bound to the Control generation lease authority.",
+            ));
+        }
+        if current == expected {
+            return Ok(Some(ControlCapabilityGatewayReconciliation::Unchanged(
+                current,
+            )));
+        }
+        if current.generation > expected.generation {
+            return Err(UseError::new(
+                "use.control.capability_gateway_publication_stale",
+                "The durable Control publication is older than the live Gateway endpoint.",
+            ));
+        }
+
+        let Some(lease) = self.capability_plane.reopen_published().await? else {
+            return Ok(None);
+        };
+        let server = Self::gateway_server_from_control_lease(lease, provider, options)?;
+        let next = gateway_session_key(server.catalog())?;
+        let current = factory.current_key()?;
+        if current == next {
+            return Ok(Some(ControlCapabilityGatewayReconciliation::Unchanged(
+                current,
+            )));
+        }
+        if current.generation > next.generation {
+            return Err(UseError::new(
+                "use.control.capability_gateway_publication_stale",
+                "The durable Control publication is older than the live Gateway endpoint.",
+            ));
+        }
+        Ok(Some(ControlCapabilityGatewayReconciliation::Replaced(
+            factory.replace(server).await?,
+        )))
+    }
+
+    /// Build the graph-lifecycle activation adapter for a Gateway factory
+    /// that was seeded from this composition's Control authority.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) fn gateway_cutover_activation(
+        &self,
+        factory: CapabilityGatewaySessionFactory,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> Arc<dyn PluginGraphCapabilityCutoverActivation> {
+        Arc::new(ControlCapabilityGatewayCutoverActivation {
+            composition: self.clone(),
+            factory,
+            provider,
+            options,
+        })
+    }
+
     #[cfg(feature = "mcp")]
     pub(in crate::control_store) fn gateway_server_from_control_lease(
         lease: ControlCapabilitySnapshotLease,
@@ -441,6 +549,53 @@ impl ControlStoreRuntimeComposition {
             .commit_transition_under_maintenance(transition)
             .await
     }
+}
+
+#[cfg(feature = "mcp")]
+#[async_trait]
+impl PluginGraphCapabilityCutoverActivation for ControlCapabilityGatewayCutoverActivation {
+    async fn activate_capability_cutover(&self, _idempotency_key: &str) -> UseResult<()> {
+        self.composition
+            .reconcile_published_capability_gateway(
+                &self.factory,
+                Arc::clone(&self.provider),
+                self.options.clone(),
+            )
+            .await?
+            .ok_or_else(|| {
+                UseError::new(
+                    "use.control.capability_gateway_publication_missing",
+                    "The lifecycle cutover has no durable Control Gateway publication to activate.",
+                )
+            })?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "mcp")]
+fn gateway_session_key_from_cursor(
+    cursor: &ControlPublishedCapabilityCursor,
+) -> UseResult<CapabilityGatewaySessionKey> {
+    cursor.validate()?;
+    Ok(CapabilityGatewaySessionKey {
+        installation: cursor.installation.clone(),
+        generation: cursor.catalog.generation,
+        revision: cursor.catalog.revision.clone(),
+        digest: cursor.catalog.digest.clone(),
+    })
+}
+
+#[cfg(feature = "mcp")]
+fn gateway_session_key(
+    catalog: &CapabilityGatewayCatalog,
+) -> UseResult<CapabilityGatewaySessionKey> {
+    catalog.validate()?;
+    Ok(CapabilityGatewaySessionKey {
+        installation: catalog.installation().clone(),
+        generation: catalog.generation(),
+        revision: catalog.revision().to_owned(),
+        digest: catalog.descriptor_digest()?,
+    })
 }
 
 /// Validate the publication set against the target Runtime prepare inventory.

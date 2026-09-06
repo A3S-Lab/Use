@@ -1283,6 +1283,15 @@ cannot replace a leased endpoint with an unleased server. Production live
 Control activation, owner registration, lease drain, lifecycle retention
 policy, and Registry/TUF authority binding remain open.
 
+Implementation note (2026-09-06): graph lifecycle now exposes the
+replay-safe `PluginGraphCapabilityCutoverActivation` hook. It is invoked after
+the durable capability publish (or its exact replay) and before any prior
+generation drain. The inactive Control composition supplies a concrete
+adapter that reopens the Control cursor, requires an external Control lease on
+the live factory, rejects a newer in-memory endpoint, and treats an identical
+catalog as an idempotent no-op. Production hosts still need to attach this
+adapter and select retention from the complete live-lease set.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

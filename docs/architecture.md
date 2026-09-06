@@ -209,7 +209,13 @@ reacquires the full package-generation lease set, and rejects a raced cutover
 instead of exposing a mixed graph. The composition can seed or replace a live
 `CapabilityGatewaySessionFactory` from that lease; an internal generation
 guard is retained by every cloned server and makes lease mode part of the
-replacement compatibility check.
+replacement compatibility check. The package-graph coordinator now offers a
+replay-safe `PluginGraphCapabilityCutoverActivation` boundary that runs after
+durable publication and before prior-generation drain. The Control
+composition supplies an adapter that reconciles the durable cursor, rejects an
+unleased or newer endpoint, and treats an already matching catalog as a
+no-op. The adapter is still an embedding seam until production lifecycle hosts
+attach it and derive payload retention from live leases.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,

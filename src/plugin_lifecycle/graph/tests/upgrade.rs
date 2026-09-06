@@ -68,6 +68,36 @@ async fn dependency_closure_upgrade_cuts_over_once_then_retires_prior_generation
 }
 
 #[tokio::test]
+async fn live_capability_activation_precedes_prior_generation_drain() {
+    let fixture = upgrade_graph_fixture();
+    let key = publication_key(&fixture.envelope).unwrap();
+    let graph = PluginPackageGraphLifecycleCoordinator::new(fixture.host.clone())
+        .with_capability_cutover_activation(fixture.host.clone());
+
+    graph
+        .apply_upgrade(
+            &fixture.envelope,
+            &fixture.prior_lock,
+            &fixture.candidates,
+            &fixture.retirements,
+            || 1,
+        )
+        .await
+        .unwrap();
+
+    let calls = fixture.host.calls.lock().await;
+    let activation = calls
+        .iter()
+        .position(|call| call == &format!("activate:{key}"))
+        .expect("the live endpoint must be activated after publication");
+    let first_drain = calls
+        .iter()
+        .position(|call| call.ends_with(":drain"))
+        .expect("the prior generation must be drained");
+    assert!(activation < first_drain);
+}
+
+#[tokio::test]
 async fn interrupted_mixed_rollback_states_converge_before_plan_rejection() {
     let fixture = upgrade_graph_fixture();
     for candidate in &fixture.candidates {

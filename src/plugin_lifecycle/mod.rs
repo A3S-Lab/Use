@@ -34,9 +34,9 @@ pub use diagnostic::{
 pub use grant::{PluginCapabilityCutoverEvidence, PluginGrantLifecycleUnit};
 pub(crate) use graph::operation_cutover_key;
 pub use graph::{
-    PluginGraphCapabilityLifecycleHost, PluginGraphCapabilityPublication,
-    PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
-    PluginPackagePublicationEvidence, PluginPackageRollbackEvidence,
+    PluginGraphCapabilityCutoverActivation, PluginGraphCapabilityLifecycleHost,
+    PluginGraphCapabilityPublication, PluginPackageGraphLifecycleCoordinator,
+    PluginPackageLifecycleUnit, PluginPackagePublicationEvidence, PluginPackageRollbackEvidence,
 };
 pub use journal::{
     PluginLifecycleCheckpointOutcome, PluginLifecycleCheckpointReceipt, PluginLifecycleFailure,
