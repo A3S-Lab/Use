@@ -1,6 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+#[cfg(feature = "mcp")]
+use crate::plugin_runtime::RuntimeServiceBindingReceipt;
+#[cfg(feature = "mcp")]
+use a3s_runtime::contract::{RuntimeObservation, RuntimeServiceEndpoint};
 use a3s_use_core::{
     CapabilityDescriptionProof, CapabilityDescriptionSignatureAlgorithm,
     CapabilityDescriptionSignaturePayload, CapabilityDescriptor, CapabilityDescriptorKind,
@@ -9,6 +13,8 @@ use a3s_use_core::{
     SignedCapabilityDescription,
 };
 use a3s_use_extension::{CapabilityDescriptionTrustKey, CapabilityDescriptionTrustStore};
+#[cfg(feature = "mcp")]
+use a3s_use_extension::{PluginMcpSurface, ToolSurface};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 
 #[cfg(feature = "mcp")]
@@ -32,6 +38,8 @@ use super::effect_owner::capability_plane::{
     ControlCapabilitySignerPolicy,
 };
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
+#[cfg(feature = "mcp")]
+use super::effect_owner::runtime::ControlRuntimeServiceReadinessPort;
 use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
 use super::effect_port::{
     ControlCapabilityCatalogProjectionPort, ControlEffectPortOutcome, ControlFlowEffectPort,
@@ -74,6 +82,67 @@ impl CapabilityGatewayInvocationProvider for EmptyGatewayProvider {
         _context: &CapabilityGatewayRequestContext,
     ) -> a3s_use_core::UseResult<serde_json::Value> {
         Ok(serde_json::json!({"ok": true}))
+    }
+}
+
+#[cfg(feature = "mcp")]
+struct CompositionReadiness;
+
+#[cfg(feature = "mcp")]
+#[async_trait::async_trait]
+impl ControlRuntimeServiceReadinessPort for CompositionReadiness {
+    async fn bind_tool_service(
+        &self,
+        _surface: &ToolSurface,
+        _plan: &crate::plugin_runtime::RuntimeSurfacePlan,
+        _observation: &RuntimeObservation,
+        _runtime_endpoint: &RuntimeServiceEndpoint,
+        _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
+    ) -> a3s_use_core::UseResult<crate::plugin_runtime::RuntimeEndpointRef> {
+        Err(a3s_use_core::UseError::new(
+            "provider.test_unavailable",
+            "The composition test does not bind Runtime services.",
+        ))
+    }
+
+    async fn bind_mcp_service(
+        &self,
+        _surface: &PluginMcpSurface,
+        _plan: &crate::plugin_runtime::RuntimeSurfacePlan,
+        _observation: &RuntimeObservation,
+        _runtime_endpoint: &RuntimeServiceEndpoint,
+        _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
+    ) -> a3s_use_core::UseResult<super::effect_owner::runtime::ControlRuntimeMcpReadiness> {
+        Err(a3s_use_core::UseError::new(
+            "provider.test_unavailable",
+            "The composition test does not bind Runtime services.",
+        ))
+    }
+
+    async fn drain_service(
+        &self,
+        _receipt: &RuntimeServiceBindingReceipt,
+        _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
+    ) -> a3s_use_core::UseResult<()> {
+        Err(a3s_use_core::UseError::new(
+            "provider.test_unavailable",
+            "The composition test does not drain Runtime services.",
+        ))
+    }
+
+    async fn remove_service(
+        &self,
+        _receipt: &RuntimeServiceBindingReceipt,
+        _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
+    ) -> a3s_use_core::UseResult<()> {
+        Err(a3s_use_core::UseError::new(
+            "provider.test_unavailable",
+            "The composition test does not remove Runtime services.",
+        ))
     }
 }
 
@@ -340,6 +409,71 @@ async fn reopened_control_lease_seeds_a_lease_bound_gateway_session() {
     assert!(server.has_generation_lease());
     let factory = CapabilityGatewaySessionFactory::new(server);
     assert!(factory.current().has_generation_lease());
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn control_gateway_reconciliation_is_idempotent_for_the_current_cursor() {
+    let fixture = installed_capability_plane("operation:capability-plane:gateway-reconcile").await;
+    let paths = fixture._owner_fixture.paths.clone();
+    let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        super::composition::ControlEffectCompositionDependencies {
+            runtime_registry: Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: Arc::new(CompositionReadiness),
+            catalog_projection: Arc::new(EmptyCatalogProjection),
+            flow: Arc::new(UnexpectedDynamicSurfacePort),
+            clock: Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+
+    let lease = fixture.plane.reopen_published().await.unwrap().unwrap();
+    let factory = CapabilityGatewaySessionFactory::new(
+        super::composition::ControlStoreRuntimeComposition::gateway_server_from_control_lease(
+            lease,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .unwrap(),
+    );
+    let first = composition
+        .reconcile_published_capability_gateway(
+            &factory,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        first,
+        Some(super::composition::ControlCapabilityGatewayReconciliation::Unchanged(_))
+    ));
+    let second = composition
+        .reconcile_published_capability_gateway(
+            &factory,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        second,
+        Some(super::composition::ControlCapabilityGatewayReconciliation::Unchanged(_))
+    ));
+
+    let activation = composition.gateway_cutover_activation(
+        factory,
+        Arc::new(EmptyGatewayProvider),
+        CapabilityGatewayCompositionOptions::default(),
+    );
+    crate::plugin_lifecycle::PluginGraphCapabilityCutoverActivation::activate_capability_cutover(
+        activation.as_ref(),
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

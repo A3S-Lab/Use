@@ -945,5 +945,13 @@ fn upgrade_graph_fixture() -> UpgradeGraphFixture {
     }
 }
 
+#[async_trait]
+impl PluginGraphCapabilityCutoverActivation for RecordingHost {
+    async fn activate_capability_cutover(&self, key: &str) -> UseResult<()> {
+        self.calls.lock().await.push(format!("activate:{key}"));
+        Ok(())
+    }
+}
+
 mod install;
 mod upgrade;

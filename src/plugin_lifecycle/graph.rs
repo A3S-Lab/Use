@@ -96,6 +96,19 @@ pub struct PluginGraphCapabilityPublication {
     cutover: PluginCapabilityCutoverEvidence,
 }
 
+/// Host-owned activation boundary for a durable capability cutover.
+///
+/// A graph publication is not enough to make a live endpoint safe: new
+/// sessions must route to the newly published immutable catalog before any
+/// prior-generation calls are drained. Implementations must be idempotent
+/// and recover from the durable publication identified by `idempotency_key`;
+/// the callback may be invoked again after a process stop between publication
+/// and lifecycle checkpoint persistence.
+#[async_trait]
+pub trait PluginGraphCapabilityCutoverActivation: Send + Sync {
+    async fn activate_capability_cutover(&self, idempotency_key: &str) -> UseResult<()>;
+}
+
 impl PluginGraphCapabilityPublication {
     pub fn new(
         packages: Vec<PluginPackagePublicationEvidence>,
@@ -221,11 +234,38 @@ pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
 #[derive(Clone)]
 pub struct PluginPackageGraphLifecycleCoordinator {
     publication: Arc<dyn PluginGraphCapabilityLifecycleHost>,
+    activation: Option<Arc<dyn PluginGraphCapabilityCutoverActivation>>,
 }
 
 impl PluginPackageGraphLifecycleCoordinator {
     pub fn new(publication: Arc<dyn PluginGraphCapabilityLifecycleHost>) -> Self {
-        Self { publication }
+        Self {
+            publication,
+            activation: None,
+        }
+    }
+
+    /// Attach the host-owned live-endpoint activation boundary.
+    ///
+    /// The default remains a no-op for hosts that do not expose a live
+    /// Gateway. When present, activation is called after the durable
+    /// publication (including an exact replay) and before any old-generation
+    /// drain or retirement starts.
+    pub fn with_capability_cutover_activation(
+        mut self,
+        activation: Arc<dyn PluginGraphCapabilityCutoverActivation>,
+    ) -> Self {
+        self.activation = Some(activation);
+        self
+    }
+
+    async fn activate_capability_cutover(&self, idempotency_key: &str) -> UseResult<()> {
+        if let Some(activation) = &self.activation {
+            activation
+                .activate_capability_cutover(idempotency_key)
+                .await?;
+        }
+        Ok(())
     }
 
     pub async fn apply_install(
@@ -295,6 +335,7 @@ impl PluginPackageGraphLifecycleCoordinator {
         let cutover_key = publication_key(envelope)?;
         if let Some(grants) = grants {
             if grants.has_cutover().await? {
+                self.activate_capability_cutover(&cutover_key).await?;
                 let records = completed_publication_records(&ordered).await?;
                 grants.retire().await?;
                 self.publication
@@ -343,7 +384,10 @@ impl PluginPackageGraphLifecycleCoordinator {
             grants
                 .commit_cutover(&cutover, committed_at_ms, committed_at_ms)
                 .await?;
+            self.activate_capability_cutover(&cutover_key).await?;
             grants.retire().await?;
+        } else {
+            self.activate_capability_cutover(&cutover_key).await?;
         }
         self.publication
             .complete_capability_cutover(&cutover_key)
@@ -457,6 +501,8 @@ impl PluginPackageGraphLifecycleCoordinator {
                     .await?;
             }
         }
+
+        self.activate_capability_cutover(&cutover_key).await?;
 
         for unit in &ordered {
             unit.coordinator
@@ -748,6 +794,8 @@ impl PluginPackageGraphLifecycleCoordinator {
                     .await?;
             }
         }
+
+        self.activate_capability_cutover(&cutover_key).await?;
 
         for package in prior_lock.removal_order()? {
             let Some(transition) = envelope

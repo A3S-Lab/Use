@@ -125,8 +125,11 @@ The implementation and fixtures exercise the product model directly:
   assigned-provider preflight, host authority, canonical Grant semantics, and
   drift-checked final selection.
 - [`PluginPackageGraphLifecycleCoordinator`](src/plugin_lifecycle/graph.rs)
-  prepares dependency closures, performs one durable Registry cutover, drains
-  accepted calls, and retires exact prior generations.
+  prepares dependency closures, performs one durable Registry cutover, invokes
+  an optional host-owned Gateway activation boundary, drains accepted calls,
+  and retires exact prior generations. The activation hook is replay-safe and
+  runs before any prior-generation drain; the inactive Control composition
+  supplies a Control-lease-backed adapter for live session replacement.
 - [`RuntimeTaskDispatcher`](src/plugin_runtime/task_dispatch.rs) reopens the
   exact v4 Task binding and provider selected at review time, while capability
   snapshot v5 publishes only matching release-backed Tasks with complete
