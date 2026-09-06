@@ -354,6 +354,18 @@ pub(super) async fn apply_retention(
     let _maintenance = StateMaintenanceLock::new(&store.state_root)
         .acquire_shared()
         .await?;
+    apply_retention_under_maintenance(store, plan, expected_plan_digest).await
+}
+
+/// Apply a reviewed retention plan while an outer coordinator owns the
+/// installation-wide maintenance fence. The owner mutation lock and durable
+/// journal still provide the per-record crash boundary; this seam only avoids
+/// taking a second state lock during a coordinated operation.
+pub(super) async fn apply_retention_under_maintenance(
+    store: &ControlCapabilityDescriptorSnapshotStore,
+    plan: &ControlCapabilityDescriptorSnapshotRetentionPlan,
+    expected_plan_digest: &str,
+) -> UseResult<ControlCapabilityDescriptorSnapshotRetentionResult> {
     if !super::path_ancestors_exist(&store.state_root).await?
         || !super::validate_existing_directory(&store.root).await?
     {
@@ -530,6 +542,60 @@ pub(super) async fn apply_retention(
             ));
         }
     }
+}
+
+/// Validate that the live descriptor-snapshot owner can resume or apply the
+/// reviewed plan while an outer coordinator owns the installation fence. No
+/// snapshot is removed here; an already durable in-flight checkpoint may be
+/// reconciled when its unlink is observable.
+pub(super) async fn ensure_retention_target_under_maintenance(
+    store: &ControlCapabilityDescriptorSnapshotStore,
+    plan: &ControlCapabilityDescriptorSnapshotRetentionPlan,
+    expected_plan_digest: &str,
+) -> UseResult<()> {
+    store.validate_configuration()?;
+    plan.validate()?;
+    if plan.installation != store.installation {
+        return Err(retention_stale(
+            "The descriptor snapshot retention plan belongs to another installation.",
+        ));
+    }
+    if !valid_digest(expected_plan_digest) || plan.descriptor_digest()? != expected_plan_digest {
+        return Err(retention_stale(
+            "The confirmed descriptor snapshot retention plan does not match its payload.",
+        ));
+    }
+    if !super::path_ancestors_exist(&store.state_root).await?
+        || !super::validate_existing_directory(&store.root).await?
+    {
+        if plan.before_record_count == 0 && plan.retain.is_empty() {
+            return Ok(());
+        }
+        return Err(retention_stale(
+            "The descriptor snapshot state root disappeared after the retention plan was reviewed.",
+        ));
+    }
+
+    let _mutation = store.acquire_mutation().await?;
+    let records = super::scan_records(&store.root, &store.installation).await?;
+    let current = entries_from_snapshots(&records, &store.installation)?;
+    let mut journal = RetentionJournal::load(&store.root, plan, expected_plan_digest).await?;
+    if let Some(mut journal) = journal.take() {
+        reconcile_journal(&mut journal, &current).await?;
+        return Ok(());
+    }
+    if current == plan.retain {
+        return Ok(());
+    }
+    if inventory_digest(&current)? != plan.before_inventory_digest
+        || current.len() != usize::try_from(plan.before_record_count).unwrap_or(usize::MAX)
+        || !same_partition(&current, plan)
+    {
+        return Err(retention_stale(
+            "The descriptor snapshot inventory changed after the retention plan was reviewed.",
+        ));
+    }
+    Ok(())
 }
 
 pub(super) async fn recover_retention(

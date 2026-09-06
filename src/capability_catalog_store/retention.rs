@@ -156,6 +156,40 @@ pub struct CapabilityGatewayCatalogRetentionResult {
     pub retained_record_count: u64,
 }
 
+impl CapabilityGatewayCatalogRetentionResult {
+    /// Validate portable result evidence before a coordinator binds it to a
+    /// reviewed retention plan.
+    pub fn validate(&self) -> UseResult<()> {
+        self.installation.validate()?;
+        if self.schema != CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA
+            || super::validate_digest(&self.plan_digest).is_err()
+            || self.removed.len() > MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS
+            || self.retained_record_count > MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS as u64
+            || self.changed != !self.removed.is_empty()
+            || self
+                .retained_record_count
+                .saturating_add(u64::try_from(self.removed.len()).unwrap_or(u64::MAX))
+                > MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS as u64
+        {
+            return Err(retention_invalid(
+                "The catalog-retention result is invalid.",
+            ));
+        }
+        validate_entries(&self.removed)?;
+        let bytes = serde_json::to_vec(self).map_err(|error| {
+            retention_invalid(format!(
+                "The catalog-retention result cannot be encoded: {error}"
+            ))
+        })?;
+        if bytes.len() > MAX_PLAN_BYTES {
+            return Err(retention_invalid(
+                "The catalog-retention result exceeds its byte bound.",
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl CapabilityGatewayCatalogStore {
     /// Build a retention plan while holding the same mutation boundary used by
     /// publication. `retain_digests` must name every payload that the
@@ -207,6 +241,19 @@ impl CapabilityGatewayCatalogStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        self.apply_retention_under_maintenance(plan, actual_plan_digest)
+            .await
+    }
+
+    /// Apply a reviewed retention plan while the caller owns the
+    /// installation-wide maintenance fence. The owner mutation lock and its
+    /// durable journal still provide the per-record crash boundary; this seam
+    /// only prevents a second owner from interleaving a coordinated operation.
+    pub(crate) async fn apply_retention_under_maintenance(
+        &self,
+        plan: &CapabilityGatewayCatalogRetentionPlan,
+        actual_plan_digest: String,
+    ) -> UseResult<CapabilityGatewayCatalogRetentionResult> {
         let Some((state_root, root)) = self.existing_physical_paths().await? else {
             if plan.before_record_count == 0 && plan.retain.is_empty() {
                 return Ok(CapabilityGatewayCatalogRetentionResult {
@@ -389,6 +436,60 @@ impl CapabilityGatewayCatalogStore {
                 ));
             }
         }
+    }
+
+    /// Validate that the live catalog owner can resume or apply the reviewed
+    /// plan while an outer coordinator owns the installation maintenance
+    /// fence. This method never unlinks a record; it only reconciles an
+    /// already durable in-flight checkpoint when the corresponding unlink is
+    /// observable.
+    pub(crate) async fn ensure_retention_target_under_maintenance(
+        &self,
+        plan: &CapabilityGatewayCatalogRetentionPlan,
+        expected_plan_digest: &str,
+    ) -> UseResult<()> {
+        plan.validate()?;
+        super::validate_digest(expected_plan_digest)?;
+        if plan.installation != self.installation {
+            return Err(retention_invalid(
+                "The catalog-retention plan belongs to another installation.",
+            ));
+        }
+        if plan.descriptor_digest()? != expected_plan_digest {
+            return Err(retention_stale(
+                "The confirmed catalog-retention plan digest does not match its payload.",
+            ));
+        }
+
+        let Some((state_root, root)) = self.existing_physical_paths().await? else {
+            if plan.before_record_count == 0 && plan.retain.is_empty() {
+                return Ok(());
+            }
+            return Err(retention_stale(
+                "The catalog state root disappeared after the retention plan was reviewed.",
+            ));
+        };
+        let _mutation = self.acquire_mutation(&state_root, &root).await?;
+        super::validate_store_layout(&root).await?;
+        let records = self.scan_records(&root).await?;
+        let current = entries_from_records(&records)?;
+        let mut journal = RetentionJournal::load(&root, plan, expected_plan_digest).await?;
+        if let Some(mut journal) = journal.take() {
+            reconcile_journal(&mut journal, &current).await?;
+            return Ok(());
+        }
+        if current == plan.retain {
+            return Ok(());
+        }
+        if inventory_digest(&current)? != plan.before_inventory_digest
+            || current.len() != usize::try_from(plan.before_record_count).unwrap_or(usize::MAX)
+            || !same_partition(&current, plan)
+        {
+            return Err(retention_stale(
+                "The catalog inventory changed after the retention plan was reviewed.",
+            ));
+        }
+        Ok(())
     }
 
     /// Resume the durable retention operation left by an interrupted process.

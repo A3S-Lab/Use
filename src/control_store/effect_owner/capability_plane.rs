@@ -30,6 +30,10 @@ mod payload_restore;
 #[cfg(test)]
 #[path = "capability_plane/payload_restore_tests.rs"]
 mod payload_restore_tests;
+mod payload_retention;
+#[cfg(test)]
+#[path = "capability_plane/payload_retention_tests.rs"]
+mod payload_retention_tests;
 #[cfg(test)]
 mod tests;
 
@@ -63,6 +67,12 @@ pub(in crate::control_store) use payload_restore::{
     ControlCapabilityPayloadRestoreCoordinator, ControlCapabilityPayloadRestorePlan,
     ControlCapabilityPayloadRestoreResult, CONTROL_CAPABILITY_PAYLOAD_RESTORE_PLAN_SCHEMA,
     CONTROL_CAPABILITY_PAYLOAD_RESTORE_RESULT_SCHEMA,
+};
+#[allow(unused_imports)]
+pub(in crate::control_store) use payload_retention::{
+    ControlCapabilityPayloadRetentionCoordinator, ControlCapabilityPayloadRetentionPlan,
+    ControlCapabilityPayloadRetentionResult, CONTROL_CAPABILITY_PAYLOAD_RETENTION_PLAN_SCHEMA,
+    CONTROL_CAPABILITY_PAYLOAD_RETENTION_RESULT_SCHEMA,
 };
 
 const CATALOG_BINDING_ERROR: &str = "use.control.capability_catalog_binding_invalid";

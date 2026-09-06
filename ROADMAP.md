@@ -656,11 +656,12 @@ an unpublished prior incarnation and an exclusive lock, safely deferring until
 accepted calls release it. Immutable publication is no-follow, no-replace, and
 crash-replayable. The Index and lease files remain derived operational state;
 the legacy coordinated inventory now registers and verifies the catalog and
-descriptor-snapshot payloads, while production owner-native restore/retention
-still remains open. The owner-native restore boundary now also has a
+descriptor-snapshot payloads. The owner-native restore boundary now also has a
 `ControlCapabilityPayloadRestoreCoordinator` that binds both plans under one
 exclusive fence, preflights both targets, and replays fixed-order activation.
-A real
+A matching `ControlCapabilityPayloadRetentionCoordinator` now binds both
+retention plans under one exclusive fence, preflights both inventories and
+pending journals before the first unlink, and replays fixed-order deletion. A real
 composition test joins Knowledge, Skill, catalog/Index publication, exact
 payload admission, stale admission, and same-key drain retry. The
 inactive ADR-003 step-3 qualification now also includes a committed-authority
@@ -1183,9 +1184,10 @@ expiry, revocation, substitution, and proof/envelope mismatch fail closed. The
 legacy v1 proof-only snapshot remains an explicit compatibility path and is
 not allowed to consume a signed v2 record. This closes the Control
 proof-snapshot admission mechanism in the inactive kernel; official
-Registry/TUF key-source binding, production owner-native restore/retention
-activation, and Registry-to-Control/Runtime/receipt wiring remain release
-gates.
+Registry/TUF key-source binding, production owner-native restore activation,
+and Registry-to-Control/Runtime/receipt wiring remain release gates. The
+paired owner-retention coordinator is qualified below, but lifecycle-selected
+retention policy is still a production authority gate.
 
 Implementation note (2026-09-05): coordinated state backup now has an explicit
 `CapabilityPayloads` family for the two immutable Capability Gateway owners.
@@ -1194,8 +1196,8 @@ layouts, verifies installation binding, canonical bytes, and content-addressed
 digests during inventory and archive verification, and rejects unknown paths,
 staging residue, mutation locks, and retention journals. This is a qualified
 legacy inventory/restore-plan boundary, not the A2 owner-registry cutover:
-production clean-target activation, owner retention policy, and current
-Registry/TUF trust revalidation on signed replay remain required.
+production clean-target activation, lifecycle owner retention policy, and
+current Registry/TUF trust revalidation on signed replay remain required.
 
 Implementation note (2026-09-05): Artifact Reachability now traverses the
 same Capability Gateway payload-owner tree instead of silently ignoring the
@@ -1215,7 +1217,13 @@ repairs only a torn journal tail, and blocks publication or inspection while
 the journal is pending. The non-empty inventory invariant prevents an empty
 protection set from deleting every snapshot. Production Control owner
 registration, clean-target restore activation, and Registry/TUF policy wiring
-remain separate gates.
+remain separate gates. `ControlCapabilityPayloadRetentionCoordinator` now
+joins this owner with the Gateway catalog: it binds both child plans to one
+canonical digest, preflights both inventories and exact pending journals under
+one exclusive maintenance fence, and resumes catalog-then-descriptor deletion
+after an interruption. The coordinator is recoverable ordered deletion, not a
+cross-directory atomic transaction; lifecycle retention policy and production
+owner registration remain outside it.
 
 Implementation note (2026-09-06): `CapabilityGatewayCatalogStore` now also
 exposes an owner-native clean-target restore boundary. A reviewed plan binds
@@ -1249,7 +1257,7 @@ and holds one installation-wide exclusive maintenance fence through fixed
 catalog-then-descriptor activation. A stop between owner boundaries is
 recoverable by replaying the same plan; the coordinator intentionally makes no
 cross-directory atomicity claim. Control cursor reopening, lease drain,
-retention activation, and Registry/TUF authority binding remain open.
+lifecycle retention policy, and Registry/TUF authority binding remain open.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning

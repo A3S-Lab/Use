@@ -193,9 +193,13 @@ requires current trust-store verification for signed v2 evidence. A dedicated
 canonical digest, preflights their sources and clean targets under one
 exclusive maintenance fence, and replays fixed-order no-clobber activation.
 This is recoverable ordered activation, not a cross-directory atomic rename.
-Production owner registration/retention coordination, coordinated cursor
-reopening, and official Registry/TUF key-source binding remain activation
-gates.
+The paired `ControlCapabilityPayloadRetentionCoordinator` binds both owner
+retention plans to one canonical digest, preflights inventories and exact
+pending journals under the same exclusive fence, and replays catalog-then-
+descriptor deletion. This is recoverable ordered deletion, not a
+cross-directory atomic transaction. Production owner registration, lifecycle
+retention policy, coordinated cursor reopening, and official Registry/TUF
+key-source binding remain activation gates.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,

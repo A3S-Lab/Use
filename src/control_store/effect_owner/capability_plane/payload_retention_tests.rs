@@ -1,0 +1,180 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use a3s_use_core::{CapabilityGatewayCatalog, InstallationId, InstallationKind};
+
+use super::{
+    ControlCapabilityDescriptorSnapshot, ControlCapabilityDescriptorSnapshotKey,
+    ControlCapabilityDescriptorSnapshotStore, ControlCapabilityPayloadRetentionCoordinator,
+    ControlCapabilitySignerPolicy,
+};
+use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
+
+fn installation(label: &str) -> InstallationId {
+    InstallationId::new(InstallationKind::User, format!("user/{label}")).unwrap()
+}
+
+fn digest(byte: char) -> String {
+    format!("sha256:{}", byte.to_string().repeat(64))
+}
+
+fn catalog(installation: &InstallationId, generation: u64) -> CapabilityGatewayCatalog {
+    CapabilityGatewayCatalog::new(installation.clone(), generation, Vec::new()).unwrap()
+}
+
+fn snapshot(
+    installation: &InstallationId,
+    installation_generation: u64,
+    capability_generation: u64,
+    descriptor_digest: char,
+) -> ControlCapabilityDescriptorSnapshot {
+    let key = ControlCapabilityDescriptorSnapshotKey::new(
+        installation.clone(),
+        installation_generation,
+        capability_generation,
+        digest(descriptor_digest),
+    )
+    .unwrap();
+    let policy =
+        ControlCapabilitySignerPolicy::new(BTreeMap::<String, BTreeSet<String>>::new()).unwrap();
+    ControlCapabilityDescriptorSnapshot::new(key, Vec::new(), policy).unwrap()
+}
+
+fn coordinator(
+    state_root: &std::path::Path,
+    installation: &InstallationId,
+) -> ControlCapabilityPayloadRetentionCoordinator {
+    ControlCapabilityPayloadRetentionCoordinator::new(
+        CapabilityGatewayCatalogStore::new(state_root, installation.clone()).unwrap(),
+        ControlCapabilityDescriptorSnapshotStore::new(state_root, installation.clone()).unwrap(),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn coordinator_preflights_and_replays_both_retention_owners() {
+    let temporary = tempfile::tempdir().unwrap();
+    let installation = installation("capability-payload-retention");
+    let state_root = temporary.path().join("state");
+    let coordinator = coordinator(&state_root, &installation);
+    let catalog_one = catalog(&installation, 1);
+    let catalog_two = catalog(&installation, 2);
+    let snapshot_one = snapshot(&installation, 1, 1, 'a');
+    let snapshot_two = snapshot(&installation, 2, 2, 'b');
+    let catalog_store = coordinator.catalog_store();
+    catalog_store.publish(&catalog_one).await.unwrap();
+    catalog_store.publish(&catalog_two).await.unwrap();
+    let snapshot_store = coordinator.descriptor_snapshot_store();
+    snapshot_store.publish(&snapshot_one).await.unwrap();
+    snapshot_store.publish(&snapshot_two).await.unwrap();
+    let catalog_two_digest = catalog_two.descriptor_digest().unwrap();
+    let snapshot_two_digest = snapshot_two.digest().unwrap();
+
+    let plan = coordinator
+        .plan_retention(
+            std::slice::from_ref(&catalog_two_digest),
+            std::slice::from_ref(&snapshot_two_digest),
+        )
+        .await
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+    let first = coordinator
+        .apply_retention(&plan, &plan_digest)
+        .await
+        .unwrap();
+    assert!(first.changed);
+    assert!(first.catalog.changed);
+    assert!(first.descriptor_snapshot.changed);
+    assert_eq!(first.catalog.removed.len(), 1);
+    assert_eq!(first.descriptor_snapshot.removed.len(), 1);
+    assert_eq!(catalog_store.list().await.unwrap().len(), 1);
+    assert_eq!(snapshot_store.keys().await.unwrap().len(), 1);
+
+    let replay = coordinator
+        .apply_retention(&plan, &plan_digest)
+        .await
+        .unwrap();
+    assert!(!replay.changed);
+    assert!(!replay.catalog.changed);
+    assert!(!replay.descriptor_snapshot.changed);
+}
+
+#[tokio::test]
+async fn coordinator_rejects_second_owner_drift_before_first_owner_unlink() {
+    let temporary = tempfile::tempdir().unwrap();
+    let installation = installation("capability-payload-retention-conflict");
+    let state_root = temporary.path().join("state");
+    let coordinator = coordinator(&state_root, &installation);
+    let catalog_one = catalog(&installation, 1);
+    let catalog_two = catalog(&installation, 2);
+    let snapshot_one = snapshot(&installation, 1, 1, 'a');
+    let snapshot_two = snapshot(&installation, 2, 2, 'b');
+    coordinator
+        .catalog_store()
+        .publish(&catalog_one)
+        .await
+        .unwrap();
+    coordinator
+        .catalog_store()
+        .publish(&catalog_two)
+        .await
+        .unwrap();
+    coordinator
+        .descriptor_snapshot_store()
+        .publish(&snapshot_one)
+        .await
+        .unwrap();
+    coordinator
+        .descriptor_snapshot_store()
+        .publish(&snapshot_two)
+        .await
+        .unwrap();
+    let catalog_two_digest = catalog_two.descriptor_digest().unwrap();
+    let snapshot_two_digest = snapshot_two.digest().unwrap();
+
+    let plan = coordinator
+        .plan_retention(
+            std::slice::from_ref(&catalog_two_digest),
+            std::slice::from_ref(&snapshot_two_digest),
+        )
+        .await
+        .unwrap();
+    // Drift only the second owner after review. Its preflight must fail while
+    // the catalog still contains both records.
+    let snapshot_three = snapshot(&installation, 3, 3, 'c');
+    coordinator
+        .descriptor_snapshot_store()
+        .publish(&snapshot_three)
+        .await
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+    let error = coordinator
+        .apply_retention(&plan, &plan_digest)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.control.capability_descriptor_snapshot_retention_stale"
+    );
+    assert_eq!(coordinator.catalog_store().list().await.unwrap().len(), 2);
+}
+
+#[test]
+fn coordinator_rejects_mismatched_owner_roots() {
+    let installation = installation("capability-payload-retention-roots");
+    let first_root = tempfile::tempdir().unwrap();
+    let second_root = tempfile::tempdir().unwrap();
+    let catalog_store =
+        CapabilityGatewayCatalogStore::new(first_root.path().join("state"), installation.clone())
+            .unwrap();
+    let snapshot_store = ControlCapabilityDescriptorSnapshotStore::new(
+        second_root.path().join("state"),
+        installation,
+    )
+    .unwrap();
+    let error = ControlCapabilityPayloadRetentionCoordinator::new(catalog_store, snapshot_store)
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.control.capability_payload_retention_invalid"
+    );
+}
