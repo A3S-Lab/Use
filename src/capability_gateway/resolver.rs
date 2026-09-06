@@ -14,8 +14,9 @@ use rmcp::model::{GetPromptResult, ResourceContents};
 use serde_json::Value;
 
 use super::{
-    CapabilityGatewayInvocationFailure, CapabilityGatewayInvocationProvider,
-    CapabilityGatewayRequestContext, CapabilitySnapshotCursor, CapabilitySnapshotLease,
+    CapabilityGatewayExternalLease, CapabilityGatewayInvocationFailure,
+    CapabilityGatewayInvocationProvider, CapabilityGatewayRequestContext, CapabilitySnapshotCursor,
+    CapabilitySnapshotLease,
 };
 use crate::capability_registry::CapabilityRegistry;
 
@@ -77,6 +78,11 @@ pub struct CapabilityGatewayInvocationLease {
     /// common package-generation guard explicit and keeps it alive for the
     /// complete call.
     snapshot_lease: Option<Arc<CapabilitySnapshotLease>>,
+    /// Optional lease supplied by an installation authority other than the
+    /// legacy Capability Registry. The concrete authority remains private,
+    /// while this erased value keeps its generation fence alive through the
+    /// complete operation.
+    external_lease: Option<Arc<dyn CapabilityGatewayExternalLease>>,
 }
 
 impl CapabilityGatewayInvocationLease {
@@ -90,6 +96,7 @@ impl CapabilityGatewayInvocationLease {
             invocation_ref,
             handle,
             snapshot_lease: None,
+            external_lease: None,
         }
     }
 
@@ -105,6 +112,24 @@ impl CapabilityGatewayInvocationLease {
             invocation_ref,
             handle,
             snapshot_lease: Some(Arc::new(snapshot_lease)),
+            external_lease: None,
+        }
+    }
+
+    /// Bind a private invocation handle to an installation authority other
+    /// than the legacy Capability Registry. The erased lease is retained
+    /// until this value is dropped, so a provider cannot accidentally release
+    /// the authority fence before its result is complete.
+    pub(crate) fn with_external_lease(
+        invocation_ref: InvocationRef,
+        external_lease: Arc<dyn CapabilityGatewayExternalLease>,
+        handle: Box<dyn CapabilityGatewayInvocation>,
+    ) -> Self {
+        Self {
+            invocation_ref,
+            handle,
+            snapshot_lease: None,
+            external_lease: Some(external_lease),
         }
     }
 
@@ -159,6 +184,7 @@ impl fmt::Debug for CapabilityGatewayInvocationLease {
             .debug_struct("CapabilityGatewayInvocationLease")
             .field("invocation_ref", &self.invocation_ref)
             .field("has_snapshot_lease", &self.snapshot_lease.is_some())
+            .field("has_external_lease", &self.external_lease.is_some())
             .finish_non_exhaustive()
     }
 }

@@ -24,6 +24,8 @@ use crate::plugin_lifecycle::PluginLifecycleAction;
 mod descriptor;
 mod descriptor_snapshot;
 mod index;
+#[cfg(feature = "mcp")]
+mod invocation;
 mod lease;
 mod model;
 mod payload_restore;
@@ -60,6 +62,10 @@ pub(in crate::control_store) use descriptor_snapshot::{
     CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_RESULT_SCHEMA,
 };
 use index::ControlCapabilityIndexStore;
+#[cfg(feature = "mcp")]
+pub(in crate::control_store) use invocation::{
+    ControlCapabilityGatewayInvocationFactory, ControlCapabilityGatewayInvocationResolver,
+};
 use lease::{ControlGenerationFileLease, ControlGenerationLeaseStore};
 use model::ControlCapabilityIndexDocument;
 #[allow(unused_imports)]
@@ -530,6 +536,31 @@ impl ControlCapabilitySnapshotLease {
             }
         }
         Ok(())
+    }
+
+    /// Validate one provider request against the exact immutable descriptor
+    /// retained by this Control publication. This is intentionally stricter
+    /// than checking package and surface identity: a forged title, schema,
+    /// opaque reference, or publication evidence must not reach a host
+    /// invocation factory.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) fn validate_gateway_descriptor(
+        &self,
+        descriptor: &a3s_use_core::CapabilityDescriptor,
+    ) -> UseResult<()> {
+        descriptor.validate()?;
+        if self
+            .catalog
+            .descriptors()
+            .iter()
+            .any(|candidate| candidate == descriptor)
+        {
+            return Ok(());
+        }
+        Err(UseError::new(
+            "use.control.capability_gateway_invocation_mismatch",
+            "The invocation descriptor is not part of the exact published Control catalog.",
+        ))
     }
 }
 

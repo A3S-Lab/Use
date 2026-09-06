@@ -1292,6 +1292,15 @@ the live factory, rejects a newer in-memory endpoint, and treats an identical
 catalog as an idempotent no-op. Production hosts still need to attach this
 adapter and select retention from the complete live-lease set.
 
+Implementation note (2026-09-06): the inactive Control composition now also
+provides a Control-backed opaque invocation resolver. Each operation reopens
+the durable published cursor, validates the complete descriptor against the
+immutable catalog before provider state is opened, and retains that exact
+Control generation lease through the returned invocation handle. A host-owned
+factory receives the lease for its principal/Grant/Runtime binding; forged or
+cross-generation descriptors fail before provider I/O. Production lifecycle
+wiring and legacy-authority deletion remain open.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

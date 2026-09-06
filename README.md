@@ -1868,6 +1868,15 @@ one constructor; a publication race returns no server. Signature verification
 and receipt/Runtime/Grant-backed opaque-reference resolution remain host-owned,
 and product wiring is still open.
 
+The inactive Control composition now has the equivalent authority join for its
+own cursor: `ControlCapabilityGatewayInvocationFactory` receives the exact
+reopened Control lease only after the descriptor is compared byte-for-byte
+with the durable catalog, and `CapabilityGatewayResolvedProvider` retains that
+lease through the complete Tool, Resource, or Prompt operation. This keeps
+opaque-reference resolution on the Control generation instead of accidentally
+falling back to the legacy Registry resolver; the host factory still owns the
+private Grant/Runtime/provider binding and production activation remains open.
+
 The Gateway now also has a typed consumer boundary. `CapabilityConsumerProfile`
 distinguishes the default generic MCP client from an explicit A3S consumer,
 while `CapabilityConsumerNegotiation` binds a sorted, digest-bound extension set
