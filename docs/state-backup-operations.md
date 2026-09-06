@@ -197,8 +197,16 @@ and clean targets, and activates catalog then descriptor snapshots in a fixed
 order. Each owner keeps its own durable no-clobber boundary, so a stop between
 owners is recovered by replaying the same plan and treating the already
 published owner as an exact no-op. This is recoverable ordered activation, not
-one cross-directory filesystem rename. Control cursor reopening, lease/retention
-policy, and lifecycle authority remain outside the payload owners.
+one cross-directory filesystem rename. The same payload family now exposes
+`ControlCapabilityPayloadRetentionCoordinator`: it binds the catalog and
+descriptor retention plans to one canonical digest, acquires one exclusive
+maintenance fence, preflights both live inventories and any matching pending
+journals before the first unlink, and deletes catalog then descriptor records in
+a fixed order. If the process stops between owners, replaying the exact plan
+reconciles the completed owner and resumes the other. This is recoverable
+ordered deletion, not a cross-directory atomic transaction. Control cursor
+reopening, lifecycle-selected retention policy, lease activation, and other
+authority decisions remain outside the payload owners.
 
 Absolute source or destination paths and creation time are absent. The payloads
 are the original files, however, and may contain configured paths, endpoints,

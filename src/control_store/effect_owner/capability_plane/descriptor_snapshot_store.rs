@@ -259,6 +259,25 @@ impl ControlCapabilityDescriptorSnapshotStore {
         retention::apply_retention(self, plan, expected_plan_digest).await
     }
 
+    /// Apply a reviewed retention plan while an outer coordinator owns the
+    /// installation-wide maintenance fence.
+    pub(in crate::control_store) async fn apply_retention_under_maintenance(
+        &self,
+        plan: &retention::ControlCapabilityDescriptorSnapshotRetentionPlan,
+        expected_plan_digest: &str,
+    ) -> UseResult<retention::ControlCapabilityDescriptorSnapshotRetentionResult> {
+        retention::apply_retention_under_maintenance(self, plan, expected_plan_digest).await
+    }
+
+    /// Validate a reviewed retention target without unlinking any snapshot.
+    pub(in crate::control_store) async fn ensure_retention_target_under_maintenance(
+        &self,
+        plan: &retention::ControlCapabilityDescriptorSnapshotRetentionPlan,
+        expected_plan_digest: &str,
+    ) -> UseResult<()> {
+        retention::ensure_retention_target_under_maintenance(self, plan, expected_plan_digest).await
+    }
+
     /// Resume the exact descriptor-snapshot retention operation left by a
     /// process interruption, if a durable owner journal is present.
     pub(in crate::control_store) async fn recover_retention(

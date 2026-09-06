@@ -1542,9 +1542,11 @@ as one `CapabilityPayloads` family, while locks, staging, journals, and lease
 files remain excluded. `ControlCapabilityPayloadRestoreCoordinator` now binds
 the catalog and descriptor plans under one exclusive maintenance fence,
 preflights both clean targets, and retries fixed-order activation without
-clobbering an already-published owner. Production Control owner registration,
-cursor reopening, lease drain, and retention coordination remain separate
-gates. A real
+clobbering an already-published owner. `ControlCapabilityPayloadRetentionCoordinator`
+now binds the two owner retention plans under the same exclusive fence,
+preflights both inventories (including exact pending journals), and replays
+fixed-order deletion. Production Control owner registration, cursor reopening,
+lease drain, and lifecycle retention authority remain separate gates. A real
 composition test joins Knowledge, Skill, catalog/Index publication, exact
 payload admission, stale admission, and drain.
 The inactive composition now accepts the canonical cognitive-package Plan
@@ -1801,6 +1803,8 @@ Only the following cognitive-package protocol line is accepted:
 | Capability Gateway catalog restore result | `a3s.use.capability-gateway-catalog-restore-result.v1` |
 | Capability payload restore plan | `a3s.use.control-capability-payload-restore-plan.v1` |
 | Capability payload restore result | `a3s.use.control-capability-payload-restore-result.v1` |
+| Capability payload retention plan | `a3s.use.control-capability-payload-retention-plan.v1` |
+| Capability payload retention result | `a3s.use.control-capability-payload-retention-result.v1` |
 | Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
 | Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
@@ -1934,12 +1938,14 @@ snapshot records and validates their canonical owner bytes; replay still
 rechecks signed envelopes against the current trust policy. This is still
 qualification code: cryptographic key-source binding to the official
 Registry/TUF metadata, production Control/Runtime/receipt wiring, and
-clean-target restore/retention activation remain host gates. Runtime Tool release planning
+clean-target restore activation remain host gates. Runtime Tool release planning
 now carries a canonical input/output schema attestation through plans, binding
 receipts, and Control evidence; verified artifact admission and strict
 descriptor projection compare the same descriptor and schema digests.
-Production Control activation, owner-native restore/retention, and retirement
-coordination remain separate gates.
+Production Control activation, lifecycle-selected retention policy, and
+retirement coordination remain separate gates; the owner-native restore and
+retention coordinators are qualification boundaries until that authority is
+composed into the live host.
 
 The embedding boundary now also includes `CapabilityGatewaySessionFactory`:
 after durable publication, a host can replace immutable Gateway generations in
@@ -1978,8 +1984,13 @@ activation evidence are replayable and publication is no-clobber. The
 single exclusive fence and replays them in a fixed order; a process stop
 between owner publications is recoverable by replaying the same plan. This is
 ordered, recoverable activation rather than a cross-directory atomic rename.
-Coordinated Control cursor reopening, owner registration, lease drain, and
-rollback authority remain outside these stores.
+`ControlCapabilityPayloadRetentionCoordinator` composes the corresponding
+retention plans under one exclusive fence, verifies both inventories before
+the first unlink, and resumes exact owner journals in catalog → descriptor
+order. This is recoverable ordered deletion rather than a cross-directory
+atomic transaction. Coordinated Control cursor reopening, owner registration,
+lease drain, lifecycle retention policy, and rollback authority remain outside
+these stores.
 
 Control descriptor snapshots expose the same owner-level contract through
 `plan_retention`, `apply_retention`, and `recover_retention`. The plan embeds
@@ -1987,7 +1998,11 @@ the complete protected/removal partition, each unlink is checkpointed in a
 bounded canonical journal, pending journals block publication and reads, and a
 non-empty inventory must retain at least one snapshot. Production Control
 registration, lifecycle activation, and trust-source selection still supply
-the authority that chooses and reopens descriptor generations.
+the authority that chooses and reopens descriptor generations. The paired
+`ControlCapabilityPayloadRetentionCoordinator` adds the cross-owner boundary:
+both inventories are preflighted under one exclusive maintenance fence before
+catalog records are removed, then descriptor snapshots are removed in a fixed
+order; an interruption between owners is resumed by replaying the same plan.
 
 | Area | Status |
 | --- | --- |
