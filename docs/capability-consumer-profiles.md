@@ -212,7 +212,9 @@ detached. A retry of the lifecycle drain-and-retain boundary can therefore be
 read-only and idempotent; an unleased factory drained through the generic API
 does not gain the proof. Control reconciliation uses a conditional source
 compare-and-swap so a stale same-generation build cannot replace a newer local
-cutover.
+cutover. During a normal upgrade the current endpoint may still hold the prior
+Control lease; reconciliation validates that lease against its own source key,
+then swaps in the newly acquired target lease.
 
 ## Catalog retention
 

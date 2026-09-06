@@ -559,7 +559,12 @@ impl ControlStoreRuntimeComposition {
         let current_is_bound = {
             let current_server = factory.current();
             current_server.generation_lease_mode() == CapabilityGatewayGenerationLeaseMode::External
-                && current_server.external_lease_matches(&expected)
+                // During an upgrade the live endpoint legitimately retains
+                // the previous Control lease until this reconciliation swaps
+                // in the newly published server. Validate that lease against
+                // the endpoint it actually serves; comparing it with the
+                // target publication would reject every normal cutover.
+                && current_server.external_lease_matches(&current)
         };
         if !current_is_bound {
             return Err(UseError::new(

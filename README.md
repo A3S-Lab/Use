@@ -1994,7 +1994,9 @@ activation, provider composition, retirement, and retention coordination
 remain host responsibilities. Session identity is derived from the complete
 immutable source publication before consumer negotiation, so filtering
 optional descriptors does not break Control lease binding or lifecycle
-reconciliation.
+reconciliation. During an upgrade, reconciliation validates the existing
+endpoint's prior Control lease against its own source identity before swapping
+in the newly acquired publication lease.
 
 Catalog payload cleanup is now an explicit plan/apply operation as well:
 `CapabilityGatewayCatalogStore` requires a lifecycle-supplied protected digest

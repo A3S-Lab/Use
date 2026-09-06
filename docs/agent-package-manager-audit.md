@@ -147,7 +147,9 @@ combined drain-and-retain operation after the source lease has been detached;
 directly drained or copied unleased catalogs do not acquire that proof.
 Reconciliation also uses a source compare-and-swap so a stale same-generation
 build cannot overwrite a newer local cutover; a losing attempt returns a retry
-signal for a fresh durable read.
+signal for a fresh durable read. During an ordinary upgrade, the existing
+endpoint's prior Control lease is validated against its own source identity
+before the newly published lease is installed.
 
 ### P0 — Compose the real invocation path
 

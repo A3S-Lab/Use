@@ -213,8 +213,9 @@ replacement compatibility check. The package-graph coordinator now offers a
 replay-safe `PluginGraphCapabilityCutoverActivation` boundary that runs after
 durable publication and before prior-generation drain. The Control
 composition supplies an adapter that reconciles the durable cursor, rejects an
-unleased or newer endpoint, and treats an already matching catalog as a
-no-op. The composition also supplies a cursor-bound payload retention path:
+unleased endpoint, accepts a valid prior-generation endpoint during an
+upgrade, and treats an already matching catalog as a no-op. The composition
+also supplies a cursor-bound payload retention path:
 it derives the durable current catalog and matching descriptor snapshot, then
 rechecks the cursor under an exclusive maintenance fence before deletion.
 Standalone owner deletion uses that exclusive fence as well, so live Control

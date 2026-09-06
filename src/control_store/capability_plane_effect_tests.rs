@@ -693,6 +693,124 @@ async fn control_gateway_reconciliation_is_idempotent_for_the_current_cursor() {
     .unwrap();
 }
 
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn control_gateway_reconciliation_swaps_from_the_prior_control_lease() {
+    let fixture = installed_capability_plane("operation:capability-plane:gateway-upgrade").await;
+    let paths = fixture._owner_fixture.paths.clone();
+    let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        super::composition::ControlEffectCompositionDependencies {
+            runtime_registry: Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: Arc::new(CompositionReadiness),
+            catalog_projection: Arc::new(EmptyCatalogProjection),
+            flow: Arc::new(UnexpectedDynamicSurfacePort),
+            clock: Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+
+    let prior_cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    let prior_lease = fixture.plane.reopen_published().await.unwrap().unwrap();
+    let factory = CapabilityGatewaySessionFactory::new(
+        super::composition::ControlStoreRuntimeComposition::gateway_server_from_control_lease(
+            prior_lease,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .unwrap(),
+    );
+    let prior_key = factory.current_key().unwrap();
+
+    let prior = fixture.store.current_generation().await.unwrap().unwrap();
+    let mut history = ControlProjectionHistory::default();
+    history.observe(&prior).unwrap();
+    let upgrade = operation_at(
+        "operation:capability-plane:gateway-upgrade-operation",
+        PluginOperationAction::Upgrade,
+        1,
+        1,
+    );
+    fixture
+        .store
+        .register_operation(upgrade.clone())
+        .await
+        .unwrap();
+    fixture
+        .store
+        .commit_transition(projected_transition(&upgrade, &prior, &history))
+        .await
+        .unwrap();
+
+    // The fixture has no second package artifact. Mark the two preparation
+    // effects applied so this test reaches the capability publication and
+    // live-session reconciliation boundary.
+    for sequence in 0..2_u32 {
+        let now_ms = 200 + u64::from(sequence) * 20;
+        let claim_token = format!("claim:capability-plane:gateway-upgrade:{sequence}");
+        let claimed = fixture
+            .store
+            .claim_next_effect(claim(
+                upgrade.operation_id(),
+                &claim_token,
+                now_ms,
+                now_ms + 10,
+                false,
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(claimed.intent.sequence, sequence);
+        fixture
+            .store
+            .record_effect_observation(observation(
+                upgrade.operation_id(),
+                &claimed.intent,
+                &claimed.claim_token,
+                ControlEffectOutcome::Applied,
+                char::from_digit(sequence, 16).unwrap(),
+                now_ms + 5,
+            ))
+            .await
+            .unwrap();
+    }
+    assert_dispatch(
+        &fixture.dispatcher,
+        &upgrade,
+        "claim:capability-plane:gateway-upgrade-cutover",
+        2,
+        1,
+        ControlEffectOutcome::Applied,
+        false,
+    )
+    .await;
+
+    let target_cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    assert!(target_cursor.capability_generation > prior_cursor.capability_generation);
+    let result = composition
+        .reconcile_published_capability_gateway(
+            &factory,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap()
+        .expect("the target Control publication must be available");
+    let super::composition::ControlCapabilityGatewayReconciliation::Replaced(replacement) = result
+    else {
+        panic!("a newer Control publication must replace the prior live endpoint");
+    };
+    assert_eq!(replacement.previous, prior_key);
+    assert_eq!(
+        replacement.current.generation,
+        target_cursor.capability_generation
+    );
+    assert_eq!(replacement.current.revision, target_cursor.catalog.revision);
+    assert_eq!(replacement.current.digest, target_cursor.catalog.digest);
+    assert_eq!(factory.current_key().unwrap(), replacement.current);
+}
+
 #[tokio::test]
 async fn published_cutover_key_follows_the_published_generation_not_current_generation() {
     let fixture =
