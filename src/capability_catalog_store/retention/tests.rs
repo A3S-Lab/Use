@@ -1,6 +1,10 @@
 use std::path::PathBuf;
+#[cfg(feature = "extensions")]
+use std::time::Duration;
 
 use a3s_use_core::{CapabilityGatewayCatalog, InstallationId, InstallationKind};
+#[cfg(feature = "extensions")]
+use a3s_use_extension::StateMaintenanceLock;
 use tokio::io::AsyncWriteExt;
 
 use super::{journal::RetentionJournal, CapabilityGatewayCatalogStore};
@@ -215,6 +219,49 @@ async fn pending_retention_blocks_catalog_reads_and_inventory_listing() {
         get_error.code,
         "use.plugin.capability_gateway_catalog_retention_stale"
     );
+}
+
+#[cfg(feature = "extensions")]
+#[tokio::test]
+async fn destructive_retention_waits_for_live_shared_installation_leases() {
+    let temporary = tempfile::tempdir().unwrap();
+    let installation = installation("retention-lease-fence");
+    let state_root = temporary.path().join("state");
+    let store = CapabilityGatewayCatalogStore::new(&state_root, installation.clone()).unwrap();
+    let first = store.publish(&catalog(&installation, 0)).await.unwrap();
+    let second = store.publish(&catalog(&installation, 1)).await.unwrap();
+    let plan = store
+        .plan_retention(std::slice::from_ref(&second.digest))
+        .await
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+
+    // A live Control Gateway snapshot uses this same shared installation
+    // fence.  Destructive owner retention must not proceed around it.
+    let shared = StateMaintenanceLock::new(&state_root)
+        .acquire_shared()
+        .await
+        .unwrap();
+    let task_store = store.clone();
+    let task_plan = plan.clone();
+    let task_digest = plan_digest.clone();
+    let mut apply =
+        tokio::spawn(async move { task_store.apply_retention(&task_plan, &task_digest).await });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(75), &mut apply)
+            .await
+            .is_err(),
+        "retention must remain fenced while a shared lease is alive"
+    );
+    drop(shared);
+
+    let result = tokio::time::timeout(Duration::from_secs(2), apply)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(result.removed, plan.remove);
+    assert!(store.get(&first.digest).await.unwrap().is_none());
 }
 
 #[tokio::test]

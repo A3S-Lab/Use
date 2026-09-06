@@ -12,7 +12,7 @@
 use std::path::Path;
 
 use a3s_use_core::{InstallationId, UseError, UseResult};
-use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
+use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -279,6 +279,38 @@ impl ControlCapabilityPayloadRetentionCoordinator {
             .acquire_exclusive()
             .await?;
 
+        let existing_journal =
+            journal::RetentionCoordinatorJournal::load_unbound(self.state_root()).await?;
+        self.apply_retention_under_maintenance(plan, expected_plan_digest, existing_journal)
+            .await
+    }
+
+    /// Apply a reviewed retention plan while the caller owns the exact
+    /// installation-wide exclusive maintenance fence.
+    ///
+    /// This is the composition seam for lifecycle code that must re-check
+    /// Control authority and the protected payload set immediately before
+    /// deletion.  Accepting an already-held guard avoids recursively taking
+    /// the same file lock and makes the authority check and destructive phase
+    /// one indivisible boundary.
+    pub(in crate::control_store) async fn apply_retention_with_exclusive_maintenance(
+        &self,
+        plan: &ControlCapabilityPayloadRetentionPlan,
+        expected_plan_digest: &str,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<ControlCapabilityPayloadRetentionResult> {
+        plan.validate()?;
+        if !valid_sha256(expected_plan_digest) || plan.descriptor_digest()? != expected_plan_digest
+        {
+            return Err(coordinator_invalid(
+                "The confirmed Capability payload retention plan differs from its payload.",
+            ));
+        }
+        if !maintenance.is_exclusive_for(self.state_root()) {
+            return Err(coordinator_invalid(
+                "Capability payload retention requires the installation's exclusive maintenance fence.",
+            ));
+        }
         let existing_journal =
             journal::RetentionCoordinatorJournal::load_unbound(self.state_root()).await?;
         self.apply_retention_under_maintenance(plan, expected_plan_digest, existing_journal)

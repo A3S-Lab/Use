@@ -1983,9 +1983,15 @@ retirement, and retention coordination remain host responsibilities.
 Catalog payload cleanup is now an explicit plan/apply operation as well:
 `CapabilityGatewayCatalogStore` requires a lifecycle-supplied protected digest
 set, revalidates the canonical inventory under its mutation lock, and removes
-only the reviewed complement with durability checks. It never guesses which
-generation is current; active and draining session leases must remain in the
-protected set.
+only the reviewed complement with durability checks. Destructive owner apply
+now takes the installation's exclusive maintenance fence, so a live
+Control-backed snapshot/Gateway lease cannot be pruned around. The inactive
+Control composition adds `plan_published_capability_payload_retention` and
+`apply_published_capability_payload_retention`: they derive the durable
+published catalog (and matching descriptor snapshot when present), recheck the
+cursor under that exclusive fence, and reject a plan that would remove it.
+Hosts still add independently managed rollback or legacy endpoint digests
+explicitly; the store never guesses liveness from an in-memory pointer.
 
 The same owner now exposes a plan-bound clean-target restore primitive through
 `plan_clean_restore` and `apply_clean_restore`. The caller confirms the
@@ -2011,10 +2017,11 @@ ordered, recoverable activation rather than a cross-directory atomic rename.
 retention plans under one exclusive fence, verifies both inventories before
 the first unlink, and resumes exact owner journals in catalog → descriptor
 order. This is recoverable ordered deletion rather than a cross-directory
-atomic transaction. The inactive Control composition now supplies the
-restart-safe cursor-reopen boundary; production owner registration, live
-Gateway session replacement from that lease, lease drain, lifecycle retention
-policy, and rollback authority remain outside these stores.
+atomic transaction. The inactive Control composition now supplies both the
+restart-safe cursor-reopen boundary and a cursor-bound retention plan/apply
+entry point; production owner registration, live Gateway session replacement
+from that lease, lease drain, and rollback authority remain outside these
+stores.
 
 Control descriptor snapshots expose the same owner-level contract through
 `plan_retention`, `apply_retention`, and `recover_retention`. The plan embeds

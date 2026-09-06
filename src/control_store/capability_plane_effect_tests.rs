@@ -585,6 +585,33 @@ async fn control_gateway_invocation_resolves_only_exact_published_descriptors() 
     )
     .await;
     let paths = fixture._owner_fixture.paths.clone();
+    let published_catalog_digest = fixture
+        .store
+        .published_capability()
+        .await
+        .unwrap()
+        .unwrap()
+        .catalog
+        .digest
+        .clone();
+    let cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    let descriptor_snapshot = ControlCapabilityDescriptorSnapshot::new(
+        ControlCapabilityDescriptorSnapshotKey::new(
+            cursor.installation.clone(),
+            cursor.installation_generation,
+            cursor.capability_generation,
+            cursor.descriptor_digest.clone(),
+        )
+        .unwrap(),
+        Vec::new(),
+        ControlCapabilitySignerPolicy::new(BTreeMap::new()).unwrap(),
+    )
+    .unwrap();
+    let descriptor_snapshot_digest = descriptor_snapshot.digest().unwrap();
+    ControlCapabilityDescriptorSnapshotStore::from_extension_paths(&paths)
+        .publish(&descriptor_snapshot)
+        .await
+        .unwrap();
     let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
         &paths,
         super::composition::ControlEffectCompositionDependencies {
@@ -644,6 +671,83 @@ async fn control_gateway_invocation_resolves_only_exact_published_descriptors() 
         session,
         factory,
         CapabilityGatewayCompositionOptions::default(),
+    );
+
+    // The composition-level retention entry point derives the currently
+    // published catalog from Control instead of trusting a caller-selected
+    // "current" pointer.  Drop the live activation first so its shared
+    // generation/maintenance lease no longer fences the destructive phase.
+    drop(_activation);
+    drop(lease);
+    let plan = composition
+        .plan_published_capability_payload_retention(&[], &[])
+        .await
+        .unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+    assert!(plan
+        .catalog_plan
+        .retain
+        .iter()
+        .any(|entry| entry.digest == published_catalog_digest));
+    assert!(plan
+        .descriptor_snapshot_plan
+        .retain
+        .iter()
+        .any(|entry| entry.digest == descriptor_snapshot_digest));
+    let result = composition
+        .apply_published_capability_payload_retention(&plan, &plan_digest)
+        .await
+        .unwrap();
+    assert!(!result.changed);
+
+    // A plan that retains only a newer, independently published payload must
+    // not be allowed to prune the catalog selected by the durable cursor.
+    let extra_catalog = CapabilityGatewayCatalog::new(
+        cursor.installation.clone(),
+        cursor.capability_generation.saturating_add(1),
+        Vec::new(),
+    )
+    .unwrap();
+    let extra_catalog_publication = composition
+        .catalog_store()
+        .publish(&extra_catalog)
+        .await
+        .unwrap();
+    let extra_snapshot = ControlCapabilityDescriptorSnapshot::new(
+        ControlCapabilityDescriptorSnapshotKey::new(
+            cursor.installation.clone(),
+            cursor.installation_generation.saturating_add(1),
+            cursor.capability_generation.saturating_add(1),
+            digest('a'),
+        )
+        .unwrap(),
+        Vec::new(),
+        ControlCapabilitySignerPolicy::new(BTreeMap::new()).unwrap(),
+    )
+    .unwrap();
+    let extra_snapshot_digest = extra_snapshot.digest().unwrap();
+    ControlCapabilityDescriptorSnapshotStore::from_extension_paths(&paths)
+        .publish(&extra_snapshot)
+        .await
+        .unwrap();
+    let unsafe_plan = composition
+        .capability_payload_retention()
+        .plan_retention(
+            std::slice::from_ref(&extra_catalog_publication.digest),
+            std::slice::from_ref(&extra_snapshot_digest),
+        )
+        .await
+        .unwrap();
+    let error = composition
+        .apply_published_capability_payload_retention(
+            &unsafe_plan,
+            &unsafe_plan.descriptor_digest().unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.control.capability_payload_retention_cursor_stale"
     );
 }
 

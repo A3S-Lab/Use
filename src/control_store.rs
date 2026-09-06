@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use a3s_use_core::{InstallationId, UseError, UseResult};
-use a3s_use_extension::{ExtensionPaths, StateMaintenanceLock};
+use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
 
 mod aggregate;
 mod composition;
@@ -343,6 +343,27 @@ impl ControlStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        self.published_capability_under_maintenance(&_maintenance)
+            .await
+    }
+
+    /// Read the published cursor while the caller owns the exact
+    /// installation maintenance guard.  Coordinated destructive operations
+    /// use this seam after taking an exclusive guard; reacquiring a shared
+    /// lock there would self-deadlock and leave the retention boundary
+    /// uncheckable.
+    async fn published_capability_under_maintenance(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<Option<ControlPublishedCapabilityCursor>> {
+        if !maintenance.is_shared_for(&self.state_root)
+            && !maintenance.is_exclusive_for(&self.state_root)
+        {
+            return Err(UseError::new(
+                "use.control_store.maintenance_guard_invalid",
+                "The Control cursor read requires a guard for the same installation state root.",
+            ));
+        }
         filesystem::require_initialized(&self.state_root, &self.database_path).await?;
         let database_path =
             filesystem::physical_database_path(&self.state_root, &self.database_path).await?;

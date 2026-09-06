@@ -240,9 +240,14 @@ impl CapabilityGatewayCatalogStore {
             ));
         }
 
+        // Retention is destructive.  It must exclude every shared
+        // installation guard, including the guard retained by a live
+        // Control-backed Gateway snapshot lease.  A shared guard here would
+        // allow catalog bytes to be unlinked while an accepted call still
+        // owns the corresponding generation.
         #[cfg(feature = "extensions")]
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
-            .acquire_shared()
+            .acquire_exclusive()
             .await?;
         #[cfg(feature = "extensions")]
         crate::control_store::ensure_capability_payload_retention_quiescent(&self.state_root)

@@ -34,8 +34,9 @@ use super::dispatcher::{
     ControlEffectPorts, ControlEffectRuntime,
 };
 use super::effect_owner::capability_plane::{
-    ControlCapabilityDescriptorSnapshotStore, ControlCapabilityPayloadRestoreCoordinator,
-    ControlCapabilityPayloadRetentionCoordinator, ControlCapabilityPayloadRetentionResult,
+    ControlCapabilityDescriptorSnapshotKey, ControlCapabilityDescriptorSnapshotStore,
+    ControlCapabilityPayloadRestoreCoordinator, ControlCapabilityPayloadRetentionCoordinator,
+    ControlCapabilityPayloadRetentionPlan, ControlCapabilityPayloadRetentionResult,
     ControlCapabilityPlaneEffectPort, ControlCapabilitySnapshotLease,
 };
 #[cfg(feature = "mcp")]
@@ -68,6 +69,10 @@ use crate::plugin_runtime::{
 
 const COMPOSITION_ERROR: &str = "use.control_store.composition_invalid";
 const PUBLICATION_ERROR: &str = "use.control_store.runtime_plan_publication_invalid";
+const CAPABILITY_RETENTION_CURSOR_ERROR: &str =
+    "use.control.capability_payload_retention_cursor_stale";
+const CAPABILITY_RETENTION_SNAPSHOT_ERROR: &str =
+    "use.control.capability_payload_retention_snapshot_missing";
 
 /// All dependencies needed to compose one inactive Control dispatcher.
 ///
@@ -267,6 +272,127 @@ impl ControlStoreRuntimeComposition {
         &self,
     ) -> UseResult<Option<ControlCapabilityPayloadRetentionResult>> {
         self.capability_payload_retention.recover_retention().await
+    }
+
+    /// Build a retention plan whose protected set starts with the exact
+    /// currently published Control capability payloads.
+    ///
+    /// The caller may add digests for an independently managed rollback or a
+    /// non-Control endpoint.  The durable cursor is always included by this
+    /// boundary; when descriptor snapshots exist, the snapshot keyed by that
+    /// cursor is included as well.  A cursor race during planning is reported
+    /// so lifecycle code can refresh instead of reviewing a stale plan.
+    pub(in crate::control_store) async fn plan_published_capability_payload_retention(
+        &self,
+        additional_catalog_retain_digests: &[String],
+        additional_descriptor_snapshot_retain_digests: &[String],
+    ) -> UseResult<ControlCapabilityPayloadRetentionPlan> {
+        let before = self.store.published_capability().await?;
+        let (catalog_retain, descriptor_snapshot_retain) = self
+            .published_payload_retain_digests(
+                before.as_ref(),
+                additional_catalog_retain_digests,
+                additional_descriptor_snapshot_retain_digests,
+            )
+            .await?;
+        let catalog_retain = catalog_retain.into_iter().collect::<Vec<_>>();
+        let descriptor_snapshot_retain = descriptor_snapshot_retain.into_iter().collect::<Vec<_>>();
+        let plan = self
+            .capability_payload_retention
+            .plan_retention(&catalog_retain, &descriptor_snapshot_retain)
+            .await?;
+        let after = self.store.published_capability().await?;
+        if after != before {
+            return Err(UseError::new(
+                CAPABILITY_RETENTION_CURSOR_ERROR,
+                "The published Control capability changed while its payload retention plan was being built.",
+            ));
+        }
+        Ok(plan)
+    }
+
+    /// Apply a reviewed published-payload retention plan without allowing a
+    /// concurrent Control cutover or live snapshot lease to invalidate its
+    /// protected set.
+    ///
+    /// The exclusive maintenance guard is acquired before rereading Control
+    /// authority and is held through both owner deletions.  This is the
+    /// lifecycle-safe entry point; direct owner plans remain useful for
+    /// compatibility stores but cannot provide this authority check.
+    pub(in crate::control_store) async fn apply_published_capability_payload_retention(
+        &self,
+        plan: &ControlCapabilityPayloadRetentionPlan,
+        expected_plan_digest: &str,
+    ) -> UseResult<ControlCapabilityPayloadRetentionResult> {
+        plan.validate()?;
+        let maintenance = StateMaintenanceLock::new(&self.store.state_root)
+            .acquire_exclusive()
+            .await?;
+        let cursor = self
+            .store
+            .published_capability_under_maintenance(&maintenance)
+            .await?;
+        if let Some(cursor) = cursor.as_ref() {
+            ensure_published_payloads_are_retained(cursor, plan)?;
+        }
+        self.capability_payload_retention
+            .apply_retention_with_exclusive_maintenance(plan, expected_plan_digest, &maintenance)
+            .await
+    }
+
+    async fn published_payload_retain_digests(
+        &self,
+        cursor: Option<&ControlPublishedCapabilityCursor>,
+        additional_catalog_retain_digests: &[String],
+        additional_descriptor_snapshot_retain_digests: &[String],
+    ) -> UseResult<(BTreeSet<String>, BTreeSet<String>)> {
+        let mut catalog_retain = additional_catalog_retain_digests
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let mut descriptor_snapshot_retain = additional_descriptor_snapshot_retain_digests
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let Some(cursor) = cursor else {
+            return Ok((catalog_retain, descriptor_snapshot_retain));
+        };
+        cursor.validate()?;
+        catalog_retain.insert(cursor.catalog.digest.clone());
+
+        let key = ControlCapabilityDescriptorSnapshotKey::new(
+            cursor.installation.clone(),
+            cursor.installation_generation,
+            cursor.capability_generation,
+            cursor.descriptor_digest.clone(),
+        )?;
+        let snapshots = self
+            .capability_payload_retention
+            .descriptor_snapshot_store()
+            .keys()
+            .await?;
+        if snapshots.is_empty() {
+            return Ok((catalog_retain, descriptor_snapshot_retain));
+        }
+        if !snapshots.iter().any(|candidate| candidate == &key) {
+            return Err(UseError::new(
+                CAPABILITY_RETENTION_SNAPSHOT_ERROR,
+                "The published Control capability has no matching descriptor proof snapshot.",
+            ));
+        }
+        let snapshot = self
+            .capability_payload_retention
+            .descriptor_snapshot_store()
+            .get(&key)
+            .await?
+            .ok_or_else(|| {
+                UseError::new(
+                    CAPABILITY_RETENTION_SNAPSHOT_ERROR,
+                    "The published Control descriptor proof snapshot disappeared while retention was being planned.",
+                )
+            })?;
+        descriptor_snapshot_retain.insert(snapshot.digest()?);
+        Ok((catalog_retain, descriptor_snapshot_retain))
     }
 
     /// Reopen the exact published Capability snapshot from durable Control
@@ -635,6 +761,50 @@ impl PluginGraphCapabilityCutoverActivation for ControlCapabilityGatewayCutoverA
             })?;
         Ok(())
     }
+}
+
+fn ensure_published_payloads_are_retained(
+    cursor: &ControlPublishedCapabilityCursor,
+    plan: &ControlCapabilityPayloadRetentionPlan,
+) -> UseResult<()> {
+    cursor.validate()?;
+    let catalog_is_retained = plan.catalog_plan.retain.iter().any(|entry| {
+        entry.digest == cursor.catalog.digest
+            && entry.generation == cursor.catalog.generation
+            && entry.revision == cursor.catalog.revision
+    });
+    if !catalog_is_retained {
+        return Err(UseError::new(
+            CAPABILITY_RETENTION_CURSOR_ERROR,
+            "The reviewed retention plan would remove the catalog selected by the published Control cursor.",
+        ));
+    }
+
+    // A proof snapshot is optional for the legacy proof-only projector.  Once
+    // this owner has any records, however, a published cursor must retain the
+    // exact key-derived record rather than silently pruning the evidence that
+    // would be needed to reconstruct its descriptor projection.
+    if plan.descriptor_snapshot_plan.before_record_count > 0 {
+        let key = ControlCapabilityDescriptorSnapshotKey::new(
+            cursor.installation.clone(),
+            cursor.installation_generation,
+            cursor.capability_generation,
+            cursor.descriptor_digest.clone(),
+        )?;
+        let key_digest = key.digest()?;
+        let snapshot_is_retained = plan.descriptor_snapshot_plan.retain.iter().any(|entry| {
+            entry.key_digest == key_digest
+                && entry.installation_generation == cursor.installation_generation
+                && entry.capability_generation == cursor.capability_generation
+        });
+        if !snapshot_is_retained {
+            return Err(UseError::new(
+                CAPABILITY_RETENTION_SNAPSHOT_ERROR,
+                "The reviewed retention plan would remove the descriptor proof snapshot selected by the published Control cursor.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "mcp")]

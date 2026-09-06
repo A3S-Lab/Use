@@ -351,8 +351,11 @@ pub(super) async fn apply_retention(
         ));
     }
 
+    // Snapshot retention is destructive and must wait for every live
+    // Control snapshot/Gateway lease.  Taking a shared guard would let this
+    // owner unlink proof bytes while an accepted call still depends on them.
     let _maintenance = StateMaintenanceLock::new(&store.state_root)
-        .acquire_shared()
+        .acquire_exclusive()
         .await?;
     super::super::super::ensure_capability_payload_retention_quiescent(&store.state_root).await?;
     apply_retention_under_maintenance(store, plan, expected_plan_digest).await

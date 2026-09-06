@@ -214,9 +214,14 @@ replay-safe `PluginGraphCapabilityCutoverActivation` boundary that runs after
 durable publication and before prior-generation drain. The Control
 composition supplies an adapter that reconciles the durable cursor, rejects an
 unleased or newer endpoint, and treats an already matching catalog as a
-no-op. The adapter is still an embedding seam until production lifecycle hosts
-attach it and derive payload retention from live leases. The same composition
-now supplies a Control-backed opaque invocation resolver: each call reopens
+no-op. The composition also supplies a cursor-bound payload retention path:
+it derives the durable current catalog and matching descriptor snapshot, then
+rechecks the cursor under an exclusive maintenance fence before deletion.
+Standalone owner deletion uses that exclusive fence as well, so live Control
+snapshot leases cannot be bypassed; independently managed rollback identities
+remain explicit host inputs. The adapter is still an embedding seam until
+production lifecycle hosts attach it. The same composition now supplies a
+Control-backed opaque invocation resolver: each call reopens
 the exact published cursor, validates the complete descriptor against the
 immutable catalog, and gives a host factory the same Control lease that is
 retained until the call returns. The host factory remains responsible for the

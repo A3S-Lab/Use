@@ -39,7 +39,7 @@ execution; the Gateway exposes only an opaque, authorized projection.
 | Signed Tool description | `CapabilityDescriptionProof`, package signer allowlist, durable signed v2 snapshots, exact descriptor and envelope digests, canonical Ed25519 envelopes, bounded public-key trust store with expiry/revocation, signed Gateway composition constructors, and replay-time re-verification | Inactive qualification plus verifier/composition mechanism | Registry/TUF key-source binding and production Registry-to-proof lifecycle wiring remain open; `from_verified` and proof-only v1 snapshots are still explicit compatibility host assertions |
 | Runtime contract continuity | Tool release input/output schemas and domain-separated `RuntimeToolSchemaAttestation` now flow through plans, task/service receipts, provisioning and Control evidence; verified payload admission and strict projection compare digests | Implemented in the inactive kernel (PR #238) | Production Control/Runtime/receipt/Grant composition and real schema-bearing release fixtures |
 | Live invocation authorization | Gateway resolver/factory seam, principal context, discovery policy, generation leases and provider `authorize` hook; inactive Control resolver now reopens the durable cursor, validates the exact descriptor, and retains an external Control lease through the operation | Embedding mechanism qualified | A production host factory must still join the principal, scope, Grant, receipt and Runtime provider; the inactive Control composition is not yet the production authority |
-| Generation-safe upgrade and drain | Immutable session factory, snapshot leases, list-change hub, explicit retention plans, paired catalog/descriptor retention coordinator, durable Control cursor reopening, an internal lease guard that follows cloned Gateway servers, and a replay-safe graph cutover activation hook wired to a Control lease-backed Gateway adapter | Mechanism qualified | Production lifecycle must attach the adapter, derive its protected retention set from live leases, and retire payloads in one host transition |
+| Generation-safe upgrade and drain | Immutable session factory, snapshot leases, list-change hub, explicit retention plans, paired catalog/descriptor retention coordinator, durable Control cursor reopening, an internal lease guard that follows cloned Gateway servers, a replay-safe graph cutover activation hook wired to a Control lease-backed Gateway adapter, and a composition retention boundary that derives the durable current payload set and applies under an exclusive fence | Mechanism qualified | Production lifecycle must attach the adapter, add any non-Control rollback/session identities, and retire payloads in one host transition |
 | Crash/restart convergence | Durable journals, exact-key replay, no-generation-inflation tests across package, Grant, Runtime, Gateway and restore paths | Broad preview coverage | Code/Runtime product-host kill tests, reboot and remaining Windows contention/reparse races |
 | Backup/restore authority | Whole-installation inventory, offline verification, reviewed restore plan, rollback archive and bounded recovery journal; canonical Capability Gateway catalog and descriptor-snapshot records are now admitted as the `CapabilityPayloads` family with owner-byte/content-address validation; artifact reachability now traverses the same payload-owner tree and fails closed on nested drift or in-flight publication evidence; both immutable owners now have plan-bound clean-target candidate/activation/replay adapters, with signed descriptor replay requiring current trust verification; dedicated restore and retention coordinators bind both owner plans under one exclusive fence with preflight, fixed-order replay, and a durable cross-owner phase journal that blocks backup/reachability until recovery; the inactive composition can derive the durable published Control cursor and reopen its exact Index, catalog, and package-generation lease set after restart | Qualified for listed legacy/Use-owned families, the Capability payload coordinators, and the cursor-reopen mechanism | Production Control owner registration, live Gateway session reconstruction from the reopened lease, lifecycle retention/lease activation, clean-machine recovery and operational drills |
 | Cross-language/remote use | Standard Streamable HTTP, bearer/Origin/admission controls and an independent Rust contract test | Partial | TypeScript and Python clients, remote/container client with no shared filesystem, and install/upgrade/drain/restart/denied-scope matrix |
@@ -94,7 +94,11 @@ activation without clobbering an already-published owner. Its retention sibling
 preflights both inventories and exact pending journals before fixed-order
 deletion. Production Registry/TUF key-source binding, owner registration,
 live Gateway session reconstruction from the restart-reopened Control lease,
-retention/lease activation, and lifecycle wiring are still required.
+and lifecycle wiring are still required. Destructive owner retention now also
+has an exclusive-fence path: it waits for live Control snapshot leases, derives
+the currently published catalog and matching descriptor snapshot, and rejects
+a reviewed plan that would prune the durable cursor. Hosts still have to add
+any independently managed rollback or legacy endpoint identities explicitly.
 
 Implementation note (2026-09-06): the package-graph coordinator now exposes a
 replay-safe `PluginGraphCapabilityCutoverActivation` hook. When attached, it
@@ -103,7 +107,10 @@ generation drain or retirement. The inactive Control composition provides a
 lease-bound adapter that reopens the durable cursor, rejects an unleased or
 newer in-memory endpoint, and avoids a redundant replacement when the current
 catalog already matches. This closes the ordering seam; production hosts still
-must attach it to their live lifecycle and choose a lease-aware retention set.
+must attach it to their live lifecycle. The composition's retention helper
+derives the durable current protection set and its apply path rechecks that
+set under an exclusive maintenance fence; independently managed rollback or
+legacy endpoint payloads remain explicit caller inputs.
 
 Implementation note (2026-09-06): the inactive Control composition now also
 provides a Control-backed opaque invocation resolver. It reopens the durable

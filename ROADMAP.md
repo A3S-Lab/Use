@@ -1289,8 +1289,12 @@ the durable capability publish (or its exact replay) and before any prior
 generation drain. The inactive Control composition supplies a concrete
 adapter that reopens the Control cursor, requires an external Control lease on
 the live factory, rejects a newer in-memory endpoint, and treats an identical
-catalog as an idempotent no-op. Production hosts still need to attach this
-adapter and select retention from the complete live-lease set.
+catalog as an idempotent no-op. The inactive composition now also derives the
+durable current catalog/descriptor protection set for retention and applies a
+reviewed plan only after rechecking the cursor under an exclusive maintenance
+fence. Production hosts still need to attach this adapter, add any
+independently managed rollback identities, and retire payloads in one host
+transition.
 
 Implementation note (2026-09-06): the inactive Control composition now also
 provides a Control-backed opaque invocation resolver. Each operation reopens
@@ -1300,6 +1304,16 @@ Control generation lease through the returned invocation handle. A host-owned
 factory receives the lease for its principal/Grant/Runtime binding; forged or
 cross-generation descriptors fail before provider I/O. Production lifecycle
 wiring and legacy-authority deletion remain open.
+
+Implementation note (2026-09-06): destructive Capability payload retention now
+has one cursor-bound composition path. It always protects the catalog selected
+by the durable Control cursor and, when descriptor snapshots are present, the
+key-matched proof snapshot; a cursor change or plan that would remove either
+payload is rejected before unlink. Both standalone owner `apply_retention`
+entries also take the installation-wide exclusive maintenance fence, so a
+live Control snapshot/Gateway lease cannot be bypassed. Hosts may add explicit
+rollback or legacy endpoint digests, but liveness is never inferred from an
+in-memory current pointer.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
