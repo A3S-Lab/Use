@@ -204,6 +204,9 @@ impl CapabilityGatewayCatalogStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        #[cfg(feature = "extensions")]
+        crate::control_store::ensure_capability_payload_retention_quiescent(&self.state_root)
+            .await?;
         let Some((state_root, root)) = self.existing_physical_paths().await? else {
             return build_plan(self.installation.clone(), Vec::new(), &retain_digests);
         };
@@ -240,6 +243,9 @@ impl CapabilityGatewayCatalogStore {
         #[cfg(feature = "extensions")]
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
+            .await?;
+        #[cfg(feature = "extensions")]
+        crate::control_store::ensure_capability_payload_retention_quiescent(&self.state_root)
             .await?;
         self.apply_retention_under_maintenance(plan, actual_plan_digest)
             .await
@@ -504,6 +510,9 @@ impl CapabilityGatewayCatalogStore {
             #[cfg(feature = "extensions")]
             let _maintenance = StateMaintenanceLock::new(&self.state_root)
                 .acquire_shared()
+                .await?;
+            #[cfg(feature = "extensions")]
+            crate::control_store::ensure_capability_payload_retention_quiescent(&self.state_root)
                 .await?;
             let Some((state_root, root)) = self.existing_physical_paths().await? else {
                 return Ok(None);

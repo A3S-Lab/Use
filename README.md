@@ -1805,6 +1805,7 @@ Only the following cognitive-package protocol line is accepted:
 | Capability payload restore result | `a3s.use.control-capability-payload-restore-result.v1` |
 | Capability payload retention plan | `a3s.use.control-capability-payload-retention-plan.v1` |
 | Capability payload retention result | `a3s.use.control-capability-payload-retention-result.v1` |
+| Capability payload retention coordinator journal | `a3s.use.control-capability-payload-retention-journal.v1` (internal, restart-recoverable phase boundary) |
 | Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
 | Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
@@ -1945,7 +1946,9 @@ descriptor projection compare the same descriptor and schema digests.
 Production Control activation, lifecycle-selected retention policy, and
 retirement coordination remain separate gates; the owner-native restore and
 retention coordinators are qualification boundaries until that authority is
-composed into the live host.
+composed into the live host. Retention now records a durable paired-owner
+phase journal before unlinking, and backup/reachability refuse to run until a
+pending journal is recovered.
 
 The embedding boundary now also includes `CapabilityGatewaySessionFactory`:
 after durable publication, a host can replace immutable Gateway generations in

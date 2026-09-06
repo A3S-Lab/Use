@@ -26,10 +26,13 @@ const SHA256: &str = "sha256";
 const STAGING: &str = ".staging";
 const MUTATION_LOCK: &str = ".mutation.lock";
 const RETENTION_JOURNAL: &str = ".retention.journal";
+const COORDINATOR_RETENTION_JOURNAL: &str = capability_payload::COORDINATOR_RETENTION_JOURNAL;
 const MAX_ROOT_ENTRIES: usize = 8;
 const MAX_SHARDS: usize = 256;
 const MAX_RECORDS: usize = 4_096;
 const MAX_LOCK_BYTES: u64 = 4 * 1024;
+const MAX_COORDINATOR_JOURNAL_BYTES: u64 =
+    crate::control_store::CAPABILITY_PAYLOAD_RETENTION_COORDINATOR_JOURNAL_MAX_BYTES;
 
 pub(super) async fn scan(
     root: &Path,
@@ -66,6 +69,17 @@ pub(super) async fn scan(
             }
             DESCRIPTOR_SNAPSHOTS if metadata.is_dir() => {
                 scan_descriptor_snapshots(&path, location, budget, &mut facts).await?;
+            }
+            COORDINATOR_RETENTION_JOURNAL if metadata.is_file() => {
+                require_owned_file(
+                    &path,
+                    MAX_COORDINATOR_JOURNAL_BYTES,
+                    "Capability Gateway retention coordinator journal",
+                )
+                .await?;
+                return Err(inventory_invalid(
+                    "Capability Gateway retention coordination is not quiescent.",
+                ));
             }
             _ => {
                 return Err(inventory_invalid(

@@ -1225,6 +1225,15 @@ after an interruption. The coordinator is recoverable ordered deletion, not a
 cross-directory atomic transaction; lifecycle retention policy and production
 owner registration remain outside it.
 
+The coordinator now also persists a bounded canonical
+`a3s.use.control-capability-payload-retention-journal.v1` before the first
+unlink and checkpoints catalog completion before advancing to descriptor
+snapshots. A restart can reopen the exact reviewed pair; ordinary owner
+publication/reads, clean restore, state backup, and artifact reachability are
+blocked until that journal is recovered and retired. This is durable ordered
+convergence rather than a cross-directory atomic transaction, so lifecycle
+retention policy and production owner registration remain release gates.
+
 Implementation note (2026-09-06): `CapabilityGatewayCatalogStore` now also
 exposes an owner-native clean-target restore boundary. A reviewed plan binds
 the installation, canonical byte counts, and the complete digest-sorted

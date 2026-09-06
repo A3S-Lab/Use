@@ -203,7 +203,10 @@ descriptor retention plans to one canonical digest, acquires one exclusive
 maintenance fence, preflights both live inventories and any matching pending
 journals before the first unlink, and deletes catalog then descriptor records in
 a fixed order. If the process stops between owners, replaying the exact plan
-reconciles the completed owner and resumes the other. This is recoverable
+reconciles the completed owner and resumes the other. A bounded canonical
+`a3s.use.control-capability-payload-retention-journal.v1` records the pair of
+plans and the catalog-complete phase before any unlink; backup and reachability
+therefore fail closed while that journal is pending. This is recoverable
 ordered deletion, not a cross-directory atomic transaction. Control cursor
 reopening, lifecycle-selected retention policy, lease activation, and other
 authority decisions remain outside the payload owners.
@@ -222,9 +225,10 @@ Creation rejects:
 - pending package graph/download/resolution work, active enablement, or Runtime
   Service provisioning evidence;
 - atomic `.tmp`, `.partial`, and other nonterminal state entries;
-- unknown Capability Gateway paths, mutation locks, staging files, or catalog
-  and descriptor-snapshot retention journals (the immutable payload family
-  admits only canonical records);
+- unknown Capability Gateway paths, mutation locks, staging files, catalog or
+  descriptor-snapshot retention journals, or the cross-owner retention
+  coordinator journal (the immutable payload family admits only canonical
+  records);
 - any installation data payload or unknown state family;
 - absolute, parent-traversing, non-UTF-8, Windows-reserved, case-colliding, or
   otherwise non-portable paths;

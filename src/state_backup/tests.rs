@@ -157,6 +157,24 @@ async fn coordinated_backup_registers_and_verifies_capability_gateway_catalogs()
     assert_eq!(error.code, "use.state_backup_nonterminal");
     std::fs::remove_file(&journal).unwrap();
 
+    // A cross-owner coordinator journal is equally nonterminal. Copying the
+    // state while it exists could make a backup look complete while one owner
+    // is only half-pruned.
+    let coordinator_journal = paths
+        .state_root()
+        .join("capability-gateway/.retention-coordinator.journal");
+    std::fs::write(&coordinator_journal, b"pending retention").unwrap();
+    let error = StateBackupManager::new(paths.clone())
+        .backup(
+            temporary
+                .path()
+                .join("pending-coordinator-retention.a3s-use-state-backup"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_nonterminal");
+    std::fs::remove_file(&coordinator_journal).unwrap();
+
     let descriptor_root = paths
         .state_root()
         .join("capability-gateway/descriptor-snapshots");

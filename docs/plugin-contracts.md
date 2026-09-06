@@ -68,6 +68,7 @@ current set.
 | Control descriptor snapshot retention plan | `a3s.use.control-capability-descriptor-snapshot-retention-plan.v1` |
 | Control descriptor snapshot retention result | `a3s.use.control-capability-descriptor-snapshot-retention-result.v1` |
 | Control descriptor snapshot retention journal | `a3s.use.control-capability-descriptor-snapshot-retention-journal.v1` (internal) |
+| Capability payload retention coordinator journal | `a3s.use.control-capability-payload-retention-journal.v1` (internal) |
 | OKF Knowledge binding | `a3s.use.okf-knowledge-binding.v2` |
 | OKF Knowledge search | `a3s.use.okf-knowledge-search-request.v1` / `a3s.use.okf-knowledge-search-response.v1` |
 | OKF Knowledge citation | `a3s.use.okf-knowledge-citation.v1` |

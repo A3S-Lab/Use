@@ -301,6 +301,7 @@ pub(super) async fn apply_clean_restore_under_maintenance(
             "The descriptor snapshot restore plan digest differs from its payload.",
         ));
     }
+    super::super::super::ensure_capability_payload_retention_quiescent(&store.state_root).await?;
     let prepared = prepare_snapshots(store, snapshots, Some(&verification))?;
     if prepared
         .iter()

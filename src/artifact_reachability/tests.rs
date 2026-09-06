@@ -588,6 +588,35 @@ async fn global_inventory_rejects_capability_gateway_retention_evidence() {
 }
 
 #[tokio::test]
+async fn global_inventory_rejects_capability_gateway_coordinator_retention_evidence() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let installation =
+        InstallationId::new(InstallationKind::User, "capability-coordinator-retention").unwrap();
+    let paths = roots.for_installation(installation.clone()).unwrap();
+    let catalog = crate::core::CapabilityGatewayCatalog::new(installation, 0, Vec::new()).unwrap();
+    let store = CapabilityGatewayCatalogStore::from_extension_paths(&paths);
+    store.publish(&catalog).await.unwrap();
+    fs::write(
+        paths
+            .installation_state_root()
+            .join("capability-gateway/.retention-coordinator.journal"),
+        b"pending",
+    )
+    .await
+    .unwrap();
+
+    let error = ArtifactReachabilityInspector::new(roots)
+        .inspect_references()
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.artifact_reachability.reference_invalid");
+}
+
+#[tokio::test]
 async fn joined_inventory_reports_unreferenced_physical_content_without_authorizing_deletion() {
     let temporary = tempfile::tempdir().unwrap();
     let roots = UsePaths::new(

@@ -71,9 +71,16 @@ pub(in crate::control_store) use payload_restore::{
 #[allow(unused_imports)]
 pub(in crate::control_store) use payload_retention::{
     ControlCapabilityPayloadRetentionCoordinator, ControlCapabilityPayloadRetentionPlan,
-    ControlCapabilityPayloadRetentionResult, CONTROL_CAPABILITY_PAYLOAD_RETENTION_PLAN_SCHEMA,
+    ControlCapabilityPayloadRetentionResult, CONTROL_CAPABILITY_PAYLOAD_RETENTION_JOURNAL_SCHEMA,
+    CONTROL_CAPABILITY_PAYLOAD_RETENTION_PLAN_SCHEMA,
     CONTROL_CAPABILITY_PAYLOAD_RETENTION_RESULT_SCHEMA,
 };
+
+pub(in crate::control_store) async fn ensure_capability_payload_retention_quiescent(
+    state_root: &std::path::Path,
+) -> a3s_use_core::UseResult<()> {
+    payload_retention::ensure_no_pending_journal(state_root).await
+}
 
 const CATALOG_BINDING_ERROR: &str = "use.control.capability_catalog_binding_invalid";
 

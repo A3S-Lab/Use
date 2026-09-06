@@ -269,6 +269,9 @@ impl CapabilityGatewayCatalogStore {
                 "The catalog restore plan digest differs from its payload.",
             ));
         }
+        #[cfg(feature = "extensions")]
+        crate::control_store::ensure_capability_payload_retention_quiescent(&self.state_root)
+            .await?;
         let prepared = prepare_catalogs(self, catalogs)?;
         if prepared
             .iter()
