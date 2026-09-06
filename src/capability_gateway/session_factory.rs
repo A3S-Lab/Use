@@ -108,8 +108,16 @@ impl SessionLifecycle {
     }
 
     async fn wait_until_idle(&self) {
-        while self.active.load(Ordering::Acquire) != 0 {
-            self.changed.notified().await;
+        loop {
+            // Create the waiter before checking the counter.  The final
+            // operation may leave between the counter read and the await;
+            // `Notify::notified` created first is guaranteed to observe the
+            // ensuing `notify_waiters` call instead of losing that wake-up.
+            let notified = self.changed.notified();
+            if self.active.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            notified.await;
         }
     }
 }
