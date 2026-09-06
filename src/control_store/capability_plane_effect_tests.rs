@@ -19,9 +19,14 @@ use ring::signature::{Ed25519KeyPair, KeyPair};
 
 #[cfg(feature = "mcp")]
 use crate::capability_gateway::{
-    CapabilityGatewayCompositionOptions, CapabilityGatewayInvocationProvider,
-    CapabilityGatewayRequestContext, CapabilityGatewaySessionFactory,
+    CapabilityGatewayCompositionOptions, CapabilityGatewayInvocation,
+    CapabilityGatewayInvocationProvider, CapabilityGatewayRequestContext,
+    CapabilityGatewaySessionFactory,
 };
+#[cfg(feature = "mcp")]
+use crate::control_store::effect_owner::capability_plane::ControlCapabilityGatewayInvocationFactory;
+#[cfg(feature = "mcp")]
+use rmcp::model::ResourceContents;
 
 use super::aggregate_tests::fixtures::{
     apply_all_effects, claim, control_installation, digest, initialized_store, observation,
@@ -59,6 +64,8 @@ struct EmptyCatalogProjection;
 
 struct UnauthorizedCatalogProjection;
 
+struct ExactResourceCatalogProjection;
+
 #[cfg(feature = "mcp")]
 #[derive(Debug, Default)]
 struct EmptyGatewayProvider;
@@ -82,6 +89,82 @@ impl CapabilityGatewayInvocationProvider for EmptyGatewayProvider {
         _context: &CapabilityGatewayRequestContext,
     ) -> a3s_use_core::UseResult<serde_json::Value> {
         Ok(serde_json::json!({"ok": true}))
+    }
+}
+
+#[cfg(feature = "mcp")]
+#[derive(Debug, Default)]
+struct RecordingControlInvocationFactory {
+    opened: std::sync::Mutex<Vec<(String, u64, String)>>,
+}
+
+#[cfg(feature = "mcp")]
+struct RecordingControlInvocation {
+    invocation_ref: InvocationRef,
+    resource_uri: String,
+}
+
+#[cfg(feature = "mcp")]
+#[async_trait::async_trait]
+impl ControlCapabilityGatewayInvocationFactory for RecordingControlInvocationFactory {
+    async fn open(
+        &self,
+        descriptor: &CapabilityDescriptor,
+        _context: &CapabilityGatewayRequestContext,
+        lease: &super::effect_owner::capability_plane::ControlCapabilitySnapshotLease,
+    ) -> a3s_use_core::UseResult<Box<dyn CapabilityGatewayInvocation>> {
+        self.opened
+            .lock()
+            .map_err(|_| {
+                a3s_use_core::UseError::new(
+                    "test.control_invocation_factory_poisoned",
+                    "The test Control invocation factory lock was poisoned.",
+                )
+            })?
+            .push((
+                descriptor.package_id.to_string(),
+                descriptor.generation,
+                lease.cursor().catalog.digest.clone(),
+            ));
+        Ok(Box::new(RecordingControlInvocation {
+            invocation_ref: descriptor.invocation_ref.clone(),
+            resource_uri: descriptor
+                .resource_uri()
+                .map(|uri| uri.as_str().to_owned())
+                .unwrap_or_default(),
+        }))
+    }
+}
+
+#[cfg(feature = "mcp")]
+#[async_trait::async_trait]
+impl CapabilityGatewayInvocation for RecordingControlInvocation {
+    async fn authorize(
+        &self,
+        _arguments: &serde_json::Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> a3s_use_core::UseResult<()> {
+        Ok(())
+    }
+
+    async fn invoke(
+        &self,
+        _arguments: serde_json::Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> a3s_use_core::UseResult<serde_json::Value> {
+        Ok(serde_json::json!({
+            "invocationRef": self.invocation_ref.as_str(),
+        }))
+    }
+
+    async fn read_resource(
+        &self,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> a3s_use_core::UseResult<Vec<ResourceContents>> {
+        Ok(vec![ResourceContents::text(
+            "Control-bound resource",
+            &self.resource_uri,
+        )])
     }
 }
 
@@ -157,6 +240,23 @@ impl ControlCapabilityCatalogProjectionPort for EmptyCatalogProjection {
                 authority.generation.snapshot.installation.clone(),
                 authority.generation.capability.generation,
                 Vec::new(),
+            )
+            .unwrap(),
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl ControlCapabilityCatalogProjectionPort for ExactResourceCatalogProjection {
+    async fn project(
+        &self,
+        authority: &ControlCapabilityEffectAuthority,
+    ) -> ControlEffectPortOutcome<CapabilityGatewayCatalog> {
+        ControlEffectPortOutcome::applied(
+            CapabilityGatewayCatalog::new(
+                authority.generation.snapshot.installation.clone(),
+                authority.generation.capability.generation,
+                vec![exact_resource_descriptor(authority)],
             )
             .unwrap(),
         )
@@ -474,6 +574,77 @@ async fn control_gateway_reconciliation_is_idempotent_for_the_current_cursor() {
     )
     .await
     .unwrap();
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn control_gateway_invocation_resolves_only_exact_published_descriptors() {
+    let fixture = installed_capability_plane_with_projection(
+        "operation:capability-plane:gateway-invocation",
+        Arc::new(ExactResourceCatalogProjection),
+    )
+    .await;
+    let paths = fixture._owner_fixture.paths.clone();
+    let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        super::composition::ControlEffectCompositionDependencies {
+            runtime_registry: Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: Arc::new(CompositionReadiness),
+            catalog_projection: Arc::new(EmptyCatalogProjection),
+            flow: Arc::new(UnexpectedDynamicSurfacePort),
+            clock: Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+
+    let lease = fixture.plane.reopen_published().await.unwrap().unwrap();
+    let descriptor = lease.catalog().descriptors()[0].clone();
+    let factory = Arc::new(RecordingControlInvocationFactory::default());
+    let provider = composition.gateway_invocation_provider(factory.clone());
+    let context = CapabilityGatewayRequestContext::stdio();
+
+    let contents = provider.read_resource(&descriptor, &context).await.unwrap();
+    assert!(matches!(
+        contents.as_slice(),
+        [ResourceContents::TextResourceContents { uri, text, .. }]
+            if uri == descriptor.resource_uri().unwrap().as_str()
+                && text == "Control-bound resource"
+    ));
+    assert_eq!(
+        factory.opened.lock().unwrap().as_slice(),
+        &[(
+            descriptor.package_id.to_string(),
+            descriptor.generation,
+            lease.cursor().catalog.digest.clone(),
+        )]
+    );
+
+    let mut forged = descriptor.clone();
+    forged.title = "substituted".to_owned();
+    let error = provider
+        .read_resource(&forged, &context)
+        .await
+        .expect_err("a forged descriptor must fail before opening provider state");
+    assert_eq!(
+        error.code,
+        "use.control.capability_gateway_invocation_mismatch"
+    );
+    assert_eq!(factory.opened.lock().unwrap().len(), 1);
+
+    let session = composition
+        .reopen_published_capability_gateway_with_factory(
+            factory.clone(),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let _activation = composition.gateway_cutover_activation_with_factory(
+        session,
+        factory,
+        CapabilityGatewayCompositionOptions::default(),
+    );
 }
 
 #[tokio::test]
@@ -1654,7 +1825,18 @@ async fn published_snapshot_lease_blocks_prior_generation_drain_until_the_call_r
 }
 
 async fn installed_capability_plane(operation_id: &str) -> InstalledCapabilityPlaneFixture {
-    let fixture = prepared_capability_plane(operation_id).await;
+    installed_capability_plane_with_projection(operation_id, Arc::new(EmptyCatalogProjection)).await
+}
+
+async fn prepared_capability_plane(operation_id: &str) -> InstalledCapabilityPlaneFixture {
+    prepared_capability_plane_with_projection(operation_id, Arc::new(EmptyCatalogProjection)).await
+}
+
+async fn installed_capability_plane_with_projection(
+    operation_id: &str,
+    projection: Arc<dyn ControlCapabilityCatalogProjectionPort>,
+) -> InstalledCapabilityPlaneFixture {
+    let fixture = prepared_capability_plane_with_projection(operation_id, projection).await;
     assert_dispatch(
         &fixture.dispatcher,
         &fixture.installed,
@@ -1678,7 +1860,10 @@ async fn installed_capability_plane(operation_id: &str) -> InstalledCapabilityPl
     fixture
 }
 
-async fn prepared_capability_plane(operation_id: &str) -> InstalledCapabilityPlaneFixture {
+async fn prepared_capability_plane_with_projection(
+    operation_id: &str,
+    projection: Arc<dyn ControlCapabilityCatalogProjectionPort>,
+) -> InstalledCapabilityPlaneFixture {
     let installation = control_installation();
     let (owner_fixture, artifact_admission) =
         knowledge_owner_fixture_for(installation.clone()).await;
@@ -1696,7 +1881,7 @@ async fn prepared_capability_plane(operation_id: &str) -> InstalledCapabilityPla
         ControlCapabilityPlaneEffectPort::new(
             store.clone(),
             CapabilityGatewayCatalogStore::from_extension_paths(&owner_fixture.paths),
-            Arc::new(EmptyCatalogProjection),
+            projection,
         )
         .unwrap(),
     );

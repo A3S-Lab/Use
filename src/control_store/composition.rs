@@ -38,6 +38,10 @@ use super::effect_owner::capability_plane::{
     ControlCapabilityPayloadRetentionCoordinator, ControlCapabilityPayloadRetentionResult,
     ControlCapabilityPlaneEffectPort, ControlCapabilitySnapshotLease,
 };
+#[cfg(feature = "mcp")]
+use super::effect_owner::capability_plane::{
+    ControlCapabilityGatewayInvocationFactory, ControlCapabilityGatewayInvocationResolver,
+};
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_owner::runtime::{ControlRuntimeEffectPort, ControlRuntimeServiceReadinessPort};
 use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
@@ -290,6 +294,21 @@ impl ControlStoreRuntimeComposition {
         Ok(Some(CapabilityGatewaySessionFactory::new(server)))
     }
 
+    /// Reconstruct a live Gateway whose opaque invocation provider is bound to
+    /// the same durable Control publication as the session lease. This helper
+    /// keeps resolver and endpoint construction together so a host cannot
+    /// accidentally pair a Control catalog with a Registry-backed resolver.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) async fn reopen_published_capability_gateway_with_factory(
+        &self,
+        factory: Arc<dyn ControlCapabilityGatewayInvocationFactory>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> UseResult<Option<CapabilityGatewaySessionFactory>> {
+        let provider = self.gateway_invocation_provider(factory);
+        self.reopen_published_capability_gateway(provider, options)
+            .await
+    }
+
     /// Replace an existing live Gateway endpoint from the current durable
     /// Control publication. A missing or raced publication returns `None` so
     /// the host can retry after refreshing its lifecycle view; the factory
@@ -306,6 +325,20 @@ impl ControlStoreRuntimeComposition {
         };
         let server = Self::gateway_server_from_control_lease(lease, provider, options)?;
         Ok(Some(factory.replace(server).await?))
+    }
+
+    /// Replace a live Gateway from the current durable Control publication
+    /// while constructing its resolver from the same Control authority.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) async fn replace_published_capability_gateway_with_factory(
+        &self,
+        session: &CapabilityGatewaySessionFactory,
+        factory: Arc<dyn ControlCapabilityGatewayInvocationFactory>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> UseResult<Option<CapabilityGatewaySessionReplacement>> {
+        let provider = self.gateway_invocation_provider(factory);
+        self.replace_published_capability_gateway(session, provider, options)
+            .await
     }
 
     /// Reconcile a live Control-bound Gateway endpoint with the durable
@@ -382,6 +415,38 @@ impl ControlStoreRuntimeComposition {
             provider,
             options,
         })
+    }
+
+    /// Build a lifecycle activation hook whose resolver and session factory
+    /// are both derived from this Control composition. Keeping this helper at
+    /// the boundary prevents a host from attaching a Registry-backed provider
+    /// to a Control-leased endpoint by accident.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) fn gateway_cutover_activation_with_factory(
+        &self,
+        session: CapabilityGatewaySessionFactory,
+        factory: Arc<dyn ControlCapabilityGatewayInvocationFactory>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> Arc<dyn PluginGraphCapabilityCutoverActivation> {
+        let provider = self.gateway_invocation_provider(factory);
+        self.gateway_cutover_activation(session, provider, options)
+    }
+
+    /// Build the host provider that resolves opaque references through this
+    /// composition's exact Control publication and generation lease.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) fn gateway_invocation_provider(
+        &self,
+        factory: Arc<dyn ControlCapabilityGatewayInvocationFactory>,
+    ) -> Arc<dyn CapabilityGatewayInvocationProvider> {
+        Arc::new(
+            crate::capability_gateway::CapabilityGatewayResolvedProvider::new(Arc::new(
+                ControlCapabilityGatewayInvocationResolver::new(
+                    Arc::clone(&self.capability_plane),
+                    factory,
+                ),
+            )),
+        )
     }
 
     #[cfg(feature = "mcp")]

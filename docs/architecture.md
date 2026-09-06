@@ -215,7 +215,12 @@ durable publication and before prior-generation drain. The Control
 composition supplies an adapter that reconciles the durable cursor, rejects an
 unleased or newer endpoint, and treats an already matching catalog as a
 no-op. The adapter is still an embedding seam until production lifecycle hosts
-attach it and derive payload retention from live leases.
+attach it and derive payload retention from live leases. The same composition
+now supplies a Control-backed opaque invocation resolver: each call reopens
+the exact published cursor, validates the complete descriptor against the
+immutable catalog, and gives a host factory the same Control lease that is
+retained until the call returns. The host factory remains responsible for the
+private principal/Grant/Runtime join.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,
