@@ -434,11 +434,15 @@ pub struct CapabilityGatewayMcpServer {
 
 /// Crate-internal lifetime marker for an alternate installation authority.
 ///
-/// External hosts must use the typed [`CapabilitySnapshotLease`] constructors.
-/// The inactive Control composition implements this marker for its private
-/// lease so the MCP layer can retain it without exposing Control storage types
-/// through the public API.
-pub(crate) trait CapabilityGatewayExternalLease: Send + Sync {}
+/// The binding check is part of the marker rather than inferred from the
+/// catalog alone.  A catalog identity can be copied into an unrelated server;
+/// the marker must prove that the retained authority lease selected that same
+/// endpoint.  The inactive Control composition implements this marker for its
+/// private lease so the MCP layer can retain it without exposing Control
+/// storage types through the public API.
+pub(crate) trait CapabilityGatewayExternalLease: Send + Sync {
+    fn matches_gateway_session(&self, key: &CapabilityGatewaySessionKey) -> bool;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CapabilityGatewayGenerationLeaseMode {
@@ -1012,6 +1016,16 @@ impl CapabilityGatewayMcpServer {
         } else {
             CapabilityGatewayGenerationLeaseMode::None
         }
+    }
+
+    /// Prove that this server's erased external authority lease selected the
+    /// exact immutable endpoint identity.  The check deliberately returns
+    /// `false` for a server without an external lease; matching catalog bytes
+    /// alone are not lifecycle authority.
+    pub(crate) fn external_lease_matches(&self, key: &CapabilityGatewaySessionKey) -> bool {
+        self.external_lease
+            .as_ref()
+            .is_some_and(|lease| lease.matches_gateway_session(key))
     }
 
     /// Return the shared standard MCP list-change hub for this server.

@@ -9,6 +9,8 @@ use rusqlite::{params, Connection, ErrorCode, Row, Transaction, TransactionBehav
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+use rusqlite::OptionalExtension as _;
+
 use super::export::ControlStoreExport;
 use super::model::{
     conflict_error, corruption_error, enforcement_profile_name, input_error, operation_action_name,
@@ -21,8 +23,8 @@ use super::model::{
     ControlEffectStatus, ControlEffectSubject, ControlGeneration, ControlGrantSelection,
     ControlOperationRecord, ControlOperationStatus, ControlPackageLifecycle,
     ControlProjectionHistory, ControlProviderSelection, ControlPublishedCapabilityCursor,
-    ControlStoreAuthority, ControlTransition, ReviewedControlOperation,
-    MAX_CONTROL_HISTORY_PACKAGES,
+    ControlPublishedCapabilityCutover, ControlStoreAuthority, ControlTransition,
+    ReviewedControlOperation, MAX_CONTROL_HISTORY_PACKAGES,
 };
 use super::schema;
 use crate::plugin_lifecycle::operation_cutover_key;
@@ -406,6 +408,16 @@ pub(super) fn published_capability_cutover_key(
     path: &Path,
     installation: &InstallationId,
 ) -> UseResult<Option<String>> {
+    Ok(published_capability_cutover(path, installation)?
+        .and_then(|cutover| cutover.graph_cutover_key))
+}
+
+/// Read the published capability cursor and its owning graph operation from
+/// one consistent SQLite snapshot.
+pub(super) fn published_capability_cutover(
+    path: &Path,
+    installation: &InstallationId,
+) -> UseResult<Option<ControlPublishedCapabilityCutover>> {
     let connection = schema::open_verified_read(path, installation)?;
     let transaction = connection.unchecked_transaction().map_err(|error| {
         schema::sqlite_error(
@@ -429,8 +441,12 @@ pub(super) fn published_capability_cutover_key(
             [to_i64(cursor.installation_generation)?],
             |row| row.get(0),
         )
+        .optional()
         .map_err(|error| {
             schema::sqlite_error("read published Control capability operation binding", error)
+        })?
+        .ok_or_else(|| {
+            corruption_error("The published Control capability has no owning operation.")
         })?;
     let operation =
         read_operation_from(&transaction, installation, &operation_id)?.ok_or_else(|| {
@@ -448,7 +464,7 @@ pub(super) fn published_capability_cutover_key(
     // they are coordinated by the dedicated enablement lifecycle.  Returning
     // no graph key makes a graph callback fail closed instead of accepting an
     // unrelated opaque key.
-    let key = if matches!(
+    let graph_cutover_key = if matches!(
         operation.reviewed.action(),
         a3s_use_core::PluginOperationAction::Enable | a3s_use_core::PluginOperationAction::Disable
     ) {
@@ -468,7 +484,10 @@ pub(super) fn published_capability_cutover_key(
             error,
         )
     })?;
-    Ok(key)
+    Ok(Some(ControlPublishedCapabilityCutover {
+        cursor,
+        graph_cutover_key,
+    }))
 }
 
 fn read_published_capability_from(

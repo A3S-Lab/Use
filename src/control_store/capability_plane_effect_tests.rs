@@ -19,9 +19,9 @@ use ring::signature::{Ed25519KeyPair, KeyPair};
 
 #[cfg(feature = "mcp")]
 use crate::capability_gateway::{
-    CapabilityGatewayCompositionOptions, CapabilityGatewayInvocation,
-    CapabilityGatewayInvocationProvider, CapabilityGatewayRequestContext,
-    CapabilityGatewaySessionFactory,
+    CapabilityGatewayCompositionOptions, CapabilityGatewayExternalLease,
+    CapabilityGatewayInvocation, CapabilityGatewayInvocationProvider, CapabilityGatewayMcpServer,
+    CapabilityGatewayRequestContext, CapabilityGatewaySessionFactory,
 };
 #[cfg(feature = "mcp")]
 use crate::control_store::effect_owner::capability_plane::ControlCapabilityGatewayInvocationFactory;
@@ -69,6 +69,26 @@ struct ExactResourceCatalogProjection;
 #[cfg(feature = "mcp")]
 #[derive(Debug, Default)]
 struct EmptyGatewayProvider;
+
+#[cfg(feature = "mcp")]
+struct DrainLeaseMarker(Arc<std::sync::atomic::AtomicBool>);
+
+#[cfg(feature = "mcp")]
+impl CapabilityGatewayExternalLease for DrainLeaseMarker {
+    fn matches_gateway_session(
+        &self,
+        _key: &crate::capability_gateway::CapabilityGatewaySessionKey,
+    ) -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "mcp")]
+impl Drop for DrainLeaseMarker {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 #[cfg(feature = "mcp")]
 #[async_trait::async_trait]
@@ -626,6 +646,94 @@ async fn published_cutover_key_follows_the_published_generation_not_current_gene
             .unwrap(),
         Some(expected)
     );
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn gateway_retention_refuses_to_drain_a_session_outside_the_published_cursor() {
+    let fixture =
+        installed_capability_plane("operation:capability-plane:gateway-drain-binding").await;
+    let paths = fixture._owner_fixture.paths.clone();
+    let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        super::composition::ControlEffectCompositionDependencies {
+            runtime_registry: Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: Arc::new(CompositionReadiness),
+            catalog_projection: Arc::new(EmptyCatalogProjection),
+            flow: Arc::new(UnexpectedDynamicSurfacePort),
+            clock: Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+    let cursor = fixture.store.published_capability().await.unwrap().unwrap();
+
+    // The session belongs to the same installation but a different
+    // publication generation. It must not be accepted as the endpoint
+    // selected by the durable Control cursor.
+    let unrelated = CapabilityGatewayCatalog::new(
+        cursor.installation.clone(),
+        cursor.capability_generation.saturating_add(1),
+        Vec::new(),
+    )
+    .unwrap();
+    let lease_dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let session = CapabilityGatewaySessionFactory::new(
+        CapabilityGatewayMcpServer::new(unrelated, Arc::new(EmptyGatewayProvider))
+            .unwrap()
+            .with_external_lease(Arc::new(DrainLeaseMarker(Arc::clone(&lease_dropped))))
+            .unwrap(),
+    );
+    let error = composition
+        .drain_and_retain_published_capability_gateway(
+            &session,
+            std::time::Duration::from_secs(1),
+            &[],
+            &[],
+        )
+        .await
+        .expect_err("an unrelated endpoint must not be drained");
+    assert_eq!(
+        error.code,
+        "use.control.capability_gateway_drain_binding_mismatch"
+    );
+    assert!(!lease_dropped.load(std::sync::atomic::Ordering::SeqCst));
+
+    // A copied catalog identity is not enough either. The external lease
+    // marker must be the one issued by the Control capability plane, or a
+    // host could drain a different provider that happens to advertise the
+    // same immutable bytes.
+    let published_catalog = fixture
+        .plane
+        .reopen_published()
+        .await
+        .unwrap()
+        .unwrap()
+        .catalog()
+        .clone();
+    let forged_lease_dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let forged_session = CapabilityGatewaySessionFactory::new(
+        CapabilityGatewayMcpServer::new(published_catalog, Arc::new(EmptyGatewayProvider))
+            .unwrap()
+            .with_external_lease(Arc::new(DrainLeaseMarker(Arc::clone(
+                &forged_lease_dropped,
+            ))))
+            .unwrap(),
+    );
+    let error = composition
+        .drain_and_retain_published_capability_gateway(
+            &forged_session,
+            std::time::Duration::from_secs(1),
+            &[],
+            &[],
+        )
+        .await
+        .expect_err("a copied catalog without the Control lease must not be drained");
+    assert_eq!(
+        error.code,
+        "use.control.capability_gateway_drain_binding_mismatch"
+    );
+    assert!(!forged_lease_dropped.load(std::sync::atomic::Ordering::SeqCst));
 }
 
 #[cfg(feature = "mcp")]

@@ -1332,6 +1332,16 @@ call drain before entering the exclusive Capability payload retention fence;
 the inactive Control composition provides one helper that performs that
 drain-and-retain sequence against its durable cursor.
 
+Implementation note (2026-09-06): the Control composition now reads the
+published capability cursor and its owning operation from one SQLite snapshot,
+then reacquires the exact cursor before constructing or swapping a Gateway
+endpoint. Destructive drain-and-retain additionally requires the supplied
+session's catalog identity and Control-issued external lease to match that
+cursor; copied catalogs, unrelated leases, and cursor changes during drain fail
+closed before payload unlink. This closes the remaining in-process session
+identity/TOCTOU gap, while production host wiring and independent rollback
+authority remain release gates.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

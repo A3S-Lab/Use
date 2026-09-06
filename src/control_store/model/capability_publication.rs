@@ -106,6 +106,21 @@ pub(in crate::control_store) struct ControlPublishedCapabilityCursor {
     pub(in crate::control_store) packages: Vec<ControlPublishedCapabilityPackage>,
 }
 
+/// One coherent read of the durable Capability publication and the lifecycle
+/// operation that owns it.
+///
+/// The cursor and its graph cutover key must be observed from the same
+/// SQLite snapshot.  Keeping them together prevents a lifecycle callback
+/// from validating a key against one publication and then reconciling a
+/// different publication after a concurrent commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::control_store) struct ControlPublishedCapabilityCutover {
+    pub(in crate::control_store) cursor: ControlPublishedCapabilityCursor,
+    /// `None` is valid for an enablement-owned cursor: enable/disable
+    /// advances installation authority without changing the package graph.
+    pub(in crate::control_store) graph_cutover_key: Option<String>,
+}
+
 impl ControlPublishedCapabilityCursor {
     pub(in crate::control_store) fn from_generation(
         generation: &ControlGeneration,

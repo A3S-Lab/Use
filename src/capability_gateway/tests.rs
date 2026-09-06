@@ -52,7 +52,11 @@ struct RecordingProviderWithoutContent;
 #[derive(Debug, Default)]
 struct ExternalLeaseMarker;
 
-impl CapabilityGatewayExternalLease for ExternalLeaseMarker {}
+impl CapabilityGatewayExternalLease for ExternalLeaseMarker {
+    fn matches_gateway_session(&self, _key: &CapabilityGatewaySessionKey) -> bool {
+        false
+    }
+}
 
 #[async_trait]
 impl CapabilityGatewayInvocationProvider for RecordingProviderWithoutContent {

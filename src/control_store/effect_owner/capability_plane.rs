@@ -565,7 +565,17 @@ impl ControlCapabilitySnapshotLease {
 }
 
 #[cfg(feature = "mcp")]
-impl crate::capability_gateway::CapabilityGatewayExternalLease for ControlCapabilitySnapshotLease {}
+impl crate::capability_gateway::CapabilityGatewayExternalLease for ControlCapabilitySnapshotLease {
+    fn matches_gateway_session(
+        &self,
+        key: &crate::capability_gateway::CapabilityGatewaySessionKey,
+    ) -> bool {
+        self.cursor.installation == key.installation
+            && self.cursor.catalog.generation == key.generation
+            && self.cursor.catalog.revision == key.revision
+            && self.cursor.catalog.digest == key.digest
+    }
+}
 
 impl fmt::Debug for ControlCapabilitySnapshotLease {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

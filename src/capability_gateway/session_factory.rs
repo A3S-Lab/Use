@@ -244,6 +244,36 @@ impl CapabilityGatewaySessionFactory {
     /// error when work is still in flight.
     pub async fn drain(&self, timeout: Duration) -> UseResult<()> {
         let _serial = self.cutover.clone().lock_owned().await;
+        self.drain_locked(timeout).await
+    }
+
+    /// Drain only when the currently selected source is the exact endpoint
+    /// bound to `expected`.  The identity and lease checks run while holding
+    /// the same serialization guard as replacement and the draining state
+    /// transition, so a concurrent replacement cannot slip between validation
+    /// and admission closure.  `false` means the source was not the expected
+    /// Control-bound endpoint and was left untouched.
+    pub(crate) async fn drain_if_bound(
+        &self,
+        expected: &CapabilityGatewaySessionKey,
+        timeout: Duration,
+    ) -> UseResult<bool> {
+        let _serial = self.cutover.clone().lock_owned().await;
+        let bound = {
+            let current = self.current();
+            session_key(current.catalog())? == *expected
+                && current.generation_lease_mode()
+                    == super::CapabilityGatewayGenerationLeaseMode::External
+                && current.external_lease_matches(expected)
+        };
+        if !bound {
+            return Ok(false);
+        }
+        self.drain_locked(timeout).await?;
+        Ok(true)
+    }
+
+    async fn drain_locked(&self, timeout: Duration) -> UseResult<()> {
         match self.lifecycle.state() {
             SESSION_DRAINED => return Ok(()),
             SESSION_RUNNING => {
@@ -680,7 +710,14 @@ mod tests {
 
     struct LeaseMarker(Arc<AtomicBool>);
 
-    impl CapabilityGatewayExternalLease for LeaseMarker {}
+    impl CapabilityGatewayExternalLease for LeaseMarker {
+        fn matches_gateway_session(
+            &self,
+            _key: &super::super::CapabilityGatewaySessionKey,
+        ) -> bool {
+            false
+        }
+    }
 
     impl Drop for LeaseMarker {
         fn drop(&mut self) {

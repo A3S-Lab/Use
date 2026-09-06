@@ -28,8 +28,8 @@ use export::VerifiedControlStoreExport;
 use filesystem::CONTROL_STORE_DATABASE_FILE;
 use model::{
     ClaimedControlEffect, ControlEffectClaim, ControlEffectObservation, ControlEffectRecord,
-    ControlGeneration, ControlOperationRecord, ControlPublishedCapabilityCursor, ControlTransition,
-    ReviewedControlOperation,
+    ControlGeneration, ControlOperationRecord, ControlPublishedCapabilityCursor,
+    ControlPublishedCapabilityCutover, ControlTransition, ReviewedControlOperation,
 };
 use payload_owner::{ControlPayloadOwnerRegistry, ControlPayloadSnapshotSession};
 use schema::{ControlStoreInspection, ControlStoreMetadata};
@@ -360,6 +360,23 @@ impl ControlStore {
             filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
         self.executor
             .published_capability_cutover_key(database_path, self.installation.clone())
+            .await
+    }
+
+    /// Read the published Capability cursor and its owning graph operation as
+    /// one coherent authority snapshot.  Lifecycle activation uses this
+    /// instead of separately reading a cursor and an opaque cutover key.
+    async fn published_capability_cutover(
+        &self,
+    ) -> UseResult<Option<ControlPublishedCapabilityCutover>> {
+        let _maintenance = StateMaintenanceLock::new(&self.state_root)
+            .acquire_shared()
+            .await?;
+        filesystem::require_initialized(&self.state_root, &self.database_path).await?;
+        let database_path =
+            filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
+        self.executor
+            .published_capability_cutover(database_path, self.installation.clone())
             .await
     }
 

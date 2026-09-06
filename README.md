@@ -100,7 +100,10 @@ The implementation and fixtures exercise the product model directly:
   session factory's `from_published` and `replace_published` paths verify this
   exact durable publication before exposing a live endpoint. The inactive
   Control composition additionally binds the publication identity to the
-  applied capability cutover and published cursor in one transaction. The
+  applied capability cutover and published cursor in one transaction. Its
+  lifecycle reconciliation reads that cursor and owning operation together,
+  and its drain-and-retain path requires both the exact catalog identity and
+  the Control-issued generation lease before closing a live endpoint. The
   coordinated backup inventory validates its canonical records together with
   signed/legacy descriptor snapshots under one capability-payload family.
 - [`RegistryNetworkPolicy`](crates/extension/src/remote/network.rs) lets an
@@ -131,7 +134,7 @@ The implementation and fixtures exercise the product model directly:
   binds its opaque key to the durable Control operation that owns the published
   cursor, and runs before any prior-generation drain; the inactive Control
   composition supplies a Control-lease-backed adapter for live session
-  replacement.
+  replacement and rejects drain requests for copied or unrelated sessions.
 - [`RuntimeTaskDispatcher`](src/plugin_runtime/task_dispatch.rs) reopens the
   exact v4 Task binding and provider selected at review time, while capability
   snapshot v5 publishes only matching release-backed Tasks with complete

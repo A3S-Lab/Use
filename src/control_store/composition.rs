@@ -51,8 +51,8 @@ use super::effect_owner::static_surface::ControlStaticSurfaceEffectPort;
 use super::effect_port::{ControlCapabilityCatalogProjectionPort, ControlFlowEffectPort};
 use super::model::{
     ControlEffectKind, ControlEffectOwner, ControlEffectSubject, ControlGeneration,
-    ControlOperationRecord, ControlPublishedCapabilityCursor, ControlTransition,
-    ReviewedControlOperation,
+    ControlOperationRecord, ControlPublishedCapabilityCursor, ControlPublishedCapabilityCutover,
+    ControlTransition, ReviewedControlOperation,
 };
 use super::operation_admission::reviewed_cognitive_package_operation;
 use super::{ControlStore, ControlStoreMetadata};
@@ -75,6 +75,8 @@ const CAPABILITY_RETENTION_CURSOR_ERROR: &str =
     "use.control.capability_payload_retention_cursor_stale";
 const CAPABILITY_RETENTION_SNAPSHOT_ERROR: &str =
     "use.control.capability_payload_retention_snapshot_missing";
+const CAPABILITY_GATEWAY_DRAIN_BINDING_ERROR: &str =
+    "use.control.capability_gateway_drain_binding_mismatch";
 
 /// All dependencies needed to compose one inactive Control dispatcher.
 ///
@@ -355,7 +357,34 @@ impl ControlStoreRuntimeComposition {
         additional_catalog_retain_digests: &[String],
         additional_descriptor_snapshot_retain_digests: &[String],
     ) -> UseResult<ControlCapabilityPayloadRetentionResult> {
-        session.drain(drain_timeout).await?;
+        // A retention call must drain the endpoint selected by the durable
+        // cursor, not merely any session supplied by the host.  Otherwise a
+        // stale or unrelated endpoint could be drained while the published
+        // generation remains live and its payload is deleted underneath it.
+        let binding = self
+            .store
+            .published_capability_cutover()
+            .await?
+            .ok_or_else(|| {
+                UseError::new(
+                    CAPABILITY_GATEWAY_DRAIN_BINDING_ERROR,
+                    "The durable Control capability publication is unavailable for Gateway drain.",
+                )
+            })?;
+        let expected_key = gateway_session_key_from_cursor(&binding.cursor)?;
+        if !session.drain_if_bound(&expected_key, drain_timeout).await? {
+            return Err(UseError::new(
+                CAPABILITY_GATEWAY_DRAIN_BINDING_ERROR,
+                "The Gateway session does not retain the Control lease for the durable capability publication.",
+            ));
+        }
+        let confirmed = self.store.published_capability_cutover().await?;
+        if confirmed.as_ref().map(|value| &value.cursor) != Some(&binding.cursor) {
+            return Err(UseError::new(
+                CAPABILITY_RETENTION_CURSOR_ERROR,
+                "The published Control capability changed while the Gateway session was draining.",
+            ));
+        }
         let plan = self
             .plan_published_capability_payload_retention(
                 additional_catalog_retain_digests,
@@ -506,14 +535,33 @@ impl ControlStoreRuntimeComposition {
         provider: Arc<dyn CapabilityGatewayInvocationProvider>,
         options: CapabilityGatewayCompositionOptions,
     ) -> UseResult<Option<ControlCapabilityGatewayReconciliation>> {
-        let Some(cursor) = self.store.published_capability().await? else {
+        let Some(binding) = self.store.published_capability_cutover().await? else {
             return Ok(None);
         };
-        let expected = gateway_session_key_from_cursor(&cursor)?;
+        self.reconcile_published_capability_gateway_binding(factory, provider, options, &binding)
+            .await
+    }
+
+    /// Reconcile against one already-coherent cursor/operation read.  The
+    /// exact cursor is reacquired below rather than reopening whatever happens
+    /// to be current, so a concurrent publication can only make this attempt
+    /// return `None` and force the lifecycle caller to retry.
+    #[cfg(feature = "mcp")]
+    async fn reconcile_published_capability_gateway_binding(
+        &self,
+        factory: &CapabilityGatewaySessionFactory,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        options: CapabilityGatewayCompositionOptions,
+        binding: &ControlPublishedCapabilityCutover,
+    ) -> UseResult<Option<ControlCapabilityGatewayReconciliation>> {
+        let expected = gateway_session_key_from_cursor(&binding.cursor)?;
         let current = factory.current_key()?;
-        if factory.current().generation_lease_mode()
-            != CapabilityGatewayGenerationLeaseMode::External
-        {
+        let current_is_bound = {
+            let current_server = factory.current();
+            current_server.generation_lease_mode() == CapabilityGatewayGenerationLeaseMode::External
+                && current_server.external_lease_matches(&expected)
+        };
+        if !current_is_bound {
             return Err(UseError::new(
                 "use.control.capability_gateway_activation_invalid",
                 "The live Gateway endpoint is not bound to the Control generation lease authority.",
@@ -531,11 +579,26 @@ impl ControlStoreRuntimeComposition {
             ));
         }
 
-        let Some(lease) = self.capability_plane.reopen_published().await? else {
+        let Some(lease) = self
+            .capability_plane
+            .acquire_published(&binding.cursor)
+            .await?
+        else {
             return Ok(None);
         };
         let server = Self::gateway_server_from_control_lease(lease, provider, options)?;
         let next = gateway_session_key(server.catalog())?;
+        // The lease admission above proves the cursor was still exact while
+        // all package-generation locks and payload bytes were acquired.  A
+        // final authority read prevents swapping a freshly built endpoint if
+        // another publication completed while the provider server was being
+        // compiled.
+        let Some(confirmed) = self.store.published_capability_cutover().await? else {
+            return Ok(None);
+        };
+        if confirmed.cursor != binding.cursor {
+            return Ok(None);
+        }
         let current = factory.current_key()?;
         if current == next {
             return Ok(Some(ControlCapabilityGatewayReconciliation::Unchanged(
@@ -778,24 +841,18 @@ impl PluginGraphCapabilityCutoverActivation for ControlCapabilityGatewayCutoverA
         // owns the published cursor before reconciling the live endpoint;
         // otherwise a stale replay could accidentally activate a newer
         // publication simply because one exists.
-        if self
+        let Some(binding) = self
             .composition
             .store
-            .published_capability()
+            .published_capability_cutover()
             .await?
-            .is_none()
-        {
+        else {
             return Err(UseError::new(
                 "use.control.capability_gateway_publication_missing",
                 "The lifecycle cutover has no durable Control Gateway publication to activate.",
             ));
-        }
-        let Some(expected_key) = self
-            .composition
-            .store
-            .published_capability_cutover_key()
-            .await?
-        else {
+        };
+        let Some(expected_key) = binding.graph_cutover_key.as_deref() else {
             return Err(UseError::new(
                 "use.control.capability_gateway_activation_key_mismatch",
                 "The durable Control capability publication is not owned by a package-graph cutover.",
@@ -808,10 +865,11 @@ impl PluginGraphCapabilityCutoverActivation for ControlCapabilityGatewayCutoverA
             ));
         }
         self.composition
-            .reconcile_published_capability_gateway(
+            .reconcile_published_capability_gateway_binding(
                 &self.factory,
                 Arc::clone(&self.provider),
                 self.options.clone(),
+                &binding,
             )
             .await?
             .ok_or_else(|| {

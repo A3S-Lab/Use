@@ -10,7 +10,8 @@ use super::export::{
 use super::model::{
     corruption_error, ClaimedControlEffect, ControlEffectClaim, ControlEffectObservation,
     ControlEffectRecord, ControlGeneration, ControlOperationRecord,
-    ControlPublishedCapabilityCursor, ControlTransition, ReviewedControlOperation,
+    ControlPublishedCapabilityCursor, ControlPublishedCapabilityCutover, ControlTransition,
+    ReviewedControlOperation,
 };
 use super::schema::{self, ControlStoreInspection, ControlStoreMetadata};
 
@@ -90,6 +91,11 @@ enum ControlStoreRequest {
         database_path: PathBuf,
         installation: InstallationId,
         response: oneshot::Sender<UseResult<Option<String>>>,
+    },
+    PublishedCapabilityCutover {
+        database_path: PathBuf,
+        installation: InstallationId,
+        response: oneshot::Sender<UseResult<Option<ControlPublishedCapabilityCutover>>>,
     },
     Effects {
         database_path: PathBuf,
@@ -339,6 +345,21 @@ impl ControlStoreExecutor {
         receive(receiver).await
     }
 
+    pub(super) async fn published_capability_cutover(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+    ) -> UseResult<Option<ControlPublishedCapabilityCutover>> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::PublishedCapabilityCutover {
+            database_path,
+            installation,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
     pub(super) async fn effects(
         &self,
         database_path: PathBuf,
@@ -580,6 +601,16 @@ fn run_worker(mut receiver: mpsc::Receiver<ControlStoreRequest>) {
                 response,
             } => {
                 let _ = response.send(aggregate::published_capability_cutover_key(
+                    &database_path,
+                    &installation,
+                ));
+            }
+            ControlStoreRequest::PublishedCapabilityCutover {
+                database_path,
+                installation,
+                response,
+            } => {
+                let _ = response.send(aggregate::published_capability_cutover(
                     &database_path,
                     &installation,
                 ));
