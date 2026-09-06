@@ -201,8 +201,12 @@ reviewed pair and the catalog-complete phase before the first unlink; restart
 recovery resumes that exact pair, while backup and reachability reject the
 nonterminal marker. This is recoverable ordered deletion, not a cross-directory
 atomic transaction. Production owner registration, lifecycle retention policy,
-coordinated cursor reopening, and official Registry/TUF key-source binding
-remain activation gates.
+live Gateway session reconstruction, and official Registry/TUF key-source
+binding remain activation gates. The inactive composition now owns one
+restart-safe cursor-reopen seam: it derives the current publication from
+durable Control state, revalidates the exact Index and catalog payloads,
+reacquires the full package-generation lease set, and rejects a raced cutover
+instead of exposing a mixed graph.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,

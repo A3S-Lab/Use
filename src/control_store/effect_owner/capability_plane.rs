@@ -263,6 +263,23 @@ impl ControlCapabilityPlaneEffectPort {
         }))
     }
 
+    /// Reopen the exact published capability generation after a process
+    /// restart.
+    ///
+    /// The cursor is read from the durable Control Store rather than supplied
+    /// by the caller.  Reusing the normal exact-admission path then validates
+    /// the immutable Index and catalog payloads, acquires every package
+    /// generation lease, and confirms that no concurrent cutover changed the
+    /// published cursor while those leases were acquired.
+    pub(in crate::control_store) async fn reopen_published(
+        &self,
+    ) -> a3s_use_core::UseResult<Option<ControlCapabilitySnapshotLease>> {
+        let Some(expected) = self.control.published_capability().await? else {
+            return Ok(None);
+        };
+        self.acquire_published(&expected).await
+    }
+
     async fn cutover(
         &self,
         request: &ControlCapabilityCutoverRequest,
