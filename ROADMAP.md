@@ -1254,8 +1254,9 @@ current trust-store verification for signed v2 evidence, stages and rescans a
 complete candidate, persists a plan-bound activation marker, and publishes
 without clobbering an existing owner. Durable candidate/marker evidence is
 replayable after interruption, while foreign staged plans and retention
-journals fail closed. The remaining gate is coordinated Control reopening and
-production Registry/TUF-to-owner authority, not another local payload writer.
+journals fail closed. The remaining gate is production Gateway reconstruction
+from the reopened Control lease and Registry/TUF-to-owner authority, not
+another local payload writer.
 
 Implementation note (2026-09-06): the two immutable Capability owners now have
 one `ControlCapabilityPayloadRestoreCoordinator`. Its canonical plan binds the
@@ -1265,7 +1266,18 @@ publication,
 and holds one installation-wide exclusive maintenance fence through fixed
 catalog-then-descriptor activation. A stop between owner boundaries is
 recoverable by replaying the same plan; the coordinator intentionally makes no
-cross-directory atomicity claim. Control cursor reopening, lease drain,
+cross-directory atomicity claim. Live Gateway session reconstruction, lease
+drain, lifecycle retention policy, and Registry/TUF authority binding remain
+open.
+
+Implementation note (2026-09-06): the inactive Control composition can now
+reopen its published Capability generation directly from durable Control
+authority after a restart. The caller supplies no cursor. The Capability Plane
+reads the committed cursor, verifies the exact immutable Index and catalog,
+acquires every bound package-generation lease in canonical order, then rereads
+the Control cursor so a concurrent cutover returns stale rather than exposing
+a mixed graph. This closes the local cursor-reopen mechanism; production live
+Gateway session construction/replacement, owner registration, lease drain,
 lifecycle retention policy, and Registry/TUF authority binding remain open.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now

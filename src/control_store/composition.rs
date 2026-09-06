@@ -25,7 +25,7 @@ use super::dispatcher::{
 use super::effect_owner::capability_plane::{
     ControlCapabilityDescriptorSnapshotStore, ControlCapabilityPayloadRestoreCoordinator,
     ControlCapabilityPayloadRetentionCoordinator, ControlCapabilityPayloadRetentionResult,
-    ControlCapabilityPlaneEffectPort,
+    ControlCapabilityPlaneEffectPort, ControlCapabilitySnapshotLease,
 };
 use super::effect_owner::knowledge::ControlOkfKnowledgeEffectPort;
 use super::effect_owner::runtime::{ControlRuntimeEffectPort, ControlRuntimeServiceReadinessPort};
@@ -84,6 +84,7 @@ pub(in crate::control_store) struct ControlStoreRuntimeComposition {
     catalog_store: CapabilityGatewayCatalogStore,
     capability_payload_restore: ControlCapabilityPayloadRestoreCoordinator,
     capability_payload_retention: ControlCapabilityPayloadRetentionCoordinator,
+    capability_plane: Arc<ControlCapabilityPlaneEffectPort>,
     artifact_store: ArtifactStore,
     effects: ControlEffectRuntime,
 }
@@ -104,6 +105,7 @@ impl std::fmt::Debug for ControlStoreRuntimeComposition {
                 "capability_payload_retention",
                 &self.capability_payload_retention,
             )
+            .field("capability_plane", &self.capability_plane)
             .finish_non_exhaustive()
     }
 }
@@ -164,7 +166,7 @@ impl ControlStoreRuntimeComposition {
         let static_surface = Arc::new(ControlStaticSurfaceEffectPort::new(artifact_store.clone()));
         let ports = ControlEffectPorts::new(
             capability.clone(),
-            capability,
+            capability.clone(),
             runtime,
             dependencies.flow,
             knowledge,
@@ -178,6 +180,7 @@ impl ControlStoreRuntimeComposition {
             catalog_store,
             capability_payload_restore,
             capability_payload_retention,
+            capability_plane: capability,
             artifact_store,
             effects,
         })
@@ -221,6 +224,15 @@ impl ControlStoreRuntimeComposition {
         &self,
     ) -> UseResult<Option<ControlCapabilityPayloadRetentionResult>> {
         self.capability_payload_retention.recover_retention().await
+    }
+
+    /// Reopen the exact published Capability snapshot from durable Control
+    /// authority after a host restart. The returned lease keeps the complete
+    /// package-generation set alive for the caller's accepted call set.
+    pub(in crate::control_store) async fn reopen_published_capability(
+        &self,
+    ) -> UseResult<Option<ControlCapabilitySnapshotLease>> {
+        self.capability_plane.reopen_published().await
     }
 
     pub(in crate::control_store) async fn initialize(&self) -> UseResult<ControlStoreMetadata> {

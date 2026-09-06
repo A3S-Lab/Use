@@ -1545,8 +1545,13 @@ preflights both clean targets, and retries fixed-order activation without
 clobbering an already-published owner. `ControlCapabilityPayloadRetentionCoordinator`
 now binds the two owner retention plans under the same exclusive fence,
 preflights both inventories (including exact pending journals), and replays
-fixed-order deletion. Production Control owner registration, cursor reopening,
-lease drain, and lifecycle retention authority remain separate gates. A real
+fixed-order deletion. The inactive composition now retains that same
+Capability Plane and can reopen the durable published Control cursor after a
+restart without accepting a caller-selected cursor. Reopening revalidates the
+exact Index and catalog, reacquires every package-generation lease, and returns
+stale if a concurrent cutover wins. Production Control owner registration,
+live Gateway session construction from the returned lease, lease drain, and
+lifecycle retention authority remain separate gates. A real
 composition test joins Knowledge, Skill, catalog/Index publication, exact
 payload admission, stale admission, and drain.
 The inactive composition now accepts the canonical cognitive-package Plan
@@ -1991,9 +1996,10 @@ ordered, recoverable activation rather than a cross-directory atomic rename.
 retention plans under one exclusive fence, verifies both inventories before
 the first unlink, and resumes exact owner journals in catalog → descriptor
 order. This is recoverable ordered deletion rather than a cross-directory
-atomic transaction. Coordinated Control cursor reopening, owner registration,
-lease drain, lifecycle retention policy, and rollback authority remain outside
-these stores.
+atomic transaction. The inactive Control composition now supplies the
+restart-safe cursor-reopen boundary; production owner registration, live
+Gateway session replacement from that lease, lease drain, lifecycle retention
+policy, and rollback authority remain outside these stores.
 
 Control descriptor snapshots expose the same owner-level contract through
 `plan_retention`, `apply_retention`, and `recover_retention`. The plan embeds

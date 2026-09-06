@@ -259,6 +259,38 @@ async fn real_surface_owners_publish_one_immutable_index_and_admit_its_exact_sna
 }
 
 #[tokio::test]
+async fn published_cursor_reopens_from_durable_control_after_restart() {
+    let fixture = installed_capability_plane("operation:capability-plane:reopen").await;
+    let cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    let paths = fixture._owner_fixture.paths.clone();
+
+    // A fresh Control Store and Capability plane stand in for a restarted
+    // host. No cursor is passed into the reopen operation: it must derive the
+    // exact published authority from durable Control state.
+    let reopened_store = ControlStore::from_extension_paths(&paths).unwrap();
+    let reopened_catalogs = CapabilityGatewayCatalogStore::from_extension_paths(&paths);
+    let reopened_plane = ControlCapabilityPlaneEffectPort::new(
+        reopened_store,
+        reopened_catalogs,
+        Arc::new(EmptyCatalogProjection),
+    )
+    .unwrap();
+    let lease = reopened_plane.reopen_published().await.unwrap().unwrap();
+
+    assert_eq!(lease.cursor(), &cursor);
+    assert_eq!(lease.package_count(), cursor.packages.len());
+    assert_eq!(lease.catalog().generation(), cursor.catalog.generation);
+    assert_eq!(
+        lease.catalog().descriptor_digest().unwrap(),
+        cursor.catalog.digest
+    );
+    assert_eq!(
+        lease.document_receipt_digest().unwrap(),
+        cursor.receipt_digest
+    );
+}
+
+#[tokio::test]
 async fn catalog_projection_cannot_publish_an_unreviewed_surface() {
     let installation = control_installation();
     let (owner_fixture, artifact_admission) =
