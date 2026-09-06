@@ -1315,6 +1315,15 @@ live Control snapshot/Gateway lease cannot be bypassed. Hosts may add explicit
 rollback or legacy endpoint digests, but liveness is never inferred from an
 in-memory current pointer.
 
+Implementation note (2026-09-06): `CapabilityGatewaySessionFactory::drain`
+now provides an explicit endpoint-retirement boundary. It serializes with
+replacement, closes admission for every live adapter clone, waits for already
+admitted operations under a caller deadline, and detaches the source
+generation lease only after the operation count reaches zero. A timed-out
+attempt remains non-admitting and can be resumed; independent immutable server
+clones retain their own leases until dropped. Lifecycle hosts can therefore
+call drain before entering the exclusive Capability payload retention fence.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must

@@ -984,6 +984,16 @@ impl CapabilityGatewayMcpServer {
         Ok(self)
     }
 
+    /// Remove the generation lease from a server that is no longer admitted
+    /// by its owning session factory.  This is intentionally crate-private:
+    /// an unleased server is suitable only as a drained diagnostic snapshot,
+    /// never as a live invocation endpoint.
+    pub(crate) fn without_generation_lease(mut self) -> Self {
+        self.snapshot_lease = None;
+        self.external_lease = None;
+        self
+    }
+
     /// Return whether this server retains any complete generation lease.
     /// Session replacement uses this to prevent an accidentally unleased
     /// server from replacing a leased endpoint (or vice versa).

@@ -8,7 +8,11 @@
 //! operation therefore retains the old server (and its lease) until it
 //! finishes, while the next discovery or invocation observes the replacement.
 
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    atomic::{AtomicU8, AtomicUsize, Ordering},
+    Arc, RwLock,
+};
+use std::time::Duration;
 
 use a3s_use_core::{CapabilityGatewayCatalog, InstallationId, UseError, UseResult};
 use rmcp::model::{
@@ -27,6 +31,98 @@ const SESSION_STALE_ERROR: &str = "use.plugin.capability_gateway_session_stale";
 const SESSION_INCOMPATIBLE_ERROR: &str = "use.plugin.capability_gateway_session_incompatible";
 const SESSION_STATE_ERROR: &str = "use.plugin.capability_gateway_session_state";
 const SESSION_PUBLICATION_ERROR: &str = "use.plugin.capability_gateway_session_publication";
+const SESSION_DRAIN_TIMEOUT_ERROR: &str = "use.plugin.capability_gateway_session_drain_timeout";
+
+const SESSION_RUNNING: u8 = 0;
+const SESSION_DRAINING: u8 = 1;
+const SESSION_DRAINED: u8 = 2;
+
+/// Shared lifecycle gate for every live adapter clone of one endpoint.
+///
+/// The factory's immutable source owns the long-lived generation lease, while
+/// each live MCP operation holds one short operation guard.  Moving to
+/// `DRAINING` closes admission before waiting for those guards, so a caller
+/// can release the source lease without racing a newly accepted request.
+#[derive(Debug, Clone)]
+struct SessionLifecycle {
+    state: Arc<AtomicU8>,
+    active: Arc<AtomicUsize>,
+    changed: Arc<tokio::sync::Notify>,
+}
+
+#[derive(Debug)]
+struct SessionOperationGuard {
+    lifecycle: SessionLifecycle,
+}
+
+impl SessionLifecycle {
+    fn new() -> Self {
+        Self {
+            state: Arc::new(AtomicU8::new(SESSION_RUNNING)),
+            active: Arc::new(AtomicUsize::new(0)),
+            changed: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    fn state(&self) -> u8 {
+        self.state.load(Ordering::Acquire)
+    }
+
+    fn enter(&self) -> UseResult<SessionOperationGuard> {
+        loop {
+            if self.state() != SESSION_RUNNING {
+                return Err(session_state_error(
+                    "The Capability Gateway session is draining or already drained.",
+                ));
+            }
+            let active = self.active.load(Ordering::Acquire);
+            if active == usize::MAX {
+                return Err(session_state_error(
+                    "The Capability Gateway session has reached its active-operation bound.",
+                ));
+            }
+            if self
+                .active
+                .compare_exchange(active, active + 1, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                continue;
+            }
+            // Close the small race in which drain changes state after the
+            // first check but before the active count is incremented.
+            if self.state() == SESSION_RUNNING {
+                return Ok(SessionOperationGuard {
+                    lifecycle: self.clone(),
+                });
+            }
+            self.leave();
+            return Err(session_state_error(
+                "The Capability Gateway session started draining before the request was admitted.",
+            ));
+        }
+    }
+
+    fn leave(&self) {
+        self.active.fetch_sub(1, Ordering::AcqRel);
+        self.changed.notify_waiters();
+    }
+
+    async fn wait_until_idle(&self) {
+        while self.active.load(Ordering::Acquire) != 0 {
+            self.changed.notified().await;
+        }
+    }
+}
+
+impl Drop for SessionOperationGuard {
+    fn drop(&mut self) {
+        self.lifecycle.leave();
+    }
+}
+
+fn session_state_error(message: impl Into<String>) -> UseError {
+    UseError::new(SESSION_STATE_ERROR, message)
+}
 
 /// The immutable catalog identity selected by a live session factory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +160,7 @@ pub struct CapabilityGatewaySessionReplacement {
 pub struct CapabilityGatewaySessionFactory {
     current: Arc<RwLock<CapabilityGatewayMcpServer>>,
     cutover: Arc<tokio::sync::Mutex<()>>,
+    lifecycle: SessionLifecycle,
 }
 
 impl std::fmt::Debug for CapabilityGatewaySessionFactory {
@@ -81,6 +178,7 @@ impl CapabilityGatewaySessionFactory {
         Self {
             current: Arc::new(RwLock::new(server)),
             cutover: Arc::new(tokio::sync::Mutex::new(())),
+            lifecycle: SessionLifecycle::new(),
         }
     }
 
@@ -120,6 +218,65 @@ impl CapabilityGatewaySessionFactory {
     /// Return the validated identity of the currently selected catalog.
     pub fn current_key(&self) -> UseResult<CapabilityGatewaySessionKey> {
         session_key(self.current().catalog())
+    }
+
+    /// Stop admitting new operations, wait for already admitted operations to
+    /// finish, and release the source server's generation lease.
+    ///
+    /// The transition is serialized with [`Self::replace`].  A timeout leaves
+    /// the factory in the draining state, so a later call can continue waiting
+    /// without reopening admission.  Once drained, the current server remains
+    /// available for diagnostics but is deliberately unleased; its live
+    /// adapter rejects all new requests.  Callers that retained independent
+    /// clones of the immutable server still own those clones and their leases
+    /// until they drop them.
+    pub async fn drain(&self, timeout: Duration) -> UseResult<()> {
+        let _serial = self.cutover.clone().lock_owned().await;
+        match self.lifecycle.state() {
+            SESSION_DRAINED => return Ok(()),
+            SESSION_RUNNING => {
+                self.lifecycle
+                    .state
+                    .compare_exchange(
+                        SESSION_RUNNING,
+                        SESSION_DRAINING,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    )
+                    .map_err(|_| {
+                        session_state_error(
+                            "The Capability Gateway session changed state while draining.",
+                        )
+                    })?;
+            }
+            SESSION_DRAINING => {}
+            _ => {
+                return Err(session_state_error(
+                    "The Capability Gateway session has an unknown lifecycle state.",
+                ));
+            }
+        }
+
+        if tokio::time::timeout(timeout, self.lifecycle.wait_until_idle())
+            .await
+            .is_err()
+        {
+            return Err(UseError::new(
+                SESSION_DRAIN_TIMEOUT_ERROR,
+                "The Capability Gateway session did not drain before the supplied deadline.",
+            ));
+        }
+
+        self.lifecycle
+            .state
+            .store(SESSION_DRAINED, Ordering::Release);
+        let detached = self.current().without_generation_lease();
+        match self.current.write() {
+            Ok(mut slot) => *slot = detached,
+            Err(poisoned) => *poisoned.into_inner() = detached,
+        }
+        self.lifecycle.changed.notify_waiters();
+        Ok(())
     }
 
     /// Serve a live Gateway over stdin/stdout.
@@ -162,6 +319,11 @@ impl CapabilityGatewaySessionFactory {
         next: CapabilityGatewayMcpServer,
     ) -> UseResult<CapabilityGatewaySessionReplacement> {
         let serial = Arc::clone(&self.cutover).lock_owned().await;
+        if self.lifecycle.state() != SESSION_RUNNING {
+            return Err(session_state_error(
+                "The Capability Gateway session is draining or already drained.",
+            ));
+        }
         let previous_server = self.current();
         let previous = session_key(previous_server.catalog())?;
 
@@ -256,6 +418,10 @@ impl CapabilityGatewaySessionFactory {
             transport: CapabilityGatewayTransport::Stdio,
         }
     }
+
+    fn enter_operation(&self) -> UseResult<SessionOperationGuard> {
+        self.lifecycle.enter()
+    }
 }
 
 /// A standard MCP handler that delegates each operation to the factory's
@@ -289,14 +455,24 @@ impl CapabilityGatewayLiveMcpServer {
         self
     }
 
-    fn snapshot(&self) -> CapabilityGatewayMcpServer {
-        self.factory.current().with_transport(self.transport)
+    fn snapshot(&self) -> UseResult<(CapabilityGatewayMcpServer, SessionOperationGuard)> {
+        let operation = self.factory.enter_operation()?;
+        Ok((
+            self.factory.current().with_transport(self.transport),
+            operation,
+        ))
     }
 }
 
 impl ServerHandler for CapabilityGatewayLiveMcpServer {
     fn get_info(&self) -> ServerInfo {
-        self.snapshot().get_info()
+        // `get_info` is a local protocol description and has no provider or
+        // payload side effect.  Keep it available while draining so clients
+        // can observe the endpoint's final server metadata.
+        self.factory
+            .current()
+            .with_transport(self.transport)
+            .get_info()
     }
 
     async fn call_tool(
@@ -304,7 +480,7 @@ impl ServerHandler for CapabilityGatewayLiveMcpServer {
         request: CallToolRequestParam,
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
-        let server = self.snapshot();
+        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
         ServerHandler::call_tool(&server, request, request_context).await
     }
 
@@ -313,7 +489,7 @@ impl ServerHandler for CapabilityGatewayLiveMcpServer {
         request: Option<PaginatedRequestParam>,
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListToolsResult, rmcp::ErrorData> {
-        let server = self.snapshot();
+        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
         ServerHandler::list_tools(&server, request, request_context).await
     }
 
@@ -322,7 +498,7 @@ impl ServerHandler for CapabilityGatewayLiveMcpServer {
         request: Option<PaginatedRequestParam>,
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListResourcesResult, rmcp::ErrorData> {
-        let server = self.snapshot();
+        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
         ServerHandler::list_resources(&server, request, request_context).await
     }
 
@@ -331,7 +507,7 @@ impl ServerHandler for CapabilityGatewayLiveMcpServer {
         request: Option<PaginatedRequestParam>,
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListPromptsResult, rmcp::ErrorData> {
-        let server = self.snapshot();
+        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
         ServerHandler::list_prompts(&server, request, request_context).await
     }
 
@@ -340,7 +516,7 @@ impl ServerHandler for CapabilityGatewayLiveMcpServer {
         request: ReadResourceRequestParam,
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ReadResourceResult, rmcp::ErrorData> {
-        let server = self.snapshot();
+        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
         ServerHandler::read_resource(&server, request, request_context).await
     }
 
@@ -349,14 +525,23 @@ impl ServerHandler for CapabilityGatewayLiveMcpServer {
         request: GetPromptRequestParam,
         request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<GetPromptResult, rmcp::ErrorData> {
-        let server = self.snapshot();
+        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
         ServerHandler::get_prompt(&server, request, request_context).await
     }
 
     async fn on_initialized(&self, context: rmcp::service::NotificationContext<rmcp::RoleServer>) {
-        let server = self.snapshot();
+        let Ok((server, _operation)) = self.snapshot() else {
+            return;
+        };
         ServerHandler::on_initialized(&server, context).await;
     }
+}
+
+fn session_state_error_data(_error: UseError) -> rmcp::ErrorData {
+    rmcp::ErrorData::invalid_request(
+        "The Capability Gateway session is draining or already drained.",
+        Some(serde_json::json!({ "code": SESSION_STATE_ERROR })),
+    )
 }
 
 fn session_key(catalog: &CapabilityGatewayCatalog) -> UseResult<CapabilityGatewaySessionKey> {
@@ -430,3 +615,100 @@ const _: fn() = || {
     assert_send_sync::<CapabilityGatewaySessionFactory>();
     assert_send_sync::<CapabilityGatewayLiveMcpServer>();
 };
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    use std::time::Duration;
+
+    use a3s_use_core::{
+        CapabilityDescriptor, CapabilityGatewayCatalog, InstallationId, InstallationKind, UseResult,
+    };
+    use async_trait::async_trait;
+    use serde_json::Value;
+
+    use super::super::{
+        CapabilityGatewayExternalLease, CapabilityGatewayInvocationProvider,
+        CapabilityGatewayRequestContext, CapabilityGatewaySessionFactory,
+    };
+    use super::{SESSION_DRAINING, SESSION_DRAIN_TIMEOUT_ERROR, SESSION_STATE_ERROR};
+
+    struct NoopProvider;
+
+    #[async_trait]
+    impl CapabilityGatewayInvocationProvider for NoopProvider {
+        async fn authorize(
+            &self,
+            _descriptor: &CapabilityDescriptor,
+            _arguments: &Value,
+            _context: &CapabilityGatewayRequestContext,
+        ) -> UseResult<()> {
+            Ok(())
+        }
+
+        async fn invoke(
+            &self,
+            _descriptor: &CapabilityDescriptor,
+            _arguments: Value,
+            _context: &CapabilityGatewayRequestContext,
+        ) -> UseResult<Value> {
+            Ok(Value::Null)
+        }
+    }
+
+    struct LeaseMarker(Arc<AtomicBool>);
+
+    impl CapabilityGatewayExternalLease for LeaseMarker {}
+
+    impl Drop for LeaseMarker {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn factory(dropped: Arc<AtomicBool>) -> CapabilityGatewaySessionFactory {
+        let installation = InstallationId::new(InstallationKind::User, "session-drain").unwrap();
+        let catalog = CapabilityGatewayCatalog::new(installation, 1, Vec::new()).unwrap();
+        let server = super::super::CapabilityGatewayMcpServer::new(catalog, Arc::new(NoopProvider))
+            .unwrap()
+            .with_external_lease(Arc::new(LeaseMarker(dropped)))
+            .unwrap();
+        CapabilityGatewaySessionFactory::new(server)
+    }
+
+    #[tokio::test]
+    async fn drain_closes_admission_waits_and_detaches_generation_lease() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let factory = factory(Arc::clone(&dropped));
+        let active = factory.enter_operation().unwrap();
+
+        let error = factory.drain(Duration::from_millis(20)).await.unwrap_err();
+        assert_eq!(error.code, SESSION_DRAIN_TIMEOUT_ERROR);
+        assert_eq!(factory.lifecycle.state(), SESSION_DRAINING);
+        assert!(factory.enter_operation().is_err());
+
+        drop(active);
+        factory.drain(Duration::from_secs(1)).await.unwrap();
+        assert_eq!(
+            factory.current().generation_lease_mode(),
+            super::super::CapabilityGatewayGenerationLeaseMode::None
+        );
+        assert!(dropped.load(Ordering::SeqCst));
+        assert_eq!(
+            factory.enter_operation().unwrap_err().code,
+            SESSION_STATE_ERROR
+        );
+    }
+
+    #[tokio::test]
+    async fn replacement_is_rejected_after_drain_begins() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let factory = factory(dropped);
+        factory.drain(Duration::from_secs(1)).await.unwrap();
+        let error = factory.replace(factory.current()).await.unwrap_err();
+        assert_eq!(error.code, SESSION_STATE_ERROR);
+    }
+}

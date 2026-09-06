@@ -1971,7 +1971,10 @@ The embedding boundary now also includes `CapabilityGatewaySessionFactory`:
 after durable publication, a host can replace immutable Gateway generations in
 order, retain one standard MCP notification hub, and keep old in-flight
 operations on their exact leases while later requests on the same endpoint
-observe the new catalog. Its `from_published` and `replace_published` paths
+observe the new catalog. Its bounded `drain` transition closes new request
+admission, waits for already-admitted operations under a deadline, and
+releases the factory's source lease so a lifecycle owner can enter an
+exclusive retention or restore fence. Its `from_published` and `replace_published` paths
 re-read the exact store publication and verify the negotiated consumer
 projection before a source becomes visible. The inactive Control composition
 also provides `reopen_published_capability_gateway` and
@@ -2020,8 +2023,8 @@ order. This is recoverable ordered deletion rather than a cross-directory
 atomic transaction. The inactive Control composition now supplies both the
 restart-safe cursor-reopen boundary and a cursor-bound retention plan/apply
 entry point; production owner registration, live Gateway session replacement
-from that lease, lease drain, and rollback authority remain outside these
-stores.
+from that lease, endpoint drain invocation, and rollback authority remain
+outside these stores.
 
 Control descriptor snapshots expose the same owner-level contract through
 `plan_retention`, `apply_retention`, and `recover_retention`. The plan embeds

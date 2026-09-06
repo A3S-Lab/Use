@@ -39,7 +39,7 @@ execution; the Gateway exposes only an opaque, authorized projection.
 | Signed Tool description | `CapabilityDescriptionProof`, package signer allowlist, durable signed v2 snapshots, exact descriptor and envelope digests, canonical Ed25519 envelopes, bounded public-key trust store with expiry/revocation, signed Gateway composition constructors, and replay-time re-verification | Inactive qualification plus verifier/composition mechanism | Registry/TUF key-source binding and production Registry-to-proof lifecycle wiring remain open; `from_verified` and proof-only v1 snapshots are still explicit compatibility host assertions |
 | Runtime contract continuity | Tool release input/output schemas and domain-separated `RuntimeToolSchemaAttestation` now flow through plans, task/service receipts, provisioning and Control evidence; verified payload admission and strict projection compare digests | Implemented in the inactive kernel (PR #238) | Production Control/Runtime/receipt/Grant composition and real schema-bearing release fixtures |
 | Live invocation authorization | Gateway resolver/factory seam, principal context, discovery policy, generation leases and provider `authorize` hook; inactive Control resolver now reopens the durable cursor, validates the exact descriptor, and retains an external Control lease through the operation | Embedding mechanism qualified | A production host factory must still join the principal, scope, Grant, receipt and Runtime provider; the inactive Control composition is not yet the production authority |
-| Generation-safe upgrade and drain | Immutable session factory, snapshot leases, list-change hub, explicit retention plans, paired catalog/descriptor retention coordinator, durable Control cursor reopening, an internal lease guard that follows cloned Gateway servers, a replay-safe graph cutover activation hook wired to a Control lease-backed Gateway adapter, and a composition retention boundary that derives the durable current payload set and applies under an exclusive fence | Mechanism qualified | Production lifecycle must attach the adapter, add any non-Control rollback/session identities, and retire payloads in one host transition |
+| Generation-safe upgrade and drain | Immutable session factory, snapshot leases, list-change hub, explicit retention plans, paired catalog/descriptor retention coordinator, durable Control cursor reopening, an internal lease guard that follows cloned Gateway servers, a bounded session-factory drain state machine that closes admission and releases the source lease, a replay-safe graph cutover activation hook wired to a Control lease-backed Gateway adapter, and a composition retention boundary that derives the durable current payload set and applies under an exclusive fence | Mechanism qualified | Production lifecycle must attach the adapter, invoke drain at endpoint shutdown, add any non-Control rollback/session identities, and retire payloads in one host transition |
 | Crash/restart convergence | Durable journals, exact-key replay, no-generation-inflation tests across package, Grant, Runtime, Gateway and restore paths | Broad preview coverage | Code/Runtime product-host kill tests, reboot and remaining Windows contention/reparse races |
 | Backup/restore authority | Whole-installation inventory, offline verification, reviewed restore plan, rollback archive and bounded recovery journal; canonical Capability Gateway catalog and descriptor-snapshot records are now admitted as the `CapabilityPayloads` family with owner-byte/content-address validation; artifact reachability now traverses the same payload-owner tree and fails closed on nested drift or in-flight publication evidence; both immutable owners now have plan-bound clean-target candidate/activation/replay adapters, with signed descriptor replay requiring current trust verification; dedicated restore and retention coordinators bind both owner plans under one exclusive fence with preflight, fixed-order replay, and a durable cross-owner phase journal that blocks backup/reachability until recovery; the inactive composition can derive the durable published Control cursor and reopen its exact Index, catalog, and package-generation lease set after restart | Qualified for listed legacy/Use-owned families, the Capability payload coordinators, and the cursor-reopen mechanism | Production Control owner registration, live Gateway session reconstruction from the reopened lease, lifecycle retention/lease activation, clean-machine recovery and operational drills |
 | Cross-language/remote use | Standard Streamable HTTP, bearer/Origin/admission controls and an independent Rust contract test | Partial | TypeScript and Python clients, remote/container client with no shared filesystem, and install/upgrade/drain/restart/denied-scope matrix |
@@ -58,7 +58,8 @@ The rows above are not independent checkboxes. The shortest safe order is:
    Skill and UI effect owners behind one dispatcher and maintenance fence.
 3. Make the live session factory consume the Control-bound cursor, publish a
    new immutable catalog before notification, retain old leases through drain,
-   and retire payloads only after the exact receipt is terminal.
+   explicitly close admission and await the bounded drain, and retire payloads
+   only after the exact receipt is terminal.
 4. Remove production reads, writes, fallbacks and repair paths for the legacy
    JSON/SQLite authorities.
 
@@ -121,6 +122,16 @@ cross-generation descriptor therefore fails before provider I/O. The injected
 factory remains responsible for the private principal/Grant/Runtime join, and
 the production lifecycle still has to compose that factory and remove legacy
 authority paths.
+
+Implementation note (2026-09-06): `CapabilityGatewaySessionFactory::drain`
+now provides the missing endpoint-retirement boundary. It serializes with
+catalog replacement, transitions the shared live adapter to a non-admitting
+draining state, waits for every already-admitted operation under a caller
+deadline, and detaches the factory's source generation lease only after the
+operation count reaches zero. A timed-out drain remains closed for new work and
+can be resumed; independent immutable server clones retain their own leases
+until dropped. This makes the subsequent exclusive payload-retention fence
+observable rather than dependent on dropping an implementation detail.
 
 ### P0 — Compose the real invocation path
 
