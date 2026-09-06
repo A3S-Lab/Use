@@ -502,11 +502,49 @@ impl ControlStoreRuntimeComposition {
         provider: Arc<dyn CapabilityGatewayInvocationProvider>,
         options: CapabilityGatewayCompositionOptions,
     ) -> UseResult<Option<CapabilityGatewaySessionReplacement>> {
-        let Some(lease) = self.capability_plane.reopen_published().await? else {
+        let Some(binding) = self.store.published_capability_cutover().await? else {
+            return Ok(None);
+        };
+        // Capture the local source before opening the new Control lease. The
+        // final conditional swap below then turns any local cutover race into
+        // a retry result instead of allowing this build to roll the endpoint
+        // back to an older same-generation projection.
+        let expected_current = factory.current_key()?;
+        if expected_current.generation > binding.cursor.capability_generation {
+            return Err(UseError::new(
+                "use.control.capability_gateway_publication_stale",
+                "The durable Control publication is older than the live Gateway endpoint.",
+            ));
+        }
+        let Some(lease) = self
+            .capability_plane
+            .acquire_published(&binding.cursor)
+            .await?
+        else {
             return Ok(None);
         };
         let server = Self::gateway_server_from_control_lease(lease, provider, options)?;
-        Ok(Some(factory.replace(server).await?))
+        let next = gateway_session_key(server.source_catalog())?;
+        let Some(confirmed) = self.store.published_capability_cutover().await? else {
+            return Ok(None);
+        };
+        if confirmed.cursor != binding.cursor {
+            return Ok(None);
+        }
+        let current = factory.current_key()?;
+        if current.generation > next.generation {
+            return Err(UseError::new(
+                "use.control.capability_gateway_publication_stale",
+                "The durable Control publication is older than the live Gateway endpoint.",
+            ));
+        }
+        let Some(replacement) = factory
+            .replace_if_current(&expected_current, server)
+            .await?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(replacement))
     }
 
     /// Replace a live Gateway from the current durable Control publication
