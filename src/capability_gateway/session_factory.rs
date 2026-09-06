@@ -166,7 +166,7 @@ impl CapabilityGatewaySessionFactory {
         let previous = session_key(previous_server.catalog())?;
 
         if previous_server.consumer_negotiation() != next.consumer_negotiation()
-            || previous_server.snapshot_cursor().is_some() != next.snapshot_cursor().is_some()
+            || previous_server.generation_lease_mode() != next.generation_lease_mode()
         {
             return Err(UseError::new(
                 SESSION_INCOMPATIBLE_ERROR,
