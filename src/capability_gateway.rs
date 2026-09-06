@@ -33,6 +33,7 @@ use rmcp::model::{
 };
 use rmcp::{ServerHandler, ServiceExt};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, OnceCell, OwnedSemaphorePermit};
 use tokio_util::sync::CancellationToken;
 
@@ -82,6 +83,8 @@ const MCP_RATE_LIMIT_ERROR: &str = "use.plugin.capability_gateway_rate_limited";
 const MCP_RESOURCE_ERROR: &str = "use.plugin.capability_gateway_resource_failed";
 const MCP_PROMPT_ERROR: &str = "use.plugin.capability_gateway_prompt_failed";
 const MCP_DISCOVERY_ERROR: &str = "use.plugin.capability_gateway_discovery_unavailable";
+const MCP_DISCOVERY_CURSOR_INVALID: &str = "use.plugin.capability_gateway_discovery_cursor_invalid";
+const MCP_DISCOVERY_CURSOR_STALE: &str = "use.plugin.capability_gateway_discovery_cursor_stale";
 const MCP_CANCELLED_ERROR: &str = "use.plugin.capability_gateway_cancelled";
 const MAX_CAPABILITY_VALUE_BYTES: usize = 256 * 1024;
 const MAX_CAPABILITY_VALUE_DEPTH: usize = 32;
@@ -89,8 +92,9 @@ const MAX_CAPABILITY_VALUE_ELEMENTS: usize = 4_096;
 const MAX_CAPABILITY_RESOURCE_SIZE: u32 = 256 * 1024;
 const MAX_CAPABILITY_PRINCIPAL_BYTES: usize = 256;
 const MAX_DISCOVERY_ITEMS_PER_PAGE: usize = 64;
-const MAX_DISCOVERY_CURSOR_BYTES: usize = 16;
+const MAX_DISCOVERY_CURSOR_BYTES: usize = 128;
 const MAX_DISCOVERY_CONTEXTS: usize = 64;
+const DISCOVERY_CURSOR_VERSION: &str = "v2";
 
 type DiscoveryView = Arc<[usize]>;
 type DiscoveryViewCell = Arc<OnceCell<DiscoveryView>>;
@@ -411,6 +415,9 @@ pub struct CapabilityGatewayMcpServer {
     /// differ between otherwise identical Control-bound endpoints.
     source_catalog: Arc<CapabilityGatewayCatalog>,
     catalog: Arc<CapabilityGatewayCatalog>,
+    /// Digest of the visible catalog projection. Discovery cursors bind to
+    /// this value so a replacement cannot reinterpret an old offset.
+    catalog_digest: Arc<str>,
     consumer_negotiation: Arc<CapabilityConsumerNegotiation>,
     provider: Arc<dyn CapabilityGatewayInvocationProvider>,
     tools: Arc<BTreeMap<String, CapabilityGatewayTool>>,
@@ -909,6 +916,7 @@ impl CapabilityGatewayMcpServer {
         // explicitly accept must disappear from both discovery and direct
         // invocation routing.
         let catalog = catalog.for_consumer(&consumer_negotiation)?;
+        let catalog_digest = Arc::<str>::from(catalog.descriptor_digest()?);
         let notification_hub = Arc::new(
             CapabilityGatewayNotificationHub::for_catalog(&catalog)
                 .map_err(|_| mcp_error("The Capability Gateway notification state is invalid."))?,
@@ -922,6 +930,7 @@ impl CapabilityGatewayMcpServer {
         Ok(Self {
             source_catalog,
             catalog,
+            catalog_digest,
             consumer_negotiation: Arc::new(consumer_negotiation),
             provider,
             tools,
@@ -965,8 +974,8 @@ impl CapabilityGatewayMcpServer {
     ///
     /// The policy is evaluated lazily for each distinct trusted request
     /// context and its descriptor decisions are frozen for the lifetime of
-    /// the returned server. This keeps numeric MCP pagination cursors stable
-    /// even when requests are concurrent. Existing constructors remain
+    /// the returned server. This keeps MCP pagination views stable even when
+    /// requests are concurrent. Existing constructors remain
     /// backwards-compatible with an allow-all policy.
     pub fn with_discovery_policy(
         mut self,
@@ -982,6 +991,24 @@ impl CapabilityGatewayMcpServer {
             .try_lock()
             .map(|views| views.len())
             .unwrap_or_default()
+    }
+
+    /// Derive the opaque identity carried by a discovery cursor. The digest
+    /// covers the complete visible catalog projection and the frozen policy
+    /// view, so a cursor from another publication, consumer surface, or
+    /// principal view cannot be interpreted as a bare offset.
+    fn discovery_cursor_fingerprint(&self, surface: &str, view: &[usize]) -> String {
+        let mut hasher = Sha256::new();
+        update_discovery_digest_field(&mut hasher, "a3s.use.capability-gateway-cursor.v2");
+        update_discovery_digest_field(&mut hasher, surface);
+        update_discovery_digest_field(&mut hasher, &self.catalog_digest);
+        for index in view {
+            // Encode indices at a fixed width so a cursor remains portable
+            // when an installation is reconstructed on a different host
+            // architecture.
+            hasher.update((*index as u64).to_be_bytes());
+        }
+        format!("{:x}", hasher.finalize())
     }
 
     /// Return the exact lease cursor when this server is bound to a live Use
@@ -1326,9 +1353,10 @@ impl ServerHandler for CapabilityGatewayMcpServer {
         self.tool_router.call(tool_context).await
     }
 
-    /// List Tools in stable name order with the same bounded cursor contract
-    /// used by Resources and Prompts. `ToolRouter` stores routes in a HashMap,
-    /// so sorting is required for a cursor to remain meaningful across calls.
+    /// List Tools in stable name order with the same bounded, projection-bound
+    /// cursor contract used by Resources and Prompts. `ToolRouter` stores
+    /// routes in a HashMap, so sorting is required for a cursor to remain
+    /// meaningful across calls.
     async fn list_tools(
         &self,
         request: Option<PaginatedRequestParam>,
@@ -1346,8 +1374,13 @@ impl ServerHandler for CapabilityGatewayMcpServer {
                 .is_some_and(|route| descriptor_is_visible(&view, route.descriptor_index))
         });
         tools.sort_by(|left, right| left.name.cmp(&right.name));
-        let (start, end, next_cursor) =
-            discovery_page(request.and_then(|request| request.cursor), tools.len())?;
+        let fingerprint = self.discovery_cursor_fingerprint("tools", &view);
+        let (start, end, next_cursor) = discovery_page(
+            request.and_then(|request| request.cursor),
+            "tools",
+            &fingerprint,
+            tools.len(),
+        )?;
         let mut result = ListToolsResult::with_all_items(
             tools.into_iter().skip(start).take(end - start).collect(),
         );
@@ -1370,8 +1403,13 @@ impl ServerHandler for CapabilityGatewayMcpServer {
             .filter(|route| descriptor_is_visible(&view, route.descriptor_index))
             .map(|route| route.resource.clone())
             .collect::<Vec<_>>();
-        let (start, end, next_cursor) =
-            discovery_page(request.and_then(|request| request.cursor), resources.len())?;
+        let fingerprint = self.discovery_cursor_fingerprint("resources", &view);
+        let (start, end, next_cursor) = discovery_page(
+            request.and_then(|request| request.cursor),
+            "resources",
+            &fingerprint,
+            resources.len(),
+        )?;
         let mut result = ListResourcesResult::with_all_items(
             resources
                 .into_iter()
@@ -1398,8 +1436,13 @@ impl ServerHandler for CapabilityGatewayMcpServer {
             .filter(|route| descriptor_is_visible(&view, route.descriptor_index))
             .map(|route| route.prompt.clone())
             .collect::<Vec<_>>();
-        let (start, end, next_cursor) =
-            discovery_page(request.and_then(|request| request.cursor), prompts.len())?;
+        let fingerprint = self.discovery_cursor_fingerprint("prompts", &view);
+        let (start, end, next_cursor) = discovery_page(
+            request.and_then(|request| request.cursor),
+            "prompts",
+            &fingerprint,
+            prompts.len(),
+        )?;
         let mut result = ListPromptsResult::with_all_items(
             prompts.into_iter().skip(start).take(end - start).collect(),
         );
@@ -1858,40 +1901,81 @@ fn discovery_policy_error() -> rmcp::ErrorData {
 
 fn discovery_page(
     cursor: Option<String>,
+    surface: &str,
+    fingerprint: &str,
     item_count: usize,
 ) -> Result<(usize, usize, Option<String>), rmcp::ErrorData> {
     let start = match cursor {
         None => 0,
-        Some(cursor)
-            if cursor.len() <= MAX_DISCOVERY_CURSOR_BYTES
-                && !cursor.is_empty()
-                && cursor.bytes().all(|byte| byte.is_ascii_digit()) =>
-        {
-            cursor.parse::<usize>().map_err(|_| {
-                rmcp::ErrorData::invalid_params(
+        Some(cursor) => {
+            if cursor.len() > MAX_DISCOVERY_CURSOR_BYTES || cursor.is_empty() {
+                return Err(discovery_cursor_error(
+                    MCP_DISCOVERY_CURSOR_INVALID,
                     "The Capability Gateway discovery cursor is invalid.",
-                    None,
-                )
-            })?
-        }
-        Some(_) => {
-            return Err(rmcp::ErrorData::invalid_params(
-                "The Capability Gateway discovery cursor is invalid.",
-                None,
-            ));
+                ));
+            }
+            let mut parts = cursor.split('.');
+            let version = parts.next();
+            let cursor_surface = parts.next();
+            let cursor_fingerprint = parts.next();
+            let offset = parts.next();
+            if version != Some(DISCOVERY_CURSOR_VERSION)
+                || cursor_surface != Some(surface)
+                || cursor_fingerprint.is_none_or(|value| !valid_discovery_fingerprint(value))
+                || offset.is_none_or(|value| {
+                    value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit())
+                })
+                || parts.next().is_some()
+            {
+                return Err(discovery_cursor_error(
+                    MCP_DISCOVERY_CURSOR_INVALID,
+                    "The Capability Gateway discovery cursor is invalid.",
+                ));
+            }
+            if cursor_fingerprint != Some(fingerprint) {
+                return Err(discovery_cursor_error(
+                    MCP_DISCOVERY_CURSOR_STALE,
+                    "The Capability Gateway catalog or visibility view changed; restart discovery pagination.",
+                ));
+            }
+            offset
+                .and_then(|value| value.parse::<usize>().ok())
+                .ok_or_else(|| {
+                    discovery_cursor_error(
+                        MCP_DISCOVERY_CURSOR_INVALID,
+                        "The Capability Gateway discovery cursor is invalid.",
+                    )
+                })?
         }
     };
     if start > item_count {
-        return Err(rmcp::ErrorData::invalid_params(
+        return Err(discovery_cursor_error(
+            MCP_DISCOVERY_CURSOR_INVALID,
             "The Capability Gateway discovery cursor is outside the catalog.",
-            None,
         ));
     }
     let end = start
         .saturating_add(MAX_DISCOVERY_ITEMS_PER_PAGE)
         .min(item_count);
-    let next_cursor = (end < item_count).then(|| end.to_string());
+    let next_cursor = (end < item_count)
+        .then(|| format!("{DISCOVERY_CURSOR_VERSION}.{surface}.{fingerprint}.{end}"));
     Ok((start, end, next_cursor))
+}
+
+fn discovery_cursor_error(code: &'static str, message: &'static str) -> rmcp::ErrorData {
+    rmcp::ErrorData::invalid_params(message, Some(serde_json::json!({ "code": code })))
+}
+
+fn valid_discovery_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
+fn update_discovery_digest_field(hasher: &mut Sha256, value: &str) {
+    hasher.update((value.len() as u64).to_be_bytes());
+    hasher.update(value.as_bytes());
 }
 
 fn validate_resource_contents(uri: &str, contents: &[ResourceContents]) -> UseResult<()> {

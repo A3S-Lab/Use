@@ -911,6 +911,70 @@ async fn live_gateway_session_routes_existing_client_after_cutover() {
 }
 
 #[tokio::test]
+async fn live_gateway_session_rejects_a_cursor_from_a_prior_catalog() {
+    let make_catalog = |generation: u64, prefix: &str| {
+        let descriptors = (0..65)
+            .map(|index| {
+                test_named_tool_descriptor(&format!("{prefix}-tool-{index:03}"), "Paginated", 'c')
+            })
+            .collect::<Vec<_>>();
+        CapabilityGatewayCatalog::new(
+            InstallationId::new(InstallationKind::User, "user/gateway-cursor-tests").unwrap(),
+            generation,
+            descriptors,
+        )
+        .unwrap()
+    };
+    let initial = make_catalog(9, "old");
+    let next = make_catalog(10, "new");
+    let factory = CapabilityGatewaySessionFactory::new(
+        CapabilityGatewayMcpServer::new(initial, Arc::new(RecordingProvider::default())).unwrap(),
+    );
+    let (server_transport, client_transport) = tokio::io::duplex(512 * 1024);
+    let serving_factory = factory.clone();
+    let server_handle = tokio::spawn(async move {
+        serving_factory
+            .live_server()
+            .serve(server_transport)
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let client = TestClient.serve(client_transport).await.unwrap();
+
+    let first = client.peer().list_tools(None).await.unwrap();
+    let old_cursor = first.next_cursor.expect("the first catalog must paginate");
+    factory
+        .replace(
+            CapabilityGatewayMcpServer::new(next, Arc::new(RecordingProvider::default())).unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let error = client
+        .peer()
+        .list_tools(Some(PaginatedRequestParam {
+            cursor: Some(old_cursor),
+        }))
+        .await
+        .expect_err("a cursor from a replaced catalog must be rejected");
+    let code = match error {
+        rmcp::service::ServiceError::McpError(data) => data
+            .data
+            .as_ref()
+            .and_then(|value| value["code"].as_str())
+            .map(str::to_owned),
+        _ => None,
+    };
+    assert_eq!(code.as_deref(), Some(MCP_DISCOVERY_CURSOR_STALE));
+
+    client.cancel().await.unwrap();
+    server_handle.await.unwrap();
+}
+
+#[tokio::test]
 async fn catalog_store_publishes_canonical_content_addressed_records() {
     let temporary = tempfile::tempdir().unwrap();
     let catalog = test_catalog(test_descriptor());
@@ -1714,7 +1778,9 @@ async fn adapter_paginates_tools_in_stable_name_order() {
 
     let first = client.peer().list_tools(None).await.unwrap();
     assert_eq!(first.tools.len(), 64);
-    assert_eq!(first.next_cursor.as_deref(), Some("64"));
+    let first_cursor = first.next_cursor.clone().unwrap();
+    assert!(first_cursor.starts_with("v2.tools."));
+    assert!(first_cursor.len() <= MAX_DISCOVERY_CURSOR_BYTES);
     assert!(first
         .tools
         .windows(2)
@@ -1725,7 +1791,7 @@ async fn adapter_paginates_tools_in_stable_name_order() {
     let second = client
         .peer()
         .list_tools(Some(PaginatedRequestParam {
-            cursor: first.next_cursor,
+            cursor: Some(first_cursor.clone()),
         }))
         .await
         .unwrap();
@@ -1739,6 +1805,17 @@ async fn adapter_paginates_tools_in_stable_name_order() {
         }))
         .await
         .is_err());
+
+    let stale = discovery_page(Some(first_cursor), "tools", &"b".repeat(64), 65)
+        .expect_err("a cursor from another catalog view must be rejected");
+    assert_eq!(
+        stale
+            .data
+            .as_ref()
+            .and_then(|value| value.get("code"))
+            .and_then(|value| value.as_str()),
+        Some(MCP_DISCOVERY_CURSOR_STALE)
+    );
 
     client.cancel().await.unwrap();
     server_handle.await.unwrap();

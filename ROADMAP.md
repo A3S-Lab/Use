@@ -1003,6 +1003,12 @@ provider output is validated before it crosses the agent boundary. This does
 not yet project A3S-specific Flow/UI/Knowledge metadata or principal-specific
 discovery policy.
 
+Implementation note (2026-09-07): Gateway discovery cursors now bind the MCP
+surface, negotiated catalog digest, frozen principal visibility indices, and
+offset in an opaque bounded `v2` token. A client that misses a standard
+`list_changed` notification cannot apply an old offset to a replacement
+catalog; the request receives a stale-cursor error and can restart discovery.
+
 Implementation note (2026-09-04): Gateway catalog projection now evaluates
 descriptor `requiredExtensions` against the immutable consumer negotiation.
 Unaccepted descriptors are removed before MCP route compilation, so they are

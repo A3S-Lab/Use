@@ -1892,7 +1892,11 @@ the Gateway removes requirements the negotiated consumer did not accept before
 compiling either discovery or invocation routes. The standard adapter publishes
 catalog-authorized, schema-validated MCP Tools plus bounded opaque-URI Resources
 and declared Prompts; every discovery list is deterministic and cursor-
-paginated. Hosts can inject a `CapabilityGatewayDiscoveryPolicy` to freeze
+paginated. Discovery cursors are opaque and bind the MCP surface, negotiated
+catalog digest, and frozen principal visibility view, so a cursor from a
+replaced publication fails closed with a stale-cursor signal instead of
+silently skipping or repeating capabilities. Hosts can inject a
+`CapabilityGatewayDiscoveryPolicy` to freeze
 principal-scoped Tool/Resource/Prompt visibility per authenticated context;
 denied routes disappear from discovery and direct access while the provider's
 per-operation authorization remains mandatory. Existing constructors retain

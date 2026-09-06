@@ -114,8 +114,12 @@ and generation checks still run for every visible operation.
 The Gateway evaluates a policy lazily and freezes the resulting descriptor
 indices per trusted context for the server lifetime. The bounded cache holds
 at most 64 contexts (matching the HTTP credential mapping), and `OnceCell`
-coordination makes concurrent requests share one view. Numeric cursors are
-therefore stable for a principal; changing policy requires constructing a new
+coordination makes concurrent requests share one view. Discovery cursors are
+opaque `v2` values carrying the MCP surface, a digest of the negotiated
+catalog, the frozen visibility indices, and the offset. A cursor from an old
+publication, another surface, or another visibility view is rejected as
+stale, so a client can restart pagination safely after a missed
+`list_changed` notification. Changing policy requires constructing a new
 Gateway from a refreshed immutable catalog/policy snapshot. Existing
 constructors use an allow-all compatibility policy, so a production
 multi-principal host must inject an explicit policy.
