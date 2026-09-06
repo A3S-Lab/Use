@@ -11,6 +11,8 @@
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
+#[cfg(feature = "mcp")]
+use std::time::Duration;
 
 use a3s_runtime::RuntimeClientRegistry;
 use a3s_use_core::{
@@ -337,6 +339,31 @@ impl ControlStoreRuntimeComposition {
         }
         self.capability_payload_retention
             .apply_retention_with_exclusive_maintenance(plan, expected_plan_digest, &maintenance)
+            .await
+    }
+
+    /// Drain a live Control-bound Gateway endpoint and then retain exactly the
+    /// payloads selected by the durable Control cursor.  This is the shutdown
+    /// path for hosts that are retiring an endpoint rather than replacing it:
+    /// the session must release its shared generation lease before the
+    /// exclusive owner-retention fence can be acquired.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) async fn drain_and_retain_published_capability_gateway(
+        &self,
+        session: &CapabilityGatewaySessionFactory,
+        drain_timeout: Duration,
+        additional_catalog_retain_digests: &[String],
+        additional_descriptor_snapshot_retain_digests: &[String],
+    ) -> UseResult<ControlCapabilityPayloadRetentionResult> {
+        session.drain(drain_timeout).await?;
+        let plan = self
+            .plan_published_capability_payload_retention(
+                additional_catalog_retain_digests,
+                additional_descriptor_snapshot_retain_digests,
+            )
+            .await?;
+        let digest = plan.descriptor_digest()?;
+        self.apply_published_capability_payload_retention(&plan, &digest)
             .await
     }
 

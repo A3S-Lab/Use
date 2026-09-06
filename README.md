@@ -1993,6 +1993,8 @@ Control composition adds `plan_published_capability_payload_retention` and
 `apply_published_capability_payload_retention`: they derive the durable
 published catalog (and matching descriptor snapshot when present), recheck the
 cursor under that exclusive fence, and reject a plan that would remove it.
+`drain_and_retain_published_capability_gateway` composes the endpoint drain
+with that plan/apply sequence for shutdown and retirement paths.
 Hosts still add independently managed rollback or legacy endpoint digests
 explicitly; the store never guesses liveness from an in-memory pointer.
 
@@ -2023,8 +2025,8 @@ order. This is recoverable ordered deletion rather than a cross-directory
 atomic transaction. The inactive Control composition now supplies both the
 restart-safe cursor-reopen boundary and a cursor-bound retention plan/apply
 entry point; production owner registration, live Gateway session replacement
-from that lease, endpoint drain invocation, and rollback authority remain
-outside these stores.
+from that lease, lifecycle invocation of the drain-and-retain boundary, and
+rollback authority remain outside these stores.
 
 Control descriptor snapshots expose the same owner-level contract through
 `plan_retention`, `apply_retention`, and `recover_retention`. The plan embeds

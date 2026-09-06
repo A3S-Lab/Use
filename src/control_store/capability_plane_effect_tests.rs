@@ -585,15 +585,6 @@ async fn control_gateway_invocation_resolves_only_exact_published_descriptors() 
     )
     .await;
     let paths = fixture._owner_fixture.paths.clone();
-    let published_catalog_digest = fixture
-        .store
-        .published_capability()
-        .await
-        .unwrap()
-        .unwrap()
-        .catalog
-        .digest
-        .clone();
     let cursor = fixture.store.published_capability().await.unwrap().unwrap();
     let descriptor_snapshot = ControlCapabilityDescriptorSnapshot::new(
         ControlCapabilityDescriptorSnapshotKey::new(
@@ -607,7 +598,6 @@ async fn control_gateway_invocation_resolves_only_exact_published_descriptors() 
         ControlCapabilitySignerPolicy::new(BTreeMap::new()).unwrap(),
     )
     .unwrap();
-    let descriptor_snapshot_digest = descriptor_snapshot.digest().unwrap();
     ControlCapabilityDescriptorSnapshotStore::from_extension_paths(&paths)
         .publish(&descriptor_snapshot)
         .await
@@ -668,37 +658,29 @@ async fn control_gateway_invocation_resolves_only_exact_published_descriptors() 
         .unwrap()
         .unwrap();
     let _activation = composition.gateway_cutover_activation_with_factory(
-        session,
+        session.clone(),
         factory,
         CapabilityGatewayCompositionOptions::default(),
     );
 
     // The composition-level retention entry point derives the currently
     // published catalog from Control instead of trusting a caller-selected
-    // "current" pointer.  Drop the live activation first so its shared
+    // "current" pointer.  Drain the endpoint first so its shared
     // generation/maintenance lease no longer fences the destructive phase.
     drop(_activation);
     drop(lease);
-    let plan = composition
-        .plan_published_capability_payload_retention(&[], &[])
-        .await
-        .unwrap();
-    let plan_digest = plan.descriptor_digest().unwrap();
-    assert!(plan
-        .catalog_plan
-        .retain
-        .iter()
-        .any(|entry| entry.digest == published_catalog_digest));
-    assert!(plan
-        .descriptor_snapshot_plan
-        .retain
-        .iter()
-        .any(|entry| entry.digest == descriptor_snapshot_digest));
     let result = composition
-        .apply_published_capability_payload_retention(&plan, &plan_digest)
+        .drain_and_retain_published_capability_gateway(
+            &session,
+            std::time::Duration::from_secs(1),
+            &[],
+            &[],
+        )
         .await
         .unwrap();
     assert!(!result.changed);
+    assert_eq!(result.catalog.retained_record_count, 1);
+    assert_eq!(result.descriptor_snapshot.retained_record_count, 1);
 
     // A plan that retains only a newer, independently published payload must
     // not be allowed to prune the catalog selected by the durable cursor.

@@ -131,7 +131,9 @@ deadline, and detaches the factory's source generation lease only after the
 operation count reaches zero. A timed-out drain remains closed for new work and
 can be resumed; independent immutable server clones retain their own leases
 until dropped. This makes the subsequent exclusive payload-retention fence
-observable rather than dependent on dropping an implementation detail.
+observable rather than dependent on dropping an implementation detail. The
+inactive Control composition exposes one drain-and-retain helper that performs
+this transition before deriving and applying the cursor-bound payload plan.
 
 ### P0 — Compose the real invocation path
 

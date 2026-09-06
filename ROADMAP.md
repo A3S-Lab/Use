@@ -1322,7 +1322,9 @@ admitted operations under a caller deadline, and detaches the source
 generation lease only after the operation count reaches zero. A timed-out
 attempt remains non-admitting and can be resumed; independent immutable server
 clones retain their own leases until dropped. Lifecycle hosts can therefore
-call drain before entering the exclusive Capability payload retention fence.
+call drain before entering the exclusive Capability payload retention fence;
+the inactive Control composition provides one helper that performs that
+drain-and-retain sequence against its durable cursor.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
