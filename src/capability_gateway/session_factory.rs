@@ -238,6 +238,10 @@ impl CapabilityGatewaySessionFactory {
     /// adapter rejects all new requests.  Callers that retained independent
     /// clones of the immutable server still own those clones and their leases
     /// until they drop them.
+    ///
+    /// A zero timeout is useful for a non-blocking shutdown probe: it succeeds
+    /// when no operation is currently admitted and returns the normal timeout
+    /// error when work is still in flight.
     pub async fn drain(&self, timeout: Duration) -> UseResult<()> {
         let _serial = self.cutover.clone().lock_owned().await;
         match self.lifecycle.state() {
@@ -265,9 +269,16 @@ impl CapabilityGatewaySessionFactory {
             }
         }
 
-        if tokio::time::timeout(timeout, self.lifecycle.wait_until_idle())
-            .await
-            .is_err()
+        // Do not hand an already-idle session to `timeout(Duration::ZERO, ..)`.
+        // Tokio is allowed to return the timeout before polling the future,
+        // which would turn an immediately drainable session into a spurious
+        // failure.  Admission is closed above, so an observed zero count
+        // cannot be invalidated by a newly entered operation.
+        let active = self.lifecycle.active.load(Ordering::Acquire);
+        if active != 0
+            && tokio::time::timeout(timeout, self.lifecycle.wait_until_idle())
+                .await
+                .is_err()
         {
             return Err(UseError::new(
                 SESSION_DRAIN_TIMEOUT_ERROR,
@@ -718,5 +729,19 @@ mod tests {
         factory.drain(Duration::from_secs(1)).await.unwrap();
         let error = factory.replace(factory.current()).await.unwrap_err();
         assert_eq!(error.code, SESSION_STATE_ERROR);
+    }
+
+    #[tokio::test]
+    async fn zero_timeout_drains_an_already_idle_session() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let factory = factory(Arc::clone(&dropped));
+
+        factory.drain(Duration::ZERO).await.unwrap();
+
+        assert_eq!(
+            factory.current().generation_lease_mode(),
+            super::super::CapabilityGatewayGenerationLeaseMode::None
+        );
+        assert!(dropped.load(Ordering::SeqCst));
     }
 }
