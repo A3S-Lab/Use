@@ -842,6 +842,23 @@ async fn control_gateway_invocation_resolves_only_exact_published_descriptors() 
     assert_eq!(result.catalog.retained_record_count, 1);
     assert_eq!(result.descriptor_snapshot.retained_record_count, 1);
 
+    // A process-level lifecycle retry may repeat the combined boundary after
+    // the session has already released its source lease.  The factory keeps a
+    // one-shot proof of the exact externally bound endpoint, so the retry is
+    // read-only instead of being rejected as an unrelated unleased catalog.
+    let replay = composition
+        .drain_and_retain_published_capability_gateway(
+            &session,
+            std::time::Duration::ZERO,
+            &[],
+            &[],
+        )
+        .await
+        .unwrap();
+    assert!(!replay.changed);
+    assert_eq!(replay.catalog.retained_record_count, 1);
+    assert_eq!(replay.descriptor_snapshot.retained_record_count, 1);
+
     // A plan that retains only a newer, independently published payload must
     // not be allowed to prune the catalog selected by the durable cursor.
     let extra_catalog = CapabilityGatewayCatalog::new(

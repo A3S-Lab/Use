@@ -201,6 +201,14 @@ MCP session observe the replacement. Lifecycle code still owns the durable
 Control cursor, receipt/Runtime/Grant composition, lease retirement, and
 catalog retention policy.
 
+When a Control-bound factory finishes draining, it keeps a one-shot identity
+proof for that exact external endpoint even though the source lease is
+detached. A retry of the lifecycle drain-and-retain boundary can therefore be
+read-only and idempotent; an unleased factory drained through the generic API
+does not gain the proof. Control reconciliation uses a conditional source
+compare-and-swap so a stale same-generation build cannot replace a newer local
+cutover.
+
 ## Catalog retention
 
 The payload store does not infer liveness from filenames or a mutable

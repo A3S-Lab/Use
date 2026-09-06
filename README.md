@@ -1985,8 +1985,13 @@ projection before a source becomes visible. The inactive Control composition
 also provides `reopen_published_capability_gateway` and
 `replace_published_capability_gateway`: both derive the lease from durable
 Control authority, retain it inside the immutable Gateway server, and reject
-an unleased replacement. Production Control activation, provider composition,
-retirement, and retention coordination remain host responsibilities.
+an unleased replacement. A successful Control-bound drain retains a one-shot
+typed endpoint identity, so an exact shutdown retry remains idempotent after
+the source lease is detached while a directly drained or copied unleased
+catalog is still rejected. Conditional replacement also refuses to overwrite
+a newer local cutover with a stale same-generation build. Production Control
+activation, provider composition, retirement, and retention coordination
+remain host responsibilities.
 
 Catalog payload cleanup is now an explicit plan/apply operation as well:
 `CapabilityGatewayCatalogStore` requires a lifecycle-supplied protected digest

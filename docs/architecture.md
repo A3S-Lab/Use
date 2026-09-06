@@ -227,6 +227,14 @@ immutable catalog, and gives a host factory the same Control lease that is
 retained until the call returns. The host factory remains responsible for the
 private principal/Grant/Runtime join.
 
+The live session boundary also keeps a one-shot identity proof after a
+Control-bound endpoint reaches `DRAINED`, allowing an exact drain/retention
+retry without treating the detached server as newly unbound. Directly drained
+unleased servers cannot manufacture that proof. Reconciliation performs a
+conditional source compare-and-swap so a stale same-generation projection
+cannot overwrite a newer local cutover; a losing attempt must refresh durable
+Control authority.
+
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,
 an Ed25519 algorithm identifier, key and signer identities, and bounded issue

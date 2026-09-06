@@ -611,8 +611,16 @@ impl ControlStoreRuntimeComposition {
                 "The durable Control publication is older than the live Gateway endpoint.",
             ));
         }
+        let Some(replacement) = factory.replace_if_current(&current, server).await? else {
+            // Another local cutover changed the source after the final
+            // durable cursor read.  Do not overwrite it with the server built
+            // from this attempt, especially when both publications share a
+            // generation but have different revisions.  The lifecycle caller
+            // can reopen Control authority and retry from a coherent view.
+            return Ok(None);
+        };
         Ok(Some(ControlCapabilityGatewayReconciliation::Replaced(
-            factory.replace(server).await?,
+            replacement,
         )))
     }
 

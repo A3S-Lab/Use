@@ -10,7 +10,7 @@
 
 use std::sync::{
     atomic::{AtomicU8, AtomicUsize, Ordering},
-    Arc, RwLock,
+    Arc, OnceLock, RwLock,
 };
 use std::time::Duration;
 
@@ -169,6 +169,12 @@ pub struct CapabilityGatewaySessionFactory {
     current: Arc<RwLock<CapabilityGatewayMcpServer>>,
     cutover: Arc<tokio::sync::Mutex<()>>,
     lifecycle: SessionLifecycle,
+    /// A one-shot proof that this factory was drained while it still held a
+    /// host-owned external lease for the recorded endpoint identity.  The
+    /// live server intentionally drops that lease after draining, but a
+    /// lifecycle retry still needs to prove that it is retrying the same
+    /// already-retired Control endpoint rather than an unbound copy.
+    drained_external_key: Arc<OnceLock<CapabilityGatewaySessionKey>>,
 }
 
 impl std::fmt::Debug for CapabilityGatewaySessionFactory {
@@ -187,6 +193,7 @@ impl CapabilityGatewaySessionFactory {
             current: Arc::new(RwLock::new(server)),
             cutover: Arc::new(tokio::sync::Mutex::new(())),
             lifecycle: SessionLifecycle::new(),
+            drained_external_key: Arc::new(OnceLock::new()),
         }
     }
 
@@ -259,7 +266,15 @@ impl CapabilityGatewaySessionFactory {
         timeout: Duration,
     ) -> UseResult<bool> {
         let _serial = self.cutover.clone().lock_owned().await;
-        let bound = {
+        let bound = if self.lifecycle.state() == SESSION_DRAINED {
+            // `drain_locked` has already detached the external lease.  A
+            // successful first attempt leaves this typed proof behind so an
+            // exact retry can remain idempotent without accepting a copied
+            // unleased catalog.
+            self.drained_external_key
+                .get()
+                .is_some_and(|key| key == expected)
+        } else {
             let current = self.current();
             session_key(current.catalog())? == *expected
                 && current.generation_lease_mode()
@@ -316,10 +331,27 @@ impl CapabilityGatewaySessionFactory {
             ));
         }
 
+        // Capture the identity and whether the lease was externally proven in
+        // a short scope.  Keeping a cloned server alive while replacing the
+        // factory slot would retain the same generation lease and make the
+        // subsequent retention fence wait on itself.
+        let (key, externally_bound, detached) = {
+            let current = self.current();
+            let key = session_key(current.catalog())?;
+            let externally_bound = current.generation_lease_mode()
+                == super::CapabilityGatewayGenerationLeaseMode::External
+                && current.external_lease_matches(&key);
+            (key, externally_bound, current.without_generation_lease())
+        };
+        if externally_bound {
+            // The lifecycle state is monotonic, so a failed set would only
+            // indicate corruption or an impossible second transition. Keep
+            // the first proof; it is safer than replacing it during replay.
+            let _ = self.drained_external_key.set(key);
+        }
         self.lifecycle
             .state
             .store(SESSION_DRAINED, Ordering::Release);
-        let detached = self.current().without_generation_lease();
         match self.current.write() {
             Ok(mut slot) => *slot = detached,
             Err(poisoned) => *poisoned.into_inner() = detached,
@@ -368,6 +400,38 @@ impl CapabilityGatewaySessionFactory {
         next: CapabilityGatewayMcpServer,
     ) -> UseResult<CapabilityGatewaySessionReplacement> {
         let serial = Arc::clone(&self.cutover).lock_owned().await;
+        self.replace_locked(next, serial).await
+    }
+
+    /// Replace the source only if it is still the exact server identified by
+    /// `expected`.  `None` means another local cutover won the race and the
+    /// caller must refresh its durable publication before retrying.  The
+    /// compare-and-swap is deliberately scoped to the factory's serialization
+    /// guard; it prevents a stale same-generation build from overwriting a
+    /// newer local replacement.
+    pub(crate) async fn replace_if_current(
+        &self,
+        expected: &CapabilityGatewaySessionKey,
+        next: CapabilityGatewayMcpServer,
+    ) -> UseResult<Option<CapabilityGatewaySessionReplacement>> {
+        let serial = Arc::clone(&self.cutover).lock_owned().await;
+        if self.lifecycle.state() != SESSION_RUNNING {
+            return Err(session_state_error(
+                "The Capability Gateway session is draining or already drained.",
+            ));
+        }
+        let current = session_key(self.current().catalog())?;
+        if current != *expected {
+            return Ok(None);
+        }
+        Ok(Some(self.replace_locked(next, serial).await?))
+    }
+
+    async fn replace_locked(
+        &self,
+        next: CapabilityGatewayMcpServer,
+        serial: tokio::sync::OwnedMutexGuard<()>,
+    ) -> UseResult<CapabilityGatewaySessionReplacement> {
         if self.lifecycle.state() != SESSION_RUNNING {
             return Err(session_state_error(
                 "The Capability Gateway session is draining or already drained.",
@@ -725,6 +789,23 @@ mod tests {
         }
     }
 
+    struct BoundLeaseMarker {
+        key: super::super::CapabilityGatewaySessionKey,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl CapabilityGatewayExternalLease for BoundLeaseMarker {
+        fn matches_gateway_session(&self, key: &super::super::CapabilityGatewaySessionKey) -> bool {
+            self.key == *key
+        }
+    }
+
+    impl Drop for BoundLeaseMarker {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
     fn factory(dropped: Arc<AtomicBool>) -> CapabilityGatewaySessionFactory {
         let installation = InstallationId::new(InstallationKind::User, "session-drain").unwrap();
         let catalog = CapabilityGatewayCatalog::new(installation, 1, Vec::new()).unwrap();
@@ -780,5 +861,80 @@ mod tests {
             super::super::CapabilityGatewayGenerationLeaseMode::None
         );
         assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn bound_drain_replay_uses_only_the_proven_external_identity() {
+        let installation =
+            InstallationId::new(InstallationKind::User, "session-bound-drain").unwrap();
+        let catalog = CapabilityGatewayCatalog::new(installation, 1, Vec::new()).unwrap();
+        let key = super::session_key(&catalog).unwrap();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let server = super::super::CapabilityGatewayMcpServer::new(catalog, Arc::new(NoopProvider))
+            .unwrap()
+            .with_external_lease(Arc::new(BoundLeaseMarker {
+                key: key.clone(),
+                dropped: Arc::clone(&dropped),
+            }))
+            .unwrap();
+        let factory = CapabilityGatewaySessionFactory::new(server);
+
+        assert!(factory.drain_if_bound(&key, Duration::ZERO).await.unwrap());
+        assert!(dropped.load(Ordering::SeqCst));
+        assert!(factory.drain_if_bound(&key, Duration::ZERO).await.unwrap());
+
+        let mut unrelated = key;
+        unrelated.generation += 1;
+        assert!(!factory
+            .drain_if_bound(&unrelated, Duration::ZERO)
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn direct_unbound_drain_does_not_forge_a_replay_binding() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let factory = factory(Arc::clone(&dropped));
+        let key = factory.current_key().unwrap();
+
+        factory.drain(Duration::ZERO).await.unwrap();
+
+        assert!(dropped.load(Ordering::SeqCst));
+        assert!(!factory.drain_if_bound(&key, Duration::ZERO).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn conditional_replacement_does_not_overwrite_a_concurrent_cutover() {
+        let installation =
+            InstallationId::new(InstallationKind::User, "session-conditional-replace").unwrap();
+        let initial = CapabilityGatewayCatalog::new(installation.clone(), 1, Vec::new()).unwrap();
+        let winner = CapabilityGatewayCatalog::new(installation.clone(), 2, Vec::new()).unwrap();
+        let stale_build = CapabilityGatewayCatalog::new(installation, 3, Vec::new()).unwrap();
+        let factory = CapabilityGatewaySessionFactory::new(
+            super::super::CapabilityGatewayMcpServer::new(initial, Arc::new(NoopProvider)).unwrap(),
+        );
+        let expected = factory.current_key().unwrap();
+
+        factory
+            .replace(
+                super::super::CapabilityGatewayMcpServer::new(
+                    winner.clone(),
+                    Arc::new(NoopProvider),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let replacement = factory
+            .replace_if_current(
+                &expected,
+                super::super::CapabilityGatewayMcpServer::new(stale_build, Arc::new(NoopProvider))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(replacement.is_none());
+        assert_eq!(factory.current().catalog(), &winner);
     }
 }

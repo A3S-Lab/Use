@@ -1342,6 +1342,17 @@ closed before payload unlink. This closes the remaining in-process session
 identity/TOCTOU gap, while production host wiring and independent rollback
 authority remain release gates.
 
+Implementation note (2026-09-06): the live session boundary now retains a
+one-shot, typed identity proof when a Control-bound endpoint finishes draining.
+An exact lifecycle retry can therefore repeat drain-and-retain after the source
+lease has been detached, while a directly drained or copied unleased server
+cannot manufacture that proof. Replacements built from a stale local snapshot
+also use a conditional source compare-and-swap; if another cutover wins, the
+attempt returns a retry signal instead of overwriting the newer same-generation
+projection. These are local convergence mechanisms; production Control
+publication and rollback authorities still have to coordinate the durable
+cross-process transition.
+
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning
 evidence and exact release descriptor digest. Registry-trusted packages must
