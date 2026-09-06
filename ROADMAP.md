@@ -1089,6 +1089,14 @@ The unverified compatibility method remains available for hosts with another
 persistence authority; selecting the Control-bound publication and retiring
 payload leases remain lifecycle responsibilities.
 
+Implementation note (2026-09-06): Gateway session identity now follows the
+complete immutable source publication retained before consumer negotiation.
+Optional descriptor filtering therefore changes only the visible MCP view;
+Control lease matching, reconciliation, and drain continue to bind the full
+published cursor. Control projection validation also requires every retained
+descriptor to equal an exact descriptor in that publication, rather than
+checking package digests alone.
+
 Implementation note (2026-09-05): catalog payload retention now has an
 explicit plan/apply protocol. The lifecycle owner supplies the protected
 digest set; the store emits a canonical inventory partition, rechecks the

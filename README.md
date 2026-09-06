@@ -1991,7 +1991,10 @@ the source lease is detached while a directly drained or copied unleased
 catalog is still rejected. Conditional replacement also refuses to overwrite
 a newer local cutover with a stale same-generation build. Production Control
 activation, provider composition, retirement, and retention coordination
-remain host responsibilities.
+remain host responsibilities. Session identity is derived from the complete
+immutable source publication before consumer negotiation, so filtering
+optional descriptors does not break Control lease binding or lifecycle
+reconciliation.
 
 Catalog payload cleanup is now an explicit plan/apply operation as well:
 `CapabilityGatewayCatalogStore` requires a lifecycle-supplied protected digest

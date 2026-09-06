@@ -405,6 +405,11 @@ impl CapabilityGatewayCompositionOptions {
 /// Standard MCP server backed by an immutable Capability Gateway catalog.
 #[derive(Clone)]
 pub struct CapabilityGatewayMcpServer {
+    /// Immutable source publication before consumer negotiation projects the
+    /// visible descriptor view. Session lifecycle identity must follow this
+    /// source, because a negotiated subset is a presentation concern and can
+    /// differ between otherwise identical Control-bound endpoints.
+    source_catalog: Arc<CapabilityGatewayCatalog>,
     catalog: Arc<CapabilityGatewayCatalog>,
     consumer_negotiation: Arc<CapabilityConsumerNegotiation>,
     provider: Arc<dyn CapabilityGatewayInvocationProvider>,
@@ -893,6 +898,12 @@ impl CapabilityGatewayMcpServer {
         limits: CapabilityGatewayLimits,
     ) -> UseResult<Self> {
         consumer_negotiation.validate()?;
+        // Preserve the complete publication identity before projecting the
+        // catalog for this consumer. The visible catalog is intentionally a
+        // separate immutable view, but leases and cutovers must remain bound
+        // to the source publication rather than to that view's derived
+        // revision/digest.
+        let source_catalog = Arc::new(catalog.clone());
         // Keep the negotiated view as part of the immutable server state. A
         // descriptor requiring an extension that this consumer did not
         // explicitly accept must disappear from both discovery and direct
@@ -909,6 +920,7 @@ impl CapabilityGatewayMcpServer {
         let tool_router = frozen_tool_router(&catalog)?;
         let admission = Arc::new(GatewayAdmission::new(limits)?);
         Ok(Self {
+            source_catalog,
             catalog,
             consumer_negotiation: Arc::new(consumer_negotiation),
             provider,
@@ -929,6 +941,14 @@ impl CapabilityGatewayMcpServer {
     /// Return the exact immutable catalog used by this server.
     pub fn catalog(&self) -> &CapabilityGatewayCatalog {
         &self.catalog
+    }
+
+    /// Return the complete immutable publication from which the consumer
+    /// visible catalog was projected. This is crate-internal because hosts
+    /// should use [`Self::catalog`] for discovery and invocation; lifecycle
+    /// code uses this source identity to bind leases and cutovers.
+    pub(crate) fn source_catalog(&self) -> &CapabilityGatewayCatalog {
+        &self.source_catalog
     }
 
     /// Return the immutable consumer negotiation bound to this Gateway.

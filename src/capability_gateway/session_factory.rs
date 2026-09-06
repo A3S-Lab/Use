@@ -132,7 +132,9 @@ fn session_state_error(message: impl Into<String>) -> UseError {
     UseError::new(SESSION_STATE_ERROR, message)
 }
 
-/// The immutable catalog identity selected by a live session factory.
+/// The immutable source-publication identity selected by a live session
+/// factory. The visible catalog may be a consumer-negotiated subset; this key
+/// deliberately remains stable across that presentation projection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityGatewaySessionKey {
     pub installation: InstallationId,
@@ -232,7 +234,7 @@ impl CapabilityGatewaySessionFactory {
 
     /// Return the validated identity of the currently selected catalog.
     pub fn current_key(&self) -> UseResult<CapabilityGatewaySessionKey> {
-        session_key(self.current().catalog())
+        server_session_key(&self.current())
     }
 
     /// Stop admitting new operations, wait for already admitted operations to
@@ -276,7 +278,7 @@ impl CapabilityGatewaySessionFactory {
                 .is_some_and(|key| key == expected)
         } else {
             let current = self.current();
-            session_key(current.catalog())? == *expected
+            server_session_key(&current)? == *expected
                 && current.generation_lease_mode()
                     == super::CapabilityGatewayGenerationLeaseMode::External
                 && current.external_lease_matches(expected)
@@ -337,7 +339,7 @@ impl CapabilityGatewaySessionFactory {
         // subsequent retention fence wait on itself.
         let (key, externally_bound, detached) = {
             let current = self.current();
-            let key = session_key(current.catalog())?;
+            let key = server_session_key(&current)?;
             let externally_bound = current.generation_lease_mode()
                 == super::CapabilityGatewayGenerationLeaseMode::External
                 && current.external_lease_matches(&key);
@@ -420,7 +422,7 @@ impl CapabilityGatewaySessionFactory {
                 "The Capability Gateway session is draining or already drained.",
             ));
         }
-        let current = session_key(self.current().catalog())?;
+        let current = server_session_key(&self.current())?;
         if current != *expected {
             return Ok(None);
         }
@@ -438,7 +440,7 @@ impl CapabilityGatewaySessionFactory {
             ));
         }
         let previous_server = self.current();
-        let previous = session_key(previous_server.catalog())?;
+        let previous = server_session_key(&previous_server)?;
 
         if previous_server.consumer_negotiation() != next.consumer_negotiation()
             || previous_server.generation_lease_mode() != next.generation_lease_mode()
@@ -448,13 +450,13 @@ impl CapabilityGatewaySessionFactory {
                 "The replacement Capability Gateway changes its consumer contract or lease mode.",
             ));
         }
-        if next.catalog().installation() != &previous.installation {
+        if next.source_catalog().installation() != &previous.installation {
             return Err(UseError::new(
                 SESSION_INCOMPATIBLE_ERROR,
                 "The replacement Capability Gateway belongs to another installation.",
             ));
         }
-        if next.catalog().generation() < previous.generation {
+        if next.source_catalog().generation() < previous.generation {
             return Err(UseError::new(
                 SESSION_STALE_ERROR,
                 "The replacement Capability Gateway publication is older than the current source.",
@@ -466,7 +468,7 @@ impl CapabilityGatewaySessionFactory {
         // safe: the factory attaches its existing notification bus before the
         // source becomes visible.
         let next = next.with_notification_hub(previous_server.notification_hub())?;
-        let current = session_key(next.catalog())?;
+        let current = server_session_key(&next)?;
         let catalog_changed = previous != current;
 
         match self.current.write() {
@@ -665,6 +667,12 @@ fn session_key(catalog: &CapabilityGatewayCatalog) -> UseResult<CapabilityGatewa
         revision: catalog.revision().to_owned(),
         digest: catalog.descriptor_digest()?,
     })
+}
+
+fn server_session_key(
+    server: &CapabilityGatewayMcpServer,
+) -> UseResult<CapabilityGatewaySessionKey> {
+    session_key(server.source_catalog())
 }
 
 async fn verify_published_server(

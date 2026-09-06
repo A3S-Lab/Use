@@ -6,11 +6,11 @@ use crate::plugin_runtime::RuntimeServiceBindingReceipt;
 #[cfg(feature = "mcp")]
 use a3s_runtime::contract::{RuntimeObservation, RuntimeServiceEndpoint};
 use a3s_use_core::{
-    CapabilityDescriptionProof, CapabilityDescriptionSignatureAlgorithm,
-    CapabilityDescriptionSignaturePayload, CapabilityDescriptor, CapabilityDescriptorKind,
-    CapabilityGatewayCatalog, CapabilityPublicationEvidence, CapabilityToolAnnotations,
-    InvocationRef, PluginOperationAction, PluginPackageId, PluginSurfaceKind, PluginSurfaceRef,
-    SignedCapabilityDescription,
+    CapabilityConsumerExtension, CapabilityDescriptionProof,
+    CapabilityDescriptionSignatureAlgorithm, CapabilityDescriptionSignaturePayload,
+    CapabilityDescriptor, CapabilityDescriptorKind, CapabilityGatewayCatalog,
+    CapabilityPublicationEvidence, CapabilityToolAnnotations, InvocationRef, PluginOperationAction,
+    PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, SignedCapabilityDescription,
 };
 use a3s_use_extension::{CapabilityDescriptionTrustKey, CapabilityDescriptionTrustStore};
 #[cfg(feature = "mcp")]
@@ -65,6 +65,8 @@ struct EmptyCatalogProjection;
 struct UnauthorizedCatalogProjection;
 
 struct ExactResourceCatalogProjection;
+
+struct OptionalResourceCatalogProjection;
 
 #[cfg(feature = "mcp")]
 #[derive(Debug, Default)]
@@ -277,6 +279,25 @@ impl ControlCapabilityCatalogProjectionPort for ExactResourceCatalogProjection {
                 authority.generation.snapshot.installation.clone(),
                 authority.generation.capability.generation,
                 vec![exact_resource_descriptor(authority)],
+            )
+            .unwrap(),
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl ControlCapabilityCatalogProjectionPort for OptionalResourceCatalogProjection {
+    async fn project(
+        &self,
+        authority: &ControlCapabilityEffectAuthority,
+    ) -> ControlEffectPortOutcome<CapabilityGatewayCatalog> {
+        let mut descriptor = exact_resource_descriptor(authority);
+        descriptor.required_extensions = vec![CapabilityConsumerExtension::Flow];
+        ControlEffectPortOutcome::applied(
+            CapabilityGatewayCatalog::new(
+                authority.generation.snapshot.installation.clone(),
+                authority.generation.capability.generation,
+                vec![descriptor],
             )
             .unwrap(),
         )
@@ -529,6 +550,70 @@ async fn reopened_control_lease_seeds_a_lease_bound_gateway_session() {
     assert!(server.has_generation_lease());
     let factory = CapabilityGatewaySessionFactory::new(server);
     assert!(factory.current().has_generation_lease());
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn control_gateway_binding_uses_source_publication_across_consumer_projection() {
+    let fixture = installed_capability_plane_with_projection(
+        "operation:capability-plane:gateway-source-binding",
+        Arc::new(OptionalResourceCatalogProjection),
+    )
+    .await;
+    let paths = fixture._owner_fixture.paths.clone();
+    let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        super::composition::ControlEffectCompositionDependencies {
+            runtime_registry: Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: Arc::new(CompositionReadiness),
+            // Reopen reads the durable catalog payload; this projection
+            // is used only for any later publication in this fixture.
+            catalog_projection: Arc::new(EmptyCatalogProjection),
+            flow: Arc::new(UnexpectedDynamicSurfacePort),
+            clock: Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+    let cursor = fixture.store.published_capability().await.unwrap().unwrap();
+
+    let session = composition
+        .reopen_published_capability_gateway(
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Generic MCP omits the Flow-only descriptor from its visible view, but
+    // the lifecycle key must still identify the complete durable publication.
+    assert!(session.current().catalog().descriptors().is_empty());
+    assert_eq!(session.current_key().unwrap().digest, cursor.catalog.digest);
+    let reconciled = composition
+        .reconcile_published_capability_gateway(
+            &session,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        reconciled,
+        Some(super::composition::ControlCapabilityGatewayReconciliation::Unchanged(_))
+    ));
+
+    let retained = composition
+        .drain_and_retain_published_capability_gateway(
+            &session,
+            std::time::Duration::ZERO,
+            &[],
+            &[],
+        )
+        .await
+        .unwrap();
+    assert!(!retained.changed);
+    assert_eq!(retained.catalog.retained_record_count, 1);
 }
 
 #[cfg(feature = "mcp")]

@@ -513,6 +513,23 @@ impl ControlCapabilitySnapshotLease {
             ));
         }
         for descriptor in catalog.descriptors() {
+            // Package lifecycle digests are necessary but not sufficient:
+            // those fields alone would allow a caller to rewrite a title,
+            // schema, opaque invocation reference, or publication evidence
+            // while retaining the same package bytes. A negotiated catalog
+            // may omit descriptors, but every descriptor it keeps must be an
+            // exact immutable member of the leased source publication.
+            if !self
+                .catalog
+                .descriptors()
+                .iter()
+                .any(|candidate| candidate == descriptor)
+            {
+                return Err(UseError::new(
+                    "use.control.capability_gateway_binding_invalid",
+                    "The Gateway catalog contains a descriptor outside the exact Control publication.",
+                ));
+            }
             let package_id = descriptor.package_id.to_string();
             let Some(package) = self
                 .cursor

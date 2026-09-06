@@ -62,6 +62,11 @@ assert!(gateway
     .accepts(CapabilityConsumerExtension::Flow));
 ```
 
+The Gateway keeps the complete source publication identity separate from this
+visible negotiated view. A generic consumer may therefore omit descriptors
+requiring optional extensions without changing the Control lease or session
+identity used for lifecycle cutover.
+
 The existing Gateway constructors continue to select the generic MCP profile.
 Use an explicit negotiation constructor when an A3S host has completed its
 profile handshake; there is no implicit profile upgrade.

@@ -587,7 +587,10 @@ impl ControlStoreRuntimeComposition {
             return Ok(None);
         };
         let server = Self::gateway_server_from_control_lease(lease, provider, options)?;
-        let next = gateway_session_key(server.catalog())?;
+        // Session identity follows the complete Control publication retained
+        // by the server, while `server.catalog()` is only the negotiated
+        // consumer view and may omit optional descriptors.
+        let next = gateway_session_key(server.source_catalog())?;
         // The lease admission above proves the cursor was still exact while
         // all package-generation locks and payload bytes were acquired.  A
         // final authority read prevents swapping a freshly built endpoint if
