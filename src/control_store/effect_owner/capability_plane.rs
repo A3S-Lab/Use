@@ -487,7 +487,54 @@ impl ControlCapabilitySnapshotLease {
     ) -> a3s_use_core::UseResult<String> {
         self.document.receipt_digest()
     }
+
+    /// Verify that a consumer-projected Gateway catalog remains inside this
+    /// exact Control publication. Consumer negotiation may remove optional
+    /// descriptors, but it cannot change installation, publication
+    /// generation, package lifecycle generation, or immutable package bytes.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) fn validate_gateway_catalog(
+        &self,
+        catalog: &CapabilityGatewayCatalog,
+    ) -> UseResult<()> {
+        catalog.validate()?;
+        if catalog.installation() != &self.cursor.installation
+            || catalog.generation() != self.cursor.capability_generation
+        {
+            return Err(UseError::new(
+                "use.control.capability_gateway_binding_invalid",
+                "The Gateway catalog is outside the published Control capability generation.",
+            ));
+        }
+        for descriptor in catalog.descriptors() {
+            let package_id = descriptor.package_id.to_string();
+            let Some(package) = self
+                .cursor
+                .packages
+                .iter()
+                .find(|package| package.package_id == package_id)
+            else {
+                return Err(UseError::new(
+                    "use.control.capability_gateway_binding_invalid",
+                    "The Gateway catalog contains a package outside the Control lease.",
+                ));
+            };
+            if package.lifecycle_generation != descriptor.generation
+                || package.package_digest != descriptor.package_digest
+                || package.manifest_digest != descriptor.manifest_digest
+            {
+                return Err(UseError::new(
+                    "use.control.capability_gateway_binding_invalid",
+                    "The Gateway descriptor does not match the Control package generation.",
+                ));
+            }
+        }
+        Ok(())
+    }
 }
+
+#[cfg(feature = "mcp")]
+impl crate::capability_gateway::CapabilityGatewayExternalLease for ControlCapabilitySnapshotLease {}
 
 impl fmt::Debug for ControlCapabilitySnapshotLease {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

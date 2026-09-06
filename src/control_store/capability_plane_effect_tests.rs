@@ -11,6 +11,12 @@ use a3s_use_core::{
 use a3s_use_extension::{CapabilityDescriptionTrustKey, CapabilityDescriptionTrustStore};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 
+#[cfg(feature = "mcp")]
+use crate::capability_gateway::{
+    CapabilityGatewayCompositionOptions, CapabilityGatewayInvocationProvider,
+    CapabilityGatewayRequestContext, CapabilityGatewaySessionFactory,
+};
+
 use super::aggregate_tests::fixtures::{
     apply_all_effects, claim, control_installation, digest, initialized_store, observation,
     operation, operation_at, projected_transition, transition,
@@ -44,6 +50,32 @@ use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
 struct EmptyCatalogProjection;
 
 struct UnauthorizedCatalogProjection;
+
+#[cfg(feature = "mcp")]
+#[derive(Debug, Default)]
+struct EmptyGatewayProvider;
+
+#[cfg(feature = "mcp")]
+#[async_trait::async_trait]
+impl CapabilityGatewayInvocationProvider for EmptyGatewayProvider {
+    async fn authorize(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: &serde_json::Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> a3s_use_core::UseResult<()> {
+        Ok(())
+    }
+
+    async fn invoke(
+        &self,
+        _descriptor: &CapabilityDescriptor,
+        _arguments: serde_json::Value,
+        _context: &CapabilityGatewayRequestContext,
+    ) -> a3s_use_core::UseResult<serde_json::Value> {
+        Ok(serde_json::json!({"ok": true}))
+    }
+}
 
 #[async_trait::async_trait]
 impl ControlCapabilityCatalogProjectionPort for EmptyCatalogProjection {
@@ -288,6 +320,26 @@ async fn published_cursor_reopens_from_durable_control_after_restart() {
         lease.document_receipt_digest().unwrap(),
         cursor.receipt_digest
     );
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn reopened_control_lease_seeds_a_lease_bound_gateway_session() {
+    let fixture = installed_capability_plane("operation:capability-plane:gateway").await;
+    let lease = fixture.plane.reopen_published().await.unwrap().unwrap();
+    let generation = lease.cursor().capability_generation;
+    let server =
+        super::composition::ControlStoreRuntimeComposition::gateway_server_from_control_lease(
+            lease,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(server.catalog().generation(), generation);
+    assert!(server.has_generation_lease());
+    let factory = CapabilityGatewaySessionFactory::new(server);
+    assert!(factory.current().has_generation_lease());
 }
 
 #[tokio::test]

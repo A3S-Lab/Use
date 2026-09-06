@@ -1063,9 +1063,10 @@ Malformed top-level state, linked entries, tampered records, and over-bound
 inventories fail closed; incomplete regular staging artifacts can be replayed
 under the same digest. The store deliberately has no mutable current pointer,
 so payload durability alone does not select a live generation. The inactive
-Control composition now supplies the transactional binding described below;
-production activation and host coordination of session replacement, lease
-drain, and retention remain required before the A3 catalog gate can close.
+Control composition now supplies the transactional binding described below
+and a restart-safe path to seed or replace a live Gateway session from its
+durable cursor; production activation, owner registration, lease drain, and
+retention remain required before the A3 catalog gate can close.
 
 Implementation note (2026-09-05): `CapabilityGatewaySessionFactory` now gives
 an embedding host a bounded live-endpoint cutover seam. It serializes
@@ -1276,9 +1277,11 @@ authority after a restart. The caller supplies no cursor. The Capability Plane
 reads the committed cursor, verifies the exact immutable Index and catalog,
 acquires every bound package-generation lease in canonical order, then rereads
 the Control cursor so a concurrent cutover returns stale rather than exposing
-a mixed graph. This closes the local cursor-reopen mechanism; production live
-Gateway session construction/replacement, owner registration, lease drain,
-lifecycle retention policy, and Registry/TUF authority binding remain open.
+a mixed graph. The composition now uses that lease as an internal Gateway
+generation guard, so every cloned server retains it and the session factory
+cannot replace a leased endpoint with an unleased server. Production live
+Control activation, owner registration, lease drain, lifecycle retention
+policy, and Registry/TUF authority binding remain open.
 
 Implementation note (2026-09-04): Runtime Task publication and dispatch now
 cross-bind each durable receipt to the installed package's retained planning

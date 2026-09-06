@@ -422,10 +422,29 @@ pub struct CapabilityGatewayMcpServer {
     /// When present, this RAII lease pins every callable package generation
     /// for the lifetime of the MCP service (including cloned session handles).
     snapshot_lease: Option<Arc<CapabilitySnapshotLease>>,
+    /// Internal composition hook for an installation authority other than the
+    /// legacy Capability Registry. Retaining this value makes the authority's
+    /// generation lease follow every cloned Gateway server.
+    external_lease: Option<Arc<dyn CapabilityGatewayExternalLease>>,
     /// Shared standard MCP list-change fan-out. The catalog itself remains
     /// immutable; a host may use this hub while replacing the session factory
     /// with a newer generation-bound server.
     notification_hub: Arc<CapabilityGatewayNotificationHub>,
+}
+
+/// Crate-internal lifetime marker for an alternate installation authority.
+///
+/// External hosts must use the typed [`CapabilitySnapshotLease`] constructors.
+/// The inactive Control composition implements this marker for its private
+/// lease so the MCP layer can retain it without exposing Control storage types
+/// through the public API.
+pub(crate) trait CapabilityGatewayExternalLease: Send + Sync {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CapabilityGatewayGenerationLeaseMode {
+    None,
+    Registry,
+    External,
 }
 
 impl std::fmt::Debug for CapabilityGatewayMcpServer {
@@ -436,6 +455,7 @@ impl std::fmt::Debug for CapabilityGatewayMcpServer {
             .field("consumer_negotiation", &self.consumer_negotiation)
             .field("discovery_context_count", &self.discovery_views_count())
             .field("has_snapshot_lease", &self.snapshot_lease.is_some())
+            .field("has_external_lease", &self.external_lease.is_some())
             .field("notification_hub", &self.notification_hub)
             .field("transport", &self.transport)
             .finish_non_exhaustive()
@@ -897,6 +917,7 @@ impl CapabilityGatewayMcpServer {
             discovery_views: Arc::new(Mutex::new(BTreeMap::new())),
             transport: CapabilityGatewayTransport::Stdio,
             snapshot_lease,
+            external_lease: None,
             notification_hub,
         })
     }
@@ -945,6 +966,42 @@ impl CapabilityGatewayMcpServer {
         self.snapshot_lease
             .as_deref()
             .map(CapabilitySnapshotLease::cursor)
+    }
+
+    /// Attach an installation-owned generation lease from an internal
+    /// authority. The caller must validate that the server catalog is the
+    /// exact projection of this lease before invoking the hook.
+    pub(crate) fn with_external_lease(
+        mut self,
+        lease: Arc<dyn CapabilityGatewayExternalLease>,
+    ) -> UseResult<Self> {
+        if self.snapshot_lease.is_some() || self.external_lease.is_some() {
+            return Err(mcp_error(
+                "The Capability Gateway already retains a generation lease authority.",
+            ));
+        }
+        self.external_lease = Some(lease);
+        Ok(self)
+    }
+
+    /// Return whether this server retains any complete generation lease.
+    /// Session replacement uses this to prevent an accidentally unleased
+    /// server from replacing a leased endpoint (or vice versa).
+    pub(crate) fn has_generation_lease(&self) -> bool {
+        self.generation_lease_mode() != CapabilityGatewayGenerationLeaseMode::None
+    }
+
+    /// Keep one live endpoint on a single generation-authority class. A
+    /// Registry lease and a Control lease are both safe individually, but
+    /// silently switching between them would change lifecycle authority.
+    pub(crate) fn generation_lease_mode(&self) -> CapabilityGatewayGenerationLeaseMode {
+        if self.snapshot_lease.is_some() {
+            CapabilityGatewayGenerationLeaseMode::Registry
+        } else if self.external_lease.is_some() {
+            CapabilityGatewayGenerationLeaseMode::External
+        } else {
+            CapabilityGatewayGenerationLeaseMode::None
+        }
     }
 
     /// Return the shared standard MCP list-change hub for this server.

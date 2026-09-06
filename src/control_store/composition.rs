@@ -18,6 +18,13 @@ use a3s_use_extension::{
     ArtifactStore, ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock,
 };
 
+#[cfg(feature = "mcp")]
+use crate::capability_gateway::{
+    CapabilityGatewayCompositionOptions, CapabilityGatewayInvocationProvider,
+    CapabilityGatewayMcpServer, CapabilityGatewaySessionFactory,
+    CapabilityGatewaySessionReplacement,
+};
+
 use super::dispatcher::{
     ControlEffectClock, ControlEffectDispatchRequest, ControlEffectDispatchResult,
     ControlEffectPorts, ControlEffectRuntime,
@@ -233,6 +240,64 @@ impl ControlStoreRuntimeComposition {
         &self,
     ) -> UseResult<Option<ControlCapabilitySnapshotLease>> {
         self.capability_plane.reopen_published().await
+    }
+
+    /// Reconstruct a live Gateway endpoint from the durable published Control
+    /// cursor after a host restart. The returned session factory retains the
+    /// exact Control generation lease in every cloned immutable server.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) async fn reopen_published_capability_gateway(
+        &self,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> UseResult<Option<CapabilityGatewaySessionFactory>> {
+        let Some(lease) = self.capability_plane.reopen_published().await? else {
+            return Ok(None);
+        };
+        let server = Self::gateway_server_from_control_lease(lease, provider, options)?;
+        Ok(Some(CapabilityGatewaySessionFactory::new(server)))
+    }
+
+    /// Replace an existing live Gateway endpoint from the current durable
+    /// Control publication. A missing or raced publication returns `None` so
+    /// the host can retry after refreshing its lifecycle view; the factory
+    /// itself retains the old server until the new lease-backed server swaps.
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) async fn replace_published_capability_gateway(
+        &self,
+        factory: &CapabilityGatewaySessionFactory,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> UseResult<Option<CapabilityGatewaySessionReplacement>> {
+        let Some(lease) = self.capability_plane.reopen_published().await? else {
+            return Ok(None);
+        };
+        let server = Self::gateway_server_from_control_lease(lease, provider, options)?;
+        Ok(Some(factory.replace(server).await?))
+    }
+
+    #[cfg(feature = "mcp")]
+    pub(in crate::control_store) fn gateway_server_from_control_lease(
+        lease: ControlCapabilitySnapshotLease,
+        provider: Arc<dyn CapabilityGatewayInvocationProvider>,
+        options: CapabilityGatewayCompositionOptions,
+    ) -> UseResult<CapabilityGatewayMcpServer> {
+        let CapabilityGatewayCompositionOptions {
+            negotiation,
+            limits,
+        } = options;
+        let catalog = lease.catalog().clone();
+        let projected = catalog.for_consumer(&negotiation)?;
+        lease.validate_gateway_catalog(&projected)?;
+        let lease: Arc<dyn crate::capability_gateway::CapabilityGatewayExternalLease> =
+            Arc::new(lease);
+        let server = CapabilityGatewayMcpServer::with_consumer_negotiation_and_limits(
+            catalog,
+            provider,
+            negotiation,
+            limits,
+        )?;
+        server.with_external_lease(lease)
     }
 
     pub(in crate::control_store) async fn initialize(&self) -> UseResult<ControlStoreMetadata> {

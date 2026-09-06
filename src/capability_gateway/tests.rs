@@ -49,6 +49,11 @@ struct RecordingProvider {
 #[derive(Debug, Default)]
 struct RecordingProviderWithoutContent;
 
+#[derive(Debug, Default)]
+struct ExternalLeaseMarker;
+
+impl CapabilityGatewayExternalLease for ExternalLeaseMarker {}
+
 #[async_trait]
 impl CapabilityGatewayInvocationProvider for RecordingProviderWithoutContent {
     async fn authorize(
@@ -683,6 +688,33 @@ async fn gateway_session_factory_replaces_catalog_monotonically() {
         .await
         .unwrap_err();
     assert_eq!(stale.code, "use.plugin.capability_gateway_session_stale");
+}
+
+#[tokio::test]
+async fn gateway_session_factory_preserves_internal_generation_lease_mode() {
+    let initial = test_catalog(test_descriptor());
+    let leased =
+        CapabilityGatewayMcpServer::new(initial.clone(), Arc::new(RecordingProvider::default()))
+            .unwrap()
+            .with_external_lease(Arc::new(ExternalLeaseMarker))
+            .unwrap();
+    let factory = CapabilityGatewaySessionFactory::new(leased);
+
+    let unleased =
+        CapabilityGatewayMcpServer::new(initial.clone(), Arc::new(RecordingProvider::default()))
+            .unwrap();
+    let error = factory.replace(unleased).await.unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.plugin.capability_gateway_session_incompatible"
+    );
+    assert!(factory.current().has_generation_lease());
+
+    let duplicate = factory
+        .current()
+        .with_external_lease(Arc::new(ExternalLeaseMarker))
+        .unwrap_err();
+    assert_eq!(duplicate.code, MCP_ERROR);
 }
 
 #[tokio::test]

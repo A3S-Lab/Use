@@ -206,7 +206,10 @@ binding remain activation gates. The inactive composition now owns one
 restart-safe cursor-reopen seam: it derives the current publication from
 durable Control state, revalidates the exact Index and catalog payloads,
 reacquires the full package-generation lease set, and rejects a raced cutover
-instead of exposing a mixed graph.
+instead of exposing a mixed graph. The composition can seed or replace a live
+`CapabilityGatewaySessionFactory` from that lease; an internal generation
+guard is retained by every cloned server and makes lease mode part of the
+replacement compatibility check.
 
 The signed-description boundary now has an explicit cryptographic contract as
 well. `SignedCapabilityDescription` defines domain-separated canonical bytes,
