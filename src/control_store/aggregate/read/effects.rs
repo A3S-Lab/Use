@@ -1,7 +1,5 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 
-use rusqlite::OptionalExtension as _;
-
 use crate::control_store::model::{MAX_CONTROL_EFFECTS, MAX_CONTROL_EFFECT_PAYLOAD_TOTAL_BYTES};
 
 use super::*;
@@ -301,14 +299,12 @@ pub(in crate::control_store::aggregate) fn read_effect_by_key(
     installation: &InstallationId,
     idempotency_key: &str,
 ) -> UseResult<Option<ControlEffectRecord>> {
-    let operation_id = connection
-        .query_row(
-            "SELECT operation_id FROM effect_outbox WHERE idempotency_key = ?1",
-            [idempotency_key],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| schema::sqlite_error("locate Control Store effect", error))?;
+    let operation_id = rusqlite::OptionalExtension::optional(connection.query_row(
+        "SELECT operation_id FROM effect_outbox WHERE idempotency_key = ?1",
+        [idempotency_key],
+        |row| row.get::<_, String>(0),
+    ))
+    .map_err(|error| schema::sqlite_error("locate Control Store effect", error))?;
     let Some(operation_id) = operation_id else {
         return Ok(None);
     };
