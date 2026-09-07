@@ -342,3 +342,99 @@ fn keygen_refuses_to_overwrite_existing_keys() {
     );
     assert!(stderr.contains("Refusing to overwrite"));
 }
+
+#[test]
+fn republication_advances_the_metadata_version_the_client_accepts() {
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let keys = root.path().join("keys");
+    run(binary().args(["keygen", "--keys-dir", keys.to_str().unwrap()]));
+
+    let registry = root.path().join("registry");
+    for version in [1_u64, 2, 3] {
+        let (stdout, stderr, ok) = run(binary().args([
+            "assemble",
+            "--keys-dir",
+            keys.to_str().unwrap(),
+            "--admissions",
+            admissions.to_str().unwrap(),
+            "--out-root",
+            registry.to_str().unwrap(),
+            "--metadata-version",
+            &version.to_string(),
+        ]));
+        assert!(ok, "assemble v{version} failed: {stderr}");
+        let outcome: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(
+            outcome["metadataVersion"], version,
+            "assembly reports the version"
+        );
+        let (stdout, stderr, ok) =
+            run(binary().args(["verify", "--registry", registry.to_str().unwrap()]));
+        assert!(ok, "verify v{version} failed: {stderr}");
+        let targets: Value = serde_json::from_str(
+            &fs::read_to_string(registry.join("metadata/targets.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(targets["signed"]["version"], version);
+    }
+}
+
+#[test]
+fn republication_with_a_new_package_version_keeps_one_identity_per_target() {
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let keys = root.path().join("keys");
+    run(binary().args(["keygen", "--keys-dir", keys.to_str().unwrap()]));
+    let registry = root.path().join("registry");
+    let assemble = |version: u64| {
+        let (_stdout, stderr, ok) = run(binary().args([
+            "assemble",
+            "--keys-dir",
+            keys.to_str().unwrap(),
+            "--admissions",
+            admissions.to_str().unwrap(),
+            "--out-root",
+            registry.to_str().unwrap(),
+            "--metadata-version",
+            &version.to_string(),
+        ]));
+        assert!(ok, "assemble failed: {stderr}");
+    };
+    assemble(1);
+
+    // Publish 0.2.0 while the 0.1.0 tree stays on disk: the stale archive
+    // is gone from the signed catalog, and the new identity verifies.
+    let manifest_path = root
+        .path()
+        .join("packages/registry-demo/a3s-use-extension.acl");
+    let manifest = fs::read_to_string(&manifest_path).unwrap();
+    fs::write(
+        &manifest_path,
+        manifest
+            .replace("0.1.0", "0.2.0")
+            .replace("skills/demo/SKILL.md", "skills/demo/SKILL.md"),
+    )
+    .unwrap();
+    assemble(2);
+    let (_stdout, stderr, ok) =
+        run(binary().args(["verify", "--registry", registry.to_str().unwrap()]));
+    assert!(ok, "verify after version bump failed: {stderr}");
+    assert!(
+        !registry
+            .join("targets/extensions/a3s/registry-demo/0.1.0")
+            .exists(),
+        "the superseded version directory must not stay published",
+    );
+    assert!(registry
+        .join("targets/extensions/a3s/registry-demo/0.2.0/stable/any/a3s-registry-demo-0.2.0-any.tar.gz")
+        .exists());
+}

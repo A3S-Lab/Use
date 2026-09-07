@@ -232,6 +232,22 @@ pub(crate) async fn assemble_registry(
 
     let metadata_directory = out_root.join("metadata");
     let targets_directory = out_root.join("targets");
+    // The published tree is fully derived from the admissions: every
+    // assembly starts from a clean state so superseded target bytes can
+    // never linger beside a catalog that no longer advertises them.
+    for derived in [&metadata_directory, &targets_directory] {
+        if derived.exists() {
+            std::fs::remove_dir_all(derived).map_err(|error| {
+                tools_error(
+                    "registry_tools.assemble_failed",
+                    &format!(
+                        "Failed to clear the derived directory '{}': {error}",
+                        derived.display()
+                    ),
+                )
+            })?;
+        }
+    }
     std::fs::create_dir_all(&metadata_directory).map_err(|error| {
         tools_error(
             "registry_tools.assemble_failed",
