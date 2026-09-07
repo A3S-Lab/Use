@@ -2436,18 +2436,22 @@ async fn assert_dispatch(
         })
         .await
         .unwrap();
-    assert!(matches!(
-        result,
+    match &result {
         ControlEffectDispatchResult::Observed {
             sequence: observed_sequence,
             attempt: observed_attempt,
             outcome,
             observation_changed: true,
             ..
-        } if observed_sequence == sequence
-            && observed_attempt == attempt
-            && outcome == expected_outcome
-    ));
+        } if *observed_sequence == sequence
+            && *observed_attempt == attempt
+            && *outcome == expected_outcome => {}
+        other => panic!(
+            "capability-plane dispatch mismatch for claim '{claim_token}': \
+             expected Observed(sequence={sequence}, attempt={attempt}, \
+             outcome={expected_outcome:?}, observation_changed=true), got {other:?}"
+        ),
+    }
 }
 
 fn exact_resource_descriptor(authority: &ControlCapabilityEffectAuthority) -> CapabilityDescriptor {

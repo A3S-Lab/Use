@@ -39,11 +39,11 @@ pub(crate) fn deterministic_package_archive(root: &Path) -> UseResult<Vec<u8>> {
     let mut archive = tar::Builder::new(encoder);
     for (relative, path) in files {
         let body = std::fs::read(&path).map_err(|error| read_error(&path, &error.to_string()))?;
-        let metadata = std::fs::symlink_metadata(&path)
-            .map_err(|error| read_error(&path, &error.to_string()))?;
         #[cfg(unix)]
         let executable = {
             use std::os::unix::fs::PermissionsExt;
+            let metadata = std::fs::symlink_metadata(&path)
+                .map_err(|error| read_error(&path, &error.to_string()))?;
             metadata.permissions().mode() & 0o111 != 0
         };
         #[cfg(not(unix))]
