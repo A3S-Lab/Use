@@ -33,6 +33,7 @@ mod remote;
 mod source;
 mod state_maintenance;
 mod surface_files;
+mod tuf_authoring;
 mod workspace_grant;
 mod workspace_grant_io;
 mod workspace_grant_lifecycle;
@@ -75,6 +76,7 @@ pub use capability_description_verifier::{
     CapabilityDescriptionTrustKey, CapabilityDescriptionTrustStore, VerifiedCapabilityDescription,
     CAPABILITY_DESCRIPTION_TRUST_KEY_SCHEMA_V1, CAPABILITY_DESCRIPTION_TRUST_STORE_SCHEMA_V1,
 };
+pub use digest::{package_fingerprint, PackageFingerprint};
 pub use paths::{ExtensionPaths, UsePaths};
 pub use plugin_manifest::{
     PluginFlowEngine, PluginFlowRuntime, PluginFlowSurface, PluginMcpLaunch, PluginMcpSurface,
@@ -135,6 +137,9 @@ pub use surface_files::{
     inspect_flow_surface_file, inspect_mcp_surface_files, inspect_skill_surface_file,
     inspect_tool_surface_files, inspect_ui_surface_files, load_okf_bundle_files,
     PluginSurfaceFileEvidence,
+};
+pub use tuf_authoring::{
+    canonical_json, ed25519_key_id, ed25519_key_value, hex_lower, sha256_hex, sign_tuf_document,
 };
 pub use workspace_grant::{
     StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantRevocation, WorkspaceGrantStore,

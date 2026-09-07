@@ -14,18 +14,24 @@ struct PackageFile {
     size: u64,
 }
 
+/// Canonical expanded-package fingerprint over one package root directory.
+///
+/// This is the same domain-separated digest the Artifact Store uses at
+/// admission, so registry assembly and install-time verification agree on
+/// package content identity by construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageFingerprint {
-    pub(crate) sha256: String,
-    pub(crate) file_count: u64,
-    pub(crate) byte_count: u64,
+pub struct PackageFingerprint {
+    pub sha256: String,
+    pub file_count: u64,
+    pub byte_count: u64,
 }
 
 pub(crate) async fn package_sha256(root: &Path) -> UseResult<String> {
     Ok(package_fingerprint(root).await?.sha256)
 }
 
-pub(crate) async fn package_fingerprint(root: &Path) -> UseResult<PackageFingerprint> {
+/// Hash one expanded package root with the canonical package fingerprint.
+pub async fn package_fingerprint(root: &Path) -> UseResult<PackageFingerprint> {
     let root = root.to_path_buf();
     tokio::task::spawn_blocking(move || hash_package(&root))
         .await

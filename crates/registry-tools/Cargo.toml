@@ -1,0 +1,28 @@
+[package]
+name = "a3s-use-registry-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Registry assembly, signing, and verification tools for A3S Use registries"
+publish = false
+
+[dependencies]
+a3s-acl = "=0.2.2"
+a3s-use-core = { version = "0.2.9", path = "../core" }
+a3s-use-extension = { version = "0.3.11", path = "../extension" }
+flate2.workspace = true
+olpc-cjson.workspace = true
+ring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
+tokio.workspace = true
+tough.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
