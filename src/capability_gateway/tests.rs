@@ -893,6 +893,20 @@ async fn live_gateway_session_routes_existing_client_after_cutover() {
     .await
     .expect("live client must register with the shared notification hub");
 
+    let policy_replacement = CapabilityGatewayMcpServer::new(
+        factory.current().catalog().clone(),
+        Arc::new(RecordingProvider::default()),
+    )
+    .unwrap()
+    .with_discovery_policy(Arc::new(PrincipalDiscoveryPolicy::default()));
+    let policy_change = factory.replace(policy_replacement).await.unwrap();
+    assert!(policy_change.catalog_changed);
+    assert_eq!(policy_change.notification.unwrap().notified_peers, 1);
+    tokio::time::timeout(Duration::from_secs(1), notification_client.wait_for_all(1))
+        .await
+        .expect("the existing client must observe a discovery-policy view change");
+    assert_eq!(client.list_all_tools().await.unwrap()[0].name, "search");
+
     let replacement = factory
         .replace(
             CapabilityGatewayMcpServer::new(next, Arc::new(RecordingProvider::default())).unwrap(),
@@ -900,7 +914,7 @@ async fn live_gateway_session_routes_existing_client_after_cutover() {
         .await
         .unwrap();
     assert_eq!(replacement.notification.unwrap().notified_peers, 1);
-    tokio::time::timeout(Duration::from_secs(1), notification_client.wait_for_all(1))
+    tokio::time::timeout(Duration::from_secs(1), notification_client.wait_for_all(2))
         .await
         .expect("the existing client must receive standard list-change notifications");
     assert_eq!(client.list_all_tools().await.unwrap()[0].name, "lookup");

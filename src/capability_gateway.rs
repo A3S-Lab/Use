@@ -1009,6 +1009,10 @@ impl CapabilityGatewayMcpServer {
         }
     }
 
+    pub(crate) fn discovery_policy_snapshot(&self) -> Option<Arc<()>> {
+        self.discovery_policy_snapshot.clone()
+    }
+
     fn discovery_views_count(&self) -> usize {
         self.discovery_views
             .try_lock()

@@ -469,6 +469,7 @@ impl CapabilityGatewaySessionFactory {
         // caller that constructs a fresh server without remembering the hub
         // safe: the factory attaches its existing notification bus before the
         // source becomes visible.
+        let policy_snapshot = next.discovery_policy_snapshot();
         let next = next.with_notification_hub(previous_server.notification_hub())?;
         let current = server_session_key(&next)?;
         let catalog_changed =
@@ -487,7 +488,8 @@ impl CapabilityGatewaySessionFactory {
             // hub and performs the bounded fan-out in publication order.
             let task = tokio::spawn(async move {
                 let _serial = serial;
-                hub.notify_catalog_changed(&catalog).await
+                hub.notify_catalog_changed_with_policy_snapshot(&catalog, policy_snapshot)
+                    .await
             });
             match task.await {
                 Ok(report) => Some(report?),

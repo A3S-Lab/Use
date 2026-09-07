@@ -63,6 +63,11 @@ pub struct CapabilityGatewayNotificationHub {
 #[derive(Debug)]
 struct NotificationState {
     last: PublicationKey,
+    /// Identity of the discovery-policy view announced with `last`. The
+    /// built-in allow-all view uses `None`; custom policy snapshots carry an
+    /// opaque host-owned token so a same-publication policy cutover is not
+    /// coalesced as a duplicate catalog event.
+    last_policy_snapshot: Option<Arc<()>>,
     next_peer_id: u64,
 }
 
@@ -95,6 +100,7 @@ impl CapabilityGatewayNotificationHub {
                     generation: catalog.generation(),
                     revision,
                 },
+                last_policy_snapshot: None,
                 next_peer_id: 1,
             })),
         })
@@ -129,6 +135,19 @@ impl CapabilityGatewayNotificationHub {
         &self,
         catalog: &CapabilityGatewayCatalog,
     ) -> UseResult<CapabilityGatewayNotificationReport> {
+        self.notify_catalog_changed_with_policy_snapshot(catalog, None)
+            .await
+    }
+
+    /// Broadcast a list-change event for a catalog and its immutable discovery
+    /// policy snapshot. The policy token is intentionally opaque and never
+    /// crosses the MCP boundary; it only lets the host session factory
+    /// distinguish same-publication view cutovers from duplicate callbacks.
+    pub(crate) async fn notify_catalog_changed_with_policy_snapshot(
+        &self,
+        catalog: &CapabilityGatewayCatalog,
+        policy_snapshot: Option<Arc<()>>,
+    ) -> UseResult<CapabilityGatewayNotificationReport> {
         catalog.validate()?;
         if catalog.installation() != &self.installation {
             return Err(UseError::new(
@@ -152,7 +171,9 @@ impl CapabilityGatewayNotificationHub {
         {
             let mut state = self.state.lock().await;
             if key.generation < state.last.generation
-                || (key.generation == state.last.generation && key.revision == state.last.revision)
+                || (key.generation == state.last.generation
+                    && key.revision == state.last.revision
+                    && same_policy_snapshot(&state.last_policy_snapshot, &policy_snapshot))
             {
                 return Ok(CapabilityGatewayNotificationReport {
                     generation: key.generation,
@@ -162,6 +183,7 @@ impl CapabilityGatewayNotificationHub {
                 });
             }
             state.last = key;
+            state.last_policy_snapshot = policy_snapshot;
         }
 
         let peers = {
@@ -216,6 +238,14 @@ impl CapabilityGatewayNotificationHub {
         let mut peers = self.peers.lock().await;
         peers.retain(|entry| !entry.peer.is_transport_closed());
         peers.len()
+    }
+}
+
+fn same_policy_snapshot(left: &Option<Arc<()>>, right: &Option<Arc<()>>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+        _ => false,
     }
 }
 
