@@ -966,7 +966,6 @@ fn metadata_is_link(metadata: &std::fs::Metadata) -> bool {
 fn configure_no_follow(options: &mut fs::OpenOptions) {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt as _;
         options.custom_flags(libc::O_NOFOLLOW);
     }
     #[cfg(windows)]

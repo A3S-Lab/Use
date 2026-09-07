@@ -1075,6 +1075,7 @@ impl CapabilityGatewayMcpServer {
     /// Return whether this server retains any complete generation lease.
     /// Session replacement uses this to prevent an accidentally unleased
     /// server from replacing a leased endpoint (or vice versa).
+    #[cfg(test)]
     pub(crate) fn has_generation_lease(&self) -> bool {
         self.generation_lease_mode() != CapabilityGatewayGenerationLeaseMode::None
     }
