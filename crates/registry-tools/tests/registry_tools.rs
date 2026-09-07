@@ -373,7 +373,7 @@ fn republication_advances_the_metadata_version_the_client_accepts() {
             outcome["metadataVersion"], version,
             "assembly reports the version"
         );
-        let (stdout, stderr, ok) =
+        let (_stdout, stderr, ok) =
             run(binary().args(["verify", "--registry", registry.to_str().unwrap()]));
         assert!(ok, "verify v{version} failed: {stderr}");
         let targets: Value = serde_json::from_str(
@@ -417,13 +417,7 @@ fn republication_with_a_new_package_version_keeps_one_identity_per_target() {
         .path()
         .join("packages/registry-demo/a3s-use-extension.acl");
     let manifest = fs::read_to_string(&manifest_path).unwrap();
-    fs::write(
-        &manifest_path,
-        manifest
-            .replace("0.1.0", "0.2.0")
-            .replace("skills/demo/SKILL.md", "skills/demo/SKILL.md"),
-    )
-    .unwrap();
+    fs::write(&manifest_path, manifest.replace("0.1.0", "0.2.0")).unwrap();
     assemble(2);
     let (_stdout, stderr, ok) =
         run(binary().args(["verify", "--registry", registry.to_str().unwrap()]));
