@@ -426,6 +426,11 @@ pub struct CapabilityGatewayMcpServer {
     tool_router: ToolRouter<Self>,
     admission: Arc<GatewayAdmission>,
     discovery_policy: Arc<dyn CapabilityGatewayDiscoveryPolicy>,
+    /// Identity of the immutable discovery-policy snapshot. `None` denotes
+    /// the built-in allow-all policy; a token is assigned whenever a host
+    /// installs a custom policy so lifecycle cutovers can detect a changed
+    /// discovery contract even when the source catalog is unchanged.
+    discovery_policy_snapshot: Option<Arc<()>>,
     /// One immutable visibility view is retained per trusted request context.
     /// `OnceCell` prevents concurrent requests from observing different
     /// policy decisions for the same pagination cursor.
@@ -939,6 +944,7 @@ impl CapabilityGatewayMcpServer {
             tool_router,
             admission,
             discovery_policy: Arc::new(AllowAllCapabilityGatewayDiscoveryPolicy),
+            discovery_policy_snapshot: None,
             discovery_views: Arc::new(Mutex::new(BTreeMap::new())),
             transport: CapabilityGatewayTransport::Stdio,
             snapshot_lease,
@@ -982,8 +988,25 @@ impl CapabilityGatewayMcpServer {
         policy: Arc<dyn CapabilityGatewayDiscoveryPolicy>,
     ) -> Self {
         self.discovery_policy = policy;
+        self.discovery_policy_snapshot = Some(Arc::new(()));
         self.discovery_views = Arc::new(Mutex::new(BTreeMap::new()));
         self
+    }
+
+    /// Return whether two servers retain the same immutable discovery-policy
+    /// snapshot. This is intentionally identity-based: policy implementations
+    /// are host-owned and need not expose a stable or hashable configuration,
+    /// while replacing a snapshot must conservatively trigger a fresh list
+    /// view for MCP clients.
+    pub(crate) fn same_discovery_policy_snapshot(&self, other: &Self) -> bool {
+        match (
+            &self.discovery_policy_snapshot,
+            &other.discovery_policy_snapshot,
+        ) {
+            (None, None) => true,
+            (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        }
     }
 
     fn discovery_views_count(&self) -> usize {

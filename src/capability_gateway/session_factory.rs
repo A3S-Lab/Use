@@ -146,10 +146,11 @@ pub struct CapabilityGatewaySessionKey {
 
 /// Result of one atomic replacement of the immutable server source.
 ///
-/// `catalog_changed` is false when the host replaces only the provider or
-/// policy for the same catalog identity.  Such a replacement is useful after
-/// reconnecting a provider, but it does not require MCP list-change
-/// notifications.
+/// `catalog_changed` is false when the host replaces only the provider while
+/// retaining the same catalog and discovery-policy snapshot. A changed
+/// discovery policy is treated as a catalog-view change even when the source
+/// publication identity is unchanged, because clients must discard cached
+/// list results and pagination cursors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityGatewaySessionReplacement {
     pub previous: CapabilityGatewaySessionKey,
@@ -470,7 +471,8 @@ impl CapabilityGatewaySessionFactory {
         // source becomes visible.
         let next = next.with_notification_hub(previous_server.notification_hub())?;
         let current = server_session_key(&next)?;
-        let catalog_changed = previous != current;
+        let catalog_changed =
+            previous != current || !previous_server.same_discovery_policy_snapshot(&next);
 
         match self.current.write() {
             Ok(mut slot) => *slot = next,
@@ -771,12 +773,26 @@ mod tests {
     use serde_json::Value;
 
     use super::super::{
-        CapabilityGatewayExternalLease, CapabilityGatewayInvocationProvider,
-        CapabilityGatewayRequestContext, CapabilityGatewaySessionFactory,
+        CapabilityGatewayDiscoveryPolicy, CapabilityGatewayExternalLease,
+        CapabilityGatewayInvocationProvider, CapabilityGatewayRequestContext,
+        CapabilityGatewaySessionFactory,
     };
     use super::{SESSION_DRAINING, SESSION_DRAIN_TIMEOUT_ERROR, SESSION_STATE_ERROR};
 
     struct NoopProvider;
+
+    struct HiddenDiscoveryPolicy;
+
+    #[async_trait]
+    impl CapabilityGatewayDiscoveryPolicy for HiddenDiscoveryPolicy {
+        async fn is_visible(
+            &self,
+            _descriptor: &CapabilityDescriptor,
+            _context: &CapabilityGatewayRequestContext,
+        ) -> UseResult<bool> {
+            Ok(false)
+        }
+    }
 
     #[async_trait]
     impl CapabilityGatewayInvocationProvider for NoopProvider {
@@ -963,5 +979,28 @@ mod tests {
             .unwrap();
         assert!(replacement.is_none());
         assert_eq!(factory.current().catalog(), &winner);
+    }
+
+    #[tokio::test]
+    async fn replacement_notifies_when_discovery_policy_snapshot_changes() {
+        let installation =
+            InstallationId::new(InstallationKind::User, "session-policy-cutover").unwrap();
+        let catalog = CapabilityGatewayCatalog::new(installation, 1, Vec::new()).unwrap();
+        let factory = CapabilityGatewaySessionFactory::new(
+            super::super::CapabilityGatewayMcpServer::new(catalog.clone(), Arc::new(NoopProvider))
+                .unwrap(),
+        );
+
+        let replacement = factory
+            .replace(
+                super::super::CapabilityGatewayMcpServer::new(catalog, Arc::new(NoopProvider))
+                    .unwrap()
+                    .with_discovery_policy(Arc::new(HiddenDiscoveryPolicy)),
+            )
+            .await
+            .unwrap();
+
+        assert!(replacement.catalog_changed);
+        assert!(replacement.notification.is_some());
     }
 }

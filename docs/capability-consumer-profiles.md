@@ -124,6 +124,11 @@ Gateway from a refreshed immutable catalog/policy snapshot. Existing
 constructors use an allow-all compatibility policy, so a production
 multi-principal host must inject an explicit policy.
 
+The session factory treats a changed discovery-policy snapshot as a catalog
+view change and emits the same standard `list_changed` notifications. This
+closes the gap where a policy replacement would make an existing cursor stale
+without telling an initialized client to restart discovery.
+
 ## Durable catalog payloads
 
 The embedding host may persist the exact immutable catalog before exposing a

@@ -1928,7 +1928,10 @@ can publish a newer immutable catalog key and fan out the standard MCP
 notifications concurrently. Repeated or older publication keys are coalesced,
 and closed or back-pressured peers are retired. This is a notification seam,
 not a mutable catalog: hosts must switch new sessions to the replacement
-server and retain the prior generation lease until drain.
+server and retain the prior generation lease until drain. A session-factory
+replacement with a new discovery-policy snapshot is also treated as a view
+change, so initialized clients receive the same notifications even when the
+source publication key is unchanged.
 
 Hosts that need restart-safe ownership of the Agent-facing payload can use
 `CapabilityGatewayCatalogStore`. It validates the installation binding and

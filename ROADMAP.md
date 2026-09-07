@@ -1008,6 +1008,9 @@ surface, negotiated catalog digest, frozen principal visibility indices, and
 offset in an opaque bounded `v2` token. A client that misses a standard
 `list_changed` notification cannot apply an old offset to a replacement
 catalog; the request receives a stale-cursor error and can restart discovery.
+The session factory also treats a changed discovery-policy snapshot as a view
+cutover and emits `list_changed`, ensuring initialized clients are prompted to
+restart before they encounter that stale-cursor boundary.
 
 Implementation note (2026-09-04): Gateway catalog projection now evaluates
 descriptor `requiredExtensions` against the immutable consumer negotiation.
