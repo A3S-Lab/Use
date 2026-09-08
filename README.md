@@ -7,6 +7,12 @@
 </p>
 
 <p align="center">
+  <strong>Language / 语言:</strong>
+  <a href="README.md">English</a> ·
+  <a href="README.zh-CN.md">中文</a>
+</p>
+
+<p align="center">
   <strong>AI Native Package Manager for native capabilities and versioned cognitive packages.</strong>
 </p>
 
