@@ -88,5 +88,18 @@ mod tests {
             true
         ));
         assert!(!supported_root_entry("future-authority", true));
+        // Host Registry transport/config stays outside the installation cutover
+        // unit (backup may still scan them via ExtensionPaths).
+        for host_registry_leaf in [
+            "registries.acl",
+            "registry-trust-roots",
+            "remote-registries",
+        ] {
+            assert!(
+                !supported_root_entry(host_registry_leaf, false)
+                    && !supported_root_entry(host_registry_leaf, true),
+                "{host_registry_leaf} must remain outside installation-state cutover leaves"
+            );
+        }
     }
 }
