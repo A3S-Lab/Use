@@ -1471,9 +1471,12 @@ identity later.
   manifest and expanded-content digesting, permission review, provenance
   verification, and isolated install tests. These formats and commands are
   versioned by `a3s-use`, not reimplemented by the Registry repository.
-- [ ] Add Registry assembly and verification commands that preserve canonical
+- [x] Add Registry assembly and verification commands that preserve canonical
   catalog metadata, validate the complete staged tree with a released client,
-  and produce a reviewable publication delta before signing.
+  and produce a reviewable publication delta before signing. Landed as
+  `crates/registry-tools` (`a3s-use-registry-tools` keygen/pack/assemble/verify)
+  on Use main via #256. Production threshold custody, rotation, and official
+  bootstrap remain open; this does not complete the A5 exit gate.
 - [ ] Document and exercise offline threshold root custody, delegated targets,
   online snapshot/timestamp custody, expiry monitoring, every-intermediate-root
   rotation, emergency withdrawal, mirror replacement, and rollback recovery.
