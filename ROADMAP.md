@@ -817,7 +817,10 @@ and descriptor-snapshot family under `capability-gateway`, restores after Runtim
 plans and before Host projection, and keeps Index/leases excluded as operational
 state. Seeded Archive (catalog + descriptor-snapshot) complete-set round-trip is
 now tip-qualified alongside Absent; owner digests may be domain-separated from
-plain archive `sha256`. Production Control Store activation and backup/restore
+plain archive `sha256`. Tip also proves Archive fail-closed offline verify
+(trailing/truncated/rebound entry) and that planted `capability-index` /
+`generation-leases` stay excluded from complete-set bytes and clean-target
+restore. Production Control Store activation and backup/restore
 wiring remain open. The private complete-set snapshot
 coordinator now captures one canonical Control export and the Capability,
 Host projection, Knowledge, planning/diagnostic observation, Restore Coordinator,

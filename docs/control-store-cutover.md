@@ -167,7 +167,9 @@ owner for immutable plan envelopes. The Capability payload is the sixth
 snapshotted owner: it captures the installation-scoped Gateway catalog and
 descriptor-snapshot family under `capability-gateway`, restores them after
 Runtime plans and before Host projection, and keeps index/leases excluded as
-operational state. The private complete-set snapshot coordinator
+operational state. Seeded Archive complete-set round-trip and Archive
+fail-closed security (including Index/leases exclusion) are tip-qualified.
+The private complete-set snapshot coordinator
 now captures the canonical Control export and every registered owner beneath
 one exclusive maintenance fence and timestamp. Its path-free canonical
 manifest binds the fixed owner registry, receipts, schemas, digests, and byte
