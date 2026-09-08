@@ -347,9 +347,11 @@ package lifecycle incarnation. Drain requires the old incarnation to be absent
 from the current cursor and then acquires its exclusive lock, safely deferring
 under an active call. Immutable catalog and Index files publish with
 no-replace/no-follow semantics and exact crash staging replay. The Index and
-lease files are derived operational state excluded from backup; the current
-owner registry does not yet snapshot the bound catalog payload. Production
-restore must preserve or reconstruct it before consumer cutover. A real
+lease files are derived operational state excluded from backup; the inactive
+owner registry now snapshots the bound catalog and descriptor-snapshot payload
+family under `capability-gateway` as the sixth snapshotted external owner.
+Production restore wiring and Control Store activation remain open before
+consumer cutover. A real
 composition fixture covers Knowledge and Skill preparation, catalog/Index
 publication, exact payload admission, stale admission, and same-key drain retry. Inactive Flow and
 Runtime owner adapters are now qualified. The Runtime owner covers
@@ -387,9 +389,9 @@ artifact/capability tampering, incomplete outbox inventories, outbox ambiguity,
 deterministic export, lifecycle-reference tamper detection, and staged restore.
 
 The kernel remains private and no production lifecycle constructs it. Its
-path-free external-payload contract now freezes six typed owner identities and
+path-free external-payload contract now freezes seven typed owner identities and
 their ACL backup policies. The global Artifact Store is excluded; the other
-five owners must form one complete, deterministic receipt set bound to an exact
+six owners must form one complete, deterministic receipt set bound to an exact
 installation, Control generation, registry digest, owner snapshot schema,
 manifest/inventory digests, and bounded accounting. Decoded registry and
 snapshot evidence must revalidate before use. This registers the identity and
@@ -511,7 +513,7 @@ reachability inventory. Existing JSON stores remain the only production
 authority. The verified aggregate now has a
 qualification-only clean-target staging coordinator. It retains one exact
 exclusive maintenance guard, durably binds the snapshot descriptor,
-installation, owner registry, Knowledge policy, and fixed six-component set in a
+installation, owner registry, Knowledge policy, and fixed seven-component set in a
 path-free attempt descriptor, and stages Control plus every external owner
 beneath one fixed `.control-installation-restore` directory. Control is rebuilt
 from and round-tripped against the canonical export, checkpointed to a single
@@ -525,8 +527,9 @@ intent. The immutable attempt descriptor remains the restore identity. One
 canonical `activation.json` is the mutable ordered journal, and the typed
 global `.maintenance.restore.json` marker binds the same attempt and immutable
 operation while blocking ordinary shared access. Control Store, Runtime plans,
-Host projection, Knowledge, observations, and Restore Coordinator execute in
-that fixed order; each follows journal, marker, owner effect, checkpoint. Every
+Capability payload, Host projection, Knowledge, observations, and Restore
+Coordinator execute in that fixed order; each follows journal, marker, owner
+effect, checkpoint. Every
 checkpoint stores only the canonical path-free result length and a
 domain-separated digest. The Restore Coordinator also verifies the exact
 complete marker bytes, length, and digest before replacing terminal history.
@@ -535,11 +538,11 @@ snapshot, attempt, registry, and Knowledge policy before reconstructing or
 verifying every owner at its candidate/live boundary. Journal and marker
 partials, each post-effect/pre-checkpoint boundary, the final checkpoint before
 marker retirement, and process exit after deletion converge deterministically.
-Marker absence is accepted only after all six checkpoints are durable;
+Marker absence is accepted only after all seven checkpoints are durable;
 out-of-order live roots, ambiguous markers, rebinding, links, and evidence drift
 fail closed. Exact completed replay performs no owner effect and can only resume
-bounded fixed-order retirement of the six link-free staging trees. A
-real-child-process matrix covers 21 top-level durable exits, including every
+bounded fixed-order retirement of the seven link-free staging trees. A
+real-child-process matrix covers 24 top-level durable exits, including every
 retirement boundary. The canonical `attempt.json` and complete `activation.json`
 then remain as the exact installation-bound terminal receipt. Legacy backup and
 artifact reachability exclude only that receipt; incomplete, extended, linked,

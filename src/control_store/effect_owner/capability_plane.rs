@@ -55,11 +55,13 @@ pub(in crate::control_store) use descriptor_snapshot::{
     ControlCapabilityDescriptorSnapshotRetentionEntry,
     ControlCapabilityDescriptorSnapshotRetentionPlan,
     ControlCapabilityDescriptorSnapshotRetentionResult, ControlCapabilityDescriptorSnapshotStore,
+    ControlCapabilityDescriptorSnapshotStoredRecord,
     CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RESTORE_PLAN_SCHEMA,
     CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RESTORE_RESULT_SCHEMA,
     CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_JOURNAL_SCHEMA,
     CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_PLAN_SCHEMA,
     CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_RESULT_SCHEMA,
+    MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_BYTES,
 };
 use index::ControlCapabilityIndexStore;
 #[cfg(feature = "mcp")]

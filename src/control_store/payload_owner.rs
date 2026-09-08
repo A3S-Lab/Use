@@ -12,25 +12,30 @@
 //! restore adapter preserves the exact active restore and replayably replaces
 //! only terminal history. The Runtime plan owner snapshots immutable,
 //! installation-scoped plan payloads and rehydrates them before Host
-//! projection activation. No owner participates in the production state-backup
-//! path yet. The complete-set snapshot coordinator now publishes and
-//! offline-verifies one no-clobber archive containing the Control export and
-//! every registered owner receipt plus each present payload. Coordinated
-//! clean-target staging now binds the same complete set beneath one retained
-//! exclusive fence without touching live authority. Qualification activation
-//! preflights every candidate, then publishes and checkpoints Control, Runtime
-//! plans, Host, Knowledge, observations, and Restore Coordinator state in one
-//! fixed order. Its global marker is retired only after all six checkpoints are
-//! durable. The six staging trees are then retired in fixed order, leaving the
-//! exact attempt descriptor and complete journal as a terminal receipt.
-//! Subprocess tests cover every top-level effect and retirement boundary.
-//! Production backup/restore wiring and the indivisible authority cutover
-//! remain separate.
+//! projection activation. The Capability payload owner snapshots the
+//! installation-scoped immutable Gateway catalog and descriptor-snapshot
+//! family under `capability-gateway` and rehydrates them after Runtime plans
+//! and before Host projection activation. No owner participates in the
+//! production state-backup path yet. The complete-set snapshot coordinator
+//! now publishes and offline-verifies one no-clobber archive containing the
+//! Control export and every registered owner receipt plus each present
+//! payload. Coordinated clean-target staging now binds the same complete set
+//! beneath one retained exclusive fence without touching live authority.
+//! Qualification activation preflights every candidate, then publishes and
+//! checkpoints Control, Runtime plans, Capability, Host, Knowledge,
+//! observations, and Restore Coordinator state in one fixed order. Its global
+//! marker is retired only after all seven checkpoints are durable. The seven
+//! staging trees are then retired in fixed order, leaving the exact attempt
+//! descriptor and complete journal as a terminal receipt. Subprocess tests
+//! cover every top-level effect and retirement boundary. Production
+//! backup/restore wiring and the indivisible authority cutover remain
+//! separate.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 
+mod capability_payload;
 mod complete_set;
 mod host_projection;
 mod knowledge;
@@ -41,6 +46,13 @@ mod runtime_plans;
 mod session;
 mod snapshot;
 
+#[cfg(test)]
+pub(in crate::control_store) use capability_payload::{
+    ControlCapabilityPayloadEntry, ControlCapabilityPayloadEntryKind,
+    ControlCapabilityPayloadRestoreResult, ControlCapabilityPayloadRestoreState,
+    ControlCapabilityPayloadSnapshot, ControlCapabilityPayloadState,
+    VerifiedControlCapabilityPayloadSnapshot, CONTROL_CAPABILITY_PAYLOAD_SNAPSHOT_SCHEMA,
+};
 pub(in crate::control_store) use complete_set::validate_terminal_receipt_blocking;
 #[cfg(test)]
 pub(in crate::control_store) use complete_set::{
@@ -100,6 +112,7 @@ const MAX_CONTROL_PAYLOAD_SCHEMA_BYTES: usize = 128;
 #[serde(rename_all = "kebab-case")]
 pub(in crate::control_store) enum ControlPayloadOwnerId {
     ArtifactStore,
+    CapabilityPayload,
     HostProtocolProjection,
     KnowledgePayload,
     PlanningAndDiagnosticObservations,
@@ -114,6 +127,8 @@ enum ControlPayloadLiveLocation {
 }
 
 const ARTIFACT_STORE_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] = &[];
+const CAPABILITY_PAYLOAD_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] =
+    &[ControlPayloadLiveLocation::StateRoot("capability-gateway")];
 const HOST_PROJECTION_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] =
     &[ControlPayloadLiveLocation::StateRoot("plugin-host-manager")];
 const KNOWLEDGE_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] =
@@ -129,8 +144,9 @@ const RUNTIME_PLAN_LIVE_LOCATIONS: &[ControlPayloadLiveLocation] =
     &[ControlPayloadLiveLocation::StateRoot("runtime-plans")];
 
 impl ControlPayloadOwnerId {
-    pub(in crate::control_store) const ALL: [Self; 6] = [
+    pub(in crate::control_store) const ALL: [Self; 7] = [
         Self::ArtifactStore,
+        Self::CapabilityPayload,
         Self::HostProtocolProjection,
         Self::KnowledgePayload,
         Self::PlanningAndDiagnosticObservations,
@@ -138,7 +154,8 @@ impl ControlPayloadOwnerId {
         Self::RuntimePlanPayload,
     ];
 
-    pub(in crate::control_store) const SNAPSHOTTED: [Self; 5] = [
+    pub(in crate::control_store) const SNAPSHOTTED: [Self; 6] = [
+        Self::CapabilityPayload,
         Self::HostProtocolProjection,
         Self::KnowledgePayload,
         Self::PlanningAndDiagnosticObservations,
@@ -149,6 +166,7 @@ impl ControlPayloadOwnerId {
     pub(in crate::control_store) const fn as_str(self) -> &'static str {
         match self {
             Self::ArtifactStore => "artifact-store",
+            Self::CapabilityPayload => "capability-payload",
             Self::HostProtocolProjection => "host-protocol-projection",
             Self::KnowledgePayload => "knowledge-payload",
             Self::PlanningAndDiagnosticObservations => "planning-and-diagnostic-observations",
@@ -166,6 +184,7 @@ impl ControlPayloadOwnerId {
     pub(in crate::control_store) const fn backup_policy(self) -> ControlPayloadBackupPolicy {
         match self {
             Self::ArtifactStore => ControlPayloadBackupPolicy::ExcludedGlobal,
+            Self::CapabilityPayload => ControlPayloadBackupPolicy::OwnerSnapshot,
             Self::HostProtocolProjection => ControlPayloadBackupPolicy::RegisteredProjection,
             Self::KnowledgePayload => ControlPayloadBackupPolicy::OwnerSnapshot,
             Self::PlanningAndDiagnosticObservations => {
@@ -179,6 +198,7 @@ impl ControlPayloadOwnerId {
     fn live_locations(self) -> &'static [ControlPayloadLiveLocation] {
         match self {
             Self::ArtifactStore => ARTIFACT_STORE_LIVE_LOCATIONS,
+            Self::CapabilityPayload => CAPABILITY_PAYLOAD_LIVE_LOCATIONS,
             Self::HostProtocolProjection => HOST_PROJECTION_LIVE_LOCATIONS,
             Self::KnowledgePayload => KNOWLEDGE_LIVE_LOCATIONS,
             Self::PlanningAndDiagnosticObservations => OBSERVATION_LIVE_LOCATIONS,

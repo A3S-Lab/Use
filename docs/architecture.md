@@ -52,7 +52,7 @@ ownership boundaries stabilize.
 | Package aggregate | One manifest generation owns Tool, MCP, OKF, Flow, Skill, and UI surfaces; dependency preparation and retirement are ordered around one cutover. | Correct foundation. A surface must not become an independently installed mini-package. |
 | Trust and planning | TUF provenance, exact SemVer locks, read-only planning, explicit confirmation, generation compare-and-swap, and crash replay are enforced. | Correct foundation. Keep source transport, trust evidence, and package identity separate. |
 | Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. One collection boundary covers bounded physical/reference inventory, checked usage, optional hard quota, full digest audit, logical quarantine, verified rehydration, and explicit confirmed GC without merging their authorities. GC requires a bounded exact target allowlist, a fresh zero-reference proof, a canonical physical/lifecycle plan, durable prepared/completed evidence, and same-shard atomic retirement before bounded tombstone deletion. Source observations and resumable partials remain source-scoped. | Correct A1 storage boundary. Keep source cleanup and scoped lifecycle retirement separate from global deletion, and never turn quota, audit, quarantine, rehydration, or unreachability into implicit GC authority. |
-| Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. `CapabilityGatewayCatalogStore` now durably owns canonical Agent-facing catalog payloads, but not the lifecycle cursor or a mutable current pointer. It is also available through the standalone `capability-catalog` feature so a headless package manager can publish the payload without compiling MCP transport code. The coordinated backup inventory now recognizes this catalog and the Control descriptor-snapshot owner as one explicit immutable payload family. | Critical debt. [ADR-003](adr-003-control-store-transaction-boundary.md) requires one coordinated Control Store cutover with no JSON/SQLite dual authority; the catalog/snapshot payload stores still need transactionally bound digests, session replacement, lease drain, owner-native restore, and retention policy. Sagas remain only for external provider effects. |
+| Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. `CapabilityGatewayCatalogStore` now durably owns canonical Agent-facing catalog payloads, but not the lifecycle cursor or a mutable current pointer. It is also available through the standalone `capability-catalog` feature so a headless package manager can publish the payload without compiling MCP transport code. The coordinated backup inventory recognizes this catalog and the Control descriptor-snapshot owner as one explicit immutable payload family, and the inactive owner registry now snapshots that family under `capability-gateway`. | Critical debt. [ADR-003](adr-003-control-store-transaction-boundary.md) requires one coordinated Control Store cutover with no JSON/SQLite dual authority; production still needs transactionally bound digests, session replacement, lease drain, production restore wiring, and retention policy. Sagas remain only for external provider effects. |
 | Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
 | Identity | Registry ownership, accepted-call leases, cursors, and Tool/MCP host names use scoped package/generation/surface keys. The optional manifest `route` is retained only as a human alias; duplicates are legal and explicit alias lookup rejects ambiguity. | Qualified A1 boundary. Aliases may improve presentation but must never enter ownership or cursor identity. |
 | Observation cost | Registry watch polls at a fixed interval, and normal snapshot projection can reopen and rehash package assets. | High scalability debt. Materialize one immutable Capability Index at cutover, publish generation notifications, and reserve full hashing for admission, audit, or detected drift. |
@@ -331,8 +331,8 @@ and immutable artifacts. This
 proves the ordering and authority boundary, but it is not a public API and
 production lifecycle code still does not construct it.
 The inactive kernel now has a path-free external-payload registry/evidence
-contract: six fixed owner identities and ACL backup policies, explicit global
-Artifact Store exclusion, and one exact canonical receipt set for the five
+contract: seven fixed owner identities and ACL backup policies, explicit global
+Artifact Store exclusion, and one exact canonical receipt set for the six
 snapshotted owners. Receipts bind installation, Control generation, registry
 and owner schemas, manifest/inventory digests, and bounded accounting; they do
 not embed host paths. A private session now binds one canonical Control export
@@ -407,9 +407,13 @@ replay, and the result is path-free and snapshot-bound. The Runtime plan payload
 is the fifth snapshotted owner. It captures immutable installation-scoped plan
 envelopes, verifies the complete key/plan binding, restores plans before Host
 projection activation, and exposes referenced Runtime blob digests to the
-installation artifact-reachability scan.
+installation artifact-reachability scan. The Capability payload is the sixth
+snapshotted owner. It captures the installation-scoped Gateway catalog and
+descriptor-snapshot family under `capability-gateway`, restores after Runtime
+plans and before Host projection, and keeps Index/leases excluded as operational
+state.
 The private complete-set snapshot coordinator now captures one canonical
-Control export and all five registered owner snapshots under the same exclusive
+Control export and all six registered owner snapshots under the same exclusive
 maintenance fence and timestamp. A canonical path-free manifest binds the
 fixed owner registry, receipts, schemas, digests, and byte accounting. The
 coordinator streams those inputs in protocol order into one staged archive
@@ -419,12 +423,12 @@ Absent owners remain explicit without contributing payload bytes, and the
 global Artifact Store stays outside installation backup. This is qualified
 cross-owner snapshot assembly. Its offline-verified aggregate can now retain
 one exact target's exclusive maintenance fence and build a deterministic
-six-component restore attempt beneath the fixed
+seven-component restore attempt beneath the fixed
 `.control-installation-restore` directory. A canonical path-free descriptor
 binds the complete snapshot, installation, owner registry, Knowledge policy,
 and component set before any candidate is created. The Control database is
 restored from the canonical export, checkpointed to a single file,
-round-tripped, and physically digest-bound; the five external candidates reuse
+round-tripped, and physically digest-bound; the six external candidates reuse
 their owner-native staging and validation under that same guard. No live owner
 path is changed. Exact replay, interrupted Control staging, explicit owner
 absence, and target isolation are qualified; links, unknown entries,
@@ -433,20 +437,21 @@ preflights every clean target, then records durable top-level intent. The
 immutable attempt descriptor remains the restore identity, one canonical
 `activation.json` is the mutable ordered journal, and the typed global
 `.maintenance.restore.json` marker binds the same immutable operation while
-blocking ordinary shared access. Control Store, Runtime plans, Host projection,
-Knowledge, observations, and Restore Coordinator execute in fixed order; every
-owner uses journal, marker, effect, checkpoint. Each checkpoint binds the canonical
+blocking ordinary shared access. Control Store, Runtime plans, Capability
+payload, Host projection, Knowledge, observations, and Restore Coordinator
+execute in fixed order; every owner uses journal, marker, effect, checkpoint.
+Each checkpoint binds the canonical
 path-free result by byte count and a domain-separated digest. The coordinator
 owner additionally verifies the exact complete marker bytes, length, and digest
 before replacing history. Reopen reacquires the exact exclusive guard, rebinds
 the same snapshot, attempt, registry, and policy, and reconstructs or verifies
-every candidate/live boundary. Safe journal and marker partial states, all six
-post-effect/pre-checkpoint boundaries, the sixth checkpoint before marker
+every candidate/live boundary. Safe journal and marker partial states, all seven
+post-effect/pre-checkpoint boundaries, the seventh checkpoint before marker
 retirement, and exit after deletion converge. Marker absence is accepted only
 with a complete journal; out-of-order live roots, ambiguous markers, links,
 rebinding, and evidence drift fail closed. Completed replay performs no owner
-effect and can only resume bounded fixed-order retirement of the six link-free
-staging trees. A 21-boundary real-child-process matrix qualifies the top-level
+effect and can only resume bounded fixed-order retirement of the seven link-free
+staging trees. A 24-boundary real-child-process matrix qualifies the top-level
 protocol, including every retirement boundary. The surviving canonical
 `attempt.json` and complete `activation.json` form the exact
 installation-bound terminal receipt. Legacy backup and artifact reachability

@@ -41,6 +41,14 @@ pub use retention::{
     CAPABILITY_GATEWAY_CATALOG_RETENTION_RESULT_SCHEMA,
 };
 
+/// One exact content-addressed catalog record captured for Control payload
+/// snapshot or restore materialization.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CapabilityGatewayCatalogStoredRecord {
+    pub digest: String,
+    pub bytes: Vec<u8>,
+}
+
 /// Stable identifier for this payload-owner layout.
 ///
 /// The identifier documents the directory contract. Individual records carry
@@ -347,6 +355,130 @@ impl CapabilityGatewayCatalogStore {
             .collect()
     }
 
+    /// Capture every valid catalog record while an installation-wide exclusive
+    /// maintenance fence is held. Returned values contain no host path and are
+    /// sorted by content-addressed digest.
+    #[cfg(feature = "extensions")]
+    pub(crate) async fn snapshot_records_under_maintenance(
+        &self,
+        maintenance: &a3s_use_extension::StateMaintenanceGuard,
+    ) -> UseResult<Vec<CapabilityGatewayCatalogStoredRecord>> {
+        if !maintenance.is_exclusive_for(&self.state_root) {
+            return Err(store_invalid(
+                "Capability Gateway catalog snapshot requires the exact installation's exclusive maintenance guard.",
+            ));
+        }
+        crate::control_store::ensure_capability_payload_retention_quiescent(&self.state_root)
+            .await?;
+        let Some((state_root, root)) = self.existing_physical_paths().await? else {
+            return Ok(Vec::new());
+        };
+        if !validate_existing_directory_chain(&state_root, &root).await? {
+            return Ok(Vec::new());
+        }
+        validate_store_layout(&root).await?;
+        retention::ensure_no_pending_journal(&root).await?;
+        let mut records = self
+            .scan_records(&root)
+            .await?
+            .into_iter()
+            .map(|(digest, catalog)| {
+                let bytes = canonical_catalog_bytes(&catalog)?;
+                if digest_for_bytes(&bytes)? != digest {
+                    return Err(store_invalid(
+                        "A live Capability Gateway catalog digest differs from its canonical bytes.",
+                    ));
+                }
+                Ok(CapabilityGatewayCatalogStoredRecord { digest, bytes })
+            })
+            .collect::<UseResult<Vec<_>>>()?;
+        records.sort_by(|left, right| left.digest.cmp(&right.digest));
+        Ok(records)
+    }
+
+    /// Inspect a restore candidate catalogs directory using the same envelope
+    /// and path checks as the live store.
+    #[cfg(feature = "extensions")]
+    pub(crate) async fn inspect_records_at(
+        catalogs_root: &Path,
+        installation: &InstallationId,
+    ) -> UseResult<Vec<CapabilityGatewayCatalogStoredRecord>> {
+        installation.validate()?;
+        let store = Self {
+            installation: installation.clone(),
+            state_root: catalogs_root.to_path_buf(),
+            root: catalogs_root.to_path_buf(),
+        };
+        if !validate_existing_directory(catalogs_root).await? {
+            return Ok(Vec::new());
+        }
+        validate_store_layout(catalogs_root).await?;
+        retention::ensure_no_pending_journal(catalogs_root).await?;
+        let mut records = store
+            .scan_records(catalogs_root)
+            .await?
+            .into_iter()
+            .map(|(digest, catalog)| {
+                let bytes = canonical_catalog_bytes(&catalog)?;
+                Ok(CapabilityGatewayCatalogStoredRecord { digest, bytes })
+            })
+            .collect::<UseResult<Vec<_>>>()?;
+        records.sort_by(|left, right| left.digest.cmp(&right.digest));
+        Ok(records)
+    }
+
+    /// Materialize exact archived catalog records into a clean candidate
+    /// catalogs directory. The complete restore coordinator already owns the
+    /// target exclusive fence; the candidate sits outside live state paths.
+    #[cfg(feature = "extensions")]
+    pub(crate) async fn materialize_records(
+        catalogs_root: &Path,
+        installation: &InstallationId,
+        records: &[CapabilityGatewayCatalogStoredRecord],
+    ) -> UseResult<()> {
+        installation.validate()?;
+        if records.len() > MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS {
+            return Err(store_invalid(
+                "The Capability Gateway catalog restore source exceeds its record bound.",
+            ));
+        }
+        ensure_directory_exists(catalogs_root).await?;
+        validate_store_layout(catalogs_root).await?;
+        retention::ensure_no_pending_journal(catalogs_root).await?;
+        let existing = Self::inspect_records_at(catalogs_root, installation).await?;
+        if !existing.is_empty() {
+            if existing == records {
+                return Ok(());
+            }
+            return Err(store_invalid(
+                "The Capability Gateway catalog restore candidate already contains different records.",
+            ));
+        }
+        for record in records {
+            let catalog = decode_catalog_bytes(&record.bytes)?;
+            if catalog.installation() != installation {
+                return Err(store_invalid(
+                    "An archived Capability Gateway catalog belongs to another installation.",
+                ));
+            }
+            let digest = catalog.descriptor_digest()?;
+            if digest != record.digest || digest_for_bytes(&record.bytes)? != digest {
+                return Err(store_invalid(
+                    "An archived Capability Gateway catalog digest differs from its bytes.",
+                ));
+            }
+            let target = path_for_digest(catalogs_root, &digest)?;
+            write_new_record(catalogs_root, &target, &record.bytes).await?;
+        }
+        let after = Self::inspect_records_at(catalogs_root, installation).await?;
+        if after != records {
+            return Err(store_invalid(
+                "The materialized Capability Gateway catalog candidate differs from its archive inventory.",
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_catalog(&self, catalog: &CapabilityGatewayCatalog) -> UseResult<()> {
         catalog.validate()?;
         if catalog.installation() != &self.installation {
@@ -529,6 +661,26 @@ fn canonical_catalog_bytes(catalog: &CapabilityGatewayCatalog) -> UseResult<Vec<
         ));
     }
     Ok(bytes)
+}
+
+fn decode_catalog_bytes(bytes: &[u8]) -> UseResult<CapabilityGatewayCatalog> {
+    if bytes.is_empty() || bytes.len() as u64 > MAX_CAPABILITY_GATEWAY_CATALOG_BYTES {
+        return Err(store_invalid(
+            "An archived Capability Gateway catalog exceeds its byte bound.",
+        ));
+    }
+    let catalog = CapabilityGatewayCatalog::from_json(bytes).map_err(|error| {
+        store_invalid(format!(
+            "An archived Capability Gateway catalog is invalid: {}",
+            error.message
+        ))
+    })?;
+    if canonical_catalog_bytes(&catalog)? != bytes {
+        return Err(store_invalid(
+            "An archived Capability Gateway catalog is not canonical.",
+        ));
+    }
+    Ok(catalog)
 }
 
 async fn read_catalog_at(

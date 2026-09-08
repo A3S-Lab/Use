@@ -53,6 +53,7 @@ const AUTHORITY_PATHS: &[&str] = &[
 ];
 
 const EXTERNAL_OWNER_PATHS: &[&str] = &[
+    "capability-gateway",
     "knowledge",
     "operations/package-diagnostic-history",
     "operations/package-downloads",

@@ -542,6 +542,8 @@ mod knowledge_effect_tests;
 #[cfg(test)]
 mod operation_admission_tests;
 #[cfg(test)]
+mod payload_capability_payload_tests;
+#[cfg(test)]
 mod payload_control_restore_activation_security_tests;
 #[cfg(test)]
 mod payload_control_restore_activation_tests;

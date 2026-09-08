@@ -705,9 +705,9 @@ production cutover boundary without activating the private kernel.
 Production lifecycle code still does not construct this kernel, and the live
 state layout, reachability, diagnostics, backup, and restore orchestration do
 not accept it as production authority. A private path-free registry contract
-now freezes all six owner identities and their ACL backup policies. It excludes
+now freezes all seven owner identities and their ACL backup policies. It excludes
 the global Artifact Store and requires an exact canonical receipt set for the
-remaining five owners, bound to one `InstallationId`, Control generation,
+remaining six owners, bound to one `InstallationId`, Control generation,
 registry digest, owner snapshot schemas, manifest/inventory digests, and
 bounded file/byte accounting. Deserialized evidence must pass the same
 semantic validation before hashing. This removes the duplicated owner-ID and
@@ -811,10 +811,15 @@ payload owner is now the fifth snapshotted owner: it captures immutable,
 installation-scoped plan envelopes, verifies complete key/plan binding, and
 restores them before Host projection activation. Runtime plan artifact digests
 are included in installation reachability scanning so cleanup cannot remove a
-blob still required by a committed plan. The private complete-set snapshot
-coordinator now captures one canonical Control export and the Host projection,
-Knowledge, planning/diagnostic observation, Restore Coordinator, and Runtime
-plan snapshots under the same exclusive maintenance fence and timestamp. One
+blob still required by a committed plan. The Capability payload owner is now
+the sixth snapshotted owner: it captures the installation-scoped Gateway catalog
+and descriptor-snapshot family under `capability-gateway`, restores after Runtime
+plans and before Host projection, and keeps Index/leases excluded as operational
+state. Production Control Store activation and backup/restore wiring remain
+open. The private complete-set snapshot
+coordinator now captures one canonical Control export and the Capability,
+Host projection, Knowledge, planning/diagnostic observation, Restore Coordinator,
+and Runtime plan snapshots under the same exclusive maintenance fence and timestamp. One
 canonical path-free manifest binds the exact owner registry,
 receipts, schemas, digests, and byte accounting. The coordinator streams a
 single staged archive outside all Use data and state roots, reuses each
@@ -824,13 +829,13 @@ global Artifact Store remains excluded. This closes complete-set snapshot
 assembly and offline verification. The same offline-verified aggregate can now
 stage one deterministic clean-target restore attempt. A canonical path-free
 descriptor first binds the exact complete snapshot, installation, owner
-registry, Knowledge policy, and fixed six-component set. One exclusive target
-maintenance fence is then retained while the Control database and all five
+registry, Knowledge policy, and fixed seven-component set. One exclusive target
+maintenance fence is then retained while the Control database and all six
 owner-native candidates are built beneath the fixed
 `.control-installation-restore` directory. Control is reconstructed from the
 canonical export, checkpointed to one SQLite file, round-tripped semantically,
-and bound by durable physical digest evidence. No live Control, Host,
-Knowledge, observation, or restore-history path is changed. Exact retries and
+and bound by durable physical digest evidence. No live Control, Capability,
+Host, Knowledge, observation, or restore-history path is changed. Exact retries and
 interrupted Control staging recover deterministically; target contamination,
 links, unknown entries, snapshot or policy rebinding, and completed-candidate
 drift fail closed. The complete-set coordinator now qualifies full ordered
@@ -839,22 +844,22 @@ clean live boundary. The immutable attempt descriptor remains the restore
 identity. A canonical `activation.json` journal binds that attempt to an
 immutable operation; the typed global `.maintenance.restore.json` marker binds
 the same identity and blocks ordinary shared access. The fixed owner order is
-Control Store, Runtime plans, Host projection, Knowledge, observations, then
-Restore Coordinator; every step follows journal, marker, owner effect,
-checkpoint.
+Control Store, Runtime plans, Capability payload, Host projection, Knowledge,
+observations, then Restore Coordinator; every step follows journal, marker,
+owner effect, checkpoint.
 Each ordered checkpoint retains only the canonical path-free result length and
 a domain-separated digest. The Restore Coordinator additionally binds the exact
 complete marker bytes, length, and digest before history mutation. Reopening
 reacquires the exact exclusive guard, rebinds the same verified snapshot,
 attempt, owner registry, and Knowledge policy, and reconstructs or verifies
 every owner at its precise candidate/live boundary. Journal and marker partials,
-all six post-effect/pre-checkpoint boundaries, the final checkpoint before
+all seven post-effect/pre-checkpoint boundaries, the final checkpoint before
 retirement, and exit immediately after marker deletion converge. A missing
-marker is valid only beside the complete six-checkpoint journal; out-of-order
+marker is valid only beside the complete seven-checkpoint journal; out-of-order
 live roots, ambiguous markers, snapshot rebinding, links, and evidence drift
 fail closed. Exact completed replay performs no owner effect and can only resume
-bounded fixed-order retirement of the six link-free staging trees. A
-real-child-process matrix qualifies 21 top-level durable exits, including each
+bounded fixed-order retirement of the seven link-free staging trees. A
+real-child-process matrix qualifies 24 top-level durable exits, including each
 retirement boundary. The surviving canonical `attempt.json` and complete
 `activation.json` are the exact installation-bound terminal receipt. Legacy
 backup and artifact reachability exclude only that receipt; incomplete,
