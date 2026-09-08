@@ -9,11 +9,13 @@ use a3s_use_core::{
     PluginPermissionCeiling, PluginReleaseChannel, PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA_V3,
     PLUGIN_PERMISSION_SCHEMA,
 };
-use olpc_cjson::CanonicalFormatter;
 use ring::signature::{Ed25519KeyPair, KeyPair};
-use serde::Serialize;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+
+use a3s_use_extension::{
+    ed25519_key_id, ed25519_key_value, sha256_hex as sha256, sign_tuf_document as signed_document,
+};
 
 #[path = "tuf_test_support/server.rs"]
 mod server;
@@ -155,13 +157,8 @@ impl TestRepository {
     ) -> Self {
         assert!(!targets.is_empty(), "a TUF test repository needs a target");
         let key = Ed25519KeyPair::from_seed_unchecked(&[7_u8; 32]).unwrap();
-        let public = hex_lower(key.public_key().as_ref());
-        let key_value = json!({
-            "keytype": "ed25519",
-            "scheme": "ed25519",
-            "keyval": {"public": public}
-        });
-        let key_id = sha256(&canonical(&key_value));
+        let key_value = ed25519_key_value(key.public_key().as_ref());
+        let key_id = ed25519_key_id(key.public_key().as_ref());
         let role = json!({"keyids": [key_id.clone()], "threshold": 1});
         let mut keys = Map::new();
         keys.insert(key_id.clone(), key_value);
@@ -324,36 +321,6 @@ fn collect_fixture_files(root: &Path, directory: &Path, output: &mut Vec<(String
             output.push((relative, path));
         }
     }
-}
-
-fn signed_document(key: &Ed25519KeyPair, key_id: &str, signed: Value) -> Vec<u8> {
-    let signature = key.sign(&canonical(&signed));
-    serde_json::to_vec(&json!({
-        "signatures": [{"keyid": key_id, "sig": hex_lower(signature.as_ref())}],
-        "signed": signed
-    }))
-    .unwrap()
-}
-
-fn canonical(value: &Value) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    let mut serializer =
-        serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
-    value.serialize(&mut serializer).unwrap();
-    bytes
-}
-
-fn sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        use std::fmt::Write as _;
-        let _ = write!(output, "{byte:02x}");
-    }
-    output
 }
 
 pub(crate) fn extension_archive(version: &str) -> Vec<u8> {

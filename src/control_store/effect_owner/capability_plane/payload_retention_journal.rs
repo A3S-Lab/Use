@@ -485,7 +485,6 @@ async fn create_journal(path: &Path, bytes: &[u8]) -> super::UseResult<()> {
     configure_no_follow(&mut options);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt as _;
         options.mode(0o600);
     }
     let mut file = options.open(path).await.map_err(|error| {
@@ -645,7 +644,6 @@ fn journal_io(action: &str, path: &Path, error: io::Error) -> super::UseError {
 fn configure_no_follow(options: &mut fs::OpenOptions) {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt as _;
         options.custom_flags(libc::O_NOFOLLOW);
     }
     #[cfg(windows)]

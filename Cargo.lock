@@ -192,6 +192,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "a3s-use-registry-tools"
+version = "0.2.9"
+dependencies = [
+ "a3s-acl",
+ "a3s-use-core",
+ "a3s-use-extension",
+ "flate2",
+ "olpc-cjson",
+ "ring",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "tokio",
+ "tough",
+ "url",
+]
+
+[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
