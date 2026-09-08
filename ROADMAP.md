@@ -815,8 +815,10 @@ blob still required by a committed plan. The Capability payload owner is now
 the sixth snapshotted owner: it captures the installation-scoped Gateway catalog
 and descriptor-snapshot family under `capability-gateway`, restores after Runtime
 plans and before Host projection, and keeps Index/leases excluded as operational
-state. Production Control Store activation and backup/restore wiring remain
-open. The private complete-set snapshot
+state. Seeded Archive (catalog + descriptor-snapshot) complete-set round-trip is
+now tip-qualified alongside Absent; owner digests may be domain-separated from
+plain archive `sha256`. Production Control Store activation and backup/restore
+wiring remain open. The private complete-set snapshot
 coordinator now captures one canonical Control export and the Capability,
 Host projection, Knowledge, planning/diagnostic observation, Restore Coordinator,
 and Runtime plan snapshots under the same exclusive maintenance fence and timestamp. One
