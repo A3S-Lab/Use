@@ -2,7 +2,7 @@
   <img
     src="assets/readme/hero.svg"
     width="100%"
-    alt="A3S Use 解析一个精确的认知包图，并通过一次原子切换发布 Tool、MCP、OKF、A3S Flow、Skill 与 UI"
+    alt="A3S Use resolves one exact cognitive-package graph and publishes Tool, MCP, OKF, A3S Flow, Skill, and UI through one atomic cutover"
   />
 </p>
 
@@ -13,136 +13,223 @@
 </p>
 
 <p align="center">
-  <strong>面向原生能力与版本化认知包的 AI 原生包管理器。</strong>
+  <strong>AI 本机包管理器，用于本机功能和版本化认知包。</strong>
 </p>
 
 <p align="center">
   <a href="https://a3s-lab.github.io/Use/">网站</a> ·
-  <a href="#安装或构建">安装</a> ·
-  <a href="#认知包格式">包格式</a> ·
-  <a href="#可替换-registry-与精确锁">Registry</a> ·
-  <a href="#当前契约基线">契约</a> ·
-  <a href="#实现状态">状态</a> ·
+  <a href="#install-or-build">安装</a> ·
+  <a href="#cognitive-package-format">封装格式</a> ·
+  <a href="#replaceable-registries-and-exact-locks">注册表</a> ·
+  <a href="#current-contract-baseline">合约</a> ·
+  <a href="#implementation-status">状态</a> ·
   <a href="ROADMAP.md">路线图</a>
 </p>
 
-> [!WARNING]
-> **开发预览 — 尚未可用于生产。** 认知包平台尚未发布受支持的产品版本。预发布清单、回执、操作记录、目录元数据与宿主协议均非兼容性目标：不受支持的状态会被拒绝，并给出清理与重装指引。版本标签不改变此发布状态。
+> [!警告]
+> **开发预览 - 尚未做好生产准备。** 认知包
+> 平台尚未发布受支持的产品版本。预发布清单，
+> 收据、操作记录、目录元数据和主机协议不
+> 兼容性目标：通过清理拒绝不支持的状态
+> 重新安装说明。版本标签不会更改此发布状态。
 
-## A3S Use 是什么
+## A3S 的用途是什么
 
-A3S Use 解析、验证、安装、升级并移除一个精确的 SemVer 包图。认知包可贡献六种命名表面：**Tool、MCP、OKF、A3S Flow、Skill 与 UI**。包是生命周期单元；其 User 或 Workspace 安装是一致性单元。各表面一并准备，并通过一次不可变的能力快照切换对外可见。
+A3S 使用解析、验证、安装、升级和删除确切的 SemVer
+包图。认知包可以提供六个命名表面：
+**工具、MCP、OKF、A3S 流程、技能和 UI**。包是生命周期单元；
+其用户或工作空间安装是一致性单元。它的表面是
+一起准备并通过一个不变的方式变得可见
+能力快照切换。
 
-它面向 Linux、macOS 与 Windows 上的 A3S 宿主设计。它不试图替代 `apt`、Homebrew 或 WinGet 来管理任意系统软件。A3S Use 拥有包信任、不可变代际、回执、依赖顺序、生命周期日志与能力证据。Runtime、Gateway、Flow、Knowledge 与 UI 宿主仍拥有执行与呈现。
+它专为 Linux、macOS 和 Windows 上的 A3S 主机而设计。它并不试图
+替换任意系统软件的 `apt`、Homebrew 或 WinGet。 A3S 使用拥有
+包信任、不可变代、收据、依赖顺序、生命周期
+期刊和能力证据。运行时、网关、流程、知识和 UI
+主持人保留执行和演示的所有权。
 
-当前架构有五条不可协商的属性：
+当前的架构有五个不可协商的属性：
 
-- **一个安装图：** 每个显式 User 或 Workspace 安装拥有一个单调生成的 `InstallationSnapshot`。它拥有统一解析图以及各包的启用状态与所选表面意图。根锁是派生视图；依赖正向安装，退役反向执行，同一安装中同一包 ID 不能在不同根下解析出不同结果。
-- **一条经审查的变更路径：** 规划为只读；apply 接受经审查的操作 ID、计划摘要与确认。不存在直接的 enable/disable 变更 API。
-- **一次串行安装变更：** install、upgrade、uninstall、enable、disable 与精确恢复共享跨进程写者围栏。每次经审查的切换绑定到预期能力代际；失败的并发计划在 provider 或包发布效果之前即失败。
-- **一个不可变内容身份：** 已验证的原始目标与展开的包树仅以摘要为键存放在全局 Artifact Store 中。Registry 源保留观测与部分下载；安装拥有选择与生命周期代际，从不保留相同内容的私有副本。
-- **一个有界的 Registry 权威边界：** 安装的权威 `registry.json` 快照仅通过拥有的目录链、no-follow/reparse-safe 文件句柄、4 MiB 字节上限与原子临时文件替换来读取与发布。读取者重新检查已打开文件，拒绝同路径变更，而非解析无界或重定向文件。
-- **一条当前协议基线：** 预发布格式被拒绝，而非解码、迁移或静默默认。
+- **一个安装图：** 每个显式用户或工作区安装都有
+  一个单调生成的`InstallationSnapshot`。它拥有统一的
+  解析图加上每个包的启用和选定表面意图。
+  根锁是派生视图；依赖项向前安装，退休运行
+  相反，一个包 ID 不能在两个根下进行不同的解析
+  在同一安装中。
+- **一条经过审查的突变路径：** 规划是只读的；申请接受
+  审核操作 ID、计划摘要和确认。没有直接的
+  启用/禁用突变 API。
+- **一个串行安装突变：**安装、升级、卸载、启用、
+  禁用和精确恢复共享跨进程写入器栅栏。每个
+  经审查的切换与预期的能力生成相关；一个失败的
+  并发计划在提供者或包发布效果之前失败。
+- **一个不可变的内容身份：**经过验证的原始目标和扩展包
+  树仅通过全局 Artifact Store 中的摘要进行键入。注册表来源
+  保留观察结果和部分下载；安装自己的选择和
+  生命周期世代，绝不是相同内容的私人副本。
+- **一个有界的注册表权限边界：** 安装的权威
+  `registry.json`快照仅通过拥有的目录读取和发布
+  链、无跟随/重新分析安全文件句柄、4 MiB 字节上限，以及
+  原子临时文件替换。读者重新检查打开的文件并拒绝相同路径的更改，而不是解析无限制或重定向的文件。
+- **当前协议基线：** 预发布格式被拒绝
+  而不是解码、迁移或默认默认。
 
-## 本仓库中的验证
+## 此存储库中的证明
 
-实现与 fixture 直接演练产品模型：
+实现和固定装置直接运用产品模型：
 
-- [`plugin-v3-cognitive`](crates/extension/fixtures/packages/plugin-v3-cognitive/) 是包含全部六种表面类型的内容寻址包。
-- [`plugin-v3-mhs-bridge`](crates/extension/fixtures/packages/plugin-v3-mhs-bridge/) 证明硬件适配器复用标准 MCP、Flow、Skill 与 UI 图，在没有精确托管 gateway 绑定时保持未发布，且无需 MHS 专用包表面。
-- [`PluginPackageResolver`](crates/core/src/plugin/package_resolution.rs) 解析有界 SemVer 闭包，并拒绝环、不兼容发布与跨 Registry 歧义。
-- [`InstallationSnapshot`](crates/core/src/plugin/installation_snapshot.rs) 拥有一个作用域的期望根、统一锁图、包状态代际、启用状态与精确所选表面发布意图。
-- [`RegistrySourceStore`](crates/extension/src/registry_sources/mod.rs) 持久化规范修订寻址的 ACL 源配置，导入摘要绑定的信任根，并按源身份隔离 TUF 元数据与缓存。
-- [`ArtifactStore`](crates/extension/src/artifact_store.rs) 在单一分片全局 SHA-256 路径存储展开包，按摘要串行化并发提交，拒绝链接/reparse-point 祖先，且不携带安装或激活权威。
-- [`CapabilityGatewayCatalogStore`](src/capability_catalog_store.rs) 拥有一个安装的精确面向 Agent 的目录 payload。
-  它发布不可变规范记录，
-  支持显式受保护集保留，
-  并持久化有界恢复日志，
-  以便中断的修剪可通过 `recover_retention()` 恢复，
-  而不发明生命周期权威。
-  Gateway 会话工厂的 `from_published` 与 `replace_published` 路径在暴露 live 端点前验证此精确持久发布。
-  inactive Control 组合还将发布身份与已应用能力切换及已发布游标绑定在同一事务中。
-  其生命周期协调读取该游标与所属操作，
-  其 drain-and-retain 路径在关闭 live 端点前需要精确目录身份与 Control 签发的代际租约。
-  协调备份清单在单一能力 payload 族下一起验证其规范记录与 signed/legacy 描述符快照。
-- [`RegistryNetworkPolicy`](crates/extension/src/remote/network.rs) 让嵌入宿主为不受信任的 Registry 端点选择严格的公网边界。
-  该模式要求 HTTPS、固定已检查 DNS 应答、拒绝非公网地址空间与代理、禁用自动重定向、在每一跳重新检查有界目标重定向，
-  并同等应用于 TUF 元数据、bootstrap 根、规划目标与包目标。
-- [`CognitivePackageManager`](src/cognitive_package/) 绑定 signed 目录证据、精确锁、经审查计划、授权与崩溃重放。
-- [`ExtensionRegistry`](crates/extension/src/registry.rs) 将有界、owned、跨平台的文件 IO 置于已发布安装快照之后，使畸形、超大、链接或并发替换的权威不能被接纳为能力代际。
-- [`CognitivePackageHostManager`](src/cognitive_package/host_manager.rs) 实现 typed host-protocol-v6 端口，
-  用于一个精确托管作用域围栏。
-  它将请求 ID 持久绑定到 Use 拥有的计划与终端结果，
-  同时将 Registry 解析、准入、生命周期、Grants 与观测委托给与其他宿主相同的 `CognitivePackageManager`。
-- [`bind_cognitive_package_provider_plan`](src/cognitive_package/provider_plan.rs) 执行授权安全的两阶段 provider 协议：未绑定草稿、assigned-provider 预检、宿主权威、规范 Grant 语义与漂移检查的最终选择。
-- [`PluginPackageGraphLifecycleCoordinator`](src/plugin_lifecycle/graph.rs) 准备依赖闭包，
-  执行一次持久 Registry 切换，
-  调用可选的宿主 owned Gateway 激活边界，
-  排空已接受调用，
-  并退役精确先前代际。
-  激活 hook 可重放安全，
-  将其不透明键绑定到拥有已发布游标的持久 Control 操作，
-  并在任何先前代际 drain 之前运行；
-  inactive Control 组合为 live 会话替换提供 Control-lease 支持的适配器，
-  并拒绝 copied 或无关会话的 drain 请求。
-- [`RuntimeTaskDispatcher`](src/plugin_runtime/task_dispatch.rs) 重新打开审查时选定的精确 v4 Task 绑定与 provider，而能力快照 v5 仅发布具有完整安装与生命周期身份的匹配 release-backed Tasks。
-- [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs) 对有作用域隔离的 OKF 投影进行 stage、promote、search、read 与 remove，
-  附带精确包代际引用、保留的源 Markdown、有界回执计量存储、全局 tombstone 修剪、移除后的物理 SQLite 压缩、源/索引完整性审计、非覆盖 verified backup、精确计划 oldest-first 备份轮换、保留权威的 FTS 修复，
-  以及权威绑定数据库加 missing-binding restore。
-- [`A3sFlowLifecycleHost`](src/flow_runtime/lifecycle.rs) 将 Flow 预检委托给真实 `a3s-flow` Native TypeScript runtime，并记录精确代际绑定。
-- [`StandaloneCognitivePackageLifecycleFactory`](src/cognitive_package/hosts.rs) 仅从显式绝对编译器路径组合该宿主；失败的预检保持未发布，并可从精确持久证据重放。
-- [`crates/core/fixtures/plugins`](crates/core/fixtures/plugins/) 下的契约 fixture 冻结当前 schema 的规范 JSON 与 SHA-256 摘要。
+- [`plugin-v3-cognitive`](crates/extension/fixtures/packages/plugin-v3-cognitive/)
+  是一个包含所有六种表面类型的内容寻址包。
+- [`plugin-v3-mhs-bridge`](crates/extension/fixtures/packages/plugin-v3-mhs-bridge/)
+  证明硬件适配器重用标准 MCP、Flow、Skill 和 UI
+  图，在没有确切的托管网关绑定的情况下仍未发布，并且
+  不需要 MHS 特定的封装表面。
+- [`PluginPackageResolver`](crates/core/src/plugin/package_resolution.rs)
+  解决有界 SemVer 闭包并拒绝循环、不兼容的版本、
+  和跨注册机构的歧义。
+- [`InstallationSnapshot`](crates/core/src/plugin/installation_snapshot.rs)
+  拥有一个作用域所需的根、统一的锁图、包状态
+  生成、启用和精确选定的表面发布意图。
+- [`RegistrySourceStore`](crates/extension/src/registry_sources/mod.rs)仍然存在
+  规范修订寻址 ACL 源配置，导入摘要绑定
+  受信任的根，并通过源身份隔离 TUF 元数据和缓存。
+- [`ArtifactStore`](crates/extension/src/artifact_store.rs) 商店扩大
+  打包在一个分片全局 SHA-256 路径中，通过以下方式序列化并发提交
+  摘要，拒绝链接/重分析点祖先，并且不进行安装
+  或激活权限。
+- [`CapabilityGatewayCatalogStore`](src/capability_catalog_store.rs) 拥有
+  一次安装的精确的面向代理的目录负载。它发布
+  不可变的规范记录，支持显式的保护集保留，以及
+  保留有界恢复日志，因此中断的修剪可以通过以下方式恢复
+  `recover_retention()` 无需发明生命周期权限。网关
+  会话工厂的 `from_published` 和 `replace_published` 路径验证了这一点
+  在公开实时端点之前进行精确的持久发布。不活跃的
+  对照组合物另外将出版物身份结合到在一笔事务中应用功能切换和发布游标。其
+  生命周期协调一起读取游标和拥有操作，
+  其排出和保留路径需要准确的目录标识和
+  在关闭实时端点之前控制发出的生成租约。的
+  协调备份库存验证其规范记录
+  一个功能有效负载系列下的签名/遗留描述符快照。
+- [`RegistryNetworkPolicy`](crates/extension/src/remote/network.rs)让
+  嵌入主机为不受信任的对象选择严格的公共互联网边界
+  注册表端点。该模式需要 HTTPS，固定检查 DNS 答案，
+  拒绝非公共地址空间和代理，禁用自动重定向，
+  在每一跳重新检查有界目标重定向，并应用于 TUF 元数据，
+  引导根、规划目标和包目标等。
+- [`CognitivePackageManager`](src/cognitive_package/)绑定签名目录
+  证据、精确锁定、审查计划、授权和崩溃重放。
+- [`ExtensionRegistry`](crates/extension/src/registry.rs) 保留已发布的
+  安装快照背后有界的、拥有的、跨平台的文件IO所以
+  格式错误、过大、链接或同时替换的权限不能被
+  被承认为有能力的一代。
+- [`CognitivePackageHostManager`](src/cognitive_package/host_manager.rs)
+  为一个精确的托管范围实现类型化主机协议 v6 端口
+  栅栏。它将请求 ID 持久地绑定到用户拥有的计划和最终结果，
+  同时委托注册管理机构决议、准入、生命周期、拨款和
+  观察其他主机使用的相同`CognitivePackageManager`。
+- [`bind_cognitive_package_provider_plan`](src/cognitive_package/provider_plan.rs)执行授权安全的两遍提供商协议：未绑定草稿，
+  指定提供者预检、主机权限、规范授予语义，以及
+  经过漂移检查的最终选择。
+- [`PluginPackageGraphLifecycleCoordinator`](src/plugin_lifecycle/graph.rs)
+  准备依赖闭包，执行一次持久的注册表切换，调用
+  可选的主机拥有的网关激活边界，耗尽接受的呼叫，
+  并让前几代人退休。激活钩子是重放安全的，
+  将其不透明密钥绑定到拥有已发布的持久控制操作
+  游标，并在任何上一代排水之前运行；非活动控制
+  组合为实时会话提供控制租赁支持的适配器
+  替换并拒绝复制或不相关会话的排出请求。
+- [`RuntimeTaskDispatcher`](src/plugin_runtime/task_dispatch.rs)重新打开
+  在审核时选择精确的 v4 任务绑定和提供者，而功能
+  快照 v5 仅发布匹配的版本支持的任务，并具有完整的
+  安装和生命周期标识。
+- [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs)阶段，
+  提升、搜索、读取和删除范围隔离的 OKF 投影
+  精确的包生成引用，保留源 Markdown，有界
+  收据核算存储、全局墓碑修剪、物理 SQLite
+  删除后压缩、源/索引完整性审核、非覆盖
+  已验证的备份、精确计划最旧优先的备份轮换、
+  保权限FTS修复、权限绑定数据库+
+  丢失绑定恢复。
+- [`A3sFlowLifecycleHost`](src/flow_runtime/lifecycle.rs)代表流程预检到真实的 `a3s-flow` Native TypeScript 运行时并记录
+  精确生成绑定。
+- [`StandaloneCognitivePackageLifecycleFactory`](src/cognitive_package/hosts.rs)
+  仅从显式绝对编译器路径组成该主机；失败了
+  预检尚未发布，可以根据确切的持久证据进行重播。
+- [`crates/core/fixtures/plugins`](crates/core/fixtures/plugins/)下的合同赛程
+  冻结当前模式的规范 JSON 和 SHA-256 摘要。
 
-CI 运行格式化、完整 A3S Use workspace 测试、Clippy、release-container 一致性以及平台任务。
-Windows 预览门现在执行完整当前 workspace 套件，包括对共享 reparse-point guard 的真实 directory-junction 回归。
-原生 Windows 套件还证明 Registry cutover-capacity 拒绝发生在任何 lifecycle-receipt 替换之前，且 Box 委托通过原生 command script 保留参数、输出与退出状态。
-可恢复 Registry partial 在不跟随其最终路径的情况下打开，并仍由单一句柄拥有；
-Windows 门证明 active partial 允许读取者但在事务释放前拒绝外部写入与移除。
-Signed Registry、dependency-graph、Grant、Flow-preflight/lifecycle 与 standalone OKF 场景也通过真实 CLI 运行。
-
-其 killed-process 覆盖现在包括：在持久 Registry 图发布之后、依赖日志与安装快照完成之前被 kill 的多节点 install；
-upgrade cutover 后的 removed-dependency cleanup；
-以及在持久 Registry hide 之后、包 hide 回执之前被 kill 的 uninstall。
-install 离线重放精确 cutover，无需另一次代际或网络请求。
-uninstall 从同一计划重启，在 accepted-call generation lease 上阻塞，然后 drain 并退役 scoped generation 权威，无需另一次 Registry 代际；
-缺少精确 cutover 的包状态仍 fail closed。
-
-Lifecycle commit 与 cleanup 对 Windows access、sharing 与 lock violation 每次阻塞变更最多重试两秒。
-对 active artifact staging 目录、选定 upgrade receipt、removal receipt 或嵌套 abandoned staging 文件的 transient scanner 句柄让同一 commit 或权威退役继续。
-persistent active-staging 句柄在 receipt 或 Registry-snapshot 变更之前失败，保留残余树，并在释放后让 commit 精确重放。
-persistent selected-receipt lock 保留有效全局候选 artifact，并回滚 retained-receipt state，同时保留 byte-exact 先前 receipt 与已发布代际；
-upgrade 重放在释放后成功。
-对完整全局 artifact 的 persistent reader 不阻塞 uninstall，共享字节仍可用。
-
-测试二进制 subprocess 矩阵还在每个规范 install、upgrade、enable、disable 与 uninstall 检查点、每次持久宿主效果之后、其 receipt 之前退出；
-恢复复用精确幂等键而不重复效果，终端重放不再调用宿主。
-第二个测试二进制 subprocess 矩阵覆盖带 grant 的 install、upgrade 与 uninstall 图 cutover：它在 atomic publish 或 hide 效果之后、包发布 receipt 与 Grant cutover 证据之前退出，
-然后证明 exact-key 恢复、单一图效果、完成的包与 Grant 日志，
-以及终端重放而无需再次 publish 或 hide。
-
-Separate managed-scope manager 进程在 five-node install、upgrade 与 uninstall 期间、Registry publish/hide 之后、一个 dependency publication receipt 待处理且 Grant 日志仍 prepared 时被外部 kill。
-重启在禁用 reauthorization 的情况下运行，
-不发起网络请求，
-保留精确 candidate Grant，
-仅退役绑定的 prior Grant，
-完成包与 Grant 日志，
-且不再推进 Registry 代际。
-
-五个真实 `CognitivePackageHostManager` 协议子进程在 Registry 服务器停止后 additionally 覆盖完整经审查 apply 集。
-Install、upgrade 与 uninstall 在对应五节点图 publish/hide 边界被 kill。
-Disable 在 root package binding 被 hide 且 Grant cutover 提交、accepted-call lease 阻塞 drain 之后被 kill；
-enable 在 Registry publication 之后、其 candidate Grant 仍 prepared 时被 kill。
-重启消费持久经审查计划与确认；
-install 与 upgrade 还仅使用 verified planning cache。
-恢复不 reauthorize，收敛精确 candidate/prior Grant 或 enablement regrant/revocation，在不 inflate generation 的情况下完成 drain 与两个日志，persist Host 结果，并保持终端可重放。
-这些路径不替代仍开放的 actual product-host 与完整跨-platform failure-injection 门。
-
-Grant Store 自身还在其规范 two-candidate/two-retirement 生命周期全部 14 个持久检查点运行测试二进制 subprocess 矩阵：forward prepare、cutover/retirement 与 pre-cutover rollback 各包含每个 candidate receipt、prior revocation 与 candidate restoration。
-参见[平台支持](#平台支持)。
+CI 运行格式化、完整的 A3S 使用工作区测试、Clippy、
+发布容器一致性和平台作业。现在的 Windows 预览门
+执行完整的当前工作区套件，包括真实的
+共享重解析点保护的目录连接回归。当地人
+Windows 套件还证明注册表切换容量拒绝发生在之前
+任何生命周期收据替换以及 Box 委托保留参数，
+通过本机命令脚本输出和退出状态。可恢复注册表
+部分文件在不遵循其最终路径的情况下打开，并保持由一个人拥有
+手柄； Windows 门证明主动部分允许读者但拒绝
+外部写入和删除，直到事务释放它。签署登记处，
+依赖图、Grant、Flow-preflight/lifecycle 和独立 OKF 场景
+也可以通过真正的 CLI 运行。现在它的终止进程覆盖率
+包括在持久注册表图发布后终止的多节点安装
+但在依赖日志和安装快照完成之前，
+升级切换后删除依赖项清理，并在持久化后终止卸载
+注册表隐藏但在包裹隐藏收据之前。安装会重播
+离线精确切换，无需另一代或网络请求。的
+卸载从同一计划重新启动，阻止已接受的呼叫生成
+租赁，然后耗尽并退役范围内的发电权，无需另一个注册表生成；缺少包状态但仍没有确切的切换
+关闭失败。
+生命周期提交和清理重试 Windows 访问、共享和锁定冲突
+每个阻断突变最多持续两秒。瞬态扫描仪处理结束
+活动工件暂存目录、选定的升级收据、删除
+收据，或嵌套废弃的暂存文件让相同的提交或权限
+退休继续。持久活动暂存句柄在接收之前失败
+或注册表快照突变，保留剩余树，并让我们提交
+发布后立即重播。持久选择收据锁保留
+有效的全局候选工件并回滚保留收据状态，同时
+保留字节精确的先前接收和发布的生成；升级
+释放后重放成功。一个完整全球的持久读者
+工件不会阻止卸载，并且共享字节仍然可用。
+在每个持久主机效果之后也会存在测试二进制子进程矩阵，但是
+在收到每个规范安装、升级、启用、禁用和
+卸载检查点；恢复重复使用精确的幂等密钥，无需
+复制效果，并且终端重播不会进行主机调用。一秒钟
+测试二进制子进程矩阵涵盖授权安装、升级和
+卸载图形转换：它在原子发布或隐藏效果后退出
+但在打包发布收据和格兰特切换证据之前，然后证明精确密钥恢复、一张图效果、完成包和授予
+日志和终端重播，无需再次发布或隐藏。分开
+托管范围管理器进程在五节点安装期间被外部终止，
+升级，并在注册表发布/隐藏后卸载，同时存在一个依赖项
+出版收据正在等待中，格兰特期刊仍在准备中。重新启动
+在禁用重新授权的情况下运行，不执行网络请求，保留
+精确候选格兰特，仅退休绑定的先前格兰特，完成包
+并授予期刊，并且不会再次推进注册表生成。五
+真正的 `CognitivePackageHostManager` 协议子项还涵盖
+注册服务器停止后完成审核的应用集。安装，
+升级、卸载在对应的五节点图处被杀死
+发布/隐藏边界。根包绑定隐藏后，Disable 被杀死
+授予切换承诺，同时接受的呼叫租约阻止消耗；启用是
+在登记处公布后被杀，而其候选人格兰特仍在准备中。
+重启会消耗持久审核计划和确认；安装并
+升级也仅使用经过验证的计划缓存。恢复不
+重新授权，汇聚确切的候选人/先前的拨款或启用
+重新授予/撤销，完成排出和两个日志而不生成
+通货膨胀，保持主机结果，并且最终仍然可重玩。这些
+路径不会替换仍然开放的实际产品主机并完成跨平台故障注入门。格兰特
+也存储自己
+在所有 14 个持久检查点上运行一个测试二进制子进程矩阵
+其规范的两个候选人/两个退休生命周期：向前准备，
+切换/退役和切换前回滚均包括每个候选者
+收据、事先撤销和候选人恢复。
+请参阅【平台支持](#platform-support)】。
 
 ## 安装或构建
 
-带标签的归档仍为开发预览。安装程序选择当前 OS 与架构，要求 Cosign，针对精确 A3S Use 标签 workflow 身份与 GitHub OIDC issuer 认证 `checksums.txt`，在解压前验证所选归档 SHA-256，拒绝不安全归档条目，并原子发布 user-scoped 命令。先下载安装程序以便执行前审查。
+标记的档案仍然是开发预览。安装程序选择当前的
+操作系统和架构，需要 Cosign，针对 `checksums.txt` 进行身份验证
+确切的 A3S 使用标签工作流身份和 GitHub OIDC 颁发者，验证所选
+在提取之前存档 SHA-256，拒绝不安全的存档条目，以及
+以原子方式发布用户范围的命令。首先下载安装程序，这样就可以了
+可以在执行前进行审查。
 
 Linux 或 macOS：
 
@@ -152,7 +239,7 @@ curl --proto '=https' --tlsv1.2 -fsSLo /tmp/a3s-use-install.sh \
 sh /tmp/a3s-use-install.sh
 ```
 
-Windows x86_64，使用 Windows PowerShell 5.1 或 PowerShell 7：
+带有 Windows PowerShell 5.1 或 PowerShell 7 的 Windows x86_64：
 
 ```powershell
 $installer = Join-Path $env:TEMP 'a3s-use-install.ps1'
@@ -160,67 +247,120 @@ Invoke-WebRequest https://raw.githubusercontent.com/A3S-Lab/Use/main/install.ps1
 & $installer
 ```
 
-`cosign` 必须安装在 `PATH` 上；Unix 上可用 `--cosign <path>`，Windows 上可用 `-CosignPath <path>` 选择显式可信可执行文件。
+`cosign`必须安装在`PATH`上；显式可信可执行文件可以是
+在 Unix 上使用 `--cosign <path>` 或在 Windows 上使用 `-CosignPath <path>` 选择。
 
-Unix 上传 `--version <version>`，Windows 上传 `-Version <version>` 以固定标签。
-Unix 安装于 `$XDG_DATA_HOME/a3s-use`（或 `$HOME/.local/share/a3s-use`），并从 `$HOME/.local/bin` 链接。
-Windows 使用 `%LOCALAPPDATA%\A3S\Use`，在 `%LOCALAPPDATA%\A3S\bin` 下创建 owned command shim，并将该 bin 目录加入用户 `PATH`，除非设置 `-NoPathUpdate`。
-托管 launcher 绑定打包的 OCR 模型、OCR Skills 与 Browser Skills，同时保留显式环境覆盖。
-重装相同版本会重新验证完整已安装树。
-缺少 Cosign、无效 Sigstore 证据、checksum 不匹配、被篡改的现有 release、不安全路径、link/reparse point、并发安装程序或 unmanaged command 冲突会在不改变 active command 的情况下失败。
-verified checksum manifest 与 Sigstore bundle 保留在不可变版本目录中。
-参见[已验证发布安装](docs/release-installation.md)了解信任边界与自定义路径选项。
+在 Unix 上传递 `--version <version>` 或在 Windows 上传递 `-Version <version>` 来固定
+标签。 Unix 安装在 `$XDG_DATA_HOME/a3s-use` 下（或
+`$HOME/.local/share/a3s-use`）和来自`$HOME/.local/bin`的链接。 Windows 使用
+`%LOCALAPPDATA%\A3S\Use`，在下创建一个拥有的命令垫片
+`%LOCALAPPDATA%\A3S\bin`，并将该 bin 目录添加到用户 `PATH` 除非
+`-NoPathUpdate` 已设置。托管启动器绑定打包的 OCR 模型，
+OCR 技能和浏览器技能，同时保留显式环境
+覆盖。重新安装相同版本会重新验证完整安装的内容
+树。缺少 Cosign、无效的 Sigstore 证据、校验和不匹配、被篡改
+现有版本、不安全路径、链接/重新分析点、并发安装程序或
+在不更改活动命令的情况下，非托管命令冲突会失败。的
+已验证的校验和清单和 Sigstore 捆绑包保留在不可变的中
+版本目录。参见
+[已验证发布安装](docs/release-installation.md)为了信任
+边界和自定义路径选项。
 
-带标签 release workflow 设计为发布确定性序列化归档、每平台一份 SPDX JSON SBOM、GitHub OIDC build-provenance 与 SBOM attestations，以及 `checksums.txt` 的 keyless Sigstore bundle。
-它固定每个 Action 以及 Rust、Python、Syft 与 Cosign 版本，从标签 commit 派生归档时间戳，并在发布前验证其 checksum 签名。
-安装程序 fail closed，除非 Cosign 在下载归档前针对相同标签身份认证该 bundle。
-对每个目标，第二个无编译 artifact 缓存的 clean runner 重建所有 shipped 原生可执行文件，且必须在 deterministic `.reproducibility.json` 证据可被 attest、checksum、签名并发布到归档旁之前与主归档 byte-match。
+标记发布工作流程旨在发布确定性序列化的内容
+档案、每个平台一个 SPDX JSON SBOM、GitHub OIDC 构建来源和 SBOM
+证明，以及 `checksums.txt` 的无密钥 Sigstore 捆绑包。它固定每个
+Action 加上 Rust、Python、Syft 和 Cosign 版本，派生存档
+标签提交的时间戳，并在之前验证其校验和签名
+出版。除非 Cosign 进行身份验证，否则安装程序将无法关闭
+在下载存档之前，根据确切的标签身份进行捆绑。对于
+每个目标，第二个干净的运行器没有编译的工件缓存重建
+所有附带的本机可执行文件，并且必须在之前与主存档进行字节匹配
+确定性`.reproducibility.json`证据可以被证明、校验和，
+签署并在档案旁边公布。
 
-`v0.3.7` Rust 兼容性 release 在携带 path-free Capability Gateway descriptor/catalog 适配器的同时，
-保留 post-`v0.3.3` 的 atomic-snapshot-lease、shared manager、Runtime service rebinding 与 standard MCP manager 契约。
-Complete snapshot 通过 clean-target staging、activation 与 crash replay 携带有界、规范的 Runtime plan archive；
-artifact reachability 保留 committed plan 引用的 blob。
-它将 facade 的精确 `a3s-flow 1.1.0` registry 依赖与 `a3s-code-core 8.0.3` 对齐，并发布 `a3s-use-core 0.2.6`、`a3s-use-extension 0.3.7` 与 `a3s-use 0.3.7`。
-facade 继续使用与 A3S Search 相同的 released Browser 0.3.2 provider，因此 packaged consumer 可解析一个 nominal Browser/Core/Flow 能力图。
-这是兼容性 release，不改变开发预览状态。
-Gateway 适配器在 lifecycle lease/drain、authentication、CLI wiring 与 independent-client qualification 完成前仍是 contract-level increment。
+`v0.3.7` Rust 兼容性版本保留了后`v0.3.3`
+原子快照租赁、共享管理器、运行时服务重新绑定和标准
+MCP管理器在携带无路径能力网关的同时签订合同
+描述符/目录适配器。完整的快照具有有界的、规范的
+通过干净目标暂存、激活和崩溃进行运行时计划存档
+重播；工件可达性保留了已提交计划引用的 blob。它
+将外观的精确 `a3s-flow 1.1.0` 注册表依赖项与
+`a3s-code-core 8.0.3` 并发布`a3s-use-core 0.2.6`，
+`a3s-use-extension 0.3.7`和`a3s-use 0.3.7`。立面继续沿用
+与 A3S 搜索相同发布的 Browser 0.3.2 提供程序，因此打包的消费者可以
+解析一个名义上的浏览器/核心/流程能力图。这是一个兼容性
+发布并且不会改变开发预览状态。网关
+适配器保持合同级增量，直到生命周期租用/耗尽，
+身份验证、CLI 连接和独立客户端资格已完成。
 
-带标签 `v0.3.2` workflow 在五个目标中的四个上暴露原生 linker 元数据漂移，因此未创建 GitHub Release。
-未发布的[qualification run 33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660) 冻结 `main` commit `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd`，
-并通过完整五平台归档、isolated-install path scan、SBOM 与 attestation，
-以及 cache-free byte-for-byte rebuild 矩阵；
-它仍是历史证据，从不发布资产。
-较早的 `v0.3.5` 发布尝试因 public `a3s-use-core` crate 仍为 `0.2.4` 而未创建 GitHub Release。
-Release workflow [33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857) 随后从精确 `main` commit `54758910f2f4ad9498137410e0a2207d412e99a1` 构建 tag `v0.3.6`，
-通过全部 primary 与 independent 五目标 job，
-并发布开发预览 [v0.3.6 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6) 及 `a3s-use-core 0.2.5`、`a3s-use-extension 0.3.6` 与 `a3s-use 0.3.6` 包。
-Release workflow [33687297386](https://github.com/A3S-Lab/Use/actions/runs/33687297386) 随后从精确 `main` commit `48a0b76f8a4a87a11d16627c7bd7567920852508` 构建 tag `v0.3.7`，
-通过全部 primary 与 independent 五目标 job，
-并发布开发预览 [v0.3.7 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.7) 及 `a3s-use-core 0.2.6`、`a3s-use-extension 0.3.7` 与 `a3s-use 0.3.7` 包。
-Release workflow [33720485826](https://github.com/A3S-Lab/Use/actions/runs/33720485826) 随后从精确 `main` commit `6d3a7baf32ce998a2e487c40fbf78b4a6cda2579` 构建 tag `v0.3.8`，
-通过完整 validation、五目标 primary build 与 independent cache-free rebuild 门，
-并发布开发预览 [v0.3.8 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.8) 及 `a3s-use-core 0.2.7`、`a3s-use-extension 0.3.8` 与 `a3s-use 0.3.8` 包。
-Release workflow [33756618837](https://github.com/A3S-Lab/Use/actions/runs/33756618837) 随后从精确 `main` commit `a5f3cc40bfb0a1021ca150d2ce4295409b74d220` 构建 tag `v0.3.9`，
-通过完整 validation、五目标 primary build 与五 independent cache-free rebuild，
-并在 [v0.3.9 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.9) 发布 19 个 verified release 资产，
-包括归档、安装程序、checksums/Sigstore、SBOM 与 reproducibility 证据，
-以及 `a3s-use-core 0.2.7`、`a3s-use-extension 0.3.9` 与 `a3s-use 0.3.9` 包。
-Release workflow [33791616307](https://github.com/A3S-Lab/Use/actions/runs/33791616307) 随后从精确 `main` commit `c4c80a223bfff3698ca4b4598e7175c6e3303239` 构建 tag `v0.3.10`，
-通过完整 validation、五目标 primary build 与五 independent cache-free rebuild，
-并在 [v0.3.10 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.10) 发布 19 个 verified release 资产，
-包括归档、安装程序、checksums/Sigstore、SBOM 与 reproducibility 证据，
-以及 `a3s-use-core 0.2.8`、`a3s-use-extension 0.3.10` 与 `a3s-use 0.3.10` 包。
-Release workflow [33830280138](https://github.com/A3S-Lab/Use/actions/runs/33830280138) 随后从精确 `main` commit `c25028ae0245ba1d28f7e2837e2a87f7e9f6fe40` 构建 tag `v0.3.11`，
-通过 validation、五目标 primary build 与五 independent cache-free rebuild，
-并在 [v0.3.11 Release](https://github.com/A3S-Lab/Use/releases/tag/v0.3.11) 发布 19 个 verified release 资产，
-包括归档、安装程序、checksums/Sigstore、SBOM 与 reproducibility 证据，
-以及 `a3s-use-core 0.2.9`、`a3s-use-extension 0.3.11` 与 `a3s-use 0.3.11` 包。
-外部运营的全归档 witness、GitHub Release 之外的证据保留，以及剩余产品门仍开放，因此不改变上述预览状态。
-操作者还可按照[已验证发布安装](docs/release-installation.md#additional-independent-verification)验证成功的 GitHub attestations。
+标记的`v0.3.2`工作流程暴露了四个上的本机链接器元数据漂移
+五个目标，因此没有创建 GitHub 版本。非出版类
+【资质运行33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660)
+冻结 `main` 提交 `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd` 并通过
+完整的五平台存档、独立安装路径扫描、SBOM 和
+证明和无缓存的逐字节重建矩阵；它仍然是历史的
+证据并且从不公布资产。早期的 `v0.3.5` 发布尝试
+没有创建 GitHub 版本，因为公共 `a3s-use-core` 箱子已
+还是`0.2.4`。发布工作流程
+[33675697857](https://github.com/A3S-Lab/Use/actions/runs/33675697857)然后构建
+标签 `v0.3.6` 来自确切的 `main` 提交
+`54758910f2f4ad9498137410e0a2207d412e99a1`，通过了所有初级和独立
+五目标工作，并发布发展预览
+[v0.3.6 发布](https://github.com/A3S-Lab/Use/releases/tag/v0.3.6)
+`a3s-use-core 0.2.5`、`a3s-use-extension 0.3.6` 和 `a3s-use 0.3.6` 封装。
+发布工作流程
+[33687297386](https://github.com/A3S-Lab/Use/actions/runs/33687297386)然后构建
+标签 `v0.3.7` 来自确切的 `main` 提交
+`48a0b76f8a4a87a11d16627c7bd7567920852508`，通过了所有初级和独立
+五目标工作，并发布发展预览
+[v0.3.7 发布](https://github.com/A3S-Lab/Use/releases/tag/v0.3.7)
+`a3s-use-core 0.2.6`、`a3s-use-extension 0.3.7` 和 `a3s-use 0.3.7` 封装。
+发布工作流程
+[33720485826](https://github.com/A3S-Lab/Use/actions/runs/33720485826)然后构建
+标签 `v0.3.8` 来自确切的 `main` 提交
+`6d3a7baf32ce998a2e487c40fbf78b4a6cda2579`，通过完整验证，
+五目标主要构建和独立的无缓存重建门，以及
+发布了开发预览
+[v0.3.8 发布](https://github.com/A3S-Lab/Use/releases/tag/v0.3.8)
+`a3s-use-core 0.2.7`、`a3s-use-extension 0.3.8` 和 `a3s-use 0.3.8` 封装。
+发布工作流程
+[33756618837](https://github.com/A3S-Lab/Use/actions/runs/33756618837)然后构建
+标签 `v0.3.9` 来自确切的 `main` 提交
+`a5f3cc40bfb0a1021ca150d2ce4295409b74d220`，通过完整验证，五个目标主要构建，以及五个独立的无缓存重建，以及
+在 中发布了 19 个经过验证的发布资产
+[v0.3.9发布](https://github.com/A3S-Lab/Use/releases/tag/v0.3.9)，包括
+档案、安装程序、校验和/Sigstore、SBOM 和再现性证据，
+以及 `a3s-use-core 0.2.7`、`a3s-use-extension 0.3.9` 和 `a3s-use 0.3.9`
+包。
+发布工作流程
+[33791616307](https://github.com/A3S-Lab/Use/actions/runs/33791616307)然后构建
+标签 `v0.3.10` 来自确切的 `main` 提交
+`c4c80a223bfff3698ca4b4598e7175c6e3303239`，通过完整验证，
+五个目标主要构建，以及五个独立的无缓存重建，以及
+在 中发布了 19 个经过验证的发布资产
+[v0.3.10 发布](https://github.com/A3S-Lab/Use/releases/tag/v0.3.10)，包括
+档案、安装程序、校验和/Sigstore、SBOM 和再现性证据，
+以及 `a3s-use-core 0.2.8`、`a3s-use-extension 0.3.10` 和 `a3s-use 0.3.10`
+包。
+发布工作流程
+[33830280138](https://github.com/A3S-Lab/Use/actions/runs/33830280138)然后构建
+标签 `v0.3.11` 来自确切的 `main` 提交
+`c25028ae0245ba1d28f7e2837e2a87f7e9f6fe40`，已通过验证，五目标
+主要构建，以及五个独立的无缓存重建，并发布了 19
+已验证的释放资产
+[v0.3.11发布](https://github.com/A3S-Lab/Use/releases/tag/v0.3.11)，包括
+档案、安装程序、校验和/Sigstore、SBOM 和再现性证据，
+以及 `a3s-use-core 0.2.9`、`a3s-use-extension 0.3.11` 和 `a3s-use 0.3.11`
+包。
+外部操作的全档案证人，证据保留在 GitHub 之外
+发布，其余产品大门仍然打开，所以这不会
+更改上面的预览状态。操作员还可以验证是否成功
+GitHub 认证遵循 [已验证的版本安装](docs/release-installation.md#additional-independent-verification)。
 
-### 构建与验证
+### 构建并验证
 
-需要 Rust 1.85 或更新版本。在产品 release 门完成前，从源码构建：
+需要 Rust 1.85 或更高版本。直到产品发布门完成，
+从源代码构建：
 
 ```bash
 git clone https://github.com/A3S-Lab/Use.git
@@ -232,7 +372,8 @@ cargo build --workspace --bins --locked
   --scope-kind user --scope-id user/alice --json
 ```
 
-Rust 嵌入宿主可将同一权威 Extension Registry 绑定到 typed capability bridge，并固定一个完整已发布代际：
+Rust 嵌入主机可以将相同的权威扩展注册表绑定到
+类型化的能力桥和引脚一完整的发布一代：
 
 ```rust
 use a3s_use::capability_registry::CapabilityRegistry;
@@ -248,34 +389,49 @@ let lease = capabilities
     ))?;
 ```
 
-游标绑定 Installation Snapshot 代际与摘要、能力修订、Registry 修订，以及排序后的精确包代际。
-Acquisition 按规范顺序获取每个 package-generation lease，并在持有完整 batch 后重新检查两个不可变权威。
-hidden、stale、mixed、contended 或 digest-mismatch 代际不返回 lease；
-没有不可变 lifecycle 证据的 enabled legacy package binding fail closed。
-不可 clone 的 RAII lease 为 `Send + Sync`，因此 A3S Code 可在 Run scope 中保留它，而 Use lifecycle retirement 等待 accepted work drain。
-Drop 仅释放同步 generation lock；
-异步 cleanup 仍由 Use lifecycle coordinator 显式拥有。
+光标绑定安装快照生成和摘要功能
+修订版、注册表修订版和排序的确切包生成。收购
+按规范顺序获取每个包生成租约并重新检查两者
+持有完整批次后不可变的权限。
+隐藏的、陈旧的、混合的、竞争的或消化不匹配的一代不会返回任何结果。
+租赁；没有不可变生命周期证据的已启用旧包绑定失败
+关闭。非克隆 RAII 租约为`Send + Sync`，因此 A3S Code 可以将其保留在
+a 运行范围，同时使用生命周期退休等待已接受的工作耗尽。
+删除它只会释放同步生成锁；异步清理
+仍然由 Use 生命周期协调器明确拥有。
 
-Capability watch 现在订阅 atomic Extension Registry 发布，而非在固定间隔重建完整投影。
-优先使用原生 filesystem backend，同时运行有界 target-metadata probe 以捕获平台 backend 可能 coalesce 或省略的 atomic replacement；
-当 native registration 不可用时使用 metadata-only polling backend。
-事件经 target 过滤并 coalesce 为单一有界信号；
-validated `registry.json` 仍是权威。
-`CapabilityRegistry` 在 subscription setup、真实 generation advance 之后，以及 timeout 时各重建并 hash 完整投影一次，以关闭最终 race。
-这从正常 wait 路径移除了重复 package scan 与 asset hashing，而不创建第二个 mutable generation cursor。
-在 lifecycle Capability Index 中持久化完整面向 agent 的 descriptor catalog 仍是单独的产品门。
+功能监视现在订阅原子扩展注册表出版物
+而不是按照固定的时间间隔重建完整的投影。当地人
+首选文件系统后端，同时运行有界目标元数据探测器
+与它一起捕获平台后端可以合并的原子替换
+或省略；当本机注册时，使用仅元数据轮询后端
+不可用。事件经过目标过滤并合并为一个有界信号；
+经过验证的`registry.json`仍然是权威。 `CapabilityRegistry`
+在真实的订阅设置后重建并散列完整的投影
+一代人前进，并一度在暂停时结束了最后的比赛。这删除了
+从正常等待路径重复包扫描和资产散列，无需
+创建第二个可变生成游标。
+在生命周期中保留完整的面向代理的描述符目录
+能力指数仍然是一个单独的产品门。
 
-`capability snapshot --json` schema v5 仍是外层 CLI envelope。
-它暴露 Installation Snapshot 代际与摘要，而完整 in-process cursor 故意不追加到该独立发布的 schema。
-Managed-MCP、Skill identity 与 UI dependency 字段是显式的。
-每个 extension MCP 表面保留其规范 ID 与 multiplicity、collision-resistant host server name、activation、package/manifest/generation identity、经审查 file-evidence digest，
-以及一个 transport-specific launch projection。
-Stdio projection 仅包含 package-relative executable 与有界 arguments。
-Streamable HTTP projection 仅包含 package-relative release、opaque endpoint reference/path，以及精确 Runtime/Gateway readiness digest；
-resolved URL 与 credentials 从不进入 snapshot。
-每个 UI 贡献携带 `a3s.use.ui-dependency-evidence.v1`，以便空 dependency list 可与未发布 dependency evidence 的旧宿主区分。
+`capability snapshot --json` 模式 v5 仍然是 CLI 的外层。它
+公开安装快照的生成和摘要，同时完整的
+进程内游标故意不附加到独立释放的游标上
+架构。托管 MCP、技能身份和 UI
+依赖字段是显式的。每个扩展 MCP 表面都保持其规范
+ID和多重性、抗冲突主机服务器名称、激活、
+包/清单/生成身份、经过审查的文件证据摘要以及一个
+特定于运输的发射预测。 Stdio 投影仅包含
+包相关的可执行文件和有界参数。可流式传输的 HTTP 投影
+仅包含包相关版本、不透明端点引用/路径，以及
+准确的运行时/网关准备情况摘要；解析的 URL 和凭据永远不会
+输入快照。每一个 UI 贡献都承载着
+`a3s.use.ui-dependency-evidence.v1` 所以空的依赖列表是可区分的
+来自未发布依赖性证据的旧主机。
 
-独立 CLI 当前暴露 package-graph lifecycle、diagnostics、capability observation、内置 Browser/OCR 路由、cited OKF search，以及 exact-scope Knowledge storage 操作：
+独立的 CLI 目前公开了包图生命周期、诊断、
+能力观察、内置浏览器/OCR 路径、引用 OKF 搜索以及
+精确范围知识存储操作：
 
 ```text
 a3s-use install <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--registry-name <name>] [--offline] [--json]
@@ -321,261 +477,362 @@ a3s-use capability snapshot|watch --scope-kind <user|workspace> --scope-id <id> 
 a3s-use mcp serve manager --scope-kind <user|workspace> --scope-id <id> [--offline]
 ```
 
-`mcp serve manager` 在 stdout 上 speak standard MCP，
-因此不得与 `--json` 组合。
-`manager`、`package-manager` 与 `use/package-manager` 目标名称等价。
-它组合 CLI 与 TUI 使用的同一 typed `PluginManagerService`；
-它不创建第二个 catalog、plan、confirmation 或 mutation 路径。
+`mcp serve manager` 在标准输出上使用标准 MCP，因此不得
+与`--json`结合。 `manager`、`package-manager` 和
+`use/package-manager` 目标名称是等效的。它由相同类型的
+CLI 和 TUI 使用的`PluginManagerService`；它不会创建第二个
+目录、计划、确认或突变路径。
 
-独立 Registry-backed `install`、`upgrade` 与 `uninstall` 现在通过共享 `PluginManagerService` 规划并 apply。
-其现有 component 与 `packageGraph` 字段仍可用，而 JSON 输出还包含 `pluginManager` 对象，内含精确 operation ID、plan digest、经审查 Host plan result 与 terminal Host apply result。
-重复 unchanged operation 返回 durable replay result。
-Offline planning 与 recovery 保持 zero-network，supplied package-lock digest 在任何 target download 之前被拒绝。
-兼容性命令仅 auto-apply 无权限的 `Allow` 计划。
-一对一 `plugin` 命令暴露与 manager toolset v5 相同的四个 read 操作、五个 read-only planning 操作、digest-only apply、exact operation observation/watch，以及显式 cancellation 边界。
-每个成功 JSON `data` 值是精确 typed service result，包括完整 Host plan、package lock、source 与 permission evidence、operation ID、plan digest、confirmation decision 与 terminal apply result。
-Planning 从不 mutate package state。
-`plugin apply-plan` 仅重新打开精确 durable `(operation ID, plan digest)` 对并要求 `--yes`；
-普通 CLI 调用不隐含 user confirmation，`Ask` plan 仅在该显式边界获得 confirmation。
-Exact apply 与 replay 使用 verified planning cache 而无需 Registry 访问。
-A3S Code CLI、TUI `/packages` 与 standard manager-v5 MCP 现在组合同一 service，而无 presentation-owned plan、confirmation 或 mutation 路径。
-每个独立 manager 命令要求显式 User 或 Workspace 安装。
-所选 `InstallationId` 拥有 manager 与全部 mutable state；
-相同 textual ID 的 User 与 Workspace 安装仍是 distinct authority domain。
+独立注册表支持的 `install`、`upgrade` 和 `uninstall` 现在正在计划和
+通过共享`PluginManagerService`申请。他们现有的组件和
+`packageGraph` 字段仍然可用，而 JSON 输出还包括
+`pluginManager` 包含确切操作 ID、计划摘要、已审核的对象
+主机计划结果，终端主机申请结果。重复不变
+操作返回持久重放结果。离线规划和恢复停留
+零网络，并且提供的包锁摘要在任何目标之前被拒绝
+下载。兼容性命令仅自动应用，无需许可 `Allow`
+计划。一对一的`plugin`命令公开相同的四个读取操作，
+五个只读计划操作、仅摘要应用、精确操作
+观察/观察，以及明确的取消边界作为管理器工具集 v5。
+每个成功的 JSON `data` 值都是精确类型化的服务结果，
+包括完整的主机计划、包锁、来源和权限证据，
+操作ID、计划摘要、确认决策、终端应用结果。
+规划永远不会改变包状态。 `plugin apply-plan` 仅重新打开确切的
+耐用的 `(operation ID, plan digest)` 配对，需要 `--yes`；一个普通的 CLI
+呼叫并不意味着用户确认，`Ask`计划收到确认
+仅在该明确的边界处。精确应用和重播使用经过验证的计划
+缓存无需注册表访问。 A3S 代码 CLI、TUI `/packages` 和标准
+manager-v5 MCP 现在可以在没有演示拥有的计划的情况下组成相同的服务，确认，或突变路径。每个独立管理器命令都需要一个
+显式用户或工作区安装。所选的`InstallationId`拥有
+管理器和所有可变状态；用户和工作区安装具有相同的
+文本 ID 保持不同的权限域。
 
-Runtime、Flow、Knowledge 与 lifecycle evidence store 在构造时捕获该精确 `InstallationId`。
-另一 installation 的 receipt、query、recovery item 或 lifecycle intent 在 Use 派生 path、获取 store lock、创建 database 或写入 evidence 之前以 `use.installation.identity_mismatch` 失败。
-Separate installation 使用 separate store，而不可变 Registry 与 artifact 输入仍可共享。
+运行时、流程、知识和生命周期证据存储准确捕捉到这一点
+`InstallationId` 当它们被构造时。收据、查询、恢复项目、
+或另一个安装的生命周期意图失败
+`use.installation.identity_mismatch` 在Use导出路径之前，获取一个
+存储锁、创建数据库或写入证据。单独安装使用
+独立的存储，而不可变的注册表和工件输入仍然可共享。
 
-Scoped layout 与 global Artifact Store 是有意的预发布 clean cutover，而非 migration。
-若报告 `use.installation.legacy_state_unsupported` 或 `use.artifact_store.legacy_state_unsupported`，停止旧 Use 宿主，保留先前 root 供 incident review，并仅移除已证明的 legacy 条目后再用显式 scope flag 重装。
-这些条目包括旧 global `data/extensions`、installation-scoped `data/installations/<kind>/<key>/extensions`，
-以及旧 state-level `extensions`、`registry.json`、generation、Grant、binding、lifecycle、Knowledge、graph、enablement、Host Manager、route-lock/generation-lease 与 mutation-lock 路径。
-保留 global `registries.acl`、Registry trust root、TUF metadata/targets 与 `data/artifacts`；
-它们是 installation 共享的输入。
+范围布局和全局 Artifact Store 是故意预发布干净的
+切换，而不是迁移。如果 `use.installation.legacy_state_unsupported` 或
+`use.artifact_store.legacy_state_unsupported` 被报告，停止旧的使用主机，
+保留事件审查的先前根源，并仅删除已证明的遗留问题
+使用显式范围标志重新安装之前的条目。这些条目包括
+旧的全局`data/extensions`，安装范围
+`data/installations/<kind>/<key>/extensions`，以及旧的国家级`extensions`，
+`registry.json`，生成，授予，绑定，生命周期，知识，图，
+支持、主机管理器、路由锁定/生成租赁和突变锁定路径。保护全球
+`registries.acl`，注册表信任根，TUF 元数据/目标，以及
+`data/artifacts`；它们是装置共享的输入。
 
-展开内容位于 `data/artifacts/expanded-packages/sha256/<prefix>/<digest>/content`。
-不同 installation 可指向同一 exact tree，同时保留独立 receipt、generation、enablement、Grant、binding 与 lease。
-Use 在 publication 与 use 前 rehash 内容。
-Global byte 仅通过显式 confirmed Artifact Store garbage-collection plan 删除；
-source cleanup 与 scoped uninstall 仍从不删除它们。
-Cross-process shared/exclusive boundary 现在防止 future inventory 与 collection 与 raw-target observation、lifecycle receipt、applying lifecycle journal、installation snapshot 或 pending graph operation 竞争。
-Source observation 与 resumable partial 仍为 Registry-source scoped；
-其 verified byte 使用 global Blob tier。
-库在 exact exclusive store guard 下暴露有界、确定性、path-free 物理 inventory。
-它分别报告 canonical content 与 abandoned staging，并在 unknown layout、link/reparse point、special file 或 traversal limit 上 fail closed。
-Separate path-free Registry reference inventory 在同一 guard 下从所有保留 source datastore（包括 replaced source）派生每个 canonical blob observation。
-Global path-free `a3s.use.artifact-reference-inventory.v1` view 现在将这些 observation 与每个 installation snapshot、current 与 retained receipt、non-cancelled package-graph operation、applying 或 rolling-back lifecycle journal，
-以及 immutable Runtime plan payload 聚合。
-Runtime plan record 在持有 installation maintenance 与 plan-store lock 时解码，因此其引用的 Blob artifact 在 cleanup 期间仍 reachable。
-通过 `ExtensionPaths`-bound plan store 的生产 publication 在该 installation fence 之前获取 global reference admission；
-为 isolated offline/test state 创建的 store 不携带 global Artifact Store boundary。
-它验证 installation identity 与 source layout，拒绝 conflicting physical expectation，并在 content missing 时仍 retain reference。
-Joined `a3s.use.artifact-reachability-inventory.v1` view 在一次 guarded collection pass 中捕获该 logical evidence 与 physical inventory。
-New publication 被冻结；
-reference retirement 只能留下 conservative extra owner。
-每个 artifact 一行，保持 owner、physical measurement、expectation status 与 checked global storage usage 分离。
+扩展内容位于
+`data/artifacts/expanded-packages/sha256/<prefix>/<digest>/content`。不同
+安装可能会指向同一棵树，同时保留独立的
+收据、生成、启用、赠款、绑定和租赁。使用重新哈希
+发布和使用之前的内容。全局字节只能通过
+明确确认的 Artifact Store 垃圾收集计划；源头清理和
+范围卸载仍然不会删除它们。一个
+跨流程共享/独占边界现在可以防止未来的库存和
+来自赛车原始目标观察、生命周期收据的收集，
+应用生命周期日志、安装快照或待处理图表
+操作。源观察和可恢复部分仍然是注册表源
+范围；它们的验证字节使用全局 Blob 层。该库公开了一个
+精确排他性下有界、确定性、无路径的物理库存
+店员。它分别报告规范内容和放弃的分段，
+在未知布局、链接/重分析点、特殊文件或情况下关闭失败
+遍历限制。派生出一个单独的无路径注册表参考清单
+来自所有保留的源数据存储的每个规范 blob 观察，
+包括更换的来源，在同一守卫之下。全局无路径
+`a3s.use.artifact-reference-inventory.v1` 视图现在聚合了这些观察结果
+每个安装快照，当前和保留的收据，未取消
+包图操作，应用或回滚生命周期日志，以及
+不可变的运行时计划有效负载。运行时计划记录在保存时被解码安装维护和计划存储锁，因此他们引用了 Blob
+清理过程中工件仍可访问。生产出版物通过
+`ExtensionPaths`绑定计划商店之前获得全球参考入场券
+安装围栏；为隔离离线/测试状态创建的商店不会
+具有全局 Artifact Store 边界。它验证安装身份并
+源布局，拒绝冲突的物理期望，并保留
+即使内容缺失，也可以参考。所加入的
+`a3s.use.artifact-reachability-inventory.v1` 视图捕获逻辑证据
+以及一张受保护的收集通行证中的实物库存。新出版物是
+冷冻；参考退休只能留下保守的额外业主。一排
+每个工件保留所有者、物理测量、期望状态和
+检查全局存储使用情况不同。
 
-Artifact Store 现在在 `data/artifacts/storage-quota.acl` 拥有可选 durable hard-quota policy。
-`ArtifactStore::storage_quota`、`set_storage_quota` 与 `clear_storage_quota` 通过 revision compare-and-swap 暴露 canonical ACL state。
-Policy 约束 logical regular-file length 与 digest container，而非 allocated filesystem block。
-Publication 总是先进入 reference admission，再进入 global storage boundary，最后进入 exact digest lock。
-无 policy 时 publisher 共享 storage boundary。
-有 policy 时，最终 Blob 或 expanded-package publication 独占持有它，扫描 current content 加 abandoned staging，project exact prepared write，并在 staging cleanup 与 atomic commit 期间 retain lock。
-因此 distinct process 不能同时 spend 同一 remaining capacity。
-若 operator 将 policy 收紧到低于 current usage，exact replay 与不 worsen 任一 exceeded dimension 的 cleanup 仍可能。
-Malformed policy 在不 suppress physical inventory evidence 的情况下 fail closed write。
+Artifact Store 现在拥有可选的持久硬配额政策：
+`data/artifacts/storage-quota.acl`。 `ArtifactStore::storage_quota`,
+`set_storage_quota`和`clear_storage_quota`通过公开规范ACL状态
+修订比较和交换。该策略限制逻辑常规文件长度和
+摘要容器，而不是分配的文件系统块。出版物总是进入
+首先是参考准入，然后是全局存储边界，然后是精确的
+摘要锁。在没有策略的情况下，发布者共享存储边界。与一个
+政策，最终的 Blob 或扩展包出版物独家拥有它，
+扫描当前内容加上废弃的暂存，项目准确准备的写入，
+并通过暂存清理和原子提交保留锁。独特的
+因此，进程不能同时使用相同的剩余容量。如果一个
+运营商收紧了低于当前使用情况的策略，精确重播和清理
+不恶化任何超过尺寸仍然是可能的。畸形的政策
+在不抑制物理库存证据的情况下关闭写入失败。
 
-`ArtifactStore::audit_digests` 现在在 exact store-bound collection guard 下执行显式 full-store integrity pass。
-其 deterministic、path-free `a3s.use.artifact-store-digest-audit.v1` report 用 raw SHA-256 顺序 rehash 完整 raw Blob，
-用 admission 时相同的 canonical package fingerprint rehash expanded package。
-它报告 `verified`、`mismatch` 与未 hash 的 `incomplete` outcome，以及 checked byte/file total。
-Pass 在返回前重复 bounded physical inventory，因此 admitted publication 在整个 operation 期间被冻结，observable layout 或 measurement drift fail closed。
-Digest mismatch 仍是 evidence；
-audit 从不 remove、overwrite、quarantine 或 rehydrate content。
+`ArtifactStore::audit_digests` 现在执行显式全存储完整性
+通过确切的商店收集警卫。其确定性，
+无路径`a3s.use.artifact-store-digest-audit.v1`报告顺序重新散列
+使用原始 SHA-256 完成原始 Blob 并使用相同的扩展包
+入院时使用的规范包装指纹。它报告`verified`，
+`mismatch`，以及未散列的 `incomplete` 结果加上检查的字节/文件总数。
+通行证在返回之前重复了有限的实物库存，因此承认
+出版物被冻结以获取完整的操作和可观察的布局，或者
+测量漂移失败关闭。摘要不匹配仍然是证据；审计
+绝不删除、覆盖、隔离或重新水化内容。
 
-Effect owner 现在有 path-free verified read boundary，而非将 `expanded_package_path` 视为 authority。
-`ArtifactStore::acquire_verified_package` 接受一个 complete verified catalog record，
-以 shared mode 获取 global reachability 与 per-artifact mutation lock，
-拒绝 interrupted collection 与 logical quarantine，
-并 revalidate 完整 package fingerprint、manifest digest、exact byte/file count、manifest-to-catalog surface graph，
-以及每个 declared surface file。
-不可 clone 的 lease 仅暴露 catalog identity 与 parsed manifest；
-其 `Debug` 形式不含 local path。
-Manifest read 在 ACL parsing 前有界，missing lock 从不由 read 创建，`verify_unchanged` 重复完整 verification 以在 adapter 记录 success 前检测 uncoordinated local tampering。
+效果所有者现在拥有一个无路径的验证读取边界，而不是处理
+`expanded_package_path` 作为权限。 `ArtifactStore::acquire_verified_package`
+接受一份完整的经过验证的目录记录，获取全球可达性并
+每个工件的突变锁定在共享模式，拒绝中断的收集和
+逻辑隔离，并重新验证完整的包指纹、清单
+摘要、准确的字节/文件计数、清单到目录表面图以及每个
+声明的表面文件。不可克隆的租约仅公开目录身份和
+解析后的清单；它的 `Debug` 形式不包含本地路径。清单读取是
+在 ACL 解析之前有界，丢失的锁永远不会由读取创建，并且
+`verify_unchanged` 重复完整验证以检测不协调
+适配器记录成功之前的本地篡改。
 
-Logical corruption quarantine 是单独的 exact-plan operation。
-`ArtifactStore::plan_quarantine` 仅接受同一 exact collection guard 下 fresh audit 的一个 complete mismatch，并返回 canonical、path-free evidence。
-`apply_quarantine` re-audit byte，要求 exact reviewed plan digest，并 atomically publish bounded canonical `quarantine.json` record，而不 move 或 overwrite `content`。
-同一 record 的 replay 是 idempotent。
-Failed recovery 保留 bounded temporary fail-closed sentinel，因此 ordinary access 在 retry 之间不 reopen。
-Physical inventory 验证 active 与 interrupted quarantine metadata，但将其排除在 content 与 staging quota measurement 之外。
-New Blob open、observation 与 commit，以及 expanded-package validation 与 commit，在 marker 存在后 fail closed。
-该 marker 保留 forensic byte 并 block ordinary future use；
-它不 revoke already-open handle、rewrite admitted generation、authorize rehydration 或 authorize deletion。
+逻辑损坏隔离是一项单独的精确计划操作。
+`ArtifactStore::plan_quarantine` 只接受新的一个完全不匹配
+在相同的确切收集守卫下进行审计并返回规范的、无路径的
+证据。 `apply_quarantine`重新审核字节，要求审核准确
+计划摘要，并原子地发布有界规范`quarantine.json`
+记录而不移动或覆盖`content`。同一记录的重播是
+幂等的。失败的恢复保留其有界的临时故障关闭哨兵，
+因此普通访问不会在重试之间重新打开。实物库存
+验证活动和中断的隔离元数据，但将其排除在外
+内容和分期配额测量。新斑点
+打开、观察和提交以及扩展包验证和提交
+一旦标记存在，关闭失败。该标记保留取证字节和
+阻止未来的普通使用；它不会撤销已经打开的句柄，而是重写
+承认生成、授权再水化或授权删除。
 
-Verified rehydration 是由 `ArtifactStoreMaintenance` 协调的 separate reference-aware mutation。
-Planning 与每个 nonterminal apply 获取 exact global collection guard 并 rescan 每个 Registry observation、installation snapshot、current 或 retained receipt、pending package graph 与 nonterminal lifecycle operation；
-target 在 replacement 前必须有 zero durable reference。
-Independently supplied candidate 必须位于 Artifact Store 之外，并匹配 expected Blob SHA-256 或 canonical expanded-package fingerprint。
-Planning 仅 emit path-free evidence。
-Initial apply 要求其 exact canonical digest，
-reverify candidate 与 quarantine binding，
-durably publish prepared evidence，
-并在 stage 与 switch canonical content 期间保持 ordinary access fail-closed。
-Matching completion record 打开 access。
-Exact terminal replay 是 read-only：它 validate completion、quarantine binding 与 canonical replacement，而不 reopen external candidate 或要求 later owner 再次 retire。
-Interrupted preparation 或 content switching 从 bounded state resume，moved 或 conflicting record fail closed，hard quota admission 计入 temporary recovery peak。
-Apply 消费 reviewed corrupt forensic byte；
-需要更长 evidence retention 的 operator 必须在 confirmation 前在 store 外 archive。
-Existing open handle 不被 revoke，但 no admitted package generation 可在 replacement 期间 reference target。
+验证的补水是一个单独的参考感知突变，由
+`ArtifactStoreMaintenance`。规划和每个非终结应用都获得
+精确的全球收集保护并重新扫描每个登记处观察，
+安装快照、当前或保留的收据、待处理的包图以及
+非终结生命周期操作；目标的持久引用必须为零
+更换前。独立提供的候选人必须居住在
+Artifact 存储并匹配预期的 Blob SHA-256 或规范扩展包
+指纹。规划仅发出无路径证据。初次申请需要其
+准确的规范摘要，重新验证候选者和隔离区绑定，
+持久地发布准备好的证据，并保持普通访问失败关闭
+同时它会暂存和切换规范内容。匹配的完成记录
+打开访问。精确的终端重放是只读的：它验证完成情况，
+隔离绑定和规范替换，无需重新打开外部
+候选人或要求后来的业主再次退休。准备工作中断或
+内容切换从有界状态恢复，移动或冲突的记录失败
+关闭，硬配额入场占暂时恢复高峰。
+应用消耗已审查的损坏取证字节；需要的运营商
+证据保留时间较长，必须在店外存档
+确认。现有开放句柄未撤销，但未承认包
+Generation 可能会在替换期间引用目标。
 
-Confirmed Artifact Store garbage collection 是由 `ArtifactStoreMaintenance` 协调的 separate reference-aware mutation。
-其 policy 是非空、有界、canonical allowlist，包含 exact `(kind, digest)` target；
-没有 timer、age threshold、quota-triggered sweep 或 implicit「all unreferenced」模式。
-Planning 持有 global collection guard，
-在每个 Registry、installation、receipt、snapshot 与 nonterminal operation 上证明 zero durable owner，
-并将 exact physical measurement 以及 ordinary、quarantined 或 completed-rehydration lifecycle evidence 绑定到 path-free plan。
-Apply 重复 zero-reference proof，且仅接受 reviewed canonical plan digest。
-在任何 namespace mutation 之前，它 publish durable global prepared record。
-每个 reviewed digest container 随后在其 shard 内 atomically rename 到 deterministic tombstone，并通过 bounded、no-link residual-tree check 移除。
-Prepared 或 temporary state 在 restart 前 block 新 reference admission，直到同一 plan resume。
-Durable completion record 使 exact replay read-only，因此 old confirmation 不能删除 later recreated 或 newly referenced 的 identical digest；
-每个 later plan 链接到 previous completion digest。
-Quarantine、rehydration、audit、quota pressure 与 physical unreachability 仅是 evidence，从不 independently authorize deletion。
+确认 Artifact Store 垃圾收集是单独的引用感知
+由`ArtifactStoreMaintenance`协调的突变。它的策略是非空的，
+精确 `(kind, digest)` 目标的有界、规范白名单；没有
+计时器、年龄阈值、配额触发的扫描或隐式“全部未引用”
+模式。规划掌控全球收藏卫士，证明零耐用所有者
+跨每个注册表、安装、接收、快照和非终端
+操作，并结合精确的物理测量加上普通的、隔离的、
+或将已完成的补液生命周期证据纳入无路径计划中。申请
+重复零引用证明并仅接受经过审查的规范计划
+消化。在任何命名空间突变之前，它会发布一个持久的全局准备好的
+记录。然后，每个经过审查的摘要容器都会在其内部自动重命名
+分片到确定性墓碑并通过有界的、无链接的方式删除
+残差树检查。准备好的或临时的状态会阻止新的引用
+重新启动后进入，直到恢复相同的计划。持久的完成
+记录使精确重播变为只读，因此旧的确认无法删除
+后来重新创建或新引用的相同摘要；每个以后的计划
+链接到先前的完成摘要。检疫、补液、审核、配额
+压力和身体无法到达只是证据，绝不是独立的
+授权删除。
 
-Joined quota assessment 仍仅是 evidence；
-它不 authorize deletion。
-Hard admission 故意 serialized，而非实现为 parallel durable reservation ledger。
-`complete` 仍仅是 physical publication state；
-explicit digest audit 产生 separate integrity result。
-Exact-plan logical quarantine 与 zero-reference verified rehydration 仍与 explicit confirmed garbage collection 分离；
-none 授予另一者的 authority。
+联合配额评估仅作为证据；它不授权
+删除。硬准入是故意序列化的，而不是实施为
+并行的持久预订分类账。 `complete`仍然只是一个物理的
+出版状态；显式摘要审计产生单独的完整性
+结果。精确计划逻辑隔离和零参考验证补液
+与明确确认的垃圾收集保持分离；没有人授予
+另一个人的权威。
 
-默认 Knowledge policy 将每个完整 User 或 Workspace scope 限制为 512 MiB receipt-accounted expanded content、256 retained projection、每 surface 32 generation 与 256 removal tombstone。
-Staging 原子检查整个 scope；
-receipt-owned removal 释放 quota、prune old tombstone，并 compact SQLite 及其 WAL。
-`knowledge usage --json` 报告 exact scope、current count、quota、allocated database byte 与 reclaimable byte。
-这些 standalone control 还 audit SQLite、receipt、scope、foreign-key 与 FTS consistency。
-Backup 写入一个 versioned、SHA-256-bound SQLite snapshot，而不 overwrite existing file；
-verification 离线 reopen 并 audit embedded database。
-`knowledge backup-retention` 在一个 owned directory 中 verify 每个 managed `*.a3s-okf-backup` candidate，isolate exact scope，并返回 oldest-first bounded plan。
-在提供 `--yes` 与 unchanged canonical `planDigest` 之前它 remove nothing，从不 remove 最后一个 verified scope backup，并将 partial deletion 报告为 outcome-unknown。
-Search-index repair 要求 `--yes`，并仅 rebuild 来自已 validated document 的 FTS row。
-它从不 rewrite package receipt、projection state 或 authorization evidence。
-Authority-bound restore 将 path-free plan review 与 digest-only confirmed apply 分离，
-verify 完整 Registry/package/lifecycle/Grant authority 与 exact-subset binding inventory，
-bind live main/WAL/SHM evidence，
-仅 restore missing binding file，
-preserve prior file，
-并在 process exit 后 resume six-state durable journal。
-Conflicting 或 newer binding evidence fail closed。
-`knowledge restore-status --json` 读取所选 installation 的 active marker 与 bounded path-free history，无需 backup path 或 plan digest；
-它报告 current phase、exact digest、retained directory count、unrecorded marker-handoff directory 与 remaining capacity，而不改变 restore 或 database evidence。
+默认知识策略将每个完整的用户或工作空间范围限制为
+512 MiB 的收据核算扩展内容、256 个保留预测、32 个
+每个表面代数，以及 256 个移除墓碑。分期检查整体
+原子范围；收据拥有的清除释放配额，修剪旧墓碑，以及
+压缩 SQLite 及其 WAL。 `knowledge usage --json` 报告确切的范围，
+当前计数、配额、分配的数据库字节和可回收字节。这些
+独立控件还审核 SQLite、收据、范围、外键和 FTS
+一致性。备份写入一个版本化、SHA-256 绑定的 SQLite 快照，无需
+覆盖现有文件；验证重新打开并审核嵌入的
+数据库离线。 `knowledge backup-retention` 验证每个托管
+`*.a3s-okf-backup` 候选者位于一个拥有的目录中，隔离确切的范围，
+并返回一个最旧优先的有界计划。它不会删除任何内容，直到 `--yes` 并且
+提供未更改的规范`planDigest`，永远不会删除最后一个
+验证范围备份，并将部分删除报告为结果未知。
+搜索索引修复需要 `--yes` 并且仅重建 FTS
+从已验证的文档派生的行。它从不重写包
+收据、预测状态或授权证据。权限绑定恢复
+将无路径计划审查与仅摘要确认申请分开，验证
+完整的注册表/包/生命周期/授予权限和精确子集绑定
+库存，绑定实时主/WAL/SHM 证据，仅恢复丢失的绑定文件，保留以前的文件，并在之后恢复六状态持久日志
+进程退出。冲突或较新的具有约束力的证据未能结案。 `知识
+Restore-status --json` 读取所选安装的活动标记并
+有界无路径历史，无
+备份路径或计划摘要；它报告当前阶段、准确摘要、保留
+目录计数、未记录的标记切换目录和剩余容量
+无需更改恢复或数据库证据。
 
-Backup 是 integrity-checked scope database snapshot，而非 signed trust artifact 或 whole-product restore。
-Standalone restore 仅可在 current set 是 backup 的 exact subset 且 Registry receipt、immutable package root、lifecycle journal 与 Grant 仍 exact 时 recreate binding file。
-它不能 recreate 那些 independent authority。
-更广泛的 authority recovery、clean-machine recovery、cross-platform operational drill 与 whole-product rollback-evidence retention 仍需要 procedure。
-每个 installation-scoped operation 要求显式 `--scope-kind` 与 `--scope-id`；
-CLI 从不猜测 current User 或 Workspace identity。
-参见 [OKF Knowledge 操作](docs/okf-knowledge-operations.md)。
+备份是经过完整性检查的范围数据库快照，而不是签名的信任
+工件或整个产品恢复。独立恢复可能会重新创建绑定
+仅当当前集是备份和注册表的精确子集时才文件
+收据、不可变的包根、生命周期日志和赠款仍然存在
+准确。它无法重建那些独立的权威。更广泛的权威
+恢复、清洁机器恢复、跨平台操作演练，以及
+整个产品的回滚证据保留仍然需要一个程序。
+每个安装范围的操作都需要显式的 `--scope-kind` 和
+`--scope-id`； CLI 永远不会猜测当前用户或工作空间身份。参见
+[OKF知识操作](docs/okf-knowledge-operations.md)。
 
-对于 quiescent whole-installation inventory，
-`state backup` 获取该 installation 的 exclusive maintenance fence，
-并 snapshot Registry、installation-snapshot、retained-generation、Grant、binding、lifecycle/package-operation、Knowledge、enablement 与 Host Manager control state。
-Expanded package byte 是 global immutable input，不被复制。
-其 `a3s.use.state-backup.v2` manifest 绑定 exact installation，
-且仅包含 portable relative path、per-file length/SHA-256/mode evidence、family accounting、Registry generation/digest，
-以及 sorted installed-receipt digest。
-Creation scan、copy with exact hashing，然后在 non-overwriting publication 前 rescan。
-Lock 被排除；
-active restore、pending cutover/operation、link/reparse point、special file、unknown state family、installation data payload 或 non-portable path fail closed。
-`state verify-backup` 离线 validate canonical manifest byte、complete archive length 与每个 payload digest，无需 extraction 或 local Use state。
-Archive 包含 raw state，必须作为 sensitive data 保护。
-`state backup-retention` 获取 separate external-directory lock，
-fully verify 每个 managed archive，
-并返回 path-free oldest-first plan，
-绑定 exact file name、modification time、length、manifest digest、inventory digest 与 Registry evidence。
-Confirmed apply 仅接受 unchanged canonical `planDigest`，synchronize 每个 deletion，按 exact installation filter archive，并 always retain 至少 newest two verified archive。
-Global Registry source/trust/TUF state、Artifact Store 与 derivable Flow compiled artifact 故意在此 backup 之外。
-`state plan-restore` 仅当 backup 精确匹配 current Use version、OS、architecture 与 independently retained Registry/receipt/Grant authority 时，构建 path-free Add/Replace/Remove/Retain review。
-Confirmed `state restore` 首先 create 或 verify explicit external rollback archive，
-仅 stage publication candidate，
-并 advance durable seven-phase journal，
-其 15 process-exit boundary idempotently converge。
-Active marker 在 live mutation 前 publish；
-candidate link/reparse point 与 marker 或 journal substitution fail closed；
-completed history 有界为 64 record；
-`state restore-status` 是 path-free 且 read-only。
-Archive 仍是 integrity evidence，而非 signature 或 missing-authority recovery mechanism；
-clean-machine recovery 与 operational disaster-recovery drill 仍开放。
-参见 [协调状态备份操作](docs/state-backup-operations.md)。
+对于静态整体安装库存，`state backup` 采用
+安装的专属维护围栏和快照注册表，
+安装快照、保留生成、授予、绑定、
+生命周期/包操作、知识、支持和主机管理器控制
+状态。扩展包字节是全局不可变输入，不会被复制。
+其
+`a3s.use.state-backup.v2` 清单绑定了确切的安装并包含
+仅可移植的相对路径，
+每个文件长度/SHA-256/模式证据、家庭会计、注册表
+生成/摘要，以及排序的安装收据摘要。创作扫描件、复印件
+使用精确的散列，然后在非覆盖发布之前重新扫描。锁是
+排除；主动恢复、挂起的切换/操作、链接/重新分析点、
+特殊文件、未知状态系列、安装数据有效负载或不可移植
+路径无法关闭。 `state verify-backup` 验证规范
+清单字节、完整存档长度和每个离线负载摘要
+没有提取或本地使用状态。存档包含原始状态并且必须
+作为敏感数据进行保护。 `state backup-retention` 需要一个单独的
+外部目录锁，完全验证每个托管存档，并返回
+绑定确切文件名、修改时间的无路径最旧优先计划，
+长度、清单摘要、库存摘要和登记证据。已确认
+apply 仅接受未更改的规范`planDigest`，同步每个
+删除，通过精确安装过滤档案，并始终保留至少最新的两个经过验证的档案。全球注册来源/信托/TUF 国家，
+Artifact Store 和可导出的 Flow 编译的工件故意放在外部
+这个备份。
+`state plan-restore` 仅构建无路径添加/替换/删除/保留审核
+当备份与当前使用的版本、操作系统、体系结构完全匹配时
+独立保留登记/收据/授予权限。确认`状态
+Restore` 首先创建或验证显式的外部回滚存档，
+仅阶段性发表候选文章，并推进持久的七阶段期刊
+其 15 个进程出口边界幂等收敛。活动标记是
+在实时突变、候选链接/重分析点和标记之前发布或
+日志替换失败关闭，完成的历史记录仅限于 64 条记录，
+`state restore-status` 是无路径且只读的。档案仍保留
+完整性证据，而不是签名或缺失权限恢复机制；
+清洁机器恢复和灾难恢复操作演习仍然进行。参见
+[协调状态备份操作](docs/state-backup-operations.md)。
 
-`extension inspect --json` 包含显式所选 installation 的最新与上一个 durable lifecycle operation。
-Versioned diagnostic projection 报告 action、status、generation、artifact digest、checkpoint progress、bounded error code、timing 与 rollback evidence。
-它故意 omit checkpoint idempotency key、credential、token、secret value 与 package-authored error text。
-这是用于 diagnosis 的 checkpoint evidence，而非 telemetry service 或 backup/restore mechanism。
-一个 reviewed graph operation 可为同一 package 创建 consecutive candidate 与 retirement phase intent。
-这些 record 故意共享 `operationId`；
-consumer 通过 `intentDigest`、action、generation 与 artifact digest 区分 exact phase。
+`extension inspect --json` 包括最新和之前的持久生命周期
+明确选择的安装的操作。版本化诊断投影
+报告操作、状态、生成、工件摘要、检查点进度、
+有界错误代码、计时和回滚证据。它故意省略
+检查点幂等性密钥、凭证、令牌、秘密值和
+包编写的错误文本。这是诊断的检查点证据，而不是
+遥测服务或备份/恢复机制。
+一项经过审查的图操作可以创建连续的候选者和退休者
+同一包的阶段意图。这些记录有意共享一个
+`operationId`；消费者通过`intentDigest`、动作来区分确切的阶段，
+生成和工件摘要。
 
-`extension diagnose --json` 读取一个 exact retained install、upgrade 或 uninstall graph、一个 active admitted enable/disable operation，
-或所选 User 或 Workspace scope 最新且尚未 admitted 的 Host-reviewed enable/disable plan，
-无需 network I/O、reconciliation、recovery 或 write。
-其 `a3s.use.plugin-operation-diagnostic.v1` projection 绑定 reviewed plan 与 lock digest、path-free Registry name 与 TUF role version、current Registry generation 与 cutover evidence、provider identity/readiness、Grant journal phase、lifecycle publication/drain/rollback state，
-以及 stable recovery guidance。
-Graph diagnostic 覆盖 retained planned、admitted 与 cancelled operation，并在仅存在 reviewed pending plan 时于 installation 之前工作。
-在 enable/disable admission 之前，
-digest-bound observation index 按 `(plannedAtMs, requestId)` 选择 newest exact Host plan，
-并 project `planned` 或 `cancelled`、selected provider 与 awaiting-Grant state、expected lifecycle-unit count，
-以及 current Registry cutover evidence。
-Index 保留 managed Host scope 仅用于 resolve 其 immutable request；
-Host ID、authority/fence value、request ID 与 private path 从不进入 public projection。
-Active Use-owned enablement evidence 优先，durable Host outcome 或 completed Use operation 抑制 stale plan。
-URL、path、idempotency key、credential、token、secret name/value、package content 与 arbitrary package-authored text 被排除。
-对于 retained install 或 upgrade graph，projection 还报告 total expected 与 currently retained archive byte，以及每个 exact target 的 `missing`、`partial` 或 `complete` cache state；
-aggregate 为 `missing`、`in-progress` 或 `complete`。
-在 reviewed graph 存在之前，Use 在 process-held package lock 下 durable record exact non-authoritative package lock 与 selected archive set。
-`extension diagnose` 随后返回带相同 byte evidence 的 `a3s.use.plugin-download-attempt-diagnostic.v1`。
-Record 在 download failure 或 process exit 后 survive，later attempt 仅可在 process lock 释放后 replace，并仅在 reviewed pending graph durable 后 remove。
-两个 projection 还通过 `planningBytes`、`planningRetainedBytes`、aggregate `planning` 与 per-package `planningTargets` 报告 exact retained package lock 所选 separately signed executable-planning target。
-每个 target 仅暴露 package ID、Registry name、target digest、expected/retained byte 与 `missing`/`partial`/`complete` state。
-Static package 报告 `not-required`。
+`extension diagnose --json` 读取任一精确保留的安装、升级、
+或卸载图表、一项主动承认的启用/禁用操作或最新的
+主持人审核的启用/禁用计划尚未被所选项目接纳
+没有网络 I/O、协调、恢复或的用户或工作空间范围
+写道。其
+`a3s.use.plugin-operation-diagnostic.v1` 投影约束已审查的计划和
+锁定摘要、无路径注册表名称和 TUF 角色版本、当前注册表
+生成和切换证据、提供商身份/准备情况、资助日志
+阶段、生命周期发布/耗尽/回滚状态和稳定恢复
+指导。图形诊断涵盖保留、计划、接纳和取消
+仅审查待定计划时的操作和安装前工作
+存在。在启用/禁用准入之前，摘要绑定观察索引
+选择`(plannedAtMs, requestId)`最新的精确主机计划和项目
+`planned` 或 `cancelled`，选定的提供者并等待授予状态，
+预期生命周期单位数量以及当前注册管理机构切换证据。的
+索引保留托管主机范围仅用于解决其不可变请求；主持人
+ID、权限/围栏值、请求 ID 和私有路径永远不会进入
+公共投影。主动使用拥有的启用证据优先，并且
+持久的主机结果或完成的使用操作会抑制过时的计划。
+URL、路径、幂等密钥、凭证、令牌、秘密名称和值，
+包内容和任意包创作的文本均被排除。对于保留的安装或升级图表，投影还报告总数
+预期和当前保留的存档字节加上每个确切目标的
+`missing`、`partial`或`complete`缓存状态；合计为`missing`，
+`in-progress`，或`complete`。在审查图表存在之前，持久使用
+记录准确的非权威包锁和选定的归档集
+进程持有的包锁。 `extension diagnose` 然后返回
+`a3s.use.plugin-download-attempt-diagnostic.v1` 具有相同的字节证据。
+该记录在下载失败或进程退出后仍然存在，以后的尝试可以
+仅在进程锁释放后才替换，并且仅将其删除
+待审核的待处理图持久后。两项预测还报告了
+由确切保留者选择的单独签名的可执行计划目标
+通过`planningBytes`、`planningRetainedBytes`、聚合进行包锁定
+`planning`，以及每个包`planningTargets`。每个目标仅公开包
+ID、注册表名称、目标摘要、预期/保留字节以及
+`missing`/`partial`/`complete`状态。静态包报告`not-required`。
 
-在 exact package lock 存在之前，Use 还将 Registry/TUF 工作记录为 `a3s.use.plugin-resolution-attempt.v1`。
-Record 在 refreshed 或 cached metadata access 之前开始，并跟踪 requested version/channel 以及每个 root 或 dependency Registry 为 pending、verifying、verified 或 failed。
-它仅暴露 path-free Registry name、source-identity/trust-root digest、verified TUF role version、bounded target count、stable error code 与 terminal package-lock digest/count。
-Killed 或 failed resolver 仍可诊断；
-successful resolution 在 remove 此 evidence 之前写入 download attempt。
-当 graph 与 download attempt 都不存在时，`extension diagnose` 返回 phase `pre-lock` 且 access `refreshed` 或 `cached` 的 `a3s.use.plugin-resolution-attempt-diagnostic.v1`。
-它从不暴露 Registry URL、path、raw transport error、credential 或 metadata byte。
+在存在确切的包锁定之前，Use 还将注册表/TUF 工作记录为
+`a3s.use.plugin-resolution-attempt.v1`。记录在刷新之前开始或
+缓存元数据访问并跟踪请求的版本/通道以及每个根
+或依赖项注册表为待定、验证、已验证或失败。它暴露了
+仅无路径注册表名称、源身份/信任根摘要、经过验证的 TUF
+角色版本、有界目标计数、稳定错误代码和终端
+包锁摘要/计数。被杀死或失败的解析器仍然可以诊断；
+成功解决会在删除此内容之前写入下载尝试
+证据。当图表和下载尝试都不存在时，
+`extension diagnose` 返回
+`a3s.use.plugin-resolution-attempt-diagnostic.v1` 具有相位 `pre-lock` 且
+访问`refreshed`或`cached`。它从不公开注册表 URL、路径、原始信息
+传输错误、凭证或元数据字节。
 
-`extension diagnose --history --json` 为同一 explicit scope 返回 `a3s.use.plugin-operation-history-diagnostic.v1`。
-它在 exact 8 MiB store bound 内 retain newest 16 retired operation，
-包括其 complete path-free operation snapshot 与 separately validated `completed`/`rolled-back` operation 或 `cancelled` graph-plan outcome。
-History 在 remove pending graph 或 active enablement recovery authority 之前写入；
-同一 `(operationId, planDigest)` occurrence 的 replay 是 idempotent。
-Textual graph operation ID 在 exact reinstall 后可能 legitimately recur，因此 plan digest 仍是 occurrence identity 的一部分。
-History 在 uninstall 后仍 available。
-Unknown field、identity/outcome conflict、link 或 reparse point，以及 oversized record fail closed，而不 echo retained byte 或 path。
+`extension diagnose --history --json`回归
+`a3s.use.plugin-operation-history-diagnostic.v1` 对于相同的显式范围。
+它在精确的 8 MiB 存储范围内保留了最新的 16 个退役操作，
+包括他们完整的无路径操作快照和单独的
+验证`completed`/`rolled-back`操作或`cancelled`图形计划结果。历史是
+在待处理图或活动启用恢复权限之前写入
+删除；相同`(operationId, planDigest)`事件的重播是
+幂等的。文本图操作 ID 可以在一次之后合法地重复出现
+完全重新安装，因此计划摘要仍然是事件标识的一部分。
+卸载后历史记录仍然可用。未知领域、身份/结果
+冲突、链接或重分析点以及超大记录无法关闭而无需
+回显保留的字节或路径。
 
-Graph 与 download projection 从 retained signed provenance 派生 historical Registry datastore，不发起 network request 或 write，不暴露 path，也不 acquire target-cache lock。
-Complete archive 或 planning target 是 canonical source observation 加 owned exact-length global blob；
-diagnostic 不 rehash，partial 也不是 apply、planning 或 recovery authority。
-Resolution diagnostic 同样 read-only 且 zero-network，不 wait 或 acquire package lock。
-Real-process test 证明 killed planning-target observation 与 exact Range resume、reviewed Host planned/cancelled enablement projection（无 admission、authorization 或 network access），
-以及 completed-Use/unfinished-Host outcome window 期间的 suppression。
+图表和下载预测源自历史注册表数据存储
+保留签名来源，不发出网络请求或写入，不公开路径，
+并且不获取目标缓存锁。完整的归档或规划目标
+是一个规范源观察加上一个拥有的精确长度的全局 blob；的
+诊断不会重复它，并且它或部分都不会应用，规划，
+或恢复权限。分辨率诊断同样是只读和零网络的
+不要等待或获取包锁。实际过程测试被证明被杀死
+规划目标观察和精确范围恢复，经主持人审查
+未经许可、授权或未经许可而计划/取消的支持计划
+网络访问，以及完成使用/未完成主机期间的抑制
+结果窗口。
 
-### 可替换 Registry 源
+### 可替换的注册表源
 
-独立 CLI 在规范 A3S ACL 中持久化有界 named Registry source 集。
-第一个 enabled source 成为 default。
-每个 enabled source 都提供给 dependency resolution，
-而 `--registry-name` 为一次 operation 选择 root source。
-跨 enabled source 的 duplicate package identity 作为 ambiguous 失败。
+独立 CLI 将一组有界的命名注册表源保留在
+规范的 A3S ACL。第一个启用的源将成为默认源。每个启用
+源被提供给依赖解析，而 `--registry-name` 选择
+一项操作的根源。跨启用的重复包标识
+消息来源因含糊不清而失败。
 
-在 package resolution 之前配置 trust：
+在包解析之前配置信任：
 
 ```bash
 a3s-use registry source add packages \
@@ -584,7 +841,8 @@ a3s-use registry source add packages \
   --json
 ```
 
-GitHub 仓库可用作 Homebrew-tap 式 authoring 与 static distribution source，而不将 Git history 作为 trust root：
+GitHub 存储库可用作类似于 Homebrew-tap 的创作和静态
+不将 Git 历史记录作为信任根的分发源：
 
 ```bash
 a3s-use registry source add official \
@@ -593,14 +851,18 @@ a3s-use registry source add official \
   --json
 ```
 
-简写解析为 `https://raw.githubusercontent.com/<owner>/<repository>/main/registry/`。
-`--github-ref` 与 `--github-path` 可选择 canonical tag/branch name 与 repository subtree。
-它们仅是 address input：caller-pinned TUF root、signed catalog-v3 metadata、archive hash、reviewed plan 与 Grant 仍是 installation 与 activation authority。
-A3S Use 从不 clone 或 execute repository checkout。
+速记解析为
+`https://raw.githubusercontent.com/<owner>/<repository>/main/registry/`。
+`--github-ref` 和 `--github-path` 可以选择规范标签/分支名称并
+存储库子树。它们只是地址输入：调用者固定的 TUF 根，
+签名的catalog-v3元数据、存档哈希、审查的计划和授予仍然是
+安装和激活权限。 A3S 使用从不克隆或执行
+存储库签出。
 
-`--trusted-root /absolute/path/root.json`  additionally 将 exact digest-matching root 导入 managed、content-addressed trust-root store。
-Source list 输出包含 complete configuration revision。
-Replacing authority 需要该 reviewed revision 与 explicit confirmation：
+`--trusted-root /absolute/path/root.json` 另外导入一个精确的
+将摘要匹配根放入托管的内容寻址信任根存储中。
+源列表输出包括完整的配置修订。更换
+当局要求审查修订并明确确认：
 
 ```bash
 a3s-use registry source list --json
@@ -613,11 +875,14 @@ a3s-use registry source replace packages \
   --json
 ```
 
-Replacing、disabling 或 removing source 从不 rewrite installed receipt，也从不 delete 其 identity-bound TUF metadata、observation、partial 或 global blob。
-Re-enabling 或 restoring exact name、URL 与 bootstrap-root digest 复用该 exact source state。
-Changed source identity 获得 separate datastore，防止 old metadata 或 observation 跨越 trust boundary。
+替换、禁用或删除源绝不会重写已安装的收据
+并且永远不会删除其身份绑定的 TUF 元数据、观察结果、部分数据或
+全局斑点。重新启用或恢复确切的名称、URL 和 bootstrap-root
+摘要重用了确切的源状态。更改后的源身份会收到
+独立的数据存储，防止旧的元数据或观察结果跨越
+信任边界。
 
-来自 configured Registry 的示例开发 install：
+从配置的注册表进行开发安装示例：
 
 ```bash
 a3s-use install acme/research \
@@ -628,7 +893,7 @@ a3s-use install acme/research \
   --json
 ```
 
-当 lock 被 separately reviewed 时，将 apply 绑定到它：
+当一个锁被单独审查时，绑定应用到它：
 
 ```bash
 a3s-use install acme/research \
@@ -639,12 +904,14 @@ a3s-use install acme/research \
   --json
 ```
 
-Mismatched lock digest 在 archive download 之前失败。上述示例 package 与 Registry name 仅作说明；本仓库不 advertise public production Registry。
+不匹配的锁摘要在存档下载之前失败。示例包和
+上述注册表名称仅供参考；这个存储库不做广告
+公共生产登记处。
 
-Online install 验证 current TUF metadata，
-并将每个 selected archive 与 signed `planning-v1.json` target 存入 Registry datastore 的 content-addressed cache。
-在该 exact graph 被 remove 之后，
-可再次 install 而无需 network access：
+在线安装会验证当前的 TUF 元数据并存储每个选定的元数据
+在注册表数据存储中存档并签名`planning-v1.json`目标
+内容寻址缓存。删除该精确图形后，可以
+在没有网络访问的情况下再次安装：
 
 ```bash
 a3s-use install acme/research \
@@ -656,7 +923,9 @@ a3s-use install acme/research \
   --json
 ```
 
-同一 flag 支持 upgrade，仅当 host 已 refresh candidate 的 TUF metadata 并将每个 selected target verify 到同一 cache：
+同一标志仅当主机已经刷新时才支持升级
+候选人的 TUF 元数据并验证每个选定的目标是否相同
+缓存：
 
 ```bash
 a3s-use upgrade acme/research \
@@ -668,35 +937,43 @@ a3s-use upgrade acme/research \
   --json
 ```
 
-Offline mode 是 explicit 且 fail-closed。
-它 load 同一 persisted Registry source revision；
-revalidate cached TUF signature、expiry、source identity、target length 与 SHA-256；
-并在 JSON 中返回 `registryAccess: "cached"` 加 `registrySourceRevision`。
-Normal online operation 返回 `registryAccess: "refreshed"`。
-Missing、disabled、expired 或 tampered source 或 cache evidence 是 error。
-Online command 在 network 或 refresh failure 后从不 fallback 到 cached target。
+离线模式是明确的并且失败关闭。它加载相同的持久注册表
+源码修订；重新验证缓存的 TUF 签名、过期时间、源身份、
+目标长度和 SHA-256；并返回 `registryAccess: "cached"` 加
+JSON 格式的`registrySourceRevision`。正常上线操作返回
+`registryAccess: "refreshed"`。源丢失、禁用、过期或被篡改
+或者缓存证据是错误的。在线命令永远不会回退到缓存
+网络或刷新失败后的目标。
 
-### 已验证目标缓存操作
+### 验证目标缓存操作
 
-每个 Registry 有独立的 default logical working-set limit：4 GiB 与 4,096 个 combined target observation 与 resumable partial，以及 256 MiB source-partial/staging free-space reserve。
-Interrupted HTTP download 保留 digest-bound `.target-<sha256>.part`，并仅从 exact signed Range response retry。
-Fully verified byte 通过 transaction-owned handle copy 并 rehash 到 `<data-root>/artifacts/blobs/sha256/<shard>/<digest>/content`，
-synchronize，
-并在不 replace existing content 的情况下 publish。
-仅 then Registry source publish canonical `<digest>.json` observation metadata 并 remove 其 partial。
-Cached staging reopen 并 rehash global blob；
-corruption fail closed 且从不 silently replace。
+每个注册表都有一个独立的默认逻辑工作集限制 4 GiB
+4,096 个组合目标观测值和可恢复部分数据，大小为 256 MiB
+源部分/暂存可用空间保留。中断的 HTTP 下载会保留
+摘要绑定 `.target-<sha256>.part` 并仅从精确签名的范围重试
+回应。完全验证的字节通过复制和重新散列
+事务拥有的句柄变为
+`<data-root>/artifacts/blobs/sha256/<shard>/<digest>/content`，同步，并且
+发布时不替换现有内容。只有这样，注册表才会
+源发布规范的`<digest>.json`观察元数据并删除其
+部分的。缓存的暂存重新打开并重新散列全局 blob；腐败失败
+关闭并且永远不会被悄悄替换。
 
-Windows-native test 建模 blob publication 与 source cleanup 上的 scanner contention。
-若 final partial deletion 仍 locked，durable blob 与 observation 仍 usable，retry 移除 redundant partial 而无需 network transfer。
-Source prune 移除 stale write，然后 inactive partial，然后 oldest observation。
-它释放 logical source-policy capacity，但从不 delete global blob、installed artifact、receipt、generation 或 journal。
-Global reference 现在与 physical evidence 及跨 source、installation 与 operation 的 bounded quota assessment join。
-Optional global hard quota admission 与 read-only digest audit 覆盖两个 publication tier；
-exact-plan logical quarantine block newly observed corrupt content 同时 preserve 其 byte，verified rehydration 需要 independent candidate 加 fresh zero-reference proof。
-Global deletion 现在 additionally 需要 bounded explicit target policy 与其 exact confirmed GC plan digest。
+Windows 本机测试模型扫描仪争用跨 Blob 发布和
+源头清理。如果最终部分删除保持锁定状态，则持久 blob 和
+观察仍然可用，重试会删除多余的部分，而无需
+网络传输。源修剪删除陈旧的写入，然后删除不活动的部分，
+然后是最古老的观察。它释放了逻辑源策略容量，但是
+从不删除全局 blob、已安装的工件、收据、生成或
+期刊。全球参考现在与物理证据和有界的结合起来
+跨来源、安装和操作的配额评估。可选全局
+硬配额准入和只读摘要审核涵盖两个出版层；
+精确计划逻辑隔离区会阻止新观察到的损坏内容，同时
+保留其字节，并验证补水需要一个独立的候选者
+加上一个新的零参考证明。全局删除现在还需要
+有界显式目标策略及其精确确认的 GC 计划摘要。
 
-Inspect cache usage 而无需 Registry request：
+在不发出注册表请求的情况下检查缓存使用情况：
 
 ```bash
 a3s-use registry cache usage \
@@ -704,7 +981,8 @@ a3s-use registry cache usage \
   --json
 ```
 
-Pruning 可 discard resumable progress 与 source observation，因此 standalone CLI 要求 explicit confirmation：
+修剪可以丢弃可恢复的进度和源观察，因此
+独立 CLI 需要明确确认：
 
 ```bash
 a3s-use registry cache prune \
@@ -716,20 +994,23 @@ a3s-use registry cache prune \
   --json
 ```
 
-Durable policy 在 `registry source add` 或 `replace` 上配置。
-Confirmed prune 可使用 stricter one-command override；
-它不 rewrite source configuration。
-Embedding host 使用同一 typed `VerifiedTargetCachePolicy`。
-Cache usage 与 pruning 是 zero-network operation，并在 inspect 或 delete source state 前 validate 任何 retained catalog-cache source identity。
-Schema v3 将 `targetBytes` 报告为 logical referenced blob byte，而非 prune 回收的 physical byte。
-此 source-cache GC 从不 change global raw 或 expanded artifact、receipt、capability generation 或 lifecycle journal。
-参见 [Registry 缓存操作](docs/registry-cache-operations.md)。
+持久策略配置在`registry source add`或`replace`上。
+确认的修剪可以使用更严格的单命令覆盖；它不会重写
+源配置。嵌入主机使用相同类型
+`VerifiedTargetCachePolicy`。缓存使用和剪枝是零网络的
+操作并在之前验证任何保留的目录缓存源身份
+检查或删除源状态。 Schema v3 将 `targetBytes` 报告为逻辑
+引用的 blob 字节，而不是修剪回收的物理字节。这个源缓存
+GC 永远不会更改全局原始或扩展工件、收据、功能
+世代或生命周期期刊。请参阅[注册表缓存
+操作](docs/registry-cache-operations.md)。
 
 ## 认知包格式
 
-认知包是 npm 式 immutable distribution unit，
-具有一个 `<publisher>/<name>` identity、一个 SemVer version、required ACL manifest、required package documentation、optional package dependency，
-以及零个或多个 named surface contribution。
+认知包是一个类似 npm 的不可变分发单元，其中包含一个
+`<publisher>/<name>` 身份、一个 SemVer 版本、所需的 ACL 清单、
+必需的包文档、可选的包依赖项以及零或
+更多命名的表面贡献。
 
 ```text
 acme-research/
@@ -743,7 +1024,9 @@ acme-research/
 └── okf/                    Open Knowledge Format bundles
 ```
 
-仅 manifest 与 `README.md` name 是 fixed。Contribution path 由 manifest 拥有。Manifest 是 A3S ACL (`.acl`)，必须用 [`a3s-acl`](https://github.com/A3S-Lab/ACL) 解析；ACL 不是 HCL。
+仅清单和 `README.md` 名称是固定的。贡献路径为
+清单拥有。清单是 A3S ACL (`.acl`)，必须使用以下命令进行解析
+[`a3s-acl`](https://github.com/A3S-Lab/ACL); ACL 不是 HCL。
 
 ```acl
 extension "acme/research" {
@@ -827,34 +1110,40 @@ extension "acme/research" {
 }
 ```
 
-`route` attribute 是 optional，仅作为 human-facing CLI alias 保留。
-它不要求 unique，且从不 own installation state、accepted-call lease、cursor package identity 或 Tool/MCP host name。
-Automation 应通过 `<publisher>/<name>` 寻址 package，通过 canonical kind 与 surface ID 寻址 surface；
-ambiguous alias lookup fail closed。
+`route` 属性是可选的，仅作为面向人的 CLI 保留
+别名。它不需要是唯一的并且从不拥有安装状态，
+接受调用租约、游标包标识或工具/MCP 主机名。自动化
+应按 `<publisher>/<name>` 处理包，并按规范类型处理表面
+和表面 ID；不明确的别名查找失败关闭。
 
-| 表面 | 包贡献 | 就绪 owner |
-| --- | --- | --- |
-| Tool | Package-local native Task 或 digest-pinned Task/Service release | Signed planning launcher 加 native provider，或 explicitly selected Runtime |
-| MCP | Package-local stdio server 或 digest-pinned HTTP release | Signed stdio launcher 加 native provider，或 Runtime/Gateway readiness |
-| OKF | Open Knowledge Format concept graph | Knowledge host stage、promotion、observation 与 cited retrieval |
-| A3S Flow | 带 explicit surface edge 的 TypeScript workflow source | `a3s-flow` preflight 与 exact compiled binding |
-| Skill | Canonical surface ID 加 content-bound `SKILL.md` 与支持文件 | Required dependency ready 后的 static projection；host 保持 manifest ID 与从 document 解析的 presentation metadata 分离 |
-| UI | Integrity-bound static entry point | Lifecycle 验证 entry 与 exact asset digest，project canonical sorted Skill/Tool/MCP/Flow dependency set 及 versioned completeness marker，仅 publish complete dependency evidence，并在 remove 时 clear receipt-owned projection。Sandboxing、rendering、state 与 backend binding 仍由 host 拥有 |
+|表面|套餐贡献 |准备就绪所有者|
+| ---| ---| ---|
+|工具|包本地本机任务或摘要固定任务/服务版本 |签名的规划启动器加上本机提供程序，或明确选择的运行时 |
+| MCP|本地包 stdio 服务器或摘要固定 HTTP 版本 |签名的 stdio 启动器加上本机提供程序，或运行时/网关准备就绪 |
+| OKF |开放知识格式概念图|知识宿主阶段、提升、观察、引用检索|
+| A3S流程|具有明确表面边缘的 TypeScript 工作流程源 | `a3s-flow` 预检和精确编译绑定 |
+|技能|规范表面 ID 加上内容绑定 `SKILL.md` 和支持文件 |所需依赖准备好后进行静态投影；主机将清单 ID 与从文档解析的表示元数据区分开来。
+|用户界面|完整性绑定静态入口点 |生命周期验证条目和准确的资产摘要，使用版本化完整性标记来投影规范排序的技能/工具/MCP/流程依赖集，仅发布完整的依赖证据，并在删除时清除收据拥有的预测。沙盒、渲染、状态和后端绑定仍由主机拥有 |
 
-Surface 可选用于 projection，但不能在其 owning package generation 之外 independently install、upgrade 或 remove。
+表面可以选择进行投影，但它们不是独立的
+在其自己的软件包生成之外安装、升级或删除。
 
-## 单一 A3S Flow 生命周期
+## 一个 A3S Flow 生命周期
 
-A3S Use 不定义第二个 workflow engine。
+A3S Use 不定义第二个工作流引擎。
 
-- Package manifest 声明 `flow` surface、source digest、export 与 Tool/MCP/OKF dependency。
-- `a3s-flow` 拥有 compilation 与 execution semantics。
-- Host 可将 `flow.json` 用作 visual design 或 deployment document，但它不是另一个 package receipt、dependency resolver 或 lifecycle journal。
-- A3S Code 是 local host，A3S OS 可以是 remote execution target；两者必须 resolve 同一 package-owned Flow identity。
+- 包清单声明了 `flow` 表面、源摘要、导出和
+  工具/MCP/OKF 依赖性。
+- `a3s-flow`拥有编译和执行语义。
+- 主机可以使用`flow.json`作为可视化设计或部署文档，但它
+  不是另一个包裹收据、依赖性解析器或生命周期日志。
+- A3S Code是本地主机，A3S OS可能是远程执行目标；两者
+  必须解析相同的包拥有的流标识。
 
-Required Flow publication 在 embedding host 未 inject declared Flow runtime 时 fail closed。
-没有 source-presence 或 `PATH` fallback。
-Standalone CLI 对 install、upgrade 与 uninstall 跨 process restart 使用同一 reviewed absolute compiler path opt in：
+当嵌入主机未注入时，所需的流发布无法关闭
+声明的 Flow 运行时。没有源存在或 `PATH` 后备。的
+独立 CLI 选择使用相同的经过审查的绝对编译器路径
+跨进程重新启动安装、升级和卸载：
 
 ```bash
 A3S_FLOW_NATIVE_TS_COMPILER=/opt/a3s/bin/a3s-flow-native-compiler \
@@ -865,102 +1154,122 @@ A3S_FLOW_NATIVE_TS_COMPILER=/opt/a3s/bin/a3s-flow-native-compiler \
     --json
 ```
 
-`CognitivePackageManager::new` 保持 provider-free 且 deterministic；
-`CognitivePackageManager::from_env` 是 explicit standalone composition。
-Missing 或 failing compiler 留下 installed-disabled candidate receipt，但 immutable capability snapshot 仍在其 exact prior generation，不 project staged package state。
-Lifecycle diagnostic 保留 bounded failure evidence。
-Repaired retry resume 同一 admitted plan 与 exact package generation，然后 publish 一次 reviewed capability cutover，而非 guess 或 expose partial state。
+`CognitivePackageManager::new` 保持无提供者和确定性；
+`CognitivePackageManager::from_env` 是显式独立组合。
+丢失或失败的编译器会留下已安装禁用的候选收据，
+但不可变的功能快照仍保持其上一代的样子
+并且不投影暂存包状态。生命周期诊断保留
+有界失败证据。修复后的重试恢复相同的承认计划并且
+准确的包生成，然后发布一项经过审查的功能切换
+而不是猜测或暴露部分状态。
 
-## 可替换 Registry 与精确锁
+## 可替换的注册表和精确的锁
 
-Registry URL 与 trust root 是 host input，
-从不 compile 进 resolver。
-Host 可选择 mirror、private Registry 或另一个 explicitly trusted TUF source，
-而无需 change package logic。
-每个 dependency 可从不同 enabled source resolve，
-但同一 package 出现在多个 enabled source 中会被作为 ambiguous 拒绝。
+注册表 URL 和信任根是主机输入，永远不会编译到解析器中。
+主机可以选择镜像、私有注册表或另一个明确信任的 TUF
+源代码无需更改包逻辑。每个依赖项都可以从
+不同的启用源，但同一个包出现在多个启用中
+来源因含糊不清而被拒绝。
 
-当前 Registry 规则：
+目前的注册规则：
 
-- Managed host 首先通过 state-free `inspect_bootstrap_root` 从 supplied byte 派生 exact digest/version/size evidence，
-  然后通过 `TrustedRegistry::pin_trusted_root` pin 相同 byte。
-  两个 API 共享单一 public one-MiB bound 与 decoder；
-  pinning additionally 在 ordinary refresh 执行 complete TUF chain、expiration 与 rollback verification 之前 enforce configured digest、regular-file check、metadata lock 与 immutable replay。
-- TUF target `custom.a3s` metadata 包含一个 complete catalog-v3 record。
-- 每个 executable catalog 携带一个 separately signed `planning-v1.json` target。它在 archive download 之前区分 package-local Tool/stdio MCP launcher 与 release-backed Runtime workload。
-- Mixed package 被 planned 为一个 exact provider set：native Tool Task 与 stdio MCP 留在 built-in launcher，
-  而 release-backed Tool Task、Tool Service 与 HTTP MCP 需要 typed `RuntimeClientRegistry` 的 explicit host assignment。
-  Missing Grant、generation、assignment 或 provider 无 fallback 即失败。
-- Provider selection 是两阶段。
-  Capability preflight 将 real provider enforcement 暴露给 host policy；
-  final pass 绑定 canonical Grant semantics，
-  且必须 retain 相同 provider ID、build、normalized capability 与 enforcement。
-  Final policy decision 也必须 unchanged。
-- Installed schema-v6 receipt 为每个 executable package retain exact installation ID、optional non-owning CLI alias 与 signed planning bundle。
-  因此 enablement 可在 restart 后再次 reviewed，
-  而无需 consult mutable Registry，
-  同时 catalog、manifest 与 installed package byte 仍被 revalidate。
-- Apply-time host adapter 从 immutable reviewed plan 与 durable snapshot re-derive Grant proposal，
-  reconstruct exact Runtime selection，
-  并要求 provider evidence byte-for-byte match。
-  Shared A3S CLI、TUI 与 managed-host enablement path 持久化 reconstruction input，
-  而非 process-local client。
-- Retirement 从不 choose new activation provider。
-  Disable、uninstall 与 prior-generation upgrade cleanup reopen exact Runtime binding receipt 记录的 provider；
-  在 Service drain 与 remove 之前 recheck provider ID、build 与 normalized capability。
-- Release-backed Runtime Task binding 使用 current self-contained receipt：argument-free reviewed Runtime template、Grant/descriptor/provider evidence、capture contract 与 exact lifecycle generation 在 process restart 后 survive，
-  而不依赖 short-lived operation record。
-  每次 invocation 仅 derive unique unit ID 与 bounded argv，
-  reopen receipt-owned provider，
-  并在 output capture 与 cleanup 期间 hold exact published-generation lease。
-  Hidden 或 replaced generation 拒绝 new call。
-- Runtime Task publication 与 dispatch 还将 durable binding cross-check 到 installed package 的 retained planning evidence。
-  Registry-trusted package 必须 retain catalog-bound signed planning bundle 与 exact release descriptor digest；
-  self-consistent 但 substituted descriptor、package generation 或 missing evidence 在 provider connection 之前被 omit 或 reject。
-- Catalog record、archive、expanded package 与 manifest 均有 exact digest/size evidence。
-- Archive admission 将每个 planning launcher rebind 到 exact digest-bound `.acl` manifest 与 release descriptor；
-  surface kind、activation、executable、argv、command、timeout 与 transport drift fail closed。
-- Prepared download 与 installed Registry/TUF receipt 必须 retain full verified catalog record 及其 provenance。
-- Online preparation 在 `<registry-datastore>/verified-targets/sha256/<digest>.json` 保留 source observation，
-  并将 verified archive、planning target 与 presentation media commit 到 global sharded blob tier。
-  Cache read 拒绝 link 与 non-regular file，
-  通过 retained handle rehash blob，
-  并在 admission 前 verify signed length。
-- Explicit cached resolution revalidate last trusted、unexpired TUF metadata 与 exact Registry name、URL 与 trust root。它从不 refresh network，也从不 weaken source 或 package-lock provenance。
-- Typed per-Registry policy 约束 logical referenced byte、observation 与 partial，
-  并 reserve source/staging disk space。
-  Digest-bound partial 在 process interruption 后 survive，
-  仅通过 exact HTTP range response resume，
-  且从不 staged 于 full signed-length 与 SHA-256 verification 之前。
-  Automatic 与 confirmed source cleanup 在同一 cache lock 下 remove stale write，
-  然后 oldest partial 与 observation。
-  它从不将 source-reference removal 视为 global blob deletion。
-- Real-process recovery coverage 还在 verified archive extraction 期间 kill installation，
-  证明 no receipt、installation snapshot、pending operation 或 package root 被 publish，
-  并从 revalidated cache 完成 explicit zero-network retry。
-- 以下 real-process package-copy interruption 保留 exact pending plan 与 applying journal，
-  但无 receipt、installation snapshot 或 package publication。
-  Offline replay reclaim physical `.artifact-staging-*` residue，
-  并 exactly once publish reviewed generation。
-- Real-process uninstall interruption replay exact lifecycle identity，finish scoped receipt 与 authority retirement，preserve global artifact byte，且不再第二次 advance Registry generation。
-- Real-process multi-node install interruption 在 atomic Registry graph publication 之后 retain 一个 complete visible closure 与其 durable cutover，
-  但无 installation snapshot。
-  Offline replay 完成每个 package journal，
-  write exact snapshot，
-  retire cutover，
-  且 Registry generation 保持 1 而无需 network request。
-- Watcher 读取 immutable publication 而无需 wait behind writer。
-  若 one-time crash reconciliation 短暂 own Registry lock，
-  lifecycle writer 异步 wait 最多两秒；
-  genuinely concurrent mutation 仍以 `use.extension.busy` 失败。
-- Installed receipt 仍 bound 到其 source name、URL、root digest、release channel、target 与 TUF role version。
-- Replacing source configuration 从不 rewrite installed receipt provenance；restore exact source 或 reinstall 在 upgrade 之前是 required。
+- 托管主机首先从提供的内容中获取准确的摘要/版本/大小证据
+  通过无状态`inspect_bootstrap_root`的字节，然后固定那些相同的
+  字节通过`TrustedRegistry::pin_trusted_root`。两个 API 共享一个
+  公共 one-MiB 绑定和解码器；固定还强制执行配置的
+  摘要、常规文件检查、元数据锁定和之前的不可变重播
+  普通刷新执行完整的TUF链、过期和回滚
+  验证。
+- TUF 目标`custom.a3s` 元数据包含一条完整的catalog-v3 记录。
+- 每个可执行目录都带有一个单独签名的`planning-v1.json`
+  目标。它将本地包工具/stdio MCP 启动器与
+  下载存档之前发布支持的运行时工作负载。
+- 混合包被计划为一个精确的提供程序集：本机工具任务和
+  stdio MCP 保留在内置启动器上，而版本支持的工具任务，
+  工具服务和 HTTP MCP 需要来自类型化的显式主机分配
+  `RuntimeClientRegistry`。缺少拨款、代际、任务或
+  提供者失败而没有后备。
+- 提供者选择是两次通过的。能力预检暴露真实情况
+  提供商执行主机策略；最终通过绑定规范格兰特
+  语义，并且必须保留相同的提供者 ID、构建、规范化
+  能力和执行力。最终的政策决定也必须保留
+  不变。
+- 安装的 schema-v6 收据保留确切的安装 ID，可选
+  非拥有的 CLI 别名，以及签名的规划包每个可执行包。因此，可以在之后再次审查启用情况
+  无需咨询可变注册表即可重新启动，而目录、清单和
+  已安装的包字节仍会重新验证。
+- 应用时主机适配器从不可变的重新派生授予提案
+  审查计划和持久快照，重建准确的运行时选择，
+  并要求提供者证据逐字节匹配。共享A3S CLI，
+  TUI 和托管主机支持路径保留重建输入
+  而不是进程本地客户端。
+- 退休永远不会选择新的激活提供商。禁用、卸载和
+  上一代升级清理重新打开由确切记录的提供程序
+  运行时绑定收据；提供者 ID、构建和标准化功能
+  在服务被耗尽和删除之前重新检查。
+- 版本支持的运行时任务绑定使用当前的独立收据：
+  无参数审查的运行时模板，Grant/descriptor/provider
+  证据、捕获契约和精确的生命周期生成过程
+  重新启动而不依赖于短暂的操作记录。每次调用
+  仅派生其唯一的单位 ID 和有界 argv，重新打开收据拥有的
+  提供商，并通过输出持有确切的发布发电租约
+  捕获和清理。隐藏的或被取代的一代拒绝新的呼吁。
+- 运行时任务发布和调度还会交叉检查持久绑定针对已安装软件包保留的规划证据。受注册机构信任
+  软件包必须保留目录绑定的签名规划包和确切的信息
+  释放描述符摘要；一个自洽但可替代的描述符，
+  包生成，或者丢失的证据在之前被遗漏或拒绝
+  提供商连接。
+- 目录记录、存档、扩展包和清单均具有准确的
+  摘要/大小证据。
+- 存档准入将每个计划启动器重新绑定到确切的摘要绑定
+  `.acl` 清单和释放描述符；表面种类、激活、可执行、
+  argv、命令、超时和传输漂移无法关闭。
+- 准备好的下载和安装的注册表/TUF收据必须保留完整的
+  经验证的目录记录及其出处。
+- 在线准备将源观察保持在
+  `<registry-datastore>/verified-targets/sha256/<digest>.json` 并提交
+  向全球核实档案、规划目标和演示媒体
+  分片 blob 层。缓存读取拒绝链接和非常规文件，重新散列
+  blob 通过保留的句柄，并在接纳之前验证签名的长度。
+- 显式缓存的解析重新验证最后一个可信的、未过期的 TUF
+  元数据和准确的注册表名称、URL 和信任根。它永远不会刷新
+  网络，并且永远不会削弱源或包锁的来源。
+- 类型化的每个注册表策略限制逻辑引用字节、观察、
+  和部分并保留源/暂存磁盘空间。消化结合部分内容可以在进程中断后幸存下来，只能通过精确的 HTTP 恢复
+  范围响应，并且在完整签名长度和 SHA-256 之前不会上演
+  验证。自动和确认的源清理会删除陈旧的写入，
+  然后是同一缓存锁下最旧的部分和观察。它从来没有
+  将源引用删除视为全局 blob 删除。
+- 实时进程恢复覆盖范围也会在验证期间终止安装
+  存档提取，证明没有收据，安装快照，待处理
+  操作，或包根已发布，并完成显式
+  从重新验证的缓存进行零网络重试。
+- 以下实际进程包复制中断保留其准确的
+  待定计划和应用日志，但没有收据、安装快照或
+  包发布。离线重播回收物理`.artifact-staging-*`残渣
+  并仅发布一次经过审查的生成。
+- 实时进程卸载中断重播准确的生命周期标识，
+  完成范围收据和权限退休，保留全局工件
+  字节，并且不会再次推进注册表生成。
+- 原子注册表图后实时多节点安装中断
+  出版物保留了一个完整的可见闭合及其持久的切换，但
+  没有安装快照。离线重播完成每个包日志，
+  写入准确的快照，取消切换，并保留注册表生成
+  1 无网络请求。- 观察者无需等待作者就可以阅读不可变的出版物。如果一个
+  一次性崩溃协调短暂拥有注册表锁、生命周期
+  写入者异步等待最多两秒；真正并发
+  `use.extension.busy` 突变仍然失败。
+- 已安装的收据仍与其源名称、URL、根摘要绑定，
+  发布通道、目标和 TUF 角色版本。
+- 替换源配置永远不会重写已安装的收据来源；
+  升级之前需要恢复确切的源或重新安装。
 
-Canonical package lock 冻结 selected version、dependency edge、host target、`requires_use`、archive 与 package digest，
-以及每个 node 的 Registry identity 与 TUF provenance。
-Resolution 在 cycle、incompatible constraint、missing provider、source ambiguity 与 configured search bound 上 fail closed。
+规范包锁冻结选定的版本、依赖边缘、主机
+目标、`requires_use`、存档和包摘要、注册表标识和 TUF
+每个节点的出处。解决方案失败，循环关闭，不兼容
+约束、缺少提供者、源模糊性和配置的搜索范围。
 
-## 经审查的生命周期
+## 审查生命周期
 
 ```text
 verified catalog set
@@ -977,17 +1286,21 @@ download changed nodes → commit disabled → prepare dependencies forward
              drain prior calls → retire generations reverse
 ```
 
-Install、upgrade、uninstall、enable 与 disable 是 durable operation。
-Apply 在 mutation 前 revalidate exact package lock、catalog evidence、host capability、policy authority、scope、confirmation 与 current state。
-Upgrade plan 绑定 prior 与 candidate lock，并将每个 node 分类为 `Add`、`Replace`、`Remove` 或 `Retain`。
+安装、升级、卸载、启用和禁用是持久操作。申请
+重新验证确切的包锁、目录证据、主机功能，
+政策权限、范围、确认以及突变前的现状。
+升级计划绑定优先锁和候选锁，并对每个节点进行分类
+如 `Add`、`Replace`、`Remove` 或 `Retain`。
 
-Managed activation 与 retirement 故意使用不同 evidence。
-Enable 或 candidate install/upgrade 使用 host-owned two-pass provider selection。
-Disable、uninstall 或 prior-generation upgrade cleanup 不携带 candidate selection，并 retire exact receipt-owned binding。
-若 stopped binding 以 new authorization semantics 被 re-enable，old binding 在 same package generation rebind 之前被 retire；
-conflicting immutable receipt 从不 in-place overwrite。
+管理激活和退休有意使用不同的证据。安
+启用或候选安装/升级使用主机拥有的两遍提供商选择。
+禁用、卸载或上一代升级清理不包含候选项
+选择并取消确切的收据拥有的绑定。如果停止的绑定是
+使用新的授权语义重新启用，旧绑定之前已停用
+同封装代反弹；冲突的不可变收据是
+从未被覆盖到位。
 
-Manager MCP toolset 将 read-only planning 与 mutation 分离暴露：
+管理器 MCP 工具集将只读计划与突变分开公开：
 
 ```text
 plugin_plan_install     plugin_plan_upgrade     plugin_plan_uninstall
@@ -995,54 +1308,70 @@ plugin_plan_enable      plugin_plan_disable     plugin_apply_plan
 plugin_observe_operation plugin_watch_operation plugin_cancel_operation
 ```
 
-`plugin_apply_plan` 是唯一 manager package-state mutation 入口；
-`plugin_cancel_operation` 是 separate pre-admission control-plane mutation，不能 publish package generation。
-`NoChange` enablement result 是 terminal，无 synthetic mutation identity。
-Crash recovery resume exact stored plan 与 authorization；
-re-read finished operation 返回 durable result 而不 repeat side effect。
-Applying 与 rolling-back record 均 retain exclusive operation ownership；
-不同 intent 在其 reach terminal record 之前不能 replace 任一 record。
-Inspection 在同一 package-scoped journal lock 下读取 latest 与 previous record。
+`plugin_apply_plan`是唯一的管理器包状态突变入口点；
+`plugin_cancel_operation` 是一个单独的预准入控制平面突变
+无法发布包生成。 `NoChange`启用结果是
+末端并且没有合成突变身份。崩溃
+恢复恢复精确存储的计划和授权；重读已完成的
+操作返回其持久结果，而不会重复产生副作用。
+应用和回滚记录均保留独占操作所有权；
+在到达终端之前，不同的意图不能取代任何一个意图
+记录。检查读取同一记录下的最新和以前的记录
+包范围的日志锁。
 
-`PluginManagerService` 现在是 `CognitivePackageHostManager` 之上的 shared typed application boundary。
-它拥有 deterministic request identity、Registry-bound search cursor、stable installed-state pagination、SemVer install/upgrade selection、全部五个 planning path、durable plan reopening 与 digest-only apply。
-`PluginManagerMcpServer` 通过 standard MCP initialization、`tools/list` 与 `tools/call` 暴露 exact thirteen v5 tool；
-其 schema 与 annotation 从 frozen toolset 生成。
-MCP apply 与 cancellation 向 injected trusted host confirmation provider 询问 existing exact evidence，且从不将 agent tool call 视为 user confirmation。
-Standalone CLI 的 Registry-backed install、upgrade 与 uninstall mutation 使用此 service，并在 released output field 旁暴露 exact reviewed Host plan/result。
-其 `plugin` surface 将全部十三个 manager operation 映射到同一 service，
-保持每个 plan read-only，
-暴露 exact operation observation/watch，
-且 apply 或 cancellation 要求 exact operation ID、plan digest 与 explicit `--yes`。
-Code TUI `/packages` 与 Code-side manager MCP 现在使用该同一 service。
-Human CLI 与 TUI review 从 immutable Manager envelope 派生一个 deterministic、read-only projection，
-展示 exact plan identity、candidate/prior package graph、source、transition、complete permission ceiling、provider/impact/state evidence 与 confirmation boundary，
-而不改变 machine JSON。
-TUI 在 exact apply 前 scroll 完整 review。
-此 qualification 在 A3S CLI `main` commit `bef7c913cbefba62638b37f91ce9263f4db2ffbb` 落地；
-CI run [32786647662](https://github.com/A3S-Lab/CLI/actions/runs/32786647662) 通过全部五个 main、Linux、macOS 与 Windows job。
-Six-surface product-host E2E 仍是 release gate。
+`PluginManagerService` 现在是共享类型应用程序边界
+`CognitivePackageHostManager`。它拥有确定性的请求身份，
+注册表绑定搜索游标、稳定的安装状态分页、SemVer
+安装/升级选择，所有五个规划路径，持久计划重新开放，
+和仅摘要适用。 `PluginManagerMcpServer`暴露了确切的13个v5
+通过标准MCP初始化`tools/list`和`tools/call`的工具；它的
+模式和注释是从冻结的工具集中生成的。 MCP 申请并
+取消请求注入的可信主机确认提供商现有的
+确切的证据，并且永远不要将代理工具调用视为用户确认。独立的 CLI
+注册表支持的安装、升级和卸载突变使用此服务并且
+公开经过精确审查的主办方计划/结果及其发布的输出
+字段。它的`plugin`表面将所有十三个管理器操作映射到同一个
+服务，保持每个计划只读，公开精确的操作观察/观察，
+并需要准确的操作 ID、计划摘要和显式 `--yes`
+申请或取消。代码 TUI `/packages` 和代码端
+Manager MCP 现在使用相同的服务。人类 CLI 和 TUI 审查派生出一个
+来自不可变管理器信封的确定性只读投影以及
+显示确切的计划身份、候选/先前包图、来源、
+过渡、完整的许可上限、提供者/影响/状态证据，以及
+确认边界而不改变机器 JSON。 TUI 滚动完整在确切申请之前进行审查。此资格登陆 A3S CLI `main` 提交
+`bef7c913cbefba62638b37f91ce9263f4db2ffbb`；持续集成运行
+[32786647662](https://github.com/A3S-Lab/CLI/actions/runs/32786647662)
+通过了所有五个主要的 Linux、macOS 和 Windows 作业。六面体
+产品主机 E2E 仍然是一个发布入口。
 
-Host protocol v6 绑定 explicit User 或 Workspace scope kind，并仅从 durable evidence project exact operation state。
-不同 kind 中 equal textual scope ID 不能 share fence、plan、request replay record 或 Host operation。
-Protocol 报告 factual phase 与 bounded checkpoint count，而非 invented percentage；
-将每个 status revision 绑定到 complete status，支持 revision-based long polling，且仅在接受 durable graph 或 enablement admission 之前 accept explicit-user cancellation。
-Publication 使 cancellation 为时已晚；
-仅 durable Host outcome 报告 `Completed`。
+主机协议 v6 绑定显式用户或工作空间范围类型和项目
+确切的运行状态仅来自持久的证据。相同的文本范围 ID
+不同类型不能共享栅栏、计划、请求重放记录或主机
+操作。该协议报告事实阶段和有界检查点计数
+而不是发明的
+百分比，将每个状态修订绑定到完整状态，支持
+基于修订的长轮询，并且仅接受显式用户取消
+在持久图表或启用许可之前。出版取消
+太晚了；只有持久的主机结果报告`Completed`。
 
-A1 two-installation qualification matrix 将同一 signed OKF package 驱动通过 concurrent User 与 Workspace installation（相同 textual ID）的 install、Host restart、exact capability snapshot、leased query、upgrade、uninstall 与 terminal replay。
-每次 mutation 使另一 installation 的 cursor unchanged 且其 retained lease callable，而 immutable package byte 通过 shared Artifact Store deduplicate。
+A1 两次安装资格矩阵驱动相同签名的 OKF 包
+通过安装、主机重启、精确能力快照、租用查询、升级、
+并发用户和工作空间安装中的卸载和终端重放
+具有相同的文本 ID。每个突变都会留下其他安装的光标
+不变且保留的租约可调用，而不可变的包字节是
+通过共享 Artifact Store 进行重复数据删除。
 
-Production managed-host adapter 仅存储 protocol request/operation binding 与 terminal projection。
-它不创建第二个 package、authorization 或 recovery state machine。
-Expired plan 仍 unusable，除非 exact Use-owned evidence 证明它已在 original review window 内被 admitted 或 completed；
-merely planned operation 必须再次 planned 与 reviewed。
+生产托管主机适配器仅存储协议请求/操作
+绑定和终端投影。它不会创建第二个包，
+授权或恢复状态机。过期的计划仍然无法使用
+除非用户拥有的确切证据证明它已经被承认或
+在原来的审查窗口内完成；仅仅是有计划的行动必须
+重新计划和审查。
 
-Workspace Grant 被 compose 进同一 graph saga。
-Candidate grant 在 package preparation 之前 persist，
-exact Registry cutover 被 record，
-accepted call 在 prior grant revoke 之前 drain，
-pre-cutover failure 将 package 与 Grant candidate 一起 rollback。
+工作空间补助金被组成相同的图形传奇。候选人补助金是
+在包准备之前保留，记录准确的注册表切换，
+在先前的授权被撤销以及预切换失败之前，已接受的呼叫已耗尽
+将一揽子计划和格兰特候选人重新组合在一起。
 
 ## 架构
 
@@ -1050,648 +1379,710 @@ pre-cutover failure 将 package 与 Grant candidate 一起 rollback。
   <img
     src="assets/readme/architecture.svg"
     width="100%"
-    alt="可信源进入经审查的 Plugin Manager 与 A3S Use 图生命周期，随后原子能力快照到达 A3S 宿主"
+    alt="Trusted sources enter one reviewed Plugin Manager and A3S Use graph lifecycle before an atomic capability snapshot reaches A3S hosts"
   />
 </p>
 
-| 边界 | 拥有 | 不拥有 |
-| --- | --- | --- |
-| Host Plugin Manager | Registry 配置、trust root、policy、user confirmation、reviewed plan/apply | Package byte 或 provider scheduling 内部 |
-| A3S Use | Verification、exact lock、immutable generation、receipt、grant、lifecycle journal、cutover evidence | Generic scheduling 或 UI rendering |
-| Runtime/Gateway | Tool 与 MCP provider execution、health 与 drain | Package resolution 或 trust policy |
-| A3S Flow | Workflow compilation、execution、replay 与 observation | 并行 package lifecycle |
-| Knowledge host | OKF validation、indexing、promotion、cited search | Process execution |
-| A3S Code/OS | Product UX、workspace/session scope、rendering、injected provider | 第二个 package manager |
+|边界|拥有 |不拥有 |
+| ---| ---| ---|
+|主机插件管理器 |注册表配置、信任根、策略、用户确认、审核计划/申请 |包字节或提供程序调度内部结构 |
+| A3S使用|验证、精确锁定、不可变代、收据、拨款、生命周期日志、切换证据 |通用调度或UI渲染|
+|运行时/网关 |工具和 MCP 提供程序执行、运行状况和消耗 |包解析或信任策略 |
+| A3S流程|工作流编译、执行、重放和观察 |并行包生命周期 |
+|知识主持人| OKF 验证、索引、提升、引用搜索 |流程执行 |
+| A3S 代码/操作系统 |产品用户体验、工作区/会话范围、渲染、注入提供程序 |第二个包管理器 |
 
-参见 [Plugin Platform Architecture](docs/plugin-platform-architecture.md)、
-[Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md)、
+参见【插件平台架构](docs/plugin-platform-architecture.md)，
+[生命周期和安全性](docs/plugin-platform-lifecycle-and-security.md)，
 [ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md)，以及
-[Control Store transaction boundary](docs/adr-003-control-store-transaction-boundary.md)。
-Machine-checked
-[coordinated cutover inventory](docs/control-store-cutover.md) 分类每个
-current state leaf、external owner、operational file 与 consumer，它们必须一起切换；
-它 explicitly 保持 production activation inactive，并 forbid dual write 或 legacy fallback read。
-
-Private A2 Control Store kernel 现在 qualify 其 clean-state schema-v11 aggregate。
-每个 operation 存储 canonical complete reviewed Plan envelope 与 versioned authorization evidence，
-然后 derive 并 revalidate 其 operation ID、Plan 与 authorization digest、action、root package、
-installation scope 与 generation cursor（在 restart 与 offline export verification 期间）。
-Authorization evidence v2 仅 retain exact prior Grant snapshot、reviewed change set 与 confirmation fact；
-resolved Grant 及其 receipt revision 是 derived output，而非 caller authority。
-Installation generation、desired package-state generation、immutable package-lifecycle generation
-与 Grant receipt revision 保持 distinct。
-
-Commit 前，kernel 从 reviewed Plan、exact prior generation、bounded committed history
-与 reviewed Grant evidence reconstruct complete target snapshot、两个 package generation axis
-与 complete target Grant inventory。全部五个 action、User 与 Workspace installation、
-multi-root shared dependency，以及 uninstall/reinstall 因此 reject caller-selected package 或 Grant identity。
-Offline export 与 restore verifier 再次运行同一 projection。
-
-Projection 还为每个 enabled Tool 与 MCP surface reconstruct complete reviewed Runtime provider selection。
-它 retain unrelated selection，remove disabled 或 removed surface，
-store full provider build/capability/semantics/enforcement evidence，
-并从 reviewed Plan evidence 上的 versioned canonical descriptor derive 每个 selection digest。
-Flow、OKF、Skill 与 UI 仍是 typed host effect，而非被 assign fictional Runtime provider。
-
-Separate candidate capability digest 从 target snapshot、package lifecycle identity、
-Grant revision 与 provider selection derive。它仅描述 committed desired capability identity；
-endpoint、readiness、compiled artifact 与 Knowledge application observation 仍是 post-commit evidence。
-
-同一 projection derive complete bounded sequence of work，不能 join local transaction：
-surface preparation、capability cutover、accepted-call drain 与 surface stop 或 removal。
-Dependency surface 在 dependant 之前 prepare；retirement 反向该顺序；
-upgrade 在 cutover 之前 prepare new incarnation，并在 removal 之前 drain old incarnation。
-每个 effect 命名 typed Capability Index、invocation-lease、Runtime、Flow、Knowledge、Skill 或 UI owner。
-Tool 与 MCP effect 携带 exact reviewed provider ID 与 selection digest；
-static host 从不 receive fictional Runtime selection。
-Optional selected surface 可在 cutover 前 degrade，但其 required dependency closure 与每个 retirement effect 仍 required。
-
-Package selection、lifecycle identity、Grant 与 reviewed provider selection 已在 aggregate 中 commit，
-因此不 duplicated 为 pseudo external effect。
-Canonical payload byte、其 domain-separated idempotency key、digest 与 relational projection 一起 commit，
-并在 restart 与 offline export verification 后再次 verify。
-
-Applied outcome persist canonical、owner-specific evidence，而非 arbitrary success digest：
-Capability Index receipt 现在 bind exact immutable Agent-facing catalog digest/generation/revision、
-invocation-lease receipt、exact Runtime selection 加 portable Task 或 opaque `gateway:` Service binding/readiness evidence、
-Flow artifact digest、Knowledge projection digest，以及 immutable Skill/UI content digest。
-每个 application rebind exact idempotency key 与 intent。
-Deferred、rejected 与 unknown outcome 仅 retain diagnostic evidence。
-Deferred 保留给证明 accepted no effect 的 owner；
-它 persist bounded not-before time 以便用 same key 自动 retry。
-
-Recording applied capability-cutover observation 在 drain、retirement 或 operation completion 之前
-retire prior publication、publish exact candidate，并在同一 transaction 中 advance capability cursor 及该 catalog binding。
-Required post-cutover failure 因此仍 reconciliation-pending，且必须 reuse original identity；
-它不能 rollback already visible generation。Completion 不能 predates 任何 provider observation。
-
-Kernel 还 qualify typed generation transition、full Grant 与 reviewed provider selection evidence、
-idempotent outbox reconciliation、bounded execution、corruption check，
-以及 deterministic offline-verifiable export 加 staged restore。
-其 inactive dispatcher 现在从 claim 到 later observation 持有 one installation-wide shared maintenance fence，
-至多 claim 一个 committed effect，在进入 owner 之前 release claim transaction 与 bounded executor，
-将 Capability Index、invocation-lease、Runtime、Flow、Knowledge、Skill 与 UI work 路由到 separate typed port，
-然后在 later transaction 中 record owner-specific applied、deferred、rejected 或 unknown evidence。
-
-Deferred effect 在其 durable not-before time 之前不能 reclaimed，然后以 same key 自动 retried。
-Provider timeout 必须在其 claim lease 内 leave fixed observation budget；timeout 是 durable unknown evidence。
-Timeout 或 cancellation 仅 detach wait，而非 possibly accepted effect task：
-该 task retain same shared fence 直到 actually finish。Process exit 仍 require explicit same-key reconciliation。
-
-Test 证明 commit-before-effect、provider I/O 期间 Store re-entry、unobserved process exit 后 exact-key recovery、
-hung-provider bounding 与全部七个 owner route。
-Concurrent whole-installation restore 不能 acquire exclusive maintenance fence，
-直到 provider observation durable 且 any detached in-process effect future 已 finish。
-
-Claim transaction 现在还 derive owner-shaped committed context：
-package port 仅 receive exact package selection、lifecycle、host、snapshot identity 与 Grant；
-Runtime 还 receive 其 full reviewed provider selection；
-Capability Index receive candidate generation 加 retained multi-root history 中
-每个 enabled selected surface 的 latest terminal preparation。
-Optional rejection 是 explicit degradation，而 missing Grant coverage、nonterminal 或 teardown state
-与 generation drift 在 owner I/O 之前 fail closed。
-Multi-root test 还 fixed generation insertion，使同一 transaction 内所有 package node
-precede 其 immediate-foreign-key dependency edge。
-Dispatcher 不由 production lifecycle code 构造，且不 beside current JSON store 创建 second authority。
-
-First concrete post-commit owner adapter 现在 against 该 boundary qualify immutable Skill 与 UI preparation。
-它从 portable request re-derive typed owner 与 idempotency key，仅通过 verified artifact lease acquire exact package，
-read 一个 named surface 而不 expose package root，并在返回 stable path-free receipt 前 re-verify complete package。
-Claim attempt 与 deadline 不改变该 receipt。
-Artifact contention 是 durable same-key deferral；tampering、missing content 或 authority substitution
-是 proved-no-effect rejection；read-only adapter 从不 report ambiguous acceptance。
-Static stop 与 remove 是 path-independent projection receipt，因此在 artifact collection 后仍 replayable。
-
-Second concrete adapter 现在 against 同一 committed boundary qualify OKF Knowledge。
-First preparation 消费 path-free、fully verified OKF byte payload；
-stage receipt-owned SQLite/FTS5 state；在 promotion 前 persist staged evidence；
-在 report applied 前 persist promoted evidence；并返回 exact observation 与 capability projection digest。
-Retained promoted receipt replay 而无需 reopen Artifact Store。
-Pre-effect contention safely defer，authority 或 byte drift reject，
-任何 ambiguous stage、promote、remove 或 receipt-persistence boundary 对 explicit same-key reconciliation 仍 unknown。
-Stop 是 path-independent checkpoint，remove 仅使用 retained projection receipt。
-
-Composition test 现在 prove committed Control claim 通过 real Knowledge adapter 并 back 到 durable Control application observation。
-Artifact admission separately idempotent 并在 create 无 installation lifecycle receipt 时 revalidate prepared source；
-caller 必须通过 separate authority commit retain 其 global reference-admission guard。
-
-Third concrete Capability Plane adapter 现在 own Capability Index publication 与 invocation drain。
-Validate committed authority 后，它 call host-owned pure projector，
-reject enabled 且 successfully prepared package incarnation 之外的 descriptor，
-durably publish exact Agent catalog，并 materialize 一个 canonical content-addressed Index document 绑定该 publication。
-不创建 second SQLite database 或 mutable `current` file。
-Applied cutover observation 仍是 sole publication transaction，并以 catalog digest/generation/revision advance Control cursor。
-
-Invocation admission reopen 并 rehash 那些 exact byte，verify Index，
-在 shared lock 下 read Control publication 于每个 exact package lifecycle incarnation，若 cutover raced 则 return stale。
-Drain 首先 prove old incarnation 不再 published，然后在 any accepted call retain shared lock 时 safely defer；
-release 后 apply same effect key。
-Catalog 与 Index publication 是 no-replace、no-follow、crash-replayable 且 path-free。
-Index 是 derived operational state，excluded from backup；
-coordinated state inventory 现在 register 并 semantically verify catalog 与 descriptor-snapshot record
-作为 one `CapabilityPayloads` family，而 lock、staging、journal 与 lease file 仍 excluded。
-
-`ControlCapabilityPayloadRestoreCoordinator` 现在在 one exclusive maintenance fence 下 bind catalog 与 descriptor plan，
-preflight 两个 clean target，并 retry fixed-order activation 而不 clobber already-published owner。
-`ControlCapabilityPayloadRetentionCoordinator` 现在在 same exclusive fence 下 bind 两个 owner retention plan，
-preflight 两个 inventory（包括 exact pending journal），并 replay fixed-order deletion。
-
-Inactive composition 现在 retain 同一 Capability Plane，
-并可在 restart 后 reopen durable published Control cursor 而不 accept caller-selected cursor。
-Reopening revalidate exact Index 与 catalog，reacquire 每个 package-generation lease，若 concurrent cutover wins 则 return stale。
-Production Control owner registration、live Gateway session construction from returned lease、
-lease drain 与 lifecycle retention authority 仍是 separate gate。
-Real composition test join Knowledge、Skill、catalog/Index publication、exact payload admission、stale admission 与 drain。
-
-Inactive composition 现在在 one lifecycle admission seam 接受 canonical cognitive-package Plan envelope、
-authorization evidence 与 optional planned Grant transition。
-它从 immutable Plan derive prior installation 与 capability cursor，而非 accept caller-selected value。
-其 combined composition entry point retain one installation-wide fence，
-同时 register exact reviewed operation、publish Runtime plan payload，并在 any provider effect 之前 commit projected generation。
-Production 仍须 route live lifecycle 通过此 seam 并 compose dispatcher。
-
-Inactive kernel 现在还有 committed-authority Flow owner：
-它 read bounded Flow source 作为 path-free verified Artifact Store payload，
-在 owner-controlled workspace publish durable no-clobber content-addressed copy，
-并仅 invoke typed `a3s-flow` Native TypeScript preflight。
-Package path 从不 cross 该 boundary；compiler/cache path 是 operational host configuration 而非 desired-state authority。
-Source substitution 与 failed preflight reject 而无 Control observation，而 Artifact Store contention safely defer。
-Stop/remove 是 path-independent receipt。此 qualification 在 production dispatcher composition cut over 之前 remain inactive。
-
-Committed-authority Runtime owner 现在在 same boundary 上 qualify release-backed Tool Task、Tool Service 与 Streamable HTTP MCP。
-First prepare 仅 consume path-free verified Tool/MCP release payload 与 explicit Runtime selection
-（其 provider 与 full semantics digest match committed Control authority）。
-Task persist self-contained binding 而不 start unit。
-Service 首先 persist `requested`，然后 retain exact Runtime 与 typed Gateway readiness evidence，
-并在 delete recovery authority 之前 commit final binding。
-Exact final receipt replay 而无需 Artifact access；
-retained terminal provisioning record reconcile 而无需 another Runtime apply；
-stop/remove 仅 use receipt-owned provider、Gateway 与 generation evidence。
-Pre-effect contention deferred，invalid authority 或 immutable byte rejected，
-Runtime/Gateway effect 之后所有 persistence 或 protocol ambiguity 仍 unknown。
-
-Runtime package 现在还 expose bounded canonical `RuntimeSurfacePlan` payload 与 `CommittedRuntimeSurfaceResolver`，
-在 restart 后 reconstruct full plan 并 recheck provider evidence。
-此 owner 仍 qualification-only：production composition 必须 supply durable host source 与 atomic dispatcher，
-而非 retain process-local selection 作为 authority。
-
-Inactive Control composition proof 随后仅 accept registered operation identity 与 host-produced immutable plan payload。
-它在 Control 内 project 所有 mutable transition field，validate exact Runtime publication 与 Grant authority，
-并在 one shared installation fence 下 order plan publication before generation commit。
-这 narrow cutover boundary，而不 make private kernel 或 legacy consumer production-active。
-
-Kernel 现在还 qualify path-free external-payload registration 与 snapshot-evidence boundary。
-其六个 frozen owner identity 与 fixed backup policy 对照 ACL cutover inventory 检查。
-Global Artifact Store explicitly excluded，而其余五个 owner 必须 produce one complete、canonically ordered receipt set，
-绑定 exact installation、Control generation、registry digest、owner schema、inventory/manifest digest 与 bounded file/byte accounting。
-Decoded evidence 在其 descriptor digest 被 accept 之前 revalidated。
-
-Private snapshot session 现在 freeze one canonical Control export 及其 digest，
-同时在 owner I/O 期间 retain same exclusive maintenance fence，而不 retain SQLite transaction 或 store-executor permit。
-Knowledge owner adapter snapshot scope-local OKF SQLite/FTS5 Knowledge database 到 non-overwriting bounded archive，
-derive canonical binding/selection inventory digest，并 offline re-verify archive。
-Live receipt issuance 与 offline acceptance 均 require snapshot binding 命名的 same canonical Control export byte。
-
-每个 retained Knowledge incarnation 必须 originate 于其 exact Control prepare intent 与 committed OKF bundle；
-applied preparation 必须 match retained Knowledge observation 与 capability-projection digest。
-此 join 在 destination archive 写入前 against temporary SQLite snapshot 运行，因此 semantic mismatch 不留 archive 或 receipt。
-Removed 或 missing formerly applied payload 需要 same lifecycle 的 recorded remove effect，
-而 deferred outcome 仍是 safe-no-effect scheduling evidence，claimed 或 unknown outcome 仍是 evidence to reconcile；
-none 是 new desired-state authority。
-
-Absent Knowledge database 产生 explicit zero-file manifest 而不 create live directory；manifest 与 receipt 不含 host path。
-Offline-verified Knowledge snapshot 现在可 stream exact database 到 caller-owned、state-root-local candidate，而不 touch live payload。
-Clean-target activation 要求 exact installation 的 exclusive maintenance guard，
-re-audit candidate 及其 binding/selection inventory，reject unowned、existing 或 ambiguous payload state，
-并通过 one atomic rename publish。Exact completed partial replayable。
-While same staged attempt 与 exclusive guard retained，publication 后、return canonical path-free result 前的 retry reconcile exact live database。
-Absent payload activation 不 create Knowledge state。
-
-Second typed adapter 现在 snapshot planning-and-diagnostic observation owner。
-它 archive 仅 owner-validated terminal diagnostic history 与 terminal resolution attempt；
-active resolution 与 download attempt 加 operational lock 从不 restore 为 authority。
-Exact active inventory count 与 digest 仍 bound 到 manifest。
-Secure bounded traversal reject link、moved 或 foreign record、unknown layout、duplicate package identity 与 file/byte overrun。
-Archive creation 是 no-clobber，publication 前 re-scan live state，并 emit path-free Control-export-bound receipt 可 offline verify。
-
-Offline-verified observation snapshot 现在 copy exact archive 到 state-root-local staging directory，而不 touch live owner path。
-First activation 要求 clean terminal/active record inventory 与 exact exclusive maintenance guard，
-然后在 publish any record 前 atomically change archive candidate 为 `activating` marker。
-Digest-named deterministic partial 使 interrupted per-record publication replayable；
-activation 开始后仅 accept exact snapshot subset。
-Candidate、target、link、active-record 与 archive drift fail closed，lock 仍 excluded，canonical result 不含 host path。
-两个 adapter 仍 inactive qualification code，未 wired 到 current backup 或 restore scanner。
-
-Host protocol projection 现在是第三个 qualified snapshot 与 clean-target restore adapter。
-其 owner-native scanner archive 仅 immutable request-to-plan record、optional terminal outcome，
-以及每个 exact operation binding 的一个 canonical cancellation。
-Operation alias 与 latest-enablement diagnostic index 仍是 derived：
-它们必须 complete 并与 source request 一致，但从不 enter archive。
-Bounded no-follow traversal、second live scan、no-clobber publication 与 exact offline decoding
-reject linked、moved、missing、stale 或 orphaned record 与 archive substitution。
-
-Publication 前，Host plan、completion/cancellation evidence、package identity、desired state、selected surface
-与 package/capability generation 必须 derivable 从 exact bound Control export；
-Host receipt 与 health evidence 仍是 observation，不能 select desired state。
-Manifest 与 receipt path-free，explicitly represent absence，并 preserve no-change request 而不 fabricate operation。
-
-Offline-verified snapshot 现在 stage private archive copy 并在 target state root 下 build one complete `plugin-host-manager` candidate。
-它 restore exact semantic source byte，rebuild 仅 canonical exact operation 与 latest-enablement index，
-并 deliberately omit legacy alias 与 lock file。
-Activation 要求 exact target 的 exclusive maintenance guard 与 absent live owner root，
-revalidate exact tree 与 owner-native semantic scan，record snapshot-bound durable activation marker，
-并通过 one atomic no-clobber directory move publish entire owner root。
-Archive、record 与 activation-marker partial recover deterministically；
-publication 后、pre-result replay 仅 accept same exact snapshot。
-Candidate、live-root、link、archive 与 marker drift fail closed，absence 不 create owner root，result 不含 host path。
-此 adapter 仍 inactive qualification code。
-
-Restore Coordinator 现在是第四个 qualified snapshot owner。
-其 owner-native journal scanner archive 仅 exact、canonically encoded completed restore operation（绑定 installation）。
-Active marker 及其 exact operation excluded from payload authority，
-但其 bounded count 与 digest inventory 仍 manifest-bound；marker-only handoff represented 而不 invent history。
-Orphaned nonterminal record、pruning 或 temporary state、unknown entry、link、foreign installation 与 path/record rebinding fail closed。
-Second scan precede no-clobber archive publication，path-free receipt 与 streaming offline verifier bind result 到 exact Control export。
-Empty 或 active-only history 不 create archive。
-
-Offline-verified snapshot 现在可在 target installation state root 下 build immutable candidate。
-Because current restore own same journal，activation intentionally 不是 clean-target merge：
-要求 exact exclusive maintenance guard 与 active marker，preserve marker 与 current operation，且仅 replace terminal history。
-Durable activation descriptor bind snapshot、stable active identity 与 exact before/target inventory。
-Existing terminal directory moved 到 retained staging tombstone，然后 candidate record published 而不 replacement。
-Replay tolerate active operation advancing，同时 reject marker drift、link、unknown state、candidate 或 tombstone tampering 与 unexplained live change。
-Marker-only handoff 与 absent history supported。
-
-Legacy whole-installation marker reserve active operation 的 future terminal slot，
-因此 64-record source deterministically drop same native oldest record journal 会 prune 的 record。
-Typed complete-set marker 无 retained operation，因此 preserve 全部 64 source record。
-Canonical result path-free 且 snapshot-bound。此仍 inactive qualification code。
-
-Runtime plan owner 现在 snapshot immutable installation-scoped plan record，
-verify 其 complete key 与 canonical envelope，并在 Host projection activation 前 restore；
-referenced Runtime artifact digest 也 included 于 installation artifact-reachability evidence。
-
-Private complete-set snapshot coordinator 现在在 one exact maintenance fence 与 timestamp 下
-capture canonical Control export 与全部五个 registered owner snapshot。
-它 bind fixed owner set、receipt、digest、schema 与 byte accounting 于 one path-free canonical manifest，
-stream 到 single no-clobber archive（位于每个 Use data 与 state root 之外），
-并在 publication 前 reuse 每个 owner-native verifier audit entire staged file offline。
-Absent owner contribute receipt 但不 invent payload byte；global Artifact Store 仍在 installation backup 之外。
-Archive header、manifest、length、payload digest、trailing-byte、link、drift、rebinding 与 overwrite failure 均 fail closed。
-此 complete-set writer 也是 inactive qualification code。
-
-Offline-verified complete snapshot 现在可在 retain exact target exclusive maintenance fence 下，
-stage Control database 与全部五个 owner candidate 于 one fixed `.control-installation-restore` directory。
-One canonical path-free attempt descriptor bind snapshot、installation、owner registry、Knowledge storage policy 与 fixed component set，
-于 candidate I/O 开始前。
-Control candidate 必须 round-trip 到 exact canonical export，checkpoint 到 one SQLite file，并 match durable byte digest；
-每个 external candidate 由 owner-native adapter 在同一 guard 下 build 与 recheck。
-Present 与 absent owner、completed retry 与 interrupted Control staging deterministic，
-而 nonempty target、unknown 或 linked entry、snapshot/policy rebinding 与 completed-candidate drift fail closed 而不 touch live authority path。
-
-Complete-set coordinator 现在 qualify 整个 cross-owner activation protocol。
-Durable intent 前，每个 present 或 absent owner candidate revalidated against clean target。
-Immutable attempt descriptor 仍是 restore identity；`activation.json` 是 sole mutable journal；
-typed global `.maintenance.restore.json` marker bind attempt 到 one immutable activation operation。
-Fixed owner order 是 Control Store、Runtime plan、Host projection、Knowledge、observation，然后 Restore Coordinator。
-每步使用 same journal-marker-effect-checkpoint discipline，
-每个 checkpoint bind canonical path-free owner result by length 与 domain-separated digest。
-Restore Coordinator receive exact expected marker byte、length 与 digest，然后才 change history。
-仅 sixth durable checkpoint permit global marker retirement。
-
-Reopening reacquire exact exclusive guard，rebind same verified snapshot、attempt、owner registry 与 Knowledge policy，
-并在 exact candidate/live boundary reconstruct 或 verify 每个 owner。
-Journal 与 marker partial、每个 owner effect before checkpoint、final checkpoint before marker deletion、
-marker deletion 后立即 process exit，以及每个 fixed-order staging retirement 后 exit 均 deterministic converge。
-21-boundary subprocess matrix exercise 那些 top-level exit。
-Missing marker 仅在有 complete six-checkpoint journal 时 accepted；
-ambiguous marker、out-of-order live root、snapshot rebinding、linked path 或 evidence drift fail closed。
-Completed replay 执行 no owner effect；它仅 resume bounded retirement of six link-free staging tree。
-Surviving canonical `attempt.json` 与 complete `activation.json` 构成 exact installation-bound terminal receipt。
-
-Legacy backup 与 artifact reachability 仅 exclude 该 two-file receipt；
-incomplete、extended、linked 或 tampered evidence fail closed。
-Production Grant conversion、Runtime/Flow dispatcher composition、backup/restore command wiring、
-indivisible consumer cutover 与 deletion of legacy mutable store 仍 open。
-
-Research-preview
-[MHS integration profile](docs/mhs-integration.md) 定义 hardware adapter boundary，
-而不 add 另一个 package surface 或 protocol fork。
-
-## 当前契约基线
-
-仅接受以下 cognitive-package protocol line：
-
-| 契约 | 当前 schema |
-| --- | --- |
-| Package manifest | schema version `3` |
-| Registry source configuration | ACL schema version `1` |
-| Signed catalog record | `a3s.use.plugin-catalog.v3` |
-| Installed receipt | schema version `6` |
-| Installation snapshot | `a3s.use.installation-snapshot.v2` |
-| Operation plan | `a3s.use.plugin-operation-plan.v4` |
-| Host capabilities | `a3s.use.plugin-host-capabilities.v6` (protocol `6`) |
-| Host managed scope | `a3s.use.plugin-managed-scope.v2` |
-| Host operation observation | `a3s.use.plugin-host-operation-observation-request/result.v1` |
-| Host operation watch | `a3s.use.plugin-host-operation-watch-request.v1` |
-| Host cancellation | `a3s.use.plugin-host-cancel-request/result.v1` |
-| Manager MCP toolset | `a3s.use.plugin-manager-tools.v5` (v4 migration contract 仍可读) |
-| Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
-| Pre-lock resolution attempt | `a3s.use.plugin-resolution-attempt.v1` |
-| Pre-plan download attempt | `a3s.use.plugin-download-attempt.v1` |
-| Lifecycle diagnostic | `a3s.use.plugin-lifecycle-diagnostic.v1` |
-| Operation diagnostic | `a3s.use.plugin-operation-diagnostic.v1` |
-| Operation history | `a3s.use.plugin-operation-history.v1` / `a3s.use.plugin-operation-history-diagnostic.v1` |
-| Pre-lock resolution diagnostic | `a3s.use.plugin-resolution-attempt-diagnostic.v1` |
-| Pre-plan download diagnostic | `a3s.use.plugin-download-attempt-diagnostic.v1` |
-| Enablement recovery projection | `a3s.use.cognitive-package-enablement-projection.v3` |
-| Enablement operation | `a3s.use.cognitive-package-enablement-operation.v3` |
-| Extension Registry snapshot | schema version `3` |
-| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v3` |
-| Capability snapshot | schema version `5` |
-| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v4` |
-| Capability descriptor | `a3s.use.capability-descriptor.v1` |
-| Signed capability description | `a3s.use.capability-description-signature.v1` (Ed25519) |
-| Control descriptor evidence snapshot | `a3s.use.control-capability-descriptor-snapshot.v1` (proof-only compatibility) / `v2` (signed envelope) |
-| Control descriptor snapshot retention plan | `a3s.use.control-capability-descriptor-snapshot-retention-plan.v1` |
-| Control descriptor snapshot retention result | `a3s.use.control-capability-descriptor-snapshot-retention-result.v1` |
-| Control descriptor snapshot retention journal | `a3s.use.control-capability-descriptor-snapshot-retention-journal.v1` (internal) |
-| Control descriptor snapshot restore plan | `a3s.use.control-capability-descriptor-snapshot-restore-plan.v1` |
-| Control descriptor snapshot restore result | `a3s.use.control-capability-descriptor-snapshot-restore-result.v1` |
-| Capability Gateway catalog | `a3s.use.capability-gateway-catalog.v1` |
-| Capability Gateway catalog restore plan | `a3s.use.capability-gateway-catalog-restore-plan.v1` |
-| Capability Gateway catalog restore result | `a3s.use.capability-gateway-catalog-restore-result.v1` |
-| Capability payload restore plan | `a3s.use.control-capability-payload-restore-plan.v1` |
-| Capability payload restore result | `a3s.use.control-capability-payload-restore-result.v1` |
-| Capability payload retention plan | `a3s.use.control-capability-payload-retention-plan.v1` |
-| Capability payload retention result | `a3s.use.control-capability-payload-retention-result.v1` |
-| Capability payload retention coordinator journal | `a3s.use.control-capability-payload-retention-journal.v1` (internal, restart-recoverable phase boundary) |
-| Capability consumer profile | `a3s.use.capability-consumer-profile.v1` |
-| Capability consumer negotiation | `a3s.use.capability-consumer-negotiation.v1` |
-| Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
-| Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
-| Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
-| Artifact Store physical inventory | `a3s.use.artifact-store-inventory.v1` |
-| Artifact Store digest audit | `a3s.use.artifact-store-digest-audit.v1` |
-| Artifact quarantine plan | `a3s.use.artifact-quarantine-plan.v1` |
-| Artifact quarantine record | `a3s.use.artifact-quarantine-record.v1` |
-| Artifact quarantine result | `a3s.use.artifact-quarantine-result.v1` |
-| Artifact rehydration plan | `a3s.use.artifact-rehydration-plan.v1` |
-| Artifact rehydration record | `a3s.use.artifact-rehydration-record.v1` |
-| Artifact rehydration result | `a3s.use.artifact-rehydration-result.v1` |
-| Registry artifact reference inventory | `a3s.use.registry-artifact-reference-inventory.v1` |
-| Global artifact reference inventory | `a3s.use.artifact-reference-inventory.v1` |
-| Joined artifact reachability inventory | `a3s.use.artifact-reachability-inventory.v1` |
-| Coordinated Use state backup | `a3s.use.state-backup.v2` |
-| Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v2` |
-| Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v2` |
-| Coordinated Use state restore plan | `a3s.use.state-restore-plan.v1` |
-| Coordinated Use state restore operation | `a3s.use.state-restore-operation.v1` |
-| Coordinated Use state restore result | `a3s.use.state-restore-result.v1` |
-| Coordinated Use state restore diagnostic | `a3s.use.state-restore-diagnostic.v1` |
-| OKF Knowledge search | `a3s.use.okf-knowledge-search-request.v1` / `a3s.use.okf-knowledge-search-response.v1` |
-| OKF Knowledge citation | `a3s.use.okf-knowledge-citation.v1` |
-| OKF Knowledge read | `a3s.use.okf-knowledge-read-request.v1` / `a3s.use.okf-knowledge-read-response.v1` |
-| OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
-| OKF Knowledge backup retention plan | `a3s.use.okf-knowledge-backup-retention-plan.v1` |
-| OKF Knowledge backup retention result | `a3s.use.okf-knowledge-backup-retention-result.v1` |
-| OKF Knowledge restore plan | `a3s.use.okf-knowledge-restore-plan.v2` |
-| OKF Knowledge restore operation | `a3s.use.okf-knowledge-restore-operation.v2` |
-| OKF Knowledge restore result | `a3s.use.okf-knowledge-restore-result.v2` |
-| OKF Knowledge restore diagnostic | `a3s.use.okf-knowledge-restore-diagnostic.v2` |
-
-SemVer dependency constraint、`requires_use`、OS/target check 与 host/provider capability check 是 product behavior，
-而非 backward-compatibility branch。
-较旧的 pre-release schema 与 persisted state deliberately 不 migrated。
-删除 unsupported state 并用 current build reinstall。
-
-## 实现状态
-
-Gateway embedding host 可通过
-`CapabilityRegistrySnapshot::capability_gateway_catalog` 从一个
-`CapabilityRegistrySnapshot` 派生 consumer-specific catalog；helper 在
-`CapabilityGatewayMcpServer::from_registry_snapshot` acquire RAII lease 前
-verify public projection revision 加 exact package/publication/readiness evidence。
-
-对 live host，`from_verified_registry_snapshot_with_factory_and_options`
-现在在 one constructor 中 compose verified description projection、cursor-bound resolver、
-exact RAII lease、consumer negotiation 与 bounded admission policy；publication race 返回 no server。
-Signature verification 与 receipt/Runtime/Grant-backed opaque-reference resolution 仍 host-owned，
-product wiring 仍 open。
-
-Inactive Control composition 现在对其自身 cursor 有 equivalent authority join：
-`ControlCapabilityGatewayInvocationFactory` 在 descriptor byte-for-byte compare 与 durable catalog 后
-receive exact reopened Control lease，`CapabilityGatewayResolvedProvider` 在整个 Tool、Resource 或 Prompt operation 期间 retain 该 lease。
-这使 opaque-reference resolution 在 Control generation 上，而非 accidentally fallback 到 legacy Registry resolver；
-host factory 仍 own private Grant/Runtime/provider binding，production activation 仍 open。
-
-Gateway 现在有 typed consumer boundary。`CapabilityConsumerProfile`
-区分 default generic MCP client 与 explicit A3S consumer，
-而 `CapabilityConsumerNegotiation` 将 sorted、digest-bound extension set 绑定到 Gateway，
-并 reject unsupported request 而非 silently downgrade。
-Existing constructor 默认仍为 generic-MCP。Profile label 仅是 metadata。
-Descriptor 可 declare canonical `requiredExtensions`，Gateway 在 compile discovery 或 invocation route 前
-remove negotiated consumer 未 accept 的 requirement。
-
-Standard adapter publish catalog-authorized、schema-validated MCP Tool
-加 bounded opaque-URI Resource 与 declared Prompt；每个 discovery list deterministic 且 cursor-paginated。
-Discovery cursor opaque，绑定 MCP surface、negotiated catalog digest 与 frozen principal visibility view，
-因此 replaced publication 的 cursor fail closed 并 stale-cursor signal，而非 silently skip 或 repeat capability。
-Host 可 inject `CapabilityGatewayDiscoveryPolicy` freeze principal-scoped Tool/Resource/Prompt visibility
-per authenticated context；denied route 从 discovery 与 direct access 消失，而 provider per-operation authorization 仍 mandatory。
-Existing constructor retain allow-all compatibility policy，因此 production multi-principal host 必须 explicitly opt in。
-Flow/Knowledge/UI payload projection 与 production host composition 仍是 separate gate。
-
-Adapter 还 consume rmcp per-request cancellation：cancel in-flight Tool、Resource 或 Prompt
-会 drop provider future 及其 short-lived admission/resolver lease，
-并在 protocol 仍可 deliver 时给出 typed secret-free cancellation result。
-参见 [Capability consumer profiles](docs/capability-consumer-profiles.md) 了解 contract 及其 limit。
-
-Agent-visible description 也可 cross explicit cryptographic trust boundary。
-`a3s-use-core` 定义 canonical、domain-separated `SignedCapabilityDescription` envelope；
-`a3s-use-extension` 用 bounded public-key trust store verify Ed25519 signature，enforce key rotation、expiry 与 revocation。
-Gateway 现在 expose signed-description composition constructor，在 take Control snapshot lease 或 provider resolver 前 verify 每个 envelope。
-Private `VerifiedCapabilityDescription` wrapper retain exact replay byte，restore 后必须 reverify。
-Trust-store source 仍 host-supplied，此 path 尚未 wired 到 official Registry/TUF source 或 production Control lifecycle。
-参见 [Capability description signatures](docs/capability-description-signatures.md)。
-
-Gateway 还 expose shared、bounded `CapabilityGatewayNotificationHub`。
-Client initialize 后，host 可 publish newer immutable catalog key 并 concurrently fan out standard MCP
-`tools/list_changed`、`resources/list_changed` 与 `prompts/list_changed` notification。
-Repeated 或 older publication key coalesced，closed 或 back-pressured peer retired。
-这是 notification seam，非 mutable catalog：host 必须 switch new session 到 replacement server，
-并 retain prior generation lease 直到 drain。
-Session-factory replacement 带 new discovery-policy snapshot 也 treated 为 view change，
-因此 initialized client 即使 source publication key unchanged 也 receive same notification。
-
-需要 restart-safe ownership of Agent-facing payload 的 host 可使用 `CapabilityGatewayCatalogStore`。
-它 validate installation binding 与 canonical catalog byte，
-在 bounded SHA-256 content-addressed layout 下 store record，
-使用 no-follow file check 加 deterministic staging 与 hard-link publication，
-并 expose exact `get`、`get_exact` 与 bounded inventory read。
-Store by design 无 mutable「current」pointer：Control/lifecycle cutover 必须 bind returned digest 到 committed generation，
-并 retain corresponding session lease。
-
-Inactive Control composition 现在 qualify 该 hand-off：host-owned、side-effect-free projector 仅 receive committed capability authority；
-concrete owner validate 每个 projected descriptor against enabled package incarnation 与 terminal surface evidence，
-durably publish catalog 与 Capability Index，然后 return both identity 作为 one typed application。
-Recording applied observation atomically advance published Control cursor 及 catalog digest、generation 与 revision。
-Live admission reopen 那些 exact byte 后再 take package-generation lease。
-
-Strict descriptor projector 现在在 explicit package-scoped signer allowlist 下 consume host-verified signed proof，
-check exact catalog surface dependency、terminal owner-specific receipt evidence、active Grant coverage
-与 reviewed Tool/MCP workload shape，然后 derive opaque route reference。
-它 intentionally 是 pure subset projection。
-
-Installation-owned descriptor snapshot store 现在 support signed v2 admission path：
-publication 前 verify 每个 canonical Ed25519 envelope，retain exact envelope beside derived proof projection，
-restart projection 时对 current trust store 与 clock re-verify envelope。
-Legacy v1 proof-only path 仍是 explicit compatibility mode，不能 downgrade signed v2 record。
-Snapshot file content-addressed by canonical byte（而非 mutable key），
-published 带 bounded no-follow staging/no-clobber replay，每次 restart read revalidated；
-missing snapshot 是 safe retry，substitution、tampering、expiry 或 revocation rejected。
-
-Coordinated state backup 现在仅 admit exact content-addressed catalog 与 descriptor-snapshot record
-并 validate canonical owner byte；replay 仍 recheck signed envelope against current trust policy。
-这仍是 qualification code：cryptographic key-source binding 到 official Registry/TUF metadata、
-production Control/Runtime/receipt wiring 与 clean-target restore activation 仍是 host gate。
-
-Runtime Tool release planning 现在 carry canonical input/output schema attestation 通过 plan、binding receipt 与 Control evidence；
-verified artifact admission 与 strict descriptor projection compare same descriptor 与 schema digest。
-Production Control activation、lifecycle-selected retention policy 与 retirement coordination 仍是 separate gate；
-owner-native restore 与 retention coordinator 是 qualification boundary，直到该 authority composed 到 live host。
-Retention 现在在 unlink 前 record durable paired-owner phase journal，backup/reachability refuse run 直到 pending journal recovered。
-
-Embedding boundary 现在还 include `CapabilityGatewaySessionFactory`：
-durable publication 后，host 可按 order replace immutable Gateway generation，
-retain one standard MCP notification hub，keep old in-flight operation 在其 exact lease 上，
-而 later request 于 same endpoint observe new catalog。
-其 bounded `drain` transition close new request admission，wait already-admitted operation under deadline，
-并 release factory source lease 以便 lifecycle owner enter exclusive retention 或 restore fence。
-
-`from_published` 与 `replace_published` path re-read exact store publication
-并 verify negotiated consumer projection 与 complete source catalog，然后 source 才 visible。
-Replacement 使用 conditional source swap，因此 concurrent local cutover 在 publication verification 后不能 overwritten。
-
-Inactive Control composition 还提供 `reopen_published_capability_gateway` 与 `replace_published_capability_gateway`：
-两者从 durable Control authority derive lease，retain 于 immutable Gateway server 内，并 reject unleased replacement。
-Successful Control-bound drain retain one-shot typed endpoint identity，
-因此 exact shutdown retry 在 source lease detached 后仍 idempotent，
-而 directly drained 或 copied unleased catalog 仍 rejected。
-Conditional replacement 还 refuse overwrite newer local cutover 以 stale same-generation build。
-Production Control activation、provider composition、retirement 与 retention coordination 仍是 host responsibility。
-
-Session identity derived 从 complete immutable source publication before consumer negotiation，
-因此 filtering optional descriptor 不 break Control lease binding 或 lifecycle reconciliation。
-Upgrade 期间，reconciliation validate existing endpoint 的 prior Control lease against 其 own source identity，
-然后 swap newly acquired publication lease。
-
-Catalog payload cleanup 现在也是 explicit plan/apply operation：
-`CapabilityGatewayCatalogStore` 要求 lifecycle-supplied protected digest set，
-在其 mutation lock 下 revalidate canonical inventory，并 remove 仅 reviewed complement 带 durability check。
-Destructive owner apply 现在 take installation exclusive maintenance fence，
-因此 live Control-backed snapshot/Gateway lease 不能 pruned around。
-
-Inactive Control composition 添加 `plan_published_capability_payload_retention` 与 `apply_published_capability_payload_retention`：
-它们 derive durable published catalog（及 present 时 matching descriptor snapshot），
-在该 exclusive fence 下 recheck cursor，并 reject 会 remove 它的 plan。
-`drain_and_retain_published_capability_gateway` 为 shutdown 与 retirement path compose endpoint drain 与该 plan/apply sequence。
-Host 仍 explicitly add independently managed rollback 或 legacy endpoint digest；store 从不从 in-memory pointer guess liveness。
-
-同一 owner 现在通过 `plan_clean_restore` 与 `apply_clean_restore` expose plan-bound clean-target restore primitive。
-Caller confirm canonical plan digest 并 supply exact catalog set；
-adapter stage 并 verify complete owner directory，record durable activation marker，并用 no-clobber directory move publish。
-Existing owner state 从不 merged 或 replaced，foreign staged plan rejected，retry 可 replay durable candidate。
-这是 owner-native building block：Control registration、signed descriptor restoration、session drain
-与 production rollback orchestration 仍 belong lifecycle host。
-
-Control descriptor-snapshot owner 现在 supply corresponding clean-target adapter。
-Plan bind 每个 snapshot digest 到 key digest、Control generation、canonical byte count 与 signed/proof-only mode；
-apply recheck exact set，对 signed v2 record 在 staging 前 require current `CapabilityDescriptionTrustStore` 与 clock。
-Candidate 与 activation evidence replayable，publication no-clobber。
-`ControlCapabilityPayloadRestoreCoordinator` 在 single exclusive fence 下 compose 两个 owner plan 并按 fixed order replay；
-owner publication 之间的 process stop recoverable by replay same plan。
-这是 ordered、recoverable activation 而非 cross-directory atomic rename。
-
-`ControlCapabilityPayloadRetentionCoordinator` 在 one exclusive fence 下 compose corresponding retention plan，
-在 first unlink 前 verify 两个 inventory，并按 catalog → descriptor order resume exact owner journal。
-这是 recoverable ordered deletion 而非 cross-directory atomic transaction。
-
-Inactive Control composition 现在 supply restart-safe cursor-reopen boundary 与 cursor-bound retention plan/apply entry point；
-production owner registration、live Gateway session replacement from that lease、
-lifecycle invocation of drain-and-retain boundary 与 rollback authority 仍在 these store 之外。
-
-Control descriptor snapshot 通过 `plan_retention`、`apply_retention` 与 `recover_retention` expose same owner-level contract。
-Plan embed complete protected/removal partition，每个 unlink checkpointed 于 bounded canonical journal，
-pending journal block publication 与 read，non-empty inventory 必须 retain 至少 one snapshot。
-Production Control registration、lifecycle activation 与 trust-source selection
-仍 supply authority 以 choose 与 reopen descriptor generation。
-
-Paired `ControlCapabilityPayloadRetentionCoordinator` 添加 cross-owner boundary：
-两个 inventory preflighted 于 one exclusive maintenance fence before catalog record removed，
-然后 descriptor snapshot removed 于 fixed order；owner 之间 interruption resumed by replay same plan。
-
-
-| 领域 | 状态 |
-| --- | --- |
-| 六表面 ACL 包契约 | 已实现并有 fixture 支撑 |
-| MHS research-preview 适配器 profile | A3S Use 边界、least-authority ceiling、exact managed-MCP publication gate、dependency graph 与 no-implicit-write-retry 规则已文档化并 contract-tested。这不是 MHS 实现或 protocol-conformance 声明 |
-| Signed catalog-v3、TUF verification、durable replaceable Registry source 与 opt-in public-endpoint SSRF policy | 在 engine 与 standalone CLI 中已实现；managed host 必须为 untrusted tenant endpoint 选择 strict policy |
-| Shared Plugin Manager service、CLI、TUI 与 manager MCP | Typed application service 实现 search、inspect、stable installed listing、status、install/upgrade/uninstall 与 enable/disable planning、durable plan reopening、digest-only apply、exact operation observation/watch，以及 one Host Manager 上的 trusted pre-admission cancellation。Standard MCP adapter 暴露 thirteen-tool v5 inventory，mutation 或 cancellation 要求 injected trusted confirmation evidence。Standalone Registry-backed compatibility mutation 使用 service 而不 break existing JSON field，而 one-to-one `plugin` CLI 暴露全部十三个 operation、exact typed result、explicit digest-bound `--yes` apply/cancellation、durable replay 与 zero-network cached apply。A3S Code CLI、TUI `/packages` 与 product-host manager MCP compose 同一 service。Human CLI/TUI presentation 现在从 immutable envelope derive exact plan、graph、source、permission、operation status 与 confirmation boundary 而不改变 machine JSON；product-host E2E 仍 open |
-| Capability Gateway contract 与 embedding MCP adapter | 已实现并 contract-tested：immutable path-free descriptor/catalog contract、opaque invocation/artifact/endpoint/resource reference、exact snapshot-lease 与 publication/lifecycle-generation binding、typed generic-MCP/A3S consumer-profile negotiation（canonical digest 与 no-silent-downgrade semantics）、route compilation 前 negotiated `requiredExtensions` catalog projection，以及 standard MCP `CapabilityGatewayMcpServer`（仅 route catalog-authorized Tool、Resource 与 Prompt 通过 injected `CapabilityGatewayInvocationProvider`）。Tool、resource 与 prompt discovery deterministic、bounded 且 cursor-paginated；resource read 要求 exact opaque URI；prompt argument closed against reviewed declaration；provider output bounded、path-free 且 catalog-linked。Host 可 inject bounded `CapabilityGatewayDiscoveryPolicy` freeze principal-scoped visibility 于 list 与 direct-access method，同时 retain provider authorization 为 separate gate。Host 可在 `/mcp` expose Streamable HTTP（bearer authentication、optional exact Origin policy、duplicate-header rejection、bounded in-flight/rolling-window admission、sanitized HTTP error、explicit pre-operation authorization hook 与 typed host-authenticated transport/principal context）。`CapabilityGatewayInvocationResolver` 与 `CapabilityGatewayResolvedProvider` 为 opaque reference 提供 single-resolution、lease-scoped host path；returned handle 必须在每个 operation 期间 retain exact package-generation lease。`CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options` 将 verified catalog、same-cursor resolver、snapshot lease、negotiation 与 admission policy compose 为 one fail-closed construction boundary。`CapabilityGatewayNotificationHub` 将 immutable publication change bridge 到 standard MCP list-change notification，`CapabilityGatewayCatalogStore` 提供 bounded、canonical、content-addressed、restart-safe payload ownership（exact read、no mutable current pointer、plan-bound retention 与 strict clean-target restore adapter 及 durable activation replay）。Control descriptor-snapshot owner 现在提供 matching plan-bound restore 与 signed-v2 trust revalidation。Inactive Control kernel 现在 atomically bind 该 payload identity 到 applied capability cutover 与 exact published cursor；composition 可 reopen cursor 并 seed 或 replace live Gateway session 同时在 every server clone retain Control lease。Coordinated backup inventory validate 并 archive catalog/descriptor-snapshot record 于 one explicit `CapabilityPayloads` family。Independent Rust client discovery/invocation check 覆盖 path-free boundary。Production Control activation、owner registration、live lifecycle wiring、lease drain/retention coordination、complete receipt/Runtime/Grant-backed descriptor projection、CLI wiring、TLS termination 与 TypeScript/Python client/recovery matrix 仍 open |
-| Registry target observation、explicit offline install/upgrade、bounded source working set、resumable download、usage 与 confirmed source cleanup | 已实现，含 interruption、range、tamper 与 zero-network test；cleanup 从不 claim global blob reclamation |
-| Global raw-blob 与 expanded-package Artifact Store | Raw verified target 与 expanded tree 在 one global root 下按 SHA-256 分片，在 cross-process digest lock 下 commit，link/reparse checked，跨 Registry source 与 installation shared，在 source prune 与 scoped uninstall 后 retained，excluded from installation backup。Store-bound shared/exclusive reference boundary 防止 maintenance 或 whole-installation restore race durable reference publication。Physical、Registry-reference、global-reference 与 joined-reachability v1 evidence 覆盖 canonical content、staging、每个 durable owner、expectation mismatch 与 checked storage usage。Optional canonical hard quota、full digest audit、exact-plan logical quarantine 与 verified zero-reference rehydration 仍是 separate authority。Confirmed GC 现在仅 accept bounded explicit Blob/expanded-package digest allowlist，repeat complete zero-reference proof，bind physical 与 lifecycle evidence 加 predecessor completion 到 one canonical plan，并在 same-shard atomic retirement 与 bounded tombstone deletion 前 persist global fail-closed fence。Terminal replay read-only 且不能 delete later recreated object。Source prune、scoped uninstall、audit、quarantine、rehydration、quota pressure 与 unreachability 从不 independently authorize global deletion |
-| Signed native Tool/stdio MCP planning 与 post-download manifest binding | 已实现并 contract-tested |
-| Bounded SemVer dependency resolution 与 exact lock | 已实现 |
-| Install、upgrade、uninstall graph ordering | 已实现 |
-| Durable atomic Registry cutover 与 exact replay | 已实现 |
-| Package-host side-effect/receipt ambiguity recovery | 每个 canonical install、upgrade、enable、disable 与 uninstall checkpoint 通过 subprocess-exit、exact-key recovery、single-effect 与 terminal-replay test。Real CLI multi-node install 还通过 durable-publish-before-journal kill、zero-network exact replay 与 no-generation-inflation check；uninstall 通过 equivalent hide、restart、accepted-call drain 与 removal boundary。Product-host 与 platform checkpoint 仍 open |
-| Grant-bearing graph cutover effect/receipt ambiguity recovery | Install、upgrade 与 uninstall atomic publish/hide boundary 通过 subprocess-exit、exact-key recovery、single-effect、completed-journal 与 no-republication test。Externally killed managed-scope manager process 证明三个 five-node graph cutover recover 而无 reauthorization、network access 或 generation inflation，同时 preserve candidate Grant 并仅 retire exact prior Grant。Real Host protocol process additionally 证明 disable hide/drain/exact-revocation 与 enable publication/exact-regrant recovery，覆盖全部五个 reviewed mutation。Actual Code/Runtime product-host 与 cross-platform qualification 仍 open |
-| Grant Store journal/receipt crash recovery | Canonical two-candidate/two-retirement lifecycle 全部 14 durable checkpoint 通过 subprocess-exit convergence 与 exact terminal replay（跨 prepare、cutover/retirement 与 pre-cutover rollback）；real CLI 与 cross-platform product qualification 仍 open |
-| Windows atomic state publication contention | Registry source/trusted-root/catalog/target-cache、extension receipt/snapshot、Workspace Grant、package graph、Host plan/outcome、lifecycle、Runtime binding/provisioning、Flow、Knowledge binding/recovery/backup、enablement、whole-state backup、restore evidence 与 diagnostic-history publication 现在 share bounded blocking primitive（replace、no-clobber 与 transactional directory-move semantics）。Windows 仅 transient access、sharing 与 lock violation 最多 retry 两秒；released file 或 directory lock converge atomically，persistent replacement lock preserve prior target，failed recovery move retain replay source。Native lifecycle test 还将 active artifact-staging rename 与 selected upgrade-receipt replacement contention bind 到 pre-publication rollback 与 replay，而 uninstall 从不 wait reader of global artifact byte。Externally raced target、reboot recovery 与 external product-host contention 仍 open |
-| Secret-free operation diagnostics | 已实现。Latest/previous package checkpoint 通过 `extension inspect --json` 暴露；`extension diagnose --json` project 一个 exact retained planned/admitted/cancelled install/upgrade/uninstall graph、active admitted enable/disable operation，或 newest Host-reviewed pre-admission enable/disable plan/cancellation（含 Registry/TUF、provider、Grant、cutover、publication、drain、rollback 与 recovery evidence）。`extension diagnose --history --json` 每 scope/package 在 8 MiB 内 retain newest 16 completed 或 rolled-back operation 与 cancelled graph plan，survive uninstall，deduplicate exact replay，damaged 或 linked state fail closed。Pre-lock Registry/TUF attempt 暴露 refreshed/cached per-Registry verification progress、trust/source digest、role version、bounded failure 与 terminal lock evidence。Retained graph 与 pre-plan attempt 从 historical provenance 暴露 zero-network expected/retained archive 与 executable-planning-target byte 加 exact-target `missing`/`partial`/`complete` state。Real killed-process 与 Host-process test 覆盖每个 handoff、partial observation、exact resume、zero-side-effect planned/cancelled enablement diagnosis 与 completed-Use outcome suppression。Path-free active/history/capacity restore evidence 通过 `knowledge restore-status --json` 暴露 |
-| Watcher-safe bounded Registry mutation locking | 已实现并 real-process tested |
-| Plan-v4 reviewed enable/disable 与 terminal `NoChange` | 在 manager contract 与 package engine 中已实现 |
-| Typed managed Host Manager | `CognitivePackageHostManager` 实现 host protocol v6（explicit User/Workspace scope-kind binding、exact capability/fence validation、persisted plan/apply replay、selected-surface evidence、durable operation observation/watch、pre-admission cancellation、Registry provenance revalidation、从 exact planning cache zero-network install/upgrade apply、graph 与 enablement delegation、fail-closed expired-plan recovery from Use-owned admission/completion evidence）。Operation storage 按 exact plan digest 区分 repeated lifecycle operation ID，同时 retain legacy lookup alias；terminal outcome 仅在其 Use-owned graph、lifecycle completion 与 package state 仍 match 时 replayed。Same textual ID 于不同 scope kind retain distinct Host plan、installation snapshot、capability cursor、invocation lease 与 replay record；complete two-installation lifecycle matrix reject substitution 并在 upgrade 与 uninstall 期间 preserve opposite installation。Killed real Host protocol install、upgrade、uninstall、disable 与 enable apply 在 Registry offline 下 recover，converge exact Grant 而无 generation inflation，并 persist one terminal outcome；injection 到每个 external managed host 仍 open |
-| Workspace Grant composition 与 drain-before-revoke | 在 core/standalone lifecycle path 中已实现 |
-| Mixed native/managed provider planning | 在 Use 与 shared A3S host path 中已实现：unbound draft、assigned-provider preflight、host policy、canonical Grant-bound final selection、durable planning bundle/Grant snapshot/provider generation、exact apply-time reconstruction、restart replay 与 provider-drift rejection 已测试 |
-| Exact published-generation Knowledge lease | 在 Use Registry 与 SQLite Knowledge host 中已实现。Acquisition bind complete capability projection 到 installed package、manifest、OKF bundle、lifecycle generation 与 generation lock；one lease retain generation 于 cited search/read，hide 后 reject new call，参与 drain，package 或 retained-content drift fail closed。A3S Code consumption 仍是 external integration task |
-| Standalone Task、stdio MCP、explicit A3S Flow preflight、Skill/UI 与 SQLite/FTS5 OKF host | 已实现 |
-| Managed Runtime receipt lifecycle | Self-contained release-backed Task template 支持 restart-safe exact-generation dispatch、receipt-owned provider reconnection、stale-generation rejection 与 accepted-call drain。Capability snapshot v5 仅 publish exact installation/package/generation-matched Task binding 与 stable host tool identity。Service preparation 现在在 Runtime apply 前 sync v1 provisioning receipt，通过 exact Runtime 与 Gateway evidence advance，并在 delete pending recovery authority 前 commit v3 binding。Tool 与 HTTP MCP bind failure、pre-apply rollback、candidate cleanup 与 final-binding/pending-receipt crash window replay 而无 second Runtime effect 或 residue。Test-binary subprocess matrix 在 Tool 与 HTTP MCP 全部六个 nested provisioning window exit，然后 prove exact replay、terminal idempotence 与 residue-free Gateway/Runtime removal。Typed endpoint、drain-before-stop、route-remove-before-Runtime-remove、exact prior-generation retirement 与 stopped-binding reauthorization contract-tested。A3S CLI `main` commit `563e7e139740e845369f9102a2d47026733797a8` 通过 production Box mapping、retained N/N+1 routing、standard MCP initialize、Gateway 与 lifecycle-host restart、drain、exact removal 与 zero-residue check qualify 四个 real Linux Tool 与 MCP process。Confirmed same-generation provider loss 现在仅 retire stale Gateway route 与 old binding receipt，然后 exact Runtime reapply 并 publish newly allocated Gateway endpoint；interrupted route removal retain replay authority 而不 stop 或 remove Runtime unit。Scoped Code Exec Task discovery 与 leased invocation 在 A3S CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7` 与 CI run [32797862154](https://github.com/A3S-Lab/CLI/actions/runs/32797862154) qualified。Real provider-process kill qualification、non-Linux provider 与 cross-platform product-host recovery 仍 open |
-| Scope-bounded OKF quota、retention、tombstone GC、SQLite compaction 与 usage diagnostics | 在 standalone Knowledge backend 中已实现 |
-| Scope-local OKF integrity audit、verified database backup 与 rotation、derived FTS repair 与 authority-bound database/binding restore | Verified backup 现在使用 exact-scope、bounded oldest-first retention（canonical plan-digest confirmation、last-backup preservation、directory locking、stale-plan rejection 与 fail-closed candidate validation）。Restore real-process tested，包括 missing database 与 missing exact-subset binding recovery、conflict rejection、main/WAL/SHM retention、binding-file 与 filesystem/journal process-exit window、durable maintenance blocking、每个 window 的 path-free restore-status diagnostic 与 terminal read-only replay。Missing Registry/package/lifecycle/Grant authority、clean-machine、coordinated cross-family 与 whole-product recovery 仍 open |
-| Coordinated whole-installation backup、retention 与 reviewed restore | Backup 与 retention 在 exclusive maintenance fence 下实现（deterministic path-free manifest、exact Registry/receipt authority digest、allowlisted control-state family、explicit global Artifact Store exclusion、scan/copy/rescan consistency、full payload verification、exact-plan retention 与 two-generation preservation）。Capability Gateway catalog 与 descriptor-snapshot record 现在进入 strict content-addressed `CapabilityPayloads` family；lock、staging 与 retention journal fail closed 为 nonterminal evidence，Artifact Reachability traverse same owner tree 而非 silently ignore nested drift。Same-version/OS/architecture restore 现在 require exact independently retained Registry、Artifact 与 Grant authority、explicit verified rollback archive、path-free digest confirmation、link/reparse-safe candidate staging、seven durable journal phase、15 subprocess-exit recovery boundary、terminal replay、read-only status 与 bounded crash-recoverable history。Production owner-native clean-target activation/retention、missing-authority 与 clean-machine recovery，以及 cross-platform operational disaster-recovery drill 仍 open |
-| Runtime Service、HTTP MCP、managed Knowledge recovery/rollback 与 sandboxed UI composition 于每个 declared host | 进行中 |
-| A3S Code CLI/TUI integration | Reviewed Runtime Task install、offline restart disable/re-enable、apply-time build drift rejection、watcher hot-plug、Host status-revision resumption 跨 killed-process offline recovery（one effect 与 path-free history）、scoped Code Exec agent discovery/invocation（frozen Task-catalog evidence）、context review 与 TUI `/packages` review 已测试。Shared Host Manager 现在还 qualify signed six-surface Tool/MCP/Flow/Skill/UI/OKF install、invocation evidence、exact-generation upgrade、uninstall、replay 与 User/Workspace scope fence；six-surface Code product-host E2E 与 release qualification 仍 open |
-| Verified preview installer 与 release evidence | Linux/macOS 与 Windows installer enforce HTTPS、exact tag-identity Sigstore verification、release checksum、safe extraction、packaged OCR/Skill binding、versioned atomic activation、complete-tree reinstall validation、retained local evidence 与 managed command ownership。Deterministic archive serialization、per-platform SPDX SBOM、GitHub OIDC provenance/SBOM attestation 与 pinned Action/tool 已实现。Qualification run [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660) 从 exact `main` commit `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd` 在五目标上通过 isolated archive execution 与 cache-free byte-for-byte rebuild；stale-core `v0.3.5` publication attempt 未创建 Release。Release workflow [33687297386](https://github.com/A3S-Lab/Use/actions/runs/33687297386) 为 tag `v0.3.7` at exact `main` commit `48a0b76f8a4a87a11d16627c7bd7567920852508` 通过全部 13 job 并发布 verified archive、typed crate（`a3s-use-core 0.2.6`、`a3s-use-extension 0.3.7`、`a3s-use 0.3.7`）、SBOM、attestation 与 installer。Release workflow [33720485826](https://github.com/A3S-Lab/Use/actions/runs/33720485826) 为 tag `v0.3.8` at exact `main` commit `6d3a7baf32ce998a2e487c40fbf78b4a6cda2579` 通过全部 13 job 并发布 verified archive、typed crate（`a3s-use-core 0.2.7`、`a3s-use-extension 0.3.8`、`a3s-use 0.3.8`）、SBOM、attestation 与 installer。Release workflow [33756618837](https://github.com/A3S-Lab/Use/actions/runs/33756618837) 为 tag `v0.3.9` at exact `main` commit `a5f3cc40bfb0a1021ca150d2ce4295409b74d220` 通过全部 13 job 并发布 19 verified release asset、typed crate（`a3s-use-core 0.2.7`、`a3s-use-extension 0.3.9`、`a3s-use 0.3.9`）、SBOM、attestation 与 installer。Release workflow [33791616307](https://github.com/A3S-Lab/Use/actions/runs/33791616307) 为 tag `v0.3.10` at exact `main` commit `c4c80a223bfff3698ca4b4598e7175c6e3303239` 通过全部 13 job 并发布 19 verified release asset、typed crate（`a3s-use-core 0.2.8`、`a3s-use-extension 0.3.10`、`a3s-use 0.3.10`）、SBOM、attestation 与 installer。Prior `v0.3.6`、`v0.3.7`、`v0.3.8` 与 `v0.3.9` release 仍是 historical evidence；externally operated full-archive witness 与 off-Release evidence retention 仍 open |
-| Complete Linux/macOS/Windows real-process E2E 与 recovery matrix | Release blocker |
-| Public Registry operation、external full-archive reproducibility witness、off-Release evidence retention、support runbook | Release blocker |
-
-**Production-ready：否。
-** 代码有 substantial tested foundation，
-但上述 unfinished row 仍是 required release gate。
-[ROADMAP.md](ROADMAP.md) 跟踪剩余 product work，
-而不将 completed internal 转为 release claim。
+[控制存储事务边界](docs/adr-003-control-store-transaction-boundary.md)。
+经机器检验
+[协调割接库存](docs/control-store-cutover.md)对每个
+当前状态叶子、外部所有者、操作文件和消费者必须
+一起切换；它明确地使生产激活保持不活动状态并且
+禁止双重写入或传统后备读取。
+私有 A2 Control Store 内核现在符合其干净状态 schema-v11
+聚合。每个操作都存储规范的完整审查计划信封
+和版本化授权证据，然后派生并重新验证其操作
+ID、计划和授权摘要、操作、根包、安装范围、
+并在重新启动后和期间针对关系投影生成游标
+离线出口验证。授权证据 v2 仅保留准确的
+先前的拨款快照、审查的变更集和确认事实；已解决
+赠款及其接收修订是派生输出，而不是调用者权限。
+安装生成、所需的包状态生成、不可变
+包生命周期生成和拨款收据修订仍然不同。
+在提交之前，内核会重建完整的目标快照，两者
+包生成轴，以及完整的目标授予库存
+审查了计划、确切的上一代、有限的承诺历史，并审查了
+授予证据。所有五个操作、用户和工作空间安装、多根目录共享依赖项，卸载/重新安装因此拒绝调用者选择
+包或授予身份。离线导出和恢复验证程序运行
+再次相同的投影。
+该投影还重建了完整审查的运行时提供程序
+每个启用的工具和 MCP 曲面的选择。保留了不相关的
+选择，删除禁用或删除的表面，存储完整的提供者
+构建/能力/语义/执行证据，并得出每个选择
+从经过审查的计划证据的版本化规范描述符中摘要。
+Flow、OKF、Skill 和 UI 保持类型化主机
+效果而不是被分配虚构的运行时提供者。一个单独的
+候选能力摘要源自目标快照、包
+生命周期身份、拨款修订和提供者选择。它描述了
+仅承诺所需的能力身份；终点、就绪、编译
+工件和知识应用观察结果仍然是提交后的证据。
+相同的投影得出完整的有界工作序列，而该序列不能
+加入本地事务：表面准备、能力割接、
+接受呼叫排水，以及表面停止或去除。依赖面准备
+受抚养人之前；退休则颠倒了这一顺序；升级为新做好准备
+切换前的化身，并在移除前耗尽旧的化身。
+每个效果都命名一个类型化的能力索引、调用租赁、运行时、流程、知识、技能或 UI 所有者。工具和 MCP 效果经过精确审查
+提供商 ID 和选择摘要；静态主机永远不会收到虚构的
+运行时选择。可选的选定表面可能会在切换前降级，但是
+他们所需的依赖性关闭和每项退休效应仍然是必需的。
+软件包选择、生命周期身份、资助和经过审查的提供商选择
+已经在聚合中提交，因此它们不会被复制为伪外部
+影响。规范有效负载字节，其域分隔的幂等密钥，
+摘要和关系投影一起提交并在之后再次验证
+重新启动并通过离线导出验证。应用结果仍然是规范的，
+所有者特定的证据，而不是任意的成功摘要：能力
+索引收据现在绑定准确的不可变的面向代理的目录
+摘要/生成/修订、调用租赁收据、精确的运行时选择以及可移植
+任务或不透明`gateway:`服务绑定/就绪证据，流程工件
+摘要、知识投影摘要和不可变的技能/UI 内容摘要。
+每个应用程序都会重新绑定确切的幂等性密钥和意图。延期，
+被拒绝，未知结果仅保留诊断证据。推迟的是
+保留给证明其不接受任何影响的所有者；它持续有界
+不早于使用相同密钥自动重试的时间。记录应用的
+能力切换观察淘汰了先前的出版物，发布了精确的候选者，并通过该目录绑定移动功能光标
+在同一笔交易中，
+在排水、报废或操作完成之前。所需的后切换
+因此，失败仍然处于协调待定状态，并且必须重用其原始状态
+身份；它无法回滚已经可见的一代。完成不能
+早于任何提供者观察。内核还限定类型化生成
+转换、完整的授予和审查的提供者选择证据、幂等
+发件箱协调、有限执行、损坏检查和确定性
+可离线验证的导出以及分阶段恢复。现在它的调度程序不活动
+持有一个安装范围内的共享维护围栏，从索赔到
+后来的观察，最多声称一个承诺的影响，释放该声明
+输入所有者之前的交易和有界执行者、路线能力
+索引、调用租赁、
+运行时、流程、知识、技能和 UI 通过单独的类型端口工作，然后
+记录特定于所有者的应用、推迟、拒绝或未知证据
+以后的交易。延迟效果在其持久之前无法收回
+不早于时间，然后使用相同的密钥自动重试。供应商
+超时必须在其声明租约内留下固定的观察预算；超时
+是持久的未知证据。超时或取消仅分离等待，
+不是可能接受的效果任务：该任务保留相同的共享栅栏直到它真正完成。进程退出仍然需要显式的相同密钥
+和解。测试证明
+commit-before-effect、提供程序 I/O 期间存储重新输入、精确密钥恢复
+在未观察到的进程退出、挂起提供者边界和所有七个所有者之后
+路线。并发的整个安装恢复无法获取其独占的
+维护围栏，直到提供者观察持久并且任何分离
+进程中效果未来已完成。索赔要求
+交易现在还衍生出所有者形状的承诺
+上下文：包端口仅接收确切的包选择、生命周期、
+主机、快照身份和授予； Runtime 也接受了全面审查
+供应商选择；能力指数接收候选生成加上
+保留的每个启用的选定表面的最新终端准备
+多根历史。可选拒绝是显式降级，同时缺失
+授予覆盖范围、非终止或拆卸状态以及生成漂移失败关闭
+在所有者 I/O 之前。多根测试还修复了生成插入，因此所有
+包节点位于其直接外键依赖边之前
+相同的交易。调度程序不是按生产生命周期构建的
+代码，并且不会在当前 JSON 存储之外创建第二个权限。
+第一个具体的提交后所有者适配器现在符合不可变技能和
+针对该边界的 UI 准备。它重新派生键入的所有者并来自可移植请求的幂等性密钥，仅获取确切的包
+通过经过验证的工件租赁，读取一个命名表面而不暴露
+包根，并在返回之前重新验证完整的包
+稳定的无路径收据。索赔尝试和截止日期不会改变这一点
+收据。工件争用是持久的同密钥延迟；篡改，
+内容缺失或权威替代属于无效拒绝；
+只读适配器从不报告不明确的接受情况。静态停止和
+删除是与路径无关的投影收据，因此仍然可重播
+神器收集后。第二个混凝土适配器现已符合 OKF 资格
+知识反对相同的承诺边界。第一次准备工作消耗了
+无路径、完全验证的 OKF 字节有效负载；阶段收据拥有的 SQLite/FTS5
+状态；保留晋升前的阶段性证据；坚持推广证据
+在应用报告之前；并返回准确的观察结果和能力
+投影摘要。保留的促销收据会重播，无需重新打开
+神器商店。预效应争用安全推迟、权限或字节漂移
+拒绝以及任何不明确的阶段、提升、删除或接收持久性
+对于显式相同密钥协调，边界仍然未知。停止是一个
+路径无关的检查点和删除仅使用保留的投影
+收据。现在，成分测试通过以下方式证明了承诺的控制声明：真正的知识适配器并返回到持久的控制应用程序
+观察。工件准入是单独幂等的并重新验证
+准备好源，同时创建无安装生命周期收据；来电者必须
+通过单独的机构保留其全球参考准入警卫
+提交。第三个具体的能力平面适配器现在拥有这两个能力
+索引发布和调用消耗。验证承诺权限后，
+它调用主机拥有的纯投影仪，拒绝启用外部的描述符，并且
+成功准备包化身，持久发布确切的代理
+目录，并具体化一个规范的内容寻址索引文档，该文档
+对该出版物具有约束力。没有第二个 SQLite 数据库或可变 `current` 文件
+创建的。应用的割接观察仍然是唯一的出版物
+事务并通过目录推进控制光标
+摘要/生成/修订。调用准入重新开放并重新讨论这些
+精确字节，验证索引，读取共享周围的控制发布
+锁定每个精确的包生命周期化身，如果
+切换赛跑。 Drain首先证明旧的化身不再
+发布，然后安全地推迟，同时任何接受的调用保留其共享锁；
+释放后应用相同的效果键。目录和索引出版物是
+不可替换、不可跟随、可崩溃重播且无路径。指数得出不包括在备份中的运行状态；现在协调的国家库存
+注册并在语义上验证目录和描述符快照记录
+作为一个 `CapabilityPayloads` 系列，同时锁定、暂存、日志和租赁
+文件仍被排除。 `ControlCapabilityPayloadRestoreCoordinator` 现在绑定
+一个专属维护围栏下的目录和描述符计划，
+预检两个干净目标，并重试固定顺序激活，无需
+打击已经出版的所有者。 `ControlCapabilityPayloadRetentionCoordinator`
+现在将两个所有者保留计划绑定在同一个专属围栏下，
+预检库存（包括确切的待处理日记）和重播
+固定顺序删除。非活性组合物现在保留了相同的
+能力平面，并且可以在经过一段时间后重新打开持久发布的控制光标
+重新启动而不接受调用者选择的光标。重新开放重新验证
+准确的索引和目录，重新获取每个包生成租约，并返回
+如果并发切换获胜，则过时。生产控制所有者注册，
+从返回的租约、租约消耗和
+生命周期保留权限仍然是独立的。一个真实的
+作文测试加入知识、技能、目录/索引出版、精确
+有效负载准入、过时准入和耗尽。
+非活动组合现在接受规范的认知包计划
+信封、授权证据和可选的计划拨款过渡一次性完成
+生命周期准入缝。它派生出先前的安装和能力来自不可变计划的游标而不是接受调用者选择的值。
+其组合组合入口点保留了一个安装范围内的围栏，同时
+它注册准确的审查操作，发布运行时计划有效负载，
+并在任何提供商生效之前承诺预计的发电量。生产
+仍然必须通过这条接缝路由实时生命周期并组成
+调度员。非活动内核现在也有一个
+提交权限流所有者：它读取有界流
+源作为无路径验证的 Artifact Store 有效负载，发布持久的
+所有者控制的工作区中的无破坏内容寻址副本，并调用
+仅类型化的 `a3s-flow` Native TypeScript 预检。包路径永远不会交叉
+该边界；编译器/缓存路径是可操作的主机配置，而不是
+比期望的国家权威。源替换和失败的预检拒绝
+没有控制观察，而 Artifact Store 争用安全地推迟。
+停止/删除是与路径无关的收据。该资格仍处于无效状态
+直至生产调度员组成被切换。坚定的权威
+运行时所有者现在符合发布支持工具的相同边界条件
+任务、工具服务和可流式 HTTP MCP。首先准备仅消耗
+无路径验证工具/MCP 发布有效负载和显式运行时选择
+其提供者和完整语义摘要与提交的控制权限相匹配。
+任务在不启动单元的情况下保持独立的绑定。服务第一坚持`requested`，然后保留准确的运行时和类型网关准备情况
+证据，并在删除恢复权限之前提交最终绑定。
+准确的最终收据重放，无需访问 Artifact；保留的终端
+配置记录无需另一个运行时应用即可协调；停止/删除使用
+仅收据拥有的提供商、网关和生成证据。预效果
+争用被推迟，无效的权限或不可变的字节被拒绝，并且
+运行时/网关效应后所有持久性或协议模糊性仍然存在
+未知。运行时包现在还公开了有界规范
+`RuntimeSurfacePlan` 有效负载和 `CommittedRuntimeSurfaceResolver`，其中
+重新启动后重建完整计划并重新检查提供商证据。这个
+所有者仍然仅限资格：生产成分必须提供
+持久主机源和原子调度程序而不是保留进程本地
+选择作为权威。
+然后，非活动控制成分证明仅接受已注册的
+操作身份和主机生成的不可变计划有效负载。它投射了所有
+Control 内的可变转换字段，验证准确的运行时发布
+授予权限，并在生成提交之前命令计划发布
+在一个共享安装围栏下。这缩小了割接边界，而无需
+使私有内核或遗留消费者处于生产活跃状态。
+现在的内核
+也符合无路径的条件
+外部有效负载注册和
+快照证据边界。其六个冻结的所有者身份和固定备份根据 ACL 切换清单检查策略。全球神器
+商店被明确排除在外，而其他五位业主必须出示一份
+完整、规范订购的收据集与确切的安装绑定，
+控制生成、注册表摘要、所有者模式、库存/清单摘要、
+和有界文件/字节记帐。解码的证据在其被重新验证之前
+描述符摘要可以被接受。私有快照会话现在冻结一个
+规范控制导出及其摘要，同时保留相同的专有性
+跨所有者 I/O 的维护栅栏，不保留 SQLite 事务或
+商店执行人许可证。知识所有者适配器对范围本地进行快照
+OKF SQLite/FTS5 知识数据库转换为非覆盖有界存档，
+导出规范的绑定/选择库存摘要，并重新验证
+离线存档。现场收据开具和线下受理均需要
+由快照绑定命名的相同规范控制导出字节。每个
+保留的知识化身必须源自其精确的控制准备
+意图和承诺的 OKF 捆绑包；使用的制剂必须与保留的制剂相匹配
+知识观察和能力预测摘要。这个连接反对
+写入目标存档之前的临时 SQLite 快照，因此
+语义不匹配不会留下存档或收据。以前被删除或丢失
+应用的有效负载需要相同的生命周期记录的删除效果，而延迟结果仍然是安全无影响的调度证据，同时声称或
+未知的结果仍然是调和的证据； none 是新的期望状态
+权威。不存在的知识数据库会产生显式的
+零文件清单，无需创建实时目录；舱单和收据
+不包含主机路径。离线验证的知识快照现在可以流式传输
+将其精确数据库写入调用者拥有的、州根本地候选人中，无需
+触摸实时有效负载。清洁目标激活需要精确的
+安装专属维护卫士，重新审核候选者及其
+绑定/选择库存，拒绝无主、现有或不明确的有效负载
+状态，并通过一个原子重命名来发布。精确完成的部分是
+可重播。在保留相同的阶段性尝试和独家守护的同时，
+发布后但在返回规范的无路径结果之前重试
+协调准确的实时数据库。缺少有效负载激活不会产生任何影响
+知识状态。第二个类型的适配器现在快照
+规划和诊断观察所有者。它仅存档经过所有者验证的
+终端诊断历史和终端解决尝试；活跃的
+分辨率和下载尝试加上操作锁定永远不会恢复为
+权威。确切的活跃库存数量和摘要仍然与
+明显。安全有界遍历拒绝链接、移动或外部记录，
+未知的布局、重复的包标识和文件/字节溢出。档案创建是无破坏的，在发布之前重新扫描实时状态，并发出
+可以离线验证的无路径控制导出绑定收据。安
+离线验证的观察快照现在可以将其精确的存档复制到
+state-root-local 暂存目录，无需触及实时所有者路径。第一
+激活需要一个干净的终端/活动记录清单和准确的
+独占维护守卫，然后自动将存档候选更改为
+发布任何记录之前的 `activating` 标记。摘要命名确定性
+部分使中断的每条记录发布可重播；只有一个精确的
+激活开始后接受快照子集。候选人、目标、
+链接、活动记录和存档漂移无法关闭，锁仍被排除在外，并且
+规范结果不包含主机路径。两个适配器均保持不活动状态
+资格代码并且未连接到当前备份或恢复扫描仪。
+主机协议投影现在是第三个合格的快照，并且
+干净目标恢复适配器。它的所有者本机扫描仪档案仅是不可变的
+请求计划记录、可选的最终结果和一个规范
+每个确切操作绑定的取消。操作别名和
+最新启用的诊断索引仍然是派生的：它们必须完整并且
+同意他们的来源请求，但绝不进入档案。有界
+无跟随遍历、第二次实时扫描、无破坏发布和精确离线解码拒绝链接、移动、丢失、陈旧或孤立的记录
+存档替换。出版前、主办计划、完成/取消
+证据、包装身份、所需状态、选定的表面，以及
+包/功能生成必须可从精确绑定的控制中导出
+出口；主机收据和健康证据仍处于观察状态，无法选择
+期望的状态。清单和收据是无路径的，代表缺席
+明确地，并保留无更改请求而不进行操作。
+离线验证的快照现在可以暂存一个私有存档副本并构建一个
+完成目标状态根下的`plugin-host-manager`候选。它
+恢复精确的语义源字节，仅重建规范的精确的
+操作和最新启用索引，并故意省略旧别名
+并锁定文件。激活需要精确目标的独家维护
+守卫和不在场的活所有者根，重新验证确切的树和
+所有者本机语义扫描，记录快照绑定的持久激活标记，
+并通过一个原子的无破坏目录移动来发布整个所有者根目录。
+存档、记录和激活标记部分可确定性恢复；
+发布后/结果前重播仅接受完全相同的快照。
+候选、live-root、链接、存档和标记漂移失败、关闭、缺席
+不创建所有者根目录，并且结果不包含主机路径。这个适配器资格代码仍处于非活动状态。恢复协调员现在是第四位
+合格的快照所有者。它的所有者本地期刊扫描仪仅存档准确的、
+对绑定安装进行规范编码的已完成恢复操作。
+活动标记及其确切操作被排除在有效负载权限之外，
+但它们的有限计数和摘要库存仍然受舱单限制；仅标记
+切换是在不发明历史的情况下进行的。孤立的非终结记录，
+修剪或临时状态、未知条目、链接、外部安装以及
+路径/记录重新绑定失败关闭。在无破坏存档之前进行第二次扫描
+发布，无路径收据和流式离线验证器绑定
+结果精确控制导出。空的或仅活动的历史记录不会创建
+存档。离线验证的快照现在可以构建不可变的候选者
+在目标安装状态根目录下。因为当前恢复拥有
+同一份日记，激活故意不是干净目标合并：
+需要精确的专属维护防护和主动标记，标记
+和当前操作被保留，并且仅替换终端历史记录。
+持久的激活描述符绑定快照，稳定的活动身份，
+以及准确的之前/目标库存。现有终端目录已移动
+在候选人记录发布之前保留暂存墓碑，无需
+更换。 Replay 容忍主动操作前进，同时拒绝标记漂移、链接、未知状态、候选者或墓碑篡改，以及
+无法解释的实时变化。支持仅标记切换和缺席历史记录。
+传统的整体安装标记保留了活跃操作的未来
+终端槽，因此 64 条记录的源确定性地丢弃相同的本机
+期刊将删除的最旧记录。打字的全套标记没有
+保留操作，因此保留所有 64 条源记录。规范的
+结果是路径自由且受快照限制的。此资格仍处于非活动状态
+代码。运行时计划所有者现在快照不可变的安装范围计划
+记录，验证其完整密钥和规范信封，并恢复它们
+主机投影激活之前；引用的运行时工件摘要也是
+包含在安装工件可达性证据中。私人完整-
+设置快照协调器现在捕获规范控制导出和所有五个
+注册所有者快照在一个确切的
+维护围栏和时间戳。它绑定固定所有者集、收据、
+摘要、模式和字节记帐在一个无路径的规范清单中，
+将它们流式传输到每个使用数据和状态之外的单个无破坏存档中
+root，并重用每个所有者本机验证程序来审核整个暂存文件
+发布前离线。缺席的业主贡献收据但没有发明
+有效负载字节；全局 Artifact Store 保留在安装备份之外。存档标头、清单、长度、有效负载摘要、尾随字节、链接、漂移、
+重新绑定和覆盖失败都失败关闭。这个全套作家是
+也是无效的资格代码。离线验证的完整快照可以
+现在将控制数据库和所有五个候选所有者放置在一个固定的
+`.control-installation-restore` 目录，同时保留确切目标的
+专属维护围栏。一种规范的无路径尝试描述符绑定
+快照、安装、所有者注册表、知识存储策略，以及
+在候选 I/O 开始之前固定组件集。控制候选人必须
+往返于精确的规范导出、检查点到一个 SQLite 文件，以及
+匹配其持久字节摘要；每个外部候选人都会被建立并重新检查
+由其所有者本地适配器在同一保护下进行。出席和缺席的业主，
+已完成的重试和中断的控制分级是确定性的，而
+非空目标、未知或链接条目、快照/策略重新绑定以及
+已完成的候选漂移失败，无需触及实时权威路径。
+全套协调员现在有资格整个跨所有者激活
+协议。在持久意向之前，每一位在场或不在场的业主候选人都是
+针对干净的目标重新验证。不可变的尝试描述符仍然存在
+恢复身份； `activation.json` 是唯一的可变日志，并且
+键入的全局 `.maintenance.restore.json` 标记会尝试绑定到一个
+不可变的激活操作。固定所有者顺序是 Control Store、Runtime计划、主机预测、知识、观察，然后恢复协调员。
+每个步骤都使用
+相同的日志标记效应检查点规则，并且每个检查点都绑定
+规范的无路径所有者由长度和域分隔的摘要得出。
+恢复协调器接收准确的预期标记字节、长度和
+在它改变历史之前消化它。只有第六个持久检查站允许
+全球标记退休。重新开放重新获得确切的专属守卫，
+重新绑定相同的已验证快照、尝试、所有者注册表和知识
+策略，并重建或验证每个所有者的确切候选/实时状态
+边界。日志和标记部分，每个所有者在检查点之前效果，
+标记删除之前的最后一个检查点，之后进程立即退出
+标记删除，并在每个固定顺序分期退出后退出全部收敛
+确定性地。 21 边界子流程矩阵运用这些顶层
+退出。仅在完整的六个检查点的情况下才接受缺失的标记
+日记；不明确的标记、无序的活根、快照重新绑定、链接
+路径或证据漂移未能关闭。完成的重播不执行所有者效应；
+它只能恢复六个无链路暂存树的有界退休。的
+幸存的规范 `attempt.json` 和完整的 `activation.json` 形成了精确的
+安装绑定的终端收据。旧版备份和工件可达性
+仅排除该两文件收据；不完整、扩展、链接或篡改证据失败关闭。生产补助金转换、运行时/流程调度程序
+组成、备份/恢复命令
+布线、不可分割的消费者切换以及遗留可变存储的删除
+保持开放。
+研究预览
+[MHS集成配置文件](docs/mhs-integration.md)定义了硬件适配器
+边界，无需添加另一个包表面或协议分支。
+
+## 当前合同基准
+
+仅接受以下认知包协议行：
+
+|合同|当前架构 |
+| ---| ---|
+|包裹清单 |架构版本 `3` |
+|注册表源码配置| ACL 架构版本 `1` |
+|签名目录记录 | `a3s.use.plugin-catalog.v3` |
+|安装收据|架构版本 `6` |
+|安装快照 | `a3s.use.installation-snapshot.v2` |
+|运营计划| `a3s.use.plugin-operation-plan.v4` |
+|主机能力| `a3s.use.plugin-host-capabilities.v6`（协议`6`）|
+|主机托管范围| `a3s.use.plugin-managed-scope.v2` |
+|主机运行观察| `a3s.use.plugin-host-operation-observation-request/result.v1` |
+|主机操作观看| `a3s.use.plugin-host-operation-watch-request.v1` |
+|主办方取消 | `a3s.use.plugin-host-cancel-request/result.v1` |
+|经理 MCP 工具集 | `a3s.use.plugin-manager-tools.v5`（v4 迁移合约仍然可读）|
+|待处理包裹图 | `a3s.use.pending-package-graph-operation.v4` |
+|锁定前解决方案尝试 | `a3s.use.plugin-resolution-attempt.v1` |
+|预先计划下载尝试| `a3s.use.plugin-download-attempt.v1` |
+|生命周期诊断 | `a3s.use.plugin-lifecycle-diagnostic.v1` |
+|运行诊断| `a3s.use.plugin-operation-diagnostic.v1` |
+|操作历史 | `a3s.use.plugin-operation-history.v1` / `a3s.use.plugin-operation-history-diagnostic.v1` |
+|预锁分辨率诊断| `a3s.use.plugin-resolution-attempt-diagnostic.v1` |
+|预先计划下载诊断| `a3s.use.plugin-download-attempt-diagnostic.v1` |
+|启用恢复预测| `a3s.use.cognitive-package-enablement-projection.v3` |
+|赋能运营| `a3s.use.cognitive-package-enablement-operation.v3` |
+|扩展注册表快照 |架构版本 `3` |
+|扩展快照光标 | `a3s.use.extension-snapshot-cursor.v3` |
+|能力快照 |架构版本 `5` |
+|能力快照光标| `a3s.use.capability-snapshot-cursor.v4` |
+|能力描述符 | `a3s.use.capability-descriptor.v1` |
+|签署的能力描述 | `a3s.use.capability-description-signature.v1`（Ed25519）|
+|控制描述符证据快照| `a3s.use.control-capability-descriptor-snapshot.v1`（仅证明兼容性）/`v2`（签名信封）|
+|控制描述符快照保留计划| `a3s.use.control-capability-descriptor-snapshot-retention-plan.v1` |
+|控制描述符快照保留结果| `a3s.use.control-capability-descriptor-snapshot-retention-result.v1` ||控制描述符快照保留日志| `a3s.use.control-capability-descriptor-snapshot-retention-journal.v1`（内部）|
+|控制描述符快照恢复计划| `a3s.use.control-capability-descriptor-snapshot-restore-plan.v1` |
+|控制描述符快照恢复结果| `a3s.use.control-capability-descriptor-snapshot-restore-result.v1` |
+|能力网关目录| `a3s.use.capability-gateway-catalog.v1` |
+|能力网关目录恢复计划| `a3s.use.capability-gateway-catalog-restore-plan.v1` |
+|能力网关目录恢复结果| `a3s.use.capability-gateway-catalog-restore-result.v1` |
+|能力有效负载恢复计划| `a3s.use.control-capability-payload-restore-plan.v1` |
+|能力负载恢复结果| `a3s.use.control-capability-payload-restore-result.v1` |
+|能力有效载荷保留计划| `a3s.use.control-capability-payload-retention-plan.v1` |
+|能力有效载荷保留结果| `a3s.use.control-capability-payload-retention-result.v1` |
+|能力有效负载保留协调员日志| `a3s.use.control-capability-payload-retention-journal.v1`（内部，可重启恢复相边界）|
+|能力消费者概况| `a3s.use.capability-consumer-profile.v1` |
+|消费者谈判能力| `a3s.use.capability-consumer-negotiation.v1` |
+|运行时任务绑定 | `a3s.use.runtime-task-binding.v4` |
+|运行时服务配置| `a3s.use.runtime-service-provisioning.v1` |
+|运行时服务绑定 | `a3s.use.runtime-service-binding.v3` |
+|神器商店实物库存| `a3s.use.artifact-store-inventory.v1` |
+| Artifact Store 摘要审核 | `a3s.use.artifact-store-digest-audit.v1` |
+|文物检疫计划| `a3s.use.artifact-quarantine-plan.v1` |
+|文物检疫记录| `a3s.use.artifact-quarantine-record.v1` |
+|文物检疫结果 | `a3s.use.artifact-quarantine-result.v1` |
+|神器补水计划| `a3s.use.artifact-rehydration-plan.v1` |
+|神器补水记录| `a3s.use.artifact-rehydration-record.v1` |
+|神器补水结果| `a3s.use.artifact-rehydration-result.v1` |
+|注册表神器参考盘点| `a3s.use.registry-artifact-reference-inventory.v1` |
+|全球神器参考盘点| `a3s.use.artifact-reference-inventory.v1` |
+|已加入工件可达性库存 | `a3s.use.artifact-reachability-inventory.v1` |
+|协调使用状态备份| `a3s.use.state-backup.v2` |
+|协调使用状态备份保留计划| `a3s.use.state-backup-retention-plan.v2` |
+|协调使用状态备份保留结果| `a3s.use.state-backup-retention-result.v2` ||协调使用状态恢复计划| `a3s.use.state-restore-plan.v1` |
+|协调使用状态恢复操作| `a3s.use.state-restore-operation.v1` |
+|协调使用状态恢复结果| `a3s.use.state-restore-result.v1` |
+|协调使用状态恢复诊断| `a3s.use.state-restore-diagnostic.v1` |
+| OKF知识搜索| `a3s.use.okf-knowledge-search-request.v1` / `a3s.use.okf-knowledge-search-response.v1` |
+| OKF知识引文 | `a3s.use.okf-knowledge-citation.v1` |
+| OKF知识阅读| `a3s.use.okf-knowledge-read-request.v1` / `a3s.use.okf-knowledge-read-response.v1` |
+| OKF知识备份| `a3s.use.okf-knowledge-backup.v1` |
+| OKF知识备份保留计划| `a3s.use.okf-knowledge-backup-retention-plan.v1` |
+| OKF知识备份保留结果| `a3s.use.okf-knowledge-backup-retention-result.v1` |
+| OKF知识恢复计划| `a3s.use.okf-knowledge-restore-plan.v2` |
+| OKF知识恢复操作| `a3s.use.okf-knowledge-restore-operation.v2` |
+| OKF知识恢复结果| `a3s.use.okf-knowledge-restore-result.v2` |
+| OKF知识恢复诊断| `a3s.use.okf-knowledge-restore-diagnostic.v2` |
+
+SemVer 依赖性约束、`requires_use`、操作系统/目标检查以及
+主机/提供商能力检查是产品行为，而不是向后兼容性
+分支机构。旧的预发布模式和持久状态故意不
+迁移了。删除不支持的状态并使用当前版本重新安装。
+
+## 实施状态
+
+网关嵌入主机可以从其中派生出特定于消费者的目录
+`CapabilityRegistrySnapshot`通过
+`CapabilityRegistrySnapshot::capability_gateway_catalog`；助手验证
+公共预测修订加上确切的包/出版物/准备证据
+在`CapabilityGatewayMcpServer::from_registry_snapshot`获得其RAII之前
+租赁。
+对于直播主播，`from_verified_registry_snapshot_with_factory_and_options`
+现在组成经过验证的描述投影，游标绑定解析器，
+确切的 RAII 租赁、消费者谈判和有限准入政策
+一个构造函数；发布竞赛不返回任何服务器。签名验证
+和收据/运行时/授予支持的不透明引用解析仍然由主机拥有，
+并且产品接线仍处于开放状态。
+
+不活动的控制组合现在具有与其相同的权限连接
+自己的光标：`ControlCapabilityGatewayInvocationFactory`接收准确的
+仅在逐字节比较描述符后重新打开控制租用
+具有耐用目录，并且 `CapabilityGatewayResolvedProvider` 保留了这一点
+通过完整的工具、资源或提示操作进行租赁。这保持
+控制生成上的不透明参考解析而不是意外
+回到旧的注册表解析器；主机厂仍拥有
+私人授权/运行时/提供者绑定和生产激活仍然开放。
+
+网关现在还具有类型化的消费者边界。 `CapabilityConsumerProfile`
+区分默认通用 MCP 客户端和显式 A3S 消费者，
+而`CapabilityConsumerNegotiation`绑定一个排序的、摘要绑定的扩展集
+发送到网关并拒绝不支持的请求，而不是静默降级
+他们。默认情况下，现有构造函数仍然是通用 MCP。配置文件标签
+仅是元数据。描述符可以声明规范的`requiredExtensions`，并且
+网关删除了协商消费者之前不接受的要求
+编译发现或调用路由。标准适配器发布
+目录授权、模式验证的 MCP 工具以及有限的不透明 URI 资源
+并声明提示；每个发现列表都是确定性的和光标-
+分页。发现游标是不透明的并绑定 MCP 表面，经过协商
+目录摘要和冻结的主要可见性视图，因此光标来自
+替换的发布失败，并用陈旧光标信号关闭，而不是
+默默地跳过或重复功能。主机可以注入一个
+`CapabilityGatewayDiscoveryPolicy` 冻结
+每个经过身份验证的上下文的主体范围内的工具/资源/提示可见性；
+被拒绝的路由从发现和直接访问中消失，而提供商的
+每次操作授权仍然是强制性的。现有构造函数保留
+允许所有兼容性策略，因此生产多主体主机必须
+明确选择加入。流程/知识/UI有效负载投影和生产主机
+组成仍然分开的门。适配器还消耗每个请求的 rmcp取消：取消运行中的工具、资源或提示会导致
+提供商未来及其短暂的准入/解析器租赁，带有类型
+当协议仍然可以传递一个结果时，就会产生无秘密的取消结果。参见
+[能力消费者配置文件](docs/capability-consumer-profiles.md)
+合同及其限制。
+
+代理可见的描述也可以跨越显式的加密信任
+边界。 `a3s-use-core` 定义了规范的、域分隔的
+`SignedCapabilityDescription`信封； `a3s-use-extension`验证Ed25519
+具有强制密钥轮换的有界公钥信任存储的签名，
+到期、撤销。网关现在公开签名描述组合
+在获取控制快照之前验证每个信封的构造函数
+租赁或提供商解析器。私人`VerifiedCapabilityDescription`
+包装器保留精确的重播字节，并且必须在恢复后重新验证。的
+信任存储源仍然由主机提供，并且该路径尚未连接到
+官方注册表/TUF 源或生产控制生命周期。参见
+[能力描述签名](docs/capability-description-signatures.md)。
+
+网关还公开了一个共享的、有界的
+`CapabilityGatewayNotificationHub`。客户端初始化后，主机
+可以发布更新的不可变目录密钥并扇出标准 MCP
+`tools/list_changed`、`resources/list_changed` 和 `prompts/list_changed`
+同时通知。重复或较旧的发布密钥被合并，
+封闭或背压的同行退休了。这是一个通知接缝，
+不是可变目录：主机必须将新会话切换到替换目录
+服务器并保留上一代租约直至耗尽。会话工厂
+用新的发现策略快照替换也被视为视图
+更改，因此初始化的客户端即使在
+源发布密钥未更改。
+
+需要面向代理的有效负载的重新启动安全所有权的主机可以使用
+`CapabilityGatewayCatalogStore`。它验证安装绑定并
+规范目录字节，在有界 SHA-256 内容下存储记录
+寻址布局，使用无跟随文件检查加上确定性暂存和
+硬链接发布，并公开精确的 `get`、`get_exact` 和有界
+库存读取。该商店在设计上没有可变的“当前”指针：
+控制/生命周期切换必须将返回的摘要绑定到其提交的
+生成并保留相应的会话租约。非活动控制
+组合现在符合这种交接要求：主机拥有，无副作用
+投影仪仅获得承诺的能力权限；具体业主
+根据启用的包化身验证每个投影描述符，并且
+终端表面证据，持久发布目录和能力指数，
+然后将两个身份作为一个类型化的应用程序返回。应用的录音
+观察以原子方式将已发布的控制光标与目录一起推进
+消化、生成和修订。实时入场重新打开这些确切的字节
+在进行包生成租赁之前。现在严格描述符投影仪
+还在显式包范围内使用主机验证的签名证明
+签名者白名单，检查准确的目录表面依赖性，终端
+所有者特定的收据证据、有效的补助金覆盖范围以及经过审查的工具/MCP
+在导出不透明路由引用之前的工作负载形状。这是故意的纯子集投影。现在安装拥有的描述符快照存储
+支持签名的 v2 准入路径：它验证每个规范的 Ed25519
+出版前的信封，在其派生的旁边保留确切的信封
+证明投影，并根据当前信任存储重新验证信封
+并在重新启动投影时计时。传统的 v1 仅证明路径仍然是
+显式兼容模式，并且无法降级已签名的 v2 记录。快照
+文件通过其规范字节进行内容寻址（而不是通过可变字节）
+key），以有限的无跟随分段/无破坏重放的方式发布，以及
+每次重新启动读取时都会重新验证；丢失的快照是安全的重试，而
+替换、篡改、过期或撤销被拒绝。协调状态
+备份现在只接受精确的内容寻址目录和描述符 -
+快照记录并验证其规范所有者字节；仍然重播
+根据当前信任策略重新检查已签名的信封。这还是
+资格码：与官方绑定的加密密钥源
+注册表/TUF元数据、生产控制/运行时/收据接线，以及
+干净目标恢复激活保留主机门。运行时工具发布计划
+现在通过计划、绑定进行规范的输入/输出模式证明
+收据和控制证据；验证工件准入和严格
+描述符投影比较相同的描述符和模式摘要。
+生产控制激活、生命周期选择的保留策略，以及退休协调仍然是分开的；所有者本机恢复和
+保留协调员是资格界限，直到该机构被
+组成现场主持人。保留现在记录了一个持久的配对所有者
+取消链接之前的阶段日志，并且备份/可达性拒绝运行，直到
+挂起的日志已恢复。
+
+嵌入边界现在还包括 `CapabilityGatewaySessionFactory`：
+持久发布后，主机可以替换不可变的网关代
+订购，保留一个标准 MCP 通知中心，并保留旧的仍在使用中
+在其确切租约上进行操作，而稍后在同一端点上请求
+遵守新目录。其有界 `drain` 转换关闭新请求
+入院，在截止日期内等待已入院的手术，以及
+释放工厂的源租约，以便生命周期所有者可以输入
+独占保留或恢复栅栏。它的 `from_published` 和 `replace_published` 路径
+重新阅读确切的商店出版物并验证协商的消费者
+在源变得可见之前进行投影和完整的源目录。他们的
+替换使用条件源交换，因此并发本地切换
+发布验证后不能被覆盖。非活动控制组合
+还提供`reopen_published_capability_gateway`和
+`replace_published_capability_gateway`：两者都从耐用品中获得租赁
+控制权限，将其保留在不可变的网关服务器内，并拒绝
+未出租的替代品。成功的控制绑定排水保留一次性
+输入端点身份，因此精确的关闭重试在之后仍然是幂等的
+源租约被分离，而直接耗尽或复制未租约
+目录仍然被拒绝。有条件替换也拒绝覆盖
+较新的本地切换与陈旧的同代构建。生产控制
+激活、提供者组成、退休和保留协调仍然承担东道主的责任​​。会话标识源自完整的
+在消费者协商之前发布不可变的源，因此进行过滤
+可选描述符不会破坏控制租约绑定或生命周期
+和解。在升级期间，协调会验证现有的
+交换之前端点针对其自己的源身份的先前控制租约
+在新获得的出版物租约中。
+
+目录有效负载清理现在也是一个明确的计划/应用操作：
+`CapabilityGatewayCatalogStore` 需要生命周期提供的受保护摘要
+设置，在其突变锁下重新验证规范库存，并删除
+仅经过持久性检查的审查补充。破坏性业主申请
+现在需要安装专属维护围栏，所以住
+无法修剪控制支持的快照/网关租用。不活跃的
+对照组合物添加 `plan_published_capability_payload_retention` 和
+`apply_published_capability_payload_retention`：他们衍生出耐用的
+已发布的目录（以及匹配的描述符快照（如果存在）），重新检查
+将光标置于该专属围栏下，并拒绝将其删除的计划。
+`drain_and_retain_published_capability_gateway` 组成端点排水
+与关闭和退休路径的计划/应用顺序。
+主机仍然添加独立管理的回滚或旧端点摘要
+明确地；存储永远不会从内存中的指针猜测活跃度。
+
+同一所有者现在通过以下方式公开计划绑定的干净目标恢复原语
+`plan_clean_restore` 和 `apply_clean_restore`。来电者确认
+规范的计划摘要并提供准确的目录集；适配器阶段
+并验证完整的所有者目录，记录持久的激活标记，
+并通过无破坏目录移动来发布它。现有所有者状态是
+从未合并或替换，外国分阶段计划被拒绝，并且可以重试
+重播持久候选者。这是一个业主原生的构建块：控制
+注册、签名描述符恢复、会话消耗和生产
+回滚编排仍然属于生命周期主机。
+
+控制描述符快照所有者现在提供相应的
+干净目标适配器。它的计划将每个快照摘要绑定到密钥摘要，
+控制生成、规范字节计数和签名/仅证明模式；申请
+重新检查确切的集合，对于签名的 v2 记录，需要当前的
+`CapabilityDescriptionTrustStore` 和登台前的时钟。候选人和
+激活证据是可重播的并且发布不会被破坏。的
+`ControlCapabilityPayloadRestoreCoordinator` 在一个
+单个专属围栏并按固定顺序重放；过程停止
+所有者出版物之间的冲突可以通过重播相同的计划来恢复。这是
+有序的、可恢复的激活而不是跨目录原子重命名。
+`ControlCapabilityPayloadRetentionCoordinator`组成对应的
+保留计划在一个专属围栏下，之前验证两个库存
+第一个取消链接，并恢复目录→描述符中的确切所有者日志
+订单。这是可恢复的有序删除而不是跨目录
+原子事务。不活动的控制成分现在提供
+重新启动安全游标重新打开边界和游标绑定保留计划/应用
+入口点；生产所有者注册、实时网关会话替换
+从该租约，生命周期调用排出和保留边界，以及
+回滚权限保留在这些存储之外。
+
+控制描述符快照通过以下方式公开相同的所有者级别合约
+`plan_retention`、`apply_retention` 和 `recover_retention`。该计划嵌入
+完整的受保护/删除分区，每个取消链接都在一个
+有界规范期刊、待定期刊阻止发布和读取，以及
+非空库存必须至少保留一个快照。生产控制
+仍然提供注册、生命周期激活和信任源选择
+选择并重新开放描述符生成的权威。配对的
+`ControlCapabilityPayloadRetentionCoordinator` 添加跨所有者边界：
+之前，这两种库存都在一个专属维护围栏下进行了预检
+删除目录记录，然后以固定的方式删除描述符快照
+订单；所有者之间的中断可以通过重播相同的计划来恢复。
+
+|面积 |状态 |
+| ---| ---|
+|六面ACL封装合同|实施并支持固定装置|
+| MHS 研究预览适配器配置文件 | A3S 使用边界、最小权限上限、精确托管 MCP 发布门、依赖图和无隐式写入重试规则均已记录并经过合同测试。这不是 MHS 实施或协议一致性声明 |
+|已签名的目录 v3、TUF 验证、持久的可替换注册表源以及选择加入公共端点 SSRF 策略 |在引擎和独立 CLI 中实现；托管主机必须为不受信任的租户端点选择严格的策略|共享插件管理器服务、CLI、TUI 和管理器 MCP |类型化应用服务通过一个主机管理器实现搜索、检查、稳定安装列表、状态、安装/升级/卸载以及启用/禁用计划、持久计划重新打开、仅摘要应用、精确操作观察/监视以及可信预准入取消。其标准 MCP 适配器公开了 13 个工具 v5 库存，并需要注入可信确认证据以进行突变或取消。独立注册表支持的兼容性突变使用该服务不会破坏现有的 JSON 字段，而一对一的 `plugin` CLI 公开所有 13 个操作、精确类型化的结果、显式摘要绑定 `--yes` 应用/取消、持久重播和零网络缓存应用。 A3S 代码 CLI、TUI `/packages` 和产品主机管理器 MCP 组成了相同的服务。人类 CLI/TUI 演示现在可以从不可变的信封中导出精确的计划、图表、来源、权限、操作状态和确认边界，而无需更改机器 JSON；产品主机E2E保持开放||能力网关合约和嵌入 MCP 适配器 |已实现并经过合约测试：不可变的无路径描述符/目录合约、不透明调用/工件/端点/资源引用、精确的快照租赁和发布/生命周期生成绑定、具有规范摘要和无静默降级语义的类型化通用 MCP/A3S 消费者配置文件协商、路由编译前协商的 `requiredExtensions` 目录投影以及标准 MCP `CapabilityGatewayMcpServer` 仅通过注入的 `CapabilityGatewayInvocationProvider` 路由目录授权的工具、资源和提示。工具、资源和提示发现是确定性的、有界的和光标分页的；资源读取需要精确的不透明 URI；针对经过审查的声明的即时论证已结束；提供者输出是有界的、无路径的和目录链接的。主机可以注入一个有界的`CapabilityGatewayDiscoveryPolicy`，它冻结列表和直接访问方法中主体范围的可见性，同时保留提供者授权作为单独的门。主机可以在 `/mcp` 上公开 Streamable HTTP，具有承载身份验证、可选的精确源策略、重复标头拒绝、有界的飞行/滚动窗口准入、净化的 HTTP 错误、显式预操作授权挂钩以及类型化的主机身份验证的传输/主体上下文。 `CapabilityGatewayInvocationResolver` 和 `CapabilityGatewayResolvedProvider` 为不透明引用提供单分辨率、租用范围的主机路径；返回的句柄必须在每次操作中保留准确的包生成租约。 `CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options` 组成经验证的目录、同游标解析器、快照租用、协商和准入策略作为一种故障关闭的构造边界。 `CapabilityGatewayNotificationHub`将不可变的发布更改桥接到标准MCP列表更改通知，并且`CapabilityGatewayCatalogStore`提供有界的、规范的、内容寻址的、重新启动安全的有效负载所有权，具有精确的读取、无可变的当前指针、计划绑定的保留以及具有持久激活重放的严格的干净目标恢复适配器。控制描述符快照所有者现在提供带有签名 v2 信任重新验证的匹配计划绑定恢复。非活动控制内核现在自动将该有效负载身份绑定到其应用的功能切换和确切发布的光标；它的组合可以重新打开该游标和种子或替换实时网关会话，同时保留每个服务器克隆中的控制租约。协调的备份清单在一个显式`CapabilityPayloads`系列下验证和归档目录/描述符快照记录。独立的 Rust 客户端发现/调用检查涵盖了无路径边界。生产控制激活、所有者注册、实时生命周期连接、租赁消耗/保留协调、完整收据/运行时/资助支持的描述符投影、CLI 连接、TLS 终止以及 TypeScript/Python 客户端/恢复矩阵保持开放 ||注册表目标观察、显式离线安装/升级、有限源工作集、可恢复下载、使用和确认源清理 |实施中断、范围、篡改和零网络测试； cleanup 从未声明全局 blob 回收 |
+|全球原始 blob 和扩展包 Artifact Store |原始验证目标和扩展树由 SHA-256 在一个全局根下进行分片，在跨进程摘要锁下提交，检查链接/重新解析，在注册表源和安装之间共享，在源修剪和范围卸载之间保留，并从安装备份中排除。存储绑定的共享/独占参考边界可防止维护或整个安装恢复与持久参考出版物竞争。物理、注册表引用、全局引用和连接可达性 v1 证据涵盖规范内容、分期、每个持久所有者、期望不匹配和检查的存储使用情况。可选的规范硬配额、完整摘要审核、精确计划逻辑隔离和经过验证的零参考补液仍然是独立的权限。确认 GC 现在仅接受有界显式 Blob/扩展包摘要允许列表，重复完整的零引用证明，将物理和生命周期证据以及前驱完成绑定到一个规范计划中，并在同分片原子退役和有界墓碑删除之前保留全局故障关闭栅栏。终端重播是只读的，无法删除稍后重新创建的目的。源修剪、范围卸载、审计、隔离、补水、配额压力和不可达性从不独立授权全局删除 |
+|已签名的本机 Tool/stdio MCP 规划和下载后清单绑定 |实施和合同测试 |
+|有界 SemVer 依赖解析和精确锁 |已实施 |
+|安装、升级、卸载图排序|已实施 |
+|持久的原子注册表切换和精确重播 |已实施 |
+|包主机副作用/收据歧义恢复 |每个规范的安装、升级、启用、禁用和卸载检查点都通过子进程退出、精确密钥恢复、单一效果和终端重放测试。真正的 CLI 多节点安装还通过了持久发布前日志终止、零网络精确重放和无生成膨胀检查；卸载通过等效的隐藏、重新启动、接受呼叫耗尽和删除边界。产品主机和平台检查点保持开放 ||赠款图切换效应/收据模糊度恢复 |安装、升级和卸载原子发布/隐藏边界通过子进程退出、精确密钥恢复、单效、已完成日志和无重复测试。外部终止的托管范围管理器进程证明，这三个五节点图切换可以在无需重新授权、网络访问或生成膨胀的情况下恢复，同时保留候选格兰特并仅撤回确切的先前格兰特。真实主机协议进程还证明禁用隐藏/耗尽/精确撤销并启用发布/精确重新授予恢复，涵盖所有五个经过审查的突变。实际代码/运行时产品托管和跨平台资格保持开放 |
+| Grant Store 日志/收据崩溃恢复 |规范的两个候选/两个退休生命周期中的所有 14 个持久检查点都通过了子流程退出收敛以及跨准备、切换/退休和切换前回滚的精确终端重放；真正的 CLI 和跨平台产品资格保持开放 || Windows 原子状态发布争用 |注册表源/可信根/目录/目标缓存、扩展收据/快照、工作空间授予、包图、主机计划/结果、生命周期、运行时绑定/配置、流程、知识绑定/恢复/备份、启用、全状态备份、恢复证据和诊断历史记录发布现在共享用于替换、无破坏和事务目录移动语义的有界阻塞原语。 Windows 仅重试瞬时访问、共享和锁定违规，最多两秒；已释放的文件或目录锁以原子方式收敛，持久替换锁保留先前的目标，失败的恢复移动保留其重播源。本机生命周期测试还将活动工件暂存重命名和选定的升级收据替换争用绑定到发布前回滚和重播，而卸载从不等待全局工件字节的读取器。外部竞争目标、重新启动恢复和外部产品主机争用仍然存在 ||免密运行诊断|实施的。最新/以前的包检查点通过`extension inspect --json`公开； `extension diagnose --json` 项目一个精确保留的计划/接纳/取消的安装/升级/卸载图表、主动接纳的启用/禁用操作或最新的主机审查的预接纳启用/禁用计划/取消，以及注册表/TUF、提供商、授予、切换、发布、耗尽、回滚和恢复证据。 `extension diagnose --history --json` 保留最新的 16 个已完成或回滚的操作，并取消每个范围/包 8 MiB 内的图形计划，卸载后仍可正常运行，删除重复数据，并且在损坏或链接状态下无法关闭。预锁定注册表/TUF 尝试公开刷新/缓存的每个注册表验证进度、信任/源摘要、角色版本、有限故障和终端锁定证据。保留图和预计划尝试公开了零网络预期/保留存档和可执行计划目标字节以及来自历史来源的精确目标`missing`/`partial`/`complete`状态。真实的终止进程和主机进程测试涵盖每次切换、部分观察、精确恢复、零副作用计划/取消启用诊断以及完成使用结果抑制。无路径活动/历史/容量恢复证据通过`knowledge restore-status --json`公开
+|观察者安全的有界注册表突变锁定 |已实施并经过实际流程测试 |
+| Plan-v4 审查了启用/禁用和终端 `NoChange` |在管理器合约和包引擎中实现 ||类型化托管主机管理器 | `CognitivePackageHostManager` 实现主机协议 v6，具有显式用户/工作空间范围类型绑定、精确功能/栅栏验证、持久计划/应用重放、选定表面证据、持久操作观察/监视、预准入取消、注册表出处重新验证、零网络安装/升级从精确计划缓存应用、图形和启用委派以及从用户拥有的准入/完成证据进行故障关闭的过期计划恢复。操作存储通过精确的计划摘要来区分重复的生命周期操作 ID，同时保留旧的查找别名，并且仅当其使用拥有的图、生命周期完成和包状态仍然匹配时才重播最终结果。不同范围类型中的相同文本ID保留不同的主机计划、安装快照、功能游标、调用租约和重放记录；完整的两次安装生命周期矩阵拒绝替换并在升级和卸载期间保留相反的安装。杀死真实的主机协议安装、升级、卸载、禁用和启用应用程序，并在注册表离线时恢复，收敛精确的拨款而不产生膨胀，并保留一个最终结果；对每个外部托管主机的注入保持开放
+|工作空间授予组合和撤销前耗尽 |在核心/独立生命周期路径中实施 ||混合原生/托管提供商规划 |在使用和共享 A3S 主机路径中实现：未绑定草稿、指定提供者预检、主机策略、规范的受资助限制的最终选择、持久规划捆绑包/资助快照/提供者生成、精确的应用时间重建、重新启动重播和提供者漂移拒绝均经过测试 |
+|确切的出版一代知识租赁|在使用注册表和 SQLite 知识主机中实现。获取将完整的能力投影与已安装的包、清单、OKF包、生命周期生成、生成锁绑定；一项租约在引用的搜索/读取中保留这一代，在隐藏后拒绝新的调用，参与耗尽，并且因包或保留内容漂移而无法关闭。 A3S 代码消耗仍然是一项外部集成任务 |
+|独立任务、stdio MCP、显式 A3S 流程预检、技能/UI 和 SQLite/FTS5 OKF 主机 |已实施 ||托管运行时收据生命周期|独立的版本支持任务模板支持重新启动安全的精确生成调度、接收拥有的提供者重新连接、陈旧生成拒绝和接受呼叫消耗。功能快照 v5 仅发布具有稳定主机工具标识的精确安装/包/代匹配的任务绑定。现在，服务准备会在运行时应用之前同步 v1 配置收据，通过精确的运行时和网关证据推进它，并在删除挂起的恢复权限之前提交 v3 绑定。工具和 HTTP MCP 绑定失败、预应用回滚、候选清理以及最终绑定/挂起接收崩溃窗口重播，而不会产生第二个运行时效果或残留。测试二进制子进程矩阵存在于工具和 HTTP MCP 的所有六个嵌套配置窗口中，然后证明精确重播、终端幂等性和无残留网关/运行时删除。类型化端点、停止前耗尽、运行时删除前路由删除、确切的上一代停用和停止绑定重新授权均经过合同测试。 A3S CLI `main` 提交 `563e7e139740e845369f9102a2d47026733797a8` 通过生产 Box 映射、保留的 N/N+1 路由、标准 MCP 初始化、网关和生命周期主机重启、耗尽、精确删除和零残留检查来验证四个真实的 Linux 工具和 MCP 进程。已确认的同代提供商丢失现在仅在准确的运行时重新应用和发布新的网关路由和旧的绑定收据之前退役分配的网关端点；中断的路由删除保留重放权限，而无需停止或删除运行系统单元。作用域 Code Exec 任务发现和租用调用在 A3S CLI `main` 提交 `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7` 和 CI 运行 [32797862154](https://github.com/A3S-Lab/CLI/actions/runs/32797862154) 上合格。真正的提供商进程终止资格、非 Linux 提供商和跨平台产品主机恢复仍然开放 |
+|范围有限的 OKF 配额、保留、逻辑删除 GC、SQLite 压缩和使用诊断 |在独立的知识后端中实施 |
+|范围本地 OKF 完整性审计、验证数据库备份和轮换、派生 FTS 修复以及权限绑定数据库/绑定恢复 |已验证的备份现在使用精确范围、有界的最旧优先保留以及规范的计划摘要确认、最后备份保留、目录锁定、陈旧计划拒绝和失败关闭候选验证。恢复经过真实进程测试，包括丢失数据库和丢失精确子集绑定恢复、冲突拒绝、主/WAL/SHM保留、绑定文件和文件系统/日志进程退出窗口、持久维护阻止、每个窗口的无路径恢复状态诊断以及终端只读重播。缺少注册表/程序包/生命周期/授予权限、清理机器、协调跨系列和整个产品恢复保持开放状态 ||协调整个安装的备份、保留和审查恢复|备份和保留是在专有维护围栏下实现的，具有确定性的无路径清单、精确的注册表/接收机构摘要、列入允许的控制状态系列、显式的全局工件存储排除、扫描/复制/重新扫描一致性、完整的有效负载验证、精确的计划保留和两代保存。能力网关目录和描述符快照记录现在进入严格的内容寻址`CapabilityPayloads`系列；锁、暂存和保留日志无法作为非最终证据关闭，并且 Artifact Reachability 会遍历同一所有者树，而不是默默地忽略嵌套漂移。相同版本/操作系统/架构恢复现在需要精确独立保留的注册表、工件和授予权限、显式验证的回滚存档、无路径摘要确认、链接/重分析安全候选暂存、七个持久日志阶段、15 个子进程退出恢复边界、终端重播、只读状态和有界崩溃可恢复历史记录。生产所有者本地干净目标激活/保留、缺失权限和干净机器恢复以及跨平台操作灾难恢复演习仍然开放|
+|每个声明的主机中的运行时服务、HTTP MCP、托管知识恢复/回滚以及沙盒 UI 组合进行中 || A3S 代码 CLI/TUI 集成 |审查了运行时任务安装、离线重新启动禁用/重新启用、应用时构建偏差拒绝、观察程序热插拔、具有单一效果和无路径历史记录的跨终止进程离线恢复的主机状态修订恢复、具有冻结任务目录证据的作用域 Code Exec 代理发现/调用、上下文审查和 TUI `/packages` 审查。共享主机管理器现在还符合已签名的六面工具/MCP/流程/技能/UI/OKF 安装、调用证据、精确生成升级、卸载、重播和用户/工作空间范围围栏的资格；六面码产品主机E2E及发布资格保持开放|已验证预览安装程序和发布证据 | Linux/macOS 和 Windows 安装程序强制执行 HTTPS、精确标签身份 Sigstore 验证、发布校验和、安全提取、打包 OCR/技能绑定、版本化原子激活、完整树重新安装验证、保留本地证据和托管命令所有权。实现了确定性存档序列化、每个平台的 SPDX SBOM、GitHub OIDC 出处/SBOM 证明以及固定操作/工具。资格运行 [33651777660](https://github.com/A3S-Lab/Use/actions/runs/33651777660) 在所有五个目标上通过了隔离存档执行和无缓存逐字节重建，来自精确的 `main` 提交 `4f6e4725205d06ab81f8ea98bfee85c7eb4b2bcd`；陈旧核心`v0.3.5`发布尝试未创建任何版本。发布工作流程 [33687297386](https://github.com/A3S-Lab/Use/actions/runs/33687297386) 在准确的 `main` 提交 `48a0b76f8a4a87a11d16627c7bd7567920852508` 处通过了标签 `v0.3.7` 的所有 13 个作业，并发布了经过验证的档案，键入了 crates（`a3s-use-core 0.2.6`、`a3s-use-extension 0.3.7`、 `a3s-use 0.3.7`)、SBOM、证明和安装程序。发布工作流程 [33720485826](https://github.com/A3S-Lab/Use/actions/runs/33720485826) 在准确的 `main` 提交 `6d3a7baf32ce998a2e487c40fbf78b4a6cda2579` 处通过了标签 `v0.3.8` 的所有 13 个作业，并发布了经过验证的档案，键入了 crates（`a3s-use-core 0.2.7`、`a3s-use-extension 0.3.8`、 `a3s-use 0.3.8`)、SBOM、证明和安装程序。发布工作流程 [33756618837](https://github.com/A3S-Lab/Use/actions/runs/33756618837) 在准确的 `main` 提交 `a5f3cc40bfb0a1021ca150d2ce4295409b74d220` 处通过了标签 `v0.3.9` 的所有 13 个作业，并发布了 19 个经过验证的发布资产，键入了板条箱（`a3s-use-core 0.2.7`、`a3s-use-extension 0.3.9`、 `a3s-use 0.3.9`)、SBOM、证明和安装程序。发布工作流程 [33791616307](https://github.com/A3S-Lab/Use/actions/runs/33791616307) 在确切的 `main` 提交 `c4c80a223bfff3698ca4b4598e7175c6e3303239` 处通过了标签 `v0.3.10` 的所有 13 个作业，并发布了 19 个作业已验证的发布资产、类型化包（`a3s-use-core 0.2.8`、`a3s-use-extension 0.3.10`、`a3s-use 0.3.10`）、SBOM、证明和安装程序。之前的 `v0.3.6`、`v0.3.7`、`v0.3.8` 和 `v0.3.9` 版本仍然是历史证据；外部操作的完整档案证人和非发布证据保留仍然开放
+|完整的Linux/macOS/Windows实时流程E2E和恢复矩阵 |释放拦截器 |
+|公共注册操作、外部完整存档再现性见证、非发布证据保留、支持运行手册 |释放拦截器 |
+
+**生产就绪：否。** 该代码具有经过大量测试的基础，但是
+上面未完成的行仍然需要释放门。 [路线图.md](ROADMAP.md)
+跟踪剩余的产品工作，无需将已完成的内部结构转换为
+释放索赔。
 
 ## 平台支持
 
-| 目标 | 当前门 | 产品状态 |
-| --- | --- | --- |
-| Linux x86_64 / arm64 | 完整 A3S Use workspace CI 加 release-container conformance | 开发预览 |
-| macOS arm64 / x86_64 | 当前 A3S Use workspace build 与 test | 开发预览 |
-| Windows x86_64 | 当前 A3S Use workspace test、native linked-state qualification（跨 Registry/cache、package graph/diagnostics、lifecycle/Runtime/Flow、backup/restore 与 OKF path）、scanner-lock blob publication/source-cleanup/package-commit/upgrade-receipt/lifecycle-removal recovery、signed Registry/graph/Grant/Flow/OKF CLI lifecycle 与 killed-process cutover replay | 预览；完整 runtime/recovery matrix 待定 |
+|目标|当前门|产品状态 |
+| ---| ---| ---|
+| Linux x86_64/arm64 |完整的 A3S 使用工作区 CI 以及发布容器一致性 |发展预览 |
+| macOS arm64 / x86_64 |当前 A3S 使用工作区构建和测试 |发展预览 |
+| Windows x86_64 |当前 A3S 使用工作区测试、跨注册表/缓存的本机链接状态限定、包图/诊断、生命周期/运行时/流程、备份/恢复和 OKF 路径、扫描器锁定 blob 发布/源清理/包提交/升级接收/生命周期删除恢复、签名注册表/图/授予/流程/OKF CLI 生命周期以及终止进程切换重播 |预览;完整的运行时间/恢复矩阵待定|
 
-Native CI run [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662) 从 exact `main` commit `40bc5593cbf58ca2da171d85ba578c2d6bd911c8` 在五目标上通过 current Use-owned workspace 与 real-process integration suite。
-这仅 establish current Use-owned platform baseline；
-product-host、reboot、broader antivirus contention 与 remaining recovery scenario 仍是 release blocker。
+本机 CI 运行
+[32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)
+通过当前使用拥有的工作区和实时流程集成套件
+来自确切 `main` 提交的所有五个目标
+`40bc5593cbf58ca2da171d85ba578c2d6bd911c8`。这建立了当前
+仅使用自有平台基线；产品主机、重新启动、更广泛的防病毒
+争用，其余的恢复场景仍然是释放阻碍。
 
-Trusted package 与 state path 使用 platform-aware metadata check，在 traversal 前 reject Unix symbolic link 与 Windows reparse point。Platform test coverage 不等于 production qualification。
+受信任的包和状态路径使用平台感知的元数据检查来拒绝
+Unix 符号链接和 Windows 遍历之前的重分析点。平台测试
+覆盖范围与生产资质不同。
 
-## 仓库布局
+## 存储库布局
 
-`a3s-use-science` intentionally 不是本 repository、workspace、runtime、CI 或 release 的一部分。
-Domain-specific Science code 仍 independently owned，日后仅可作为 signed package 通过与其他第三方 capability 相同的 Registry contract 消费。
-名为 `a3s/science` 的 test package 是 synthetic Registry fixture，不 link Science crate。
+`a3s-use-science` 故意不属于此存储库、工作区，
+运行时、CI 或发布。特定领域的科学代码保持独立
+拥有并且以后只能通过相同的签名包来使用
+注册合同作为任何第三方功能。测试包命名为
+`a3s/science` 是合成注册表固定装置，不链接科学箱。
 
 ```text
 Use/
@@ -1706,9 +2097,9 @@ Use/
 └── docs/                    architecture, contracts, ADRs, and release design
 ```
 
-## 开发
+## 发展
 
-从本 repository 运行检查，而非 A3S monorepo root：
+从此存储库运行检查，而不是从 A3S monorepo 根运行检查：
 
 ```bash
 cargo fmt --all -- --check
@@ -1718,7 +2109,7 @@ cargo check -p a3s-use --no-default-features
 cargo check -p a3s-use --no-default-features --features extensions
 ```
 
-构建并验证 documentation site：
+构建并验证文档站点：
 
 ```bash
 cd website
@@ -1729,23 +2120,26 @@ npm run build
 npm run check:site
 ```
 
-Contribution rule 见 [AGENTS.md](AGENTS.md)。Public Rust type 在适用处应保持 typed 且 `Send + Sync`；I/O 使用 Tokio；ACL 是 default human-authored configuration format。
+贡献规则记录在[AGENTS.md](AGENTS.md)中。公共 Rust 类型
+应保持键入状态并在适用的情况下显示`Send + Sync`； I/O使用Tokio；访问控制列表是
+默认的人工编写的配置格式。
 
 ## 文档
 
 - [产品路线图](ROADMAP.md)
-- [Plugin 契约参考](docs/plugin-contracts.md)
-- [Plugin 平台架构](docs/plugin-platform-architecture.md)
-- [生命周期与安全](docs/plugin-platform-lifecycle-and-security.md)
-- [Model Hardware Standard 集成 profile](docs/mhs-integration.md)
-- [开发计划](docs/plugin-platform-development-plan.md)
+- [插件合约参考](docs/plugin-contracts.md)
+- [插件平台架构](docs/plugin-platform-architecture.md)
+- [生命周期和安全性](docs/plugin-platform-lifecycle-and-security.md)
+- [型号硬件标准集成配置文件](docs/mhs-integration.md)
+- [发展计划](docs/plugin-platform-development-plan.md)
 - [已验证发布安装](docs/release-installation.md)
-- [Release descriptor](docs/release-descriptors.md)
-- [Agent Package Manager 第一性原理审计](docs/agent-package-manager-audit.md)
-- [OKF Knowledge 操作](docs/okf-knowledge-operations.md)
-- [Registry 缓存操作](docs/registry-cache-operations.md)
+- [释放描述符](docs/release-descriptors.md)
+- 【代理包管理器第一原则审核](docs/agent-package-manager-audit.md)
+- 【OKF知识操作](docs/okf-knowledge-operations.md)
+- [注册表缓存操作](docs/registry-cache-operations.md)
 - [文档网站](https://a3s-lab.github.io/Use/)
 
 ## 许可证
 
-Apache-2.0。参见 [LICENSE](LICENSE) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+阿帕奇-2.0。请参阅 [许可证](LICENSE) 和
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
