@@ -148,6 +148,10 @@ provenance. Replacing a Registry never rewrites historical provenance. Missing
 or partial catalog evidence is invalid and cannot be reconstructed from an
 archive or local package files.
 
+Local HTTP transports (dev-preview) are documented in
+[registry-local-transport.md](registry-local-transport.md). Transport never
+substitutes for the bootstrap trust-root pin.
+
 ## Reviewed graph lifecycle
 
 All graph mutations follow one durable sequence:
