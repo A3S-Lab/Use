@@ -432,3 +432,189 @@ fn republication_with_a_new_package_version_keeps_one_identity_per_target() {
         .join("targets/extensions/a3s/registry-demo/0.2.0/stable/any/a3s-registry-demo-0.2.0-any.tar.gz")
         .exists());
 }
+
+#[test]
+fn compose_package_wires_tool_mcp_okf_skill_and_ui() {
+    let root = tempfile::tempdir().unwrap();
+    let package = root.path().join("packages/mock-compose");
+    fs::create_dir_all(package.join("okf/domain/concepts")).unwrap();
+    fs::create_dir_all(package.join("skills/compose")).unwrap();
+    fs::create_dir_all(package.join("ui/compose")).unwrap();
+    fs::create_dir_all(package.join("tools")).unwrap();
+    fs::create_dir_all(package.join("mcp")).unwrap();
+    fs::write(
+        package.join("a3s-use-extension.acl"),
+        r#"
+extension "a3s/mock-compose" {
+  schema_version = 3
+  version        = "0.1.0"
+  route          = "mock-compose"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read", "execute"]
+
+  repository {
+    url      = "https://github.com/A3S-Lab/Use-Registry"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  tool "echo" {
+    workload    = "task"
+    interface   = "cli"
+    executable  = "tools/echo"
+    command     = "mock-compose-echo"
+    json_output = true
+    interactive = false
+    timeout_ms  = 30000
+    activation  = "lazy"
+    optional    = false
+  }
+
+  mcp "context" {
+    transport  = "stdio"
+    executable = "mcp/context"
+    args       = ["--stdio"]
+    activation = "lazy"
+    optional   = false
+  }
+
+  okf "domain" {
+    format_version         = "0.2"
+    root                   = "okf/domain"
+    content_digest         = "sha256:355b6f00153630b082e60a0f7e0b67fbbb74b2a29067bca481f7eefecbb86c7a"
+    concept_count          = 1
+    file_count             = 2
+    expanded_bytes         = 427
+    max_files              = 64
+    max_concepts           = 32
+    max_expanded_bytes     = 1048576
+    max_document_bytes     = 262144
+    max_links_per_document = 128
+    optional               = false
+  }
+
+  skill "compose" {
+    path          = "skills/compose/SKILL.md"
+    requires_tool = ["echo"]
+    requires_mcp  = ["context"]
+    requires_okf  = ["domain"]
+    optional      = false
+  }
+
+  ui "compose" {
+    entry     = "ui/compose/index.html"
+    styles    = ["ui/compose/index.css"]
+    scripts   = ["ui/compose/index.js"]
+    skill     = "compose"
+    bind_tool = ["echo"]
+    bind_mcp  = ["context"]
+    optional  = false
+  }
+}
+"#,
+    )
+    .unwrap();
+    fs::write(package.join("README.md"), "# compose\n").unwrap();
+    fs::write(package.join("tools/echo"), "#!/bin/sh\nexec cat\n").unwrap();
+    fs::write(package.join("mcp/context"), "#!/bin/sh\nexit 0\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(package.join("tools/echo"), fs::Permissions::from_mode(0o755))
+            .unwrap();
+        fs::set_permissions(package.join("mcp/context"), fs::Permissions::from_mode(0o755))
+            .unwrap();
+    }
+    fs::write(
+        package.join("okf/domain/index.md"),
+        "---\nokf_version: \"0.2\"\n---\n\n# Cognitive package knowledge\n\n- [Lifecycle](concepts/lifecycle.md) - One generation owns every plugin surface.\n",
+    )
+    .unwrap();
+    fs::write(
+        package.join("okf/domain/concepts/lifecycle.md"),
+        "---\ntype: Project-Specific Decision\ntitle: Atomic cognitive package lifecycle\ndescription: Tool, MCP, OKF, Flow, Skill, and UI contributions activate as one package generation.\nstatus: stable\n---\n\n# Decision\n\nPublish package capabilities only after every required contribution is ready.\n",
+    )
+    .unwrap();
+    fs::write(
+        package.join("skills/compose/SKILL.md"),
+        "---\nname: mock-compose\ndescription: compose\n---\n# Compose\n",
+    )
+    .unwrap();
+    fs::write(package.join("ui/compose/index.html"), "<html></html>\n").unwrap();
+    fs::write(package.join("ui/compose/index.css"), "body{}\n").unwrap();
+    fs::write(package.join("ui/compose/index.js"), "console.log(1)\n").unwrap();
+    fs::write(
+        root.path().join("compose-ceiling.json"),
+        r#"{
+  "schema": "a3s.use.plugin-permissions.v1",
+  "surfaces": [
+    {
+      "surface": {"kind": "mcp", "id": "context"},
+      "nativeExecution": true,
+      "childProcess": false,
+      "filesystem": [],
+      "networkEgress": [],
+      "privateService": false,
+      "secrets": [],
+      "resources": {
+        "cpuMillis": 500,
+        "memoryBytes": 268435456,
+        "pids": 32,
+        "ephemeralStorageBytes": 536870912
+      },
+      "uiHttp": []
+    },
+    {
+      "surface": {"kind": "tool", "id": "echo"},
+      "nativeExecution": true,
+      "childProcess": false,
+      "filesystem": [],
+      "networkEgress": [],
+      "privateService": false,
+      "secrets": [],
+      "resources": {
+        "cpuMillis": 1000,
+        "memoryBytes": 268435456,
+        "pids": 64,
+        "ephemeralStorageBytes": 1073741824,
+        "taskTimeoutMs": 30000,
+        "maxStdoutBytes": 1048576,
+        "maxStderrBytes": 1048576
+      },
+      "uiHttp": []
+    }
+  ]
+}"#,
+    )
+    .unwrap();
+
+    let (registry, root_sha256) = setup_registry(
+        root.path(),
+        &[(
+            "a3s/mock-compose",
+            "packages/mock-compose",
+            "  permission_ceiling = \"compose-ceiling.json\"\n",
+        )],
+    );
+    let (stdout, stderr, ok) = run(binary().args([
+        "verify",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--expected-root-sha256",
+        &root_sha256,
+    ]));
+    assert!(ok, "verify failed: {stderr}");
+    let report: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(report["targetsChecked"], 2);
+
+    let planning = registry.join(
+        "targets/extensions/a3s/mock-compose/0.1.0/stable/any/planning-v1.json",
+    );
+    let bundle: Value = serde_json::from_str(&fs::read_to_string(planning).unwrap()).unwrap();
+    let kinds: Vec<&str> = bundle["surfaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|surface| surface["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["mcp-stdio", "tool-task-native"]);
+}

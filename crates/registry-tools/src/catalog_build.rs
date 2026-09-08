@@ -247,6 +247,26 @@ fn catalog_surfaces(manifest: &ExtensionManifest) -> UseResult<Vec<CatalogSurfac
         });
     }
     for flow in &manifest.flows {
+        let mut requires = Vec::new();
+        for dependency in &flow.requires_tools {
+            requires.push(PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: dependency.clone(),
+            });
+        }
+        for dependency in &flow.requires_mcp {
+            requires.push(PluginSurfaceRef {
+                kind: PluginSurfaceKind::Mcp,
+                id: dependency.clone(),
+            });
+        }
+        for dependency in &flow.requires_okf {
+            requires.push(PluginSurfaceRef {
+                kind: PluginSurfaceKind::Okf,
+                id: dependency.clone(),
+            });
+        }
+        requires.sort();
         surfaces.push(CatalogSurface {
             kind: PluginSurfaceKind::Flow,
             id: flow.id.clone(),
@@ -255,7 +275,7 @@ fn catalog_surfaces(manifest: &ExtensionManifest) -> UseResult<Vec<CatalogSurfac
             mcp_transport: None,
             mcp_tool_count: None,
             okf_bundle: None,
-            requires: Vec::new(),
+            requires,
         });
     }
     for skill in &manifest.skills {
@@ -297,6 +317,32 @@ fn catalog_surfaces(manifest: &ExtensionManifest) -> UseResult<Vec<CatalogSurfac
         });
     }
     for ui in &manifest.ui {
+        let mut requires = Vec::new();
+        if let Some(skill) = &ui.skill {
+            requires.push(PluginSurfaceRef {
+                kind: PluginSurfaceKind::Skill,
+                id: skill.clone(),
+            });
+        }
+        for dependency in &ui.bind_tools {
+            requires.push(PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: dependency.clone(),
+            });
+        }
+        for dependency in &ui.bind_mcp {
+            requires.push(PluginSurfaceRef {
+                kind: PluginSurfaceKind::Mcp,
+                id: dependency.clone(),
+            });
+        }
+        for dependency in &ui.bind_flows {
+            requires.push(PluginSurfaceRef {
+                kind: PluginSurfaceKind::Flow,
+                id: dependency.clone(),
+            });
+        }
+        requires.sort();
         surfaces.push(CatalogSurface {
             kind: PluginSurfaceKind::Ui,
             id: ui.id.clone(),
@@ -305,7 +351,7 @@ fn catalog_surfaces(manifest: &ExtensionManifest) -> UseResult<Vec<CatalogSurfac
             mcp_transport: None,
             mcp_tool_count: None,
             okf_bundle: None,
-            requires: Vec::new(),
+            requires,
         });
     }
     surfaces.sort_by(|left, right| {
@@ -379,6 +425,23 @@ fn planning_target(
         return Ok(None);
     }
     let mut planning_surfaces = Vec::new();
+    for mcp in &manifest.mcp_servers {
+        let activation = planning_activation(mcp.activation);
+        planning_surfaces.push(match &mcp.launch {
+            PluginMcpLaunch::Stdio { executable, args } => ExecutablePlanningSurface::McpStdio {
+                id: mcp.id.clone(),
+                activation,
+                executable: portable_path(executable)?,
+                args: args.clone(),
+            },
+            PluginMcpLaunch::StreamableHttp { .. } => {
+                return Err(unsupported_release_surface(
+                    &admission.package_id,
+                    "Streamable HTTP MCP",
+                ));
+            }
+        });
+    }
     for tool in &manifest.tools {
         let activation = planning_activation(tool.activation);
         planning_surfaces.push(match &tool.workload {
@@ -408,24 +471,7 @@ fn planning_target(
             }
         });
     }
-    for mcp in &manifest.mcp_servers {
-        let activation = planning_activation(mcp.activation);
-        planning_surfaces.push(match &mcp.launch {
-            PluginMcpLaunch::Stdio { executable, args } => ExecutablePlanningSurface::McpStdio {
-                id: mcp.id.clone(),
-                activation,
-                executable: portable_path(executable)?,
-                args: args.clone(),
-            },
-            PluginMcpLaunch::StreamableHttp { .. } => {
-                return Err(unsupported_release_surface(
-                    &admission.package_id,
-                    "Streamable HTTP MCP",
-                ));
-            }
-        });
-    }
-    let target_name = format!(
+    planning_surfaces.sort_by_key(ExecutablePlanningSurface::reference);    let target_name = format!(
         "extensions/{}/{}/{}/{}/planning-v1.json",
         admission.package_id,
         manifest.version,
