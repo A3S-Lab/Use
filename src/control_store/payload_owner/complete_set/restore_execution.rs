@@ -128,6 +128,13 @@ impl StagedControlInstallationRestore {
                 wrap_activation_error(wrap_owner_error("Runtime plan payload preflight", error))
             })?;
         prepared
+            .capability_payload
+            .preflight_clean(&self.maintenance)
+            .await
+            .map_err(|error| {
+                wrap_activation_error(wrap_owner_error("Capability payload preflight", error))
+            })?;
+        prepared
             .host_projection
             .preflight_clean(&self.maintenance)
             .await
@@ -179,6 +186,25 @@ impl StagedControlInstallationRestore {
                         ))
                     })?;
                 restore_activation::maybe_test_crash("runtime-plans-effect");
+                result
+                    .validate_for_registry(&prepared.control.registry)
+                    .map_err(wrap_activation_error)?;
+                if checkpoint {
+                    self.checkpoint(component, &result).await?;
+                }
+            }
+            RestoreComponent::CapabilityPayload => {
+                let result = prepared
+                    .capability_payload
+                    .activate(&self.maintenance)
+                    .await
+                    .map_err(|error| {
+                        wrap_activation_error(wrap_owner_error(
+                            "Capability payload activation",
+                            error,
+                        ))
+                    })?;
+                restore_activation::maybe_test_crash("capability-payload-effect");
                 result
                     .validate_for_registry(&prepared.control.registry)
                     .map_err(wrap_activation_error)?;
@@ -398,6 +424,11 @@ impl StagedControlInstallationRestore {
     #[cfg(test)]
     pub(in crate::control_store) fn runtime_plan_candidate_path(&self) -> Option<&Path> {
         self.prepared().ok()?.runtime_plans.candidate_path()
+    }
+
+    #[cfg(test)]
+    pub(in crate::control_store) fn capability_payload_candidate_path(&self) -> Option<&Path> {
+        self.prepared().ok()?.capability_payload.candidate_path()
     }
 
     #[cfg(test)]

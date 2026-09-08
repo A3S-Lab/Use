@@ -5,7 +5,7 @@ use crate::control_store::model::valid_sha256;
 fn registry_requires_the_exact_typed_external_owner_set() {
     let registry = registry();
     registry.validate().unwrap();
-    assert_eq!(registry.registrations().len(), 6);
+    assert_eq!(registry.registrations().len(), 7);
     assert_eq!(
         registry
             .registrations()
@@ -69,6 +69,14 @@ fn live_layout_entries_resolve_to_one_registered_payload_owner() {
         Some(ControlPayloadOwnerId::HostProtocolProjection)
     );
     assert_eq!(
+        ControlPayloadOwnerId::owner_for_state_root("capability-gateway"),
+        Some(ControlPayloadOwnerId::CapabilityPayload)
+    );
+    assert_eq!(
+        ControlPayloadOwnerId::owner_for_state_root("runtime-plans"),
+        Some(ControlPayloadOwnerId::RuntimePlanPayload)
+    );
+    assert_eq!(
         ControlPayloadOwnerId::owner_for_state_root("knowledge"),
         Some(ControlPayloadOwnerId::KnowledgePayload)
     );
@@ -118,14 +126,14 @@ fn snapshot_set_is_generation_bound_path_free_and_deterministic() {
     let snapshot =
         ControlPayloadSnapshotSet::new(&registry, binding.clone(), receipts.clone()).unwrap();
     snapshot.validate(&registry).unwrap();
-    assert_eq!(snapshot.receipts.len(), 5);
+    assert_eq!(snapshot.receipts.len(), 6);
     assert_eq!(
         snapshot.receipts[0].owner,
-        ControlPayloadOwnerId::HostProtocolProjection
+        ControlPayloadOwnerId::CapabilityPayload
     );
-    assert_eq!(snapshot.file_count, 15);
-    assert_eq!(snapshot.byte_count, 15 * 1024);
-    assert_eq!(snapshot.manifest_bytes, 15 * 128);
+    assert_eq!(snapshot.file_count, 21);
+    assert_eq!(snapshot.byte_count, 21 * 1024);
+    assert_eq!(snapshot.manifest_bytes, 21 * 128);
     let first_digest = snapshot.descriptor_digest(&registry).unwrap();
     assert!(valid_sha256(&first_digest));
 
@@ -253,7 +261,7 @@ fn owner_receipts_enforce_registered_schema_and_bounds() {
 fn decoded_registry_and_snapshot_evidence_must_revalidate() {
     let registry = registry();
     let mut registry_json = serde_json::to_value(&registry).unwrap();
-    registry_json["registrations"][1]["backupPolicy"] =
+    registry_json["registrations"][2]["backupPolicy"] =
         serde_json::Value::String("owner-snapshot".to_string());
     let decoded: ControlPayloadOwnerRegistry = serde_json::from_value(registry_json).unwrap();
     assert_eq!(

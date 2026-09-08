@@ -15,7 +15,7 @@ mod path;
 
 pub(super) use path::{publish, resolve_destination};
 
-const ARCHIVE_MAGIC: &[u8] = b"A3S-USE-CONTROL-SNAPSHOT-V2\n";
+const ARCHIVE_MAGIC: &[u8] = b"A3S-USE-CONTROL-SNAPSHOT-V3\n";
 const MANIFEST_LENGTH_BYTES: usize = 8;
 const MANIFEST_DIGEST_BYTES: usize = 32;
 const COPY_BUFFER_BYTES: usize = 128 * 1024;
@@ -27,6 +27,7 @@ pub(super) struct ArchiveSources {
     pub(super) observations: PathBuf,
     pub(super) restore_coordinator: PathBuf,
     pub(super) runtime_plans: PathBuf,
+    pub(super) capability_payload: PathBuf,
 }
 
 pub(super) struct ExtractedArchive {
@@ -37,6 +38,7 @@ pub(super) struct ExtractedArchive {
     pub(super) observations: Option<PathBuf>,
     pub(super) restore_coordinator: Option<PathBuf>,
     pub(super) runtime_plans: Option<PathBuf>,
+    pub(super) capability_payload: Option<PathBuf>,
     pub(super) temporary: tempfile::TempDir,
 }
 
@@ -175,6 +177,7 @@ pub(super) fn extract(
     let mut observations = None;
     let mut restore_coordinator = None;
     let mut runtime_plans = None;
+    let mut capability_payload = None;
     for entry in &entries {
         match entry.kind {
             ArchiveEntryKind::ControlExport => {
@@ -195,6 +198,7 @@ pub(super) fn extract(
                     ArchiveEntryKind::Observations => observations = Some(path),
                     ArchiveEntryKind::RestoreCoordinator => restore_coordinator = Some(path),
                     ArchiveEntryKind::RuntimePlans => runtime_plans = Some(path),
+                    ArchiveEntryKind::CapabilityPayload => capability_payload = Some(path),
                     ArchiveEntryKind::ControlExport => {
                         return Err(snapshot_invalid(
                             "The Control export was classified as an owner payload.",
@@ -233,6 +237,7 @@ pub(super) fn extract(
         observations,
         restore_coordinator,
         runtime_plans,
+        capability_payload,
         temporary,
     })
 }
@@ -255,6 +260,7 @@ fn validate_sources(entries: &[ArchiveEntry], sources: &ArchiveSources) -> UseRe
         ArchiveEntryKind::Observations,
         ArchiveEntryKind::RestoreCoordinator,
         ArchiveEntryKind::RuntimePlans,
+        ArchiveEntryKind::CapabilityPayload,
     ] {
         let path = source_path(sources, kind)?;
         let expected = entries.iter().find(|entry| entry.kind == kind);
@@ -286,6 +292,7 @@ fn source_path(sources: &ArchiveSources, kind: ArchiveEntryKind) -> UseResult<&P
         ArchiveEntryKind::Observations => Ok(&sources.observations),
         ArchiveEntryKind::RestoreCoordinator => Ok(&sources.restore_coordinator),
         ArchiveEntryKind::RuntimePlans => Ok(&sources.runtime_plans),
+        ArchiveEntryKind::CapabilityPayload => Ok(&sources.capability_payload),
         ArchiveEntryKind::ControlExport => Err(snapshot_invalid(
             "The Control export has no external owner payload path.",
         )),
@@ -444,6 +451,7 @@ fn entry_file_name(kind: ArchiveEntryKind) -> UseResult<&'static str> {
         ArchiveEntryKind::Observations => Ok("observations.payload"),
         ArchiveEntryKind::RestoreCoordinator => Ok("restore-coordinator.payload"),
         ArchiveEntryKind::RuntimePlans => Ok("runtime-plans.archive"),
+        ArchiveEntryKind::CapabilityPayload => Ok("capability-payload.archive"),
     }
 }
 

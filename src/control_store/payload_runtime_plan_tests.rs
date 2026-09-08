@@ -26,7 +26,7 @@ async fn runtime_plan_payload_is_snapshotted_staged_and_activated_with_the_compl
         .is_some_and(|path| path.is_dir()));
 
     let result = staged.activate().await.unwrap();
-    assert_eq!(result.checkpoint_count_for_test(), 6);
+    assert_eq!(result.checkpoint_count_for_test(), 7);
     let live_root = state_root.join("runtime-plans");
     assert!(live_root.is_dir());
     let records = std::fs::read_dir(&live_root)
