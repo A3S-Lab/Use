@@ -100,11 +100,14 @@ pub(in crate::control_store) struct ControlCapabilityPayloadEntry {
 
 impl ControlCapabilityPayloadEntry {
     fn validate(&self, _installation: &InstallationId) -> UseResult<()> {
+        // `digest` is the owner-native content identity (catalog descriptor
+        // digest or domain-separated descriptor-snapshot digest). `sha256` is
+        // the plain hash of the archived bytes and may differ when the owner
+        // identity is domain-separated.
         if !valid_sha256(&self.digest)
             || self.length == 0
             || self.length > MAX_ARCHIVE_RECORD_BYTES
             || !valid_sha256(&self.sha256)
-            || self.digest != self.sha256
         {
             return Err(capability_payload_error(
                 "A Capability payload entry is invalid or exceeds its bound.",
@@ -1005,7 +1008,7 @@ async fn read_archive_records(
         file.read_exact(&mut bytes).await.map_err(|_| {
             capability_payload_error("The Capability payload archive is truncated.")
         })?;
-        if digest_bytes(&bytes) != entry.sha256 || entry.sha256 != entry.digest {
+        if digest_bytes(&bytes) != entry.sha256 {
             return Err(capability_payload_error(
                 "A Capability payload archive record differs from its manifest digest.",
             ));
@@ -1234,7 +1237,7 @@ async fn materialize_candidate(
     catalogs: &[CapabilityGatewayCatalogStoredRecord],
     descriptors: &[ControlCapabilityDescriptorSnapshotStoredRecord],
 ) -> UseResult<()> {
-    ensure_owned_directory(candidate, candidate).await?;
+    validate_directory(candidate).await?;
     if !catalogs.is_empty() {
         let catalogs_root = candidate.join(CATALOGS_DIRECTORY);
         ensure_owned_directory(candidate, &catalogs_root).await?;
