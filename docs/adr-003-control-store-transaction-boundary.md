@@ -5,6 +5,7 @@
 - Architecture: [A3S Use Architecture](architecture.md)
 - Lifecycle: [ADR-002](adr-002-cognitive-package-lifecycle-saga.md)
 - Cutover inventory: [Control Store Coordinated Cutover](control-store-cutover.md)
+- Backup authority map: [Control Store and backup authority boundary](control-store-and-backup-authority.md)
 - Roadmap: [A3S Use Roadmap](../ROADMAP.md)
 
 ## Context
