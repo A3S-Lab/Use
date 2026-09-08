@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use a3s_use_core::UseResult;
 
+use super::super::capability_payload::VerifiedControlCapabilityPayloadSnapshot;
 use super::super::host_projection::VerifiedControlHostProjectionSnapshot;
 use super::super::knowledge::VerifiedControlKnowledgePayloadSnapshot;
 use super::super::observations::VerifiedControlObservationPayloadSnapshot;
@@ -24,6 +25,7 @@ pub(in crate::control_store) struct VerifiedControlInstallationSnapshot {
     pub(super) observations: VerifiedControlObservationPayloadSnapshot,
     pub(super) restore_coordinator: VerifiedControlRestoreCoordinatorSnapshot,
     pub(super) runtime_plans: VerifiedControlRuntimePlanPayloadSnapshot,
+    pub(super) capability_payload: VerifiedControlCapabilityPayloadSnapshot,
     _temporary: tempfile::TempDir,
 }
 
@@ -105,6 +107,17 @@ impl VerifiedControlInstallationSnapshot {
             )
             .await
             .map_err(|error| nested_snapshot_invalid("Runtime plan payload", error))?;
+        let capability_payload = extracted
+            .manifest
+            .capability_payload
+            .verify_offline(
+                &registry,
+                binding,
+                &extracted.control_export,
+                extracted.capability_payload.clone(),
+            )
+            .await
+            .map_err(|error| nested_snapshot_invalid("Capability payload", error))?;
         Ok(Self {
             registry,
             manifest: extracted.manifest,
@@ -114,6 +127,7 @@ impl VerifiedControlInstallationSnapshot {
             observations,
             restore_coordinator,
             runtime_plans,
+            capability_payload,
             _temporary: extracted.temporary,
         })
     }
@@ -152,7 +166,11 @@ impl ControlPayloadSnapshotSession {
         let observations_path = staging.path().join("observations.payload");
         let restore_path = staging.path().join("restore-coordinator.payload");
         let runtime_plans_path = staging.path().join("runtime-plans.archive");
+        let capability_payload_path = staging.path().join("capability-payload.archive");
 
+        let capability_payload = self
+            .snapshot_capability_payload(capability_payload_path.clone(), created_at_ms)
+            .await?;
         let host_projection = self
             .snapshot_host_projection(host_path.clone(), created_at_ms)
             .await?;
@@ -169,6 +187,7 @@ impl ControlPayloadSnapshotSession {
             .snapshot_runtime_plans(runtime_plans_path.clone(), created_at_ms)
             .await?;
         let snapshot_set = self.complete(vec![
+            capability_payload.receipt.clone(),
             host_projection.receipt.clone(),
             knowledge.receipt.clone(),
             observations.receipt.clone(),
@@ -188,6 +207,7 @@ impl ControlPayloadSnapshotSession {
                 observations,
                 restore_coordinator,
                 runtime_plans,
+                capability_payload,
             },
         )?;
         let sources = archive::ArchiveSources {
@@ -197,6 +217,7 @@ impl ControlPayloadSnapshotSession {
             observations: observations_path,
             restore_coordinator: restore_path,
             runtime_plans: runtime_plans_path,
+            capability_payload: capability_payload_path,
         };
         let writing_manifest = manifest.clone();
         let temporary = tokio::task::spawn_blocking(move || {

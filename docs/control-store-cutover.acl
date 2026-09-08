@@ -382,6 +382,21 @@ control_store_cutover {
     may_choose_desired_state    = false
   }
 
+  external_owner "capability-payload" {
+    state_paths = ["capability-gateway"]
+    implementation = [
+      "src/capability_catalog_store.rs",
+      "src/capability_catalog_store/restore.rs",
+      "src/control_store/effect_owner/capability_plane/descriptor_snapshot_store.rs",
+      "src/control_store/effect_owner/capability_plane/descriptor_snapshot_restore.rs",
+      "src/control_store/payload_owner/capability_payload.rs",
+    ]
+    payload                     = "installation-scoped immutable Capability Gateway catalog and descriptor-snapshot records"
+    backup_policy               = "owner-snapshot"
+    registered_before_activation = true
+    may_choose_desired_state    = false
+  }
+
   external_owner "knowledge-payload" {
     state_paths = ["knowledge"]
     implementation = [

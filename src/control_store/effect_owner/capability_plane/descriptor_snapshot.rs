@@ -40,6 +40,7 @@ pub(in crate::control_store) use storage::retention::{
     CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_RESULT_SCHEMA,
 };
 pub(in crate::control_store) use storage::ControlCapabilityDescriptorSnapshotStore;
+pub(in crate::control_store) use storage::ControlCapabilityDescriptorSnapshotStoredRecord;
 
 /// Validate one descriptor-snapshot payload while it is being assembled into
 /// a coordinated state backup.  This checks the owner schema, canonical bytes,

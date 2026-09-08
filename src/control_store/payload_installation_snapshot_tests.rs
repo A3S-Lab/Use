@@ -48,7 +48,7 @@ async fn complete_snapshot_archive_round_trips_one_bound_owner_set() {
 
     manifest.validate(&registry).unwrap();
     assert_eq!(manifest.snapshot_set.binding, *session.binding());
-    assert_eq!(manifest.snapshot_set.receipts.len(), 5);
+    assert_eq!(manifest.snapshot_set.receipts.len(), 6);
     assert_eq!(
         manifest
             .snapshot_set
@@ -97,7 +97,7 @@ async fn complete_snapshot_archive_round_trips_one_bound_owner_set() {
 }
 
 #[tokio::test]
-async fn complete_snapshot_archive_represents_five_absent_payloads_without_files() {
+async fn complete_snapshot_archive_represents_six_absent_payloads_without_files() {
     let temporary = TempDir::new().unwrap();
     let paths = paths(&temporary);
     let store = ControlStore::from_extension_paths(&paths).unwrap();
@@ -119,6 +119,10 @@ async fn complete_snapshot_archive_represents_five_absent_payloads_without_files
         .unwrap();
     assert_eq!(manifest.snapshot_set.file_count, 0);
     assert_eq!(manifest.snapshot_set.byte_count, 0);
+    assert!(matches!(
+        manifest.capability_payload.manifest.payload,
+        ControlCapabilityPayloadState::Absent
+    ));
     assert!(matches!(
         manifest.host_projection.manifest.payload,
         ControlHostProjectionState::Absent
@@ -207,6 +211,9 @@ pub(in crate::control_store) fn registry() -> ControlPayloadOwnerRegistry {
                     ControlPayloadOwnerRegistration::excluded_global(owner).unwrap()
                 } else {
                     let schema = match owner {
+                        ControlPayloadOwnerId::CapabilityPayload => {
+                            CONTROL_CAPABILITY_PAYLOAD_SNAPSHOT_SCHEMA
+                        }
                         ControlPayloadOwnerId::HostProtocolProjection => {
                             CONTROL_HOST_PROJECTION_SNAPSHOT_SCHEMA
                         }

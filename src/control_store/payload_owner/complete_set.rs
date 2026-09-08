@@ -2,6 +2,7 @@ use a3s_use_core::{UseError, UseResult};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use super::capability_payload::{ControlCapabilityPayloadSnapshot, ControlCapabilityPayloadState};
 use super::host_projection::{ControlHostProjectionSnapshot, ControlHostProjectionState};
 use super::knowledge::{ControlKnowledgePayloadSnapshot, ControlKnowledgePayloadState};
 use super::observations::{ControlObservationPayloadSnapshot, ControlObservationPayloadState};
@@ -39,8 +40,8 @@ pub(in crate::control_store) use coordinator::VerifiedControlInstallationSnapsho
 #[cfg(test)]
 pub(in crate::control_store) use restore::StagedControlInstallationRestore;
 
-const COMPLETE_SNAPSHOT_SCHEMA: &str = "a3s.use.control-installation-snapshot.v2";
-const COMPLETE_SNAPSHOT_DOMAIN: &[u8] = b"a3s.use.control-installation-snapshot.v2\0";
+const COMPLETE_SNAPSHOT_SCHEMA: &str = "a3s.use.control-installation-snapshot.v3";
+const COMPLETE_SNAPSHOT_DOMAIN: &[u8] = b"a3s.use.control-installation-snapshot.v3\0";
 const MAX_COMPLETE_SNAPSHOT_MANIFEST_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +56,7 @@ pub(in crate::control_store) struct ControlInstallationSnapshotManifest {
     pub(in crate::control_store) observations: ControlObservationPayloadSnapshot,
     pub(in crate::control_store) restore_coordinator: ControlRestoreCoordinatorSnapshot,
     pub(in crate::control_store) runtime_plans: ControlRuntimePlanPayloadSnapshot,
+    pub(in crate::control_store) capability_payload: ControlCapabilityPayloadSnapshot,
     pub(in crate::control_store) descriptor_digest: String,
 }
 
@@ -76,6 +78,7 @@ impl ControlInstallationSnapshotManifest {
             observations: owners.observations,
             restore_coordinator: owners.restore_coordinator,
             runtime_plans: owners.runtime_plans,
+            capability_payload: owners.capability_payload,
             descriptor_digest: String::new(),
         };
         manifest.descriptor_digest = manifest.expected_descriptor_digest()?;
@@ -109,8 +112,12 @@ impl ControlInstallationSnapshotManifest {
         self.runtime_plans
             .validate(registry, binding)
             .map_err(|error| nested_snapshot_invalid("Runtime plan payload", error))?;
+        self.capability_payload
+            .validate(registry, binding)
+            .map_err(|error| nested_snapshot_invalid("Capability payload", error))?;
 
         let expected_receipts = vec![
+            self.capability_payload.receipt.clone(),
             self.host_projection.receipt.clone(),
             self.knowledge.receipt.clone(),
             self.observations.receipt.clone(),
@@ -118,6 +125,7 @@ impl ControlInstallationSnapshotManifest {
             self.runtime_plans.receipt.clone(),
         ];
         let timestamps = [
+            self.capability_payload.manifest.created_at_ms,
             self.host_projection.manifest.created_at_ms,
             self.knowledge.manifest.created_at_ms,
             self.observations.manifest.created_at_ms,
@@ -169,6 +177,7 @@ impl ControlInstallationSnapshotManifest {
             observations: &'a ControlObservationPayloadSnapshot,
             restore_coordinator: &'a ControlRestoreCoordinatorSnapshot,
             runtime_plans: &'a ControlRuntimePlanPayloadSnapshot,
+            capability_payload: &'a ControlCapabilityPayloadSnapshot,
         }
 
         self.validate_without_digest()?;
@@ -182,6 +191,7 @@ impl ControlInstallationSnapshotManifest {
             observations: &self.observations,
             restore_coordinator: &self.restore_coordinator,
             runtime_plans: &self.runtime_plans,
+            capability_payload: &self.capability_payload,
         })
         .map_err(|error| {
             snapshot_invalid(format!(
@@ -274,6 +284,17 @@ impl ControlInstallationSnapshotManifest {
                 } => Some((*archive_bytes, archive_sha256)),
             },
         )?;
+        append_optional_entry(
+            &mut entries,
+            ArchiveEntryKind::CapabilityPayload,
+            match &self.capability_payload.manifest.payload {
+                ControlCapabilityPayloadState::Absent => None,
+                ControlCapabilityPayloadState::Archive {
+                    archive_bytes,
+                    archive_sha256,
+                } => Some((*archive_bytes, archive_sha256)),
+            },
+        )?;
         let owner_bytes = entries
             .iter()
             .skip(1)
@@ -294,6 +315,7 @@ struct CapturedOwnerSnapshots {
     observations: ControlObservationPayloadSnapshot,
     restore_coordinator: ControlRestoreCoordinatorSnapshot,
     runtime_plans: ControlRuntimePlanPayloadSnapshot,
+    capability_payload: ControlCapabilityPayloadSnapshot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -304,6 +326,7 @@ enum ArchiveEntryKind {
     Observations,
     RestoreCoordinator,
     RuntimePlans,
+    CapabilityPayload,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

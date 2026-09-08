@@ -233,10 +233,10 @@ async fn complete_activation_checkpoints_every_owner_and_retires_the_marker() {
         .unwrap();
 
     let first = staged.activate().await.unwrap();
-    assert_eq!(first.checkpoint_count_for_test(), 6);
+    assert_eq!(first.checkpoint_count_for_test(), 7);
     assert_eq!(
         staged.activation_checkpoint_count_for_test().await.unwrap(),
-        6
+        7
     );
     assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
     assert!(state_root.join("control.sqlite3").is_file());
@@ -285,7 +285,7 @@ async fn absent_complete_activation_retires_without_inventing_payload_roots() {
         .unwrap();
 
     let result = staged.activate().await.unwrap();
-    assert_eq!(result.checkpoint_count_for_test(), 6);
+    assert_eq!(result.checkpoint_count_for_test(), 7);
     assert!(state_root.join("control.sqlite3").is_file());
     assert!(!state_root.join("plugin-host-manager").exists());
     assert!(!state_root.join("knowledge").exists());
@@ -295,7 +295,7 @@ async fn absent_complete_activation_retires_without_inventing_payload_roots() {
 
 #[tokio::test]
 async fn every_owner_effect_before_checkpoint_converges_after_reopen() {
-    for completed_prefix in 0..6 {
+    for completed_prefix in 0..7 {
         let verified = populated_snapshot(14_400 + completed_prefix as u64);
         let verified = verified.await;
         let target = TempDir::new().unwrap();
@@ -322,7 +322,7 @@ async fn every_owner_effect_before_checkpoint_converges_after_reopen() {
             .await
             .unwrap();
         let result = reopened.activate().await.unwrap();
-        assert_eq!(result.checkpoint_count_for_test(), 6);
+        assert_eq!(result.checkpoint_count_for_test(), 7);
         assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
     }
 }
@@ -336,12 +336,12 @@ async fn final_checkpoint_before_marker_retirement_converges_after_reopen() {
         .stage_clean_restore(state_root.clone(), OkfKnowledgeStoragePolicy::default())
         .await
         .unwrap();
-    for _ in 0..6 {
+    for _ in 0..7 {
         staged.activate_next_for_test().await.unwrap();
     }
     assert_eq!(
         staged.activation_checkpoint_count_for_test().await.unwrap(),
-        6
+        7
     );
     assert!(state_root.join(ACTIVE_STATE_RESTORE_MARKER).is_file());
     drop(staged);
@@ -351,7 +351,7 @@ async fn final_checkpoint_before_marker_retirement_converges_after_reopen() {
         .await
         .unwrap();
     let result = reopened.activate().await.unwrap();
-    assert_eq!(result.checkpoint_count_for_test(), 6);
+    assert_eq!(result.checkpoint_count_for_test(), 7);
     assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
 }
 
@@ -368,6 +368,8 @@ async fn every_complete_restore_checkpoint_recovers_after_process_exit() {
         "control-store-checkpoint",
         "runtime-plans-effect",
         "runtime-plans-checkpoint",
+        "capability-payload-effect",
+        "capability-payload-checkpoint",
         "host-projection-effect",
         "host-projection-checkpoint",
         "knowledge-effect",
@@ -379,6 +381,7 @@ async fn every_complete_restore_checkpoint_recovers_after_process_exit() {
         "marker-retired",
         "control-store-staging-retired",
         "runtime-plans-staging-retired",
+        "capability-payload-staging-retired",
         "host-projection-staging-retired",
         "knowledge-staging-retired",
         "observations-staging-retired",
@@ -417,7 +420,7 @@ async fn every_complete_restore_checkpoint_recovers_after_process_exit() {
             .activate()
             .await
             .unwrap_or_else(|error| panic!("failed to recover {checkpoint}: {error}"));
-        assert_eq!(result.checkpoint_count_for_test(), 6);
+        assert_eq!(result.checkpoint_count_for_test(), 7);
         assert!(state_root.join("control.sqlite3").is_file());
         assert!(!state_root.join(ACTIVE_STATE_RESTORE_MARKER).exists());
         assert_eq!(

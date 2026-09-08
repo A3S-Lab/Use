@@ -26,6 +26,14 @@ const MAX_STAGING_BYTES: u64 = 64 * 1024 * 1024;
 const LOCK_WAIT: Duration = Duration::from_secs(2);
 const LOCK_RETRY: Duration = Duration::from_millis(25);
 
+/// One exact content-addressed descriptor snapshot captured for Control
+/// payload snapshot or restore materialization.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::control_store) struct ControlCapabilityDescriptorSnapshotStoredRecord {
+    pub digest: String,
+    pub bytes: Vec<u8>,
+}
+
 /// Installation-scoped owner for immutable descriptor proof snapshots.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::control_store) struct ControlCapabilityDescriptorSnapshotStore {
@@ -72,6 +80,107 @@ impl ControlCapabilityDescriptorSnapshotStore {
     #[allow(dead_code)]
     pub(in crate::control_store) fn state_root(&self) -> &Path {
         &self.state_root
+    }
+
+    /// Capture every valid descriptor snapshot while an installation-wide
+    /// exclusive maintenance fence is held.
+    pub(in crate::control_store) async fn snapshot_records_under_maintenance(
+        &self,
+        maintenance: &a3s_use_extension::StateMaintenanceGuard,
+    ) -> UseResult<Vec<ControlCapabilityDescriptorSnapshotStoredRecord>> {
+        self.validate_configuration()?;
+        if !maintenance.is_exclusive_for(&self.state_root) {
+            return Err(snapshot_error(
+                "Descriptor snapshot capture requires the exact installation's exclusive maintenance guard.",
+            ));
+        }
+        super::super::ensure_capability_payload_retention_quiescent(&self.state_root).await?;
+        if !path_ancestors_exist(&self.state_root).await? {
+            return Ok(Vec::new());
+        }
+        if !validate_existing_directory(&self.root).await? {
+            return Ok(Vec::new());
+        }
+        retention::ensure_no_pending_journal(&self.root).await?;
+        let mut records = Vec::new();
+        for snapshot in scan_records(&self.root, &self.installation).await? {
+            let bytes = encode_snapshot(&snapshot)?;
+            let digest = snapshot.digest()?;
+            records.push(ControlCapabilityDescriptorSnapshotStoredRecord { digest, bytes });
+        }
+        records.sort_by(|left, right| left.digest.cmp(&right.digest));
+        Ok(records)
+    }
+
+    /// Inspect a restore candidate descriptor-snapshot directory.
+    pub(in crate::control_store) async fn inspect_records_at(
+        snapshots_root: &Path,
+        installation: &InstallationId,
+    ) -> UseResult<Vec<ControlCapabilityDescriptorSnapshotStoredRecord>> {
+        installation.validate()?;
+        if !validate_existing_directory(snapshots_root).await? {
+            return Ok(Vec::new());
+        }
+        retention::ensure_no_pending_journal(snapshots_root).await?;
+        let mut records = Vec::new();
+        for snapshot in scan_records(snapshots_root, installation).await? {
+            let bytes = encode_snapshot(&snapshot)?;
+            let digest = snapshot.digest()?;
+            records.push(ControlCapabilityDescriptorSnapshotStoredRecord { digest, bytes });
+        }
+        records.sort_by(|left, right| left.digest.cmp(&right.digest));
+        Ok(records)
+    }
+
+    /// Materialize exact archived descriptor snapshots into a clean candidate
+    /// directory under the complete restore exclusive fence.
+    pub(in crate::control_store) async fn materialize_records(
+        snapshots_root: &Path,
+        installation: &InstallationId,
+        records: &[ControlCapabilityDescriptorSnapshotStoredRecord],
+    ) -> UseResult<()> {
+        installation.validate()?;
+        if records.len() > MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RECORDS {
+            return Err(snapshot_error(
+                "The descriptor snapshot restore source exceeds its record bound.",
+            ));
+        }
+        ensure_directory_exists(snapshots_root).await?;
+        retention::ensure_no_pending_journal(snapshots_root).await?;
+        let existing = Self::inspect_records_at(snapshots_root, installation).await?;
+        if !existing.is_empty() {
+            if existing == records {
+                return Ok(());
+            }
+            return Err(snapshot_error(
+                "The descriptor snapshot restore candidate already contains different records.",
+            ));
+        }
+        for record in records {
+            let snapshot = decode_snapshot(&record.bytes)?;
+            installation
+                .ensure_same(&snapshot.key.installation)
+                .map_err(|_| {
+                    snapshot_error(
+                        "An archived descriptor snapshot belongs to another installation.",
+                    )
+                })?;
+            let digest = snapshot.digest()?;
+            if digest != record.digest || encode_snapshot(&snapshot)? != record.bytes {
+                return Err(snapshot_error(
+                    "An archived descriptor snapshot digest differs from its bytes.",
+                ));
+            }
+            let target = path_for_digest(snapshots_root, &digest)?;
+            write_new_record(snapshots_root, &target, &record.bytes).await?;
+        }
+        let after = Self::inspect_records_at(snapshots_root, installation).await?;
+        if after != records {
+            return Err(snapshot_error(
+                "The materialized descriptor snapshot candidate differs from its archive inventory.",
+            ));
+        }
+        Ok(())
     }
 
     pub(in crate::control_store) fn validate_configuration(&self) -> UseResult<()> {
