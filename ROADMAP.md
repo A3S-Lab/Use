@@ -1,6 +1,17 @@
 # A3S Use Roadmap
 
-Last updated: 2026-09-06
+Last updated: 2026-09-10
+
+
+
+## A3S Cloud substrate obligations
+
+Cloud Wave 3 (`U0`) consumes Use as the trusted package/Plugin Manager
+boundary. Deliver digest-only apply and observation contracts. Do not add a
+Use-owned scheduler, node channel, or Cloud desired-state store. See
+[agents portfolio roadmap](https://github.com/A3S-Lab/Cloud/blob/main/docs/project-roadmaps/agents-and-capabilities.md)
+and
+[cloud-substrate-dependency-roadmap.md](https://github.com/A3S-Lab/a3s/blob/main/docs/cloud-substrate-dependency-roadmap.md).
 
 ## Product status
 
