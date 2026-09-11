@@ -12,7 +12,7 @@ publish = false
 [dependencies]
 a3s-acl = "=0.2.2"
 a3s-use-core = { version = "0.2.9", path = "../core" }
-a3s-use-extension = { version = "0.3.11", path = "../extension" }
+a3s-use-extension = { version = "0.3.12", path = "../extension" }
 flate2.workspace = true
 olpc-cjson.workspace = true
 ring.workspace = true
