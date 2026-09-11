@@ -540,6 +540,23 @@ pub struct ToolTaskProjection {
     pub provider_id: String,
 }
 
+/// Package-local Executable Tool projection (integrity-bound files, not Runtime
+/// BindingStore receipts). Hosts reinspect file evidence and spawn under the
+/// package root — never invent a provider_id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutableToolProjection {
+    pub tool_name: String,
+    pub surface_id: String,
+    pub command: String,
+    pub json_output: bool,
+    pub timeout_ms: u64,
+    pub scope: PlanScope,
+    pub lifecycle_identity: ProjectedLifecycleIdentity,
+    pub file_evidence_digest: String,
+    pub executable: PathBuf,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedAsset {
@@ -627,6 +644,9 @@ pub struct CapabilityBinding {
     pub activity_bar: Vec<ActivityBarContribution>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_tasks: Vec<ToolTaskProjection>,
+    /// Package-local Executable Tools (host-projected; often empty until wired).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub executable_tools: Vec<ExecutableToolProjection>,
 }
 
 pub async fn snapshot(installation: InstallationId) -> UseResult<CapabilityRegistrySnapshot> {
@@ -738,6 +758,8 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             knowledge: Vec::new(),
             activity_bar: Vec::new(),
             tool_tasks: Vec::new(),
+
+            executable_tools: Vec::new(),
         })
     }
     #[cfg(not(feature = "browser"))]
@@ -764,6 +786,8 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             knowledge: Vec::new(),
             activity_bar: Vec::new(),
             tool_tasks: Vec::new(),
+
+            executable_tools: Vec::new(),
         })
     }
 }
@@ -811,6 +835,8 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             knowledge: Vec::new(),
             activity_bar: Vec::new(),
             tool_tasks: Vec::new(),
+
+            executable_tools: Vec::new(),
         })
     }
     #[cfg(not(feature = "ocr"))]
@@ -837,6 +863,8 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             knowledge: Vec::new(),
             activity_bar: Vec::new(),
             tool_tasks: Vec::new(),
+
+            executable_tools: Vec::new(),
         })
     }
 }
@@ -865,6 +893,8 @@ fn box_capability() -> CapabilityBinding {
         knowledge: Vec::new(),
         activity_bar: Vec::new(),
         tool_tasks: Vec::new(),
+
+        executable_tools: Vec::new(),
     }
 }
 
@@ -1341,16 +1371,31 @@ async fn project_extension_for_host_with_evidence(
             });
         }
     }
-    if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
-        for binding in context.knowledge_bindings {
-            if snapshot.publishes(PluginSurfaceKind::Okf, &binding.receipt.surface.surface.id) {
-                knowledge.push(OkfCapabilityProjection::from_promoted(
-                    &binding.receipt,
-                    &binding.observation,
-                )?);
+    // Knowledge is read-only cited retrieval. Admit a promoted OKF surface when
+    // the knowledge-host observation is healthy, even if sibling Tool/MCP/
+    // Skill/UI surfaces are still reconciling (AtomicScoped Code exec does not
+    // start MCP/Tool, so waiting on capability_ready would strand Knowledge).
+    if context.desired_enabled && receipt.enabled && compatible {
+        if let Some(snapshot) = reconciliation.as_ref() {
+            for binding in context.knowledge_bindings {
+                let surface_id = &binding.receipt.surface.surface.id;
+                let okf_ready = snapshot.publishes(PluginSurfaceKind::Okf, surface_id)
+                    || snapshot.surfaces.iter().any(|surface| {
+                        surface.surface.kind == PluginSurfaceKind::Okf
+                            && surface.surface.id == *surface_id
+                            && surface.observed == SurfaceObservedState::Healthy
+                    });
+                if okf_ready {
+                    knowledge.push(OkfCapabilityProjection::from_promoted(
+                        &binding.receipt,
+                        &binding.observation,
+                    )?);
+                }
             }
+            knowledge.sort_by(|left, right| left.surface.cmp(&right.surface));
         }
-        knowledge.sort_by(|left, right| left.surface.cmp(&right.surface));
+    }
+    if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
         for surface in &extension.manifest.ui {
             if !snapshot.publishes(PluginSurfaceKind::Ui, &surface.id) {
                 continue;
@@ -1400,12 +1445,15 @@ async fn project_extension_for_host_with_evidence(
     }
     let planner_evidence =
         plugin_planner_evidence(extension, context.desired_enabled, reconciliation.as_ref())?;
+    // Keep Knowledge queryable while the rest of a multi-surface package is
+    // still reconciling; other surfaces remain gated on `active` / publishes().
+    let enabled = active || !knowledge.is_empty();
     Ok(CapabilityBinding {
         id: receipt.component_id.clone(),
         alias: receipt.route_alias.clone(),
         version: receipt.version.clone(),
         origin: CapabilityOrigin::Extension,
-        enabled: active,
+        enabled,
         readiness,
         reconciliation,
         planner_evidence,
@@ -1428,6 +1476,7 @@ async fn project_extension_for_host_with_evidence(
         knowledge,
         activity_bar,
         tool_tasks,
+        executable_tools: Vec::new(),
     })
 }
 
@@ -2155,6 +2204,116 @@ extension "acme/workflow" {
             response.hits[0].citation.path,
             "concepts/package-lifecycle.md"
         );
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn healthy_okf_projects_knowledge_while_sibling_runtime_surfaces_reconcile() {
+        const MANIFEST: &str = include_str!(
+            "../crates/extension/fixtures/packages/plugin-v3-cognitive/package/a3s-use-extension.acl"
+        );
+        const PACKAGE_DIGEST: &str = include_str!(
+            "../crates/extension/fixtures/packages/plugin-v3-cognitive/package.sha256"
+        );
+        let temporary = tempfile::tempdir().unwrap();
+        let package_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("crates/extension/fixtures/packages/plugin-v3-cognitive/package");
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(MANIFEST).unwrap();
+        let mut extension = installed_extension(manifest.clone(), package_root.clone(), true);
+        let package_digest = PACKAGE_DIGEST.trim().to_owned();
+        extension.receipt.package_sha256 =
+            Some(package_digest.strip_prefix("sha256:").unwrap().to_owned());
+        extension.receipt.manifest_sha256 = format!("{:x}", Sha256::digest(MANIFEST.as_bytes()));
+        extension.receipt.lifecycle_generation = Some(3);
+        let paths = crate::test_extension_paths(temporary.path());
+        let adapter = std::sync::Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths(&paths));
+        let client = OkfKnowledgeClient::new(adapter);
+        let store = OkfKnowledgeBindingStore::from_extension_paths(&paths);
+        let surface = &manifest.okf[0];
+        let files = a3s_use_extension::load_okf_bundle_files(surface, &package_root)
+            .await
+            .unwrap();
+        let scope = crate::test_installation();
+        let staged = client
+            .stage(
+                crate::okf_knowledge::OkfKnowledgeStageRequest::new(
+                    crate::okf_knowledge::OkfKnowledgeStageSpec {
+                        operation_id: "capability-knowledge-partial".to_owned(),
+                        scope: scope.clone(),
+                        surface: PlanQualifiedSurfaceRef {
+                            package_id: manifest.package_id.clone(),
+                            surface: PluginSurfaceRef {
+                                kind: PluginSurfaceKind::Okf,
+                                id: surface.id.clone(),
+                            },
+                        },
+                        generation: 3,
+                        package_digest: package_digest.clone(),
+                        manifest_digest: format!("sha256:{}", extension.receipt.manifest_sha256),
+                        bundle: surface.bundle.clone(),
+                    },
+                    files,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        store.put(&staged).await.unwrap();
+        let promoted = client.promote(&staged.receipt).await.unwrap();
+        store.put(&promoted).await.unwrap();
+
+        let evidence = knowledge_evidence_from_store(&extension, &store, &client, &scope)
+            .await
+            .unwrap();
+        assert!(evidence.failures.is_empty());
+        // No Tool/MCP runtime observations → package stays reconciling.
+        let binding = project_extension_for_host_with_evidence(
+            &extension,
+            extension
+                .surfaces()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &SurfaceObservations::new(),
+                knowledge_bindings: &evidence.bindings,
+                runtime_tasks: &[],
+                mcp_projections: &[],
+            },
+        )
+        .await
+        .unwrap();
+        let reconciliation = binding.reconciliation.as_ref().expect("reconciliation");
+        assert!(
+            !reconciliation.capability_ready,
+            "sibling Tool/MCP must keep the package from becoming capability-ready"
+        );
+        assert_eq!(binding.knowledge.len(), 1);
+        assert!(
+            binding.enabled,
+            "healthy promoted OKF must remain queryable while siblings reconcile"
+        );
+        assert!(binding.mcp_servers.is_empty());
+        assert!(binding.tool_tasks.is_empty());
+        assert!(binding.skills.is_empty());
+        assert!(binding.flows.is_empty());
+        assert!(binding.activity_bar.is_empty());
+
+        let response = client
+            .search(
+                &crate::okf_knowledge::OkfKnowledgeSearchRequest::new(
+                    scope,
+                    "package activation",
+                    5,
+                    binding.knowledge,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.hits[0].citation.path, "concepts/lifecycle.md");
     }
 
     #[cfg(feature = "extensions")]
@@ -2923,6 +3082,8 @@ extension "acme/workflow" {
             knowledge: Vec::new(),
             activity_bar: Vec::new(),
             tool_tasks: Vec::new(),
+
+            executable_tools: Vec::new(),
         };
         let capabilities = vec![binding];
         let snapshot_revision = revision(&installation, None, None, &capabilities).unwrap();
