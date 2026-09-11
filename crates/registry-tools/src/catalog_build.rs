@@ -471,7 +471,8 @@ fn planning_target(
             }
         });
     }
-    planning_surfaces.sort_by_key(ExecutablePlanningSurface::reference);    let target_name = format!(
+    planning_surfaces.sort_by_key(ExecutablePlanningSurface::reference);
+    let target_name = format!(
         "extensions/{}/{}/{}/{}/planning-v1.json",
         admission.package_id,
         manifest.version,

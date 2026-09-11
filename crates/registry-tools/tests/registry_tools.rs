@@ -519,10 +519,16 @@ extension "a3s/mock-compose" {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(package.join("tools/echo"), fs::Permissions::from_mode(0o755))
-            .unwrap();
-        fs::set_permissions(package.join("mcp/context"), fs::Permissions::from_mode(0o755))
-            .unwrap();
+        fs::set_permissions(
+            package.join("tools/echo"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        fs::set_permissions(
+            package.join("mcp/context"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
     }
     fs::write(
         package.join("okf/domain/index.md"),
@@ -606,9 +612,8 @@ extension "a3s/mock-compose" {
     let report: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(report["targetsChecked"], 2);
 
-    let planning = registry.join(
-        "targets/extensions/a3s/mock-compose/0.1.0/stable/any/planning-v1.json",
-    );
+    let planning =
+        registry.join("targets/extensions/a3s/mock-compose/0.1.0/stable/any/planning-v1.json");
     let bundle: Value = serde_json::from_str(&fs::read_to_string(planning).unwrap()).unwrap();
     let kinds: Vec<&str> = bundle["surfaces"]
         .as_array()
