@@ -165,7 +165,7 @@ impl CapabilityGatewayCatalogRetentionResult {
             || super::validate_digest(&self.plan_digest).is_err()
             || self.removed.len() > MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS
             || self.retained_record_count > MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS as u64
-            || self.changed != !self.removed.is_empty()
+            || self.changed == self.removed.is_empty()
             || self
                 .retained_record_count
                 .saturating_add(u64::try_from(self.removed.len()).unwrap_or(u64::MAX))

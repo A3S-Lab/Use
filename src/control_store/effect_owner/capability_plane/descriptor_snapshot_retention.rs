@@ -168,7 +168,7 @@ impl ControlCapabilityDescriptorSnapshotRetentionResult {
             || self.removed.len() > MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RECORDS
             || self.retained_record_count
                 > MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RECORDS as u64
-            || self.changed != !self.removed.is_empty()
+            || self.changed == self.removed.is_empty()
             || self
                 .retained_record_count
                 .saturating_add(u64::try_from(self.removed.len()).unwrap_or(u64::MAX))
