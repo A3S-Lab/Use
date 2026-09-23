@@ -10,7 +10,9 @@ use super::{
     VerifiedPluginCatalogRecord, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_CATALOG_SCHEMA_V3,
 };
 
-pub const MAX_PLUGIN_RESOLUTION_CANDIDATES: usize = 4_096;
+/// Official plus the signed ModelScope plaza snapshot must resolve as one
+/// candidate set. The public international catalogs are larger than 4,096.
+pub const MAX_PLUGIN_RESOLUTION_CANDIDATES: usize = 16_384;
 const MAX_PLUGIN_RESOLUTION_ATTEMPTS: usize = 65_536;
 
 /// Bounded deterministic resolver for one exact verified root and a host-owned
@@ -209,7 +211,9 @@ impl ResolutionFailure {
         match self {
             Self::Missing(package_id) => resolution_error(
                 "use.plugin.package_dependency_missing",
-                format!("No verified candidate exists for required cognitive package '{package_id}'."),
+                format!(
+                    "No verified candidate exists for required cognitive package '{package_id}'."
+                ),
             ),
             Self::Incompatible(value) if value.starts_with("registry-ambiguous:") => {
                 let package_id = value.trim_start_matches("registry-ambiguous:");

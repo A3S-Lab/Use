@@ -64,12 +64,23 @@ Each successful tagged Release also publishes:
 - one `a3s-use-<version>-<platform>.spdx.json` SBOM per archive;
 - one `a3s-use-<version>-<platform>.reproducibility.json` record proving that
   every shipped native executable byte-matched a second build on a clean
-  cache-free runner;
+  cache-free runner for **required** platforms (`darwin-arm64`, `linux-arm64`,
+  `linux-x86_64`, `windows-x86_64`);
 - GitHub OIDC build-provenance and SBOM attestations for every archive;
-- a GitHub OIDC attestation for every independent-rebuild record;
+- a GitHub OIDC attestation for every independent-rebuild record that matched;
 - `checksums.txt.sigstore.json`, a keyless Sigstore bundle that authenticates
   `checksums.txt` through the public transparency log; and
 - checksums covering every archive, SBOM, rebuild record, and installer.
+
+### USE-3 macOS Intel rebuild waiver
+
+`darwin-x86_64` archives and SBOMs are still published. Independent rebuild
+byte-compare on Intel macOS is a known debt (observed on `v0.3.12`): the matrix
+job still runs and warns, but may `continue-on-error` so a mismatch does not
+block Release. **darwin-arm64 is the primary macOS reproducibility path.** Do
+not claim five-target byte reproducibility while this waiver is active. When
+Intel rebuilds match again, the staged file count returns to 17 and the waiver
+can be removed.
 
 Every Action and release tool version is immutable in the workflow. The
 archive packager is byte-reproducible for an identical staged tree and is

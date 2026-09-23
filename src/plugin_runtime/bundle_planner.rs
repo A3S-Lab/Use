@@ -120,6 +120,7 @@ fn is_native_planning_surface(surface: &ExecutablePlanningSurface) -> bool {
         surface,
         ExecutablePlanningSurface::ToolTaskNative { .. }
             | ExecutablePlanningSurface::McpStdio { .. }
+            | ExecutablePlanningSurface::McpHostGrant { .. }
     )
 }
 
@@ -145,6 +146,10 @@ fn planning_matches_catalog(
         ExecutablePlanningSurface::McpStdio { .. } => {
             catalog.workload.is_none() && catalog.mcp_transport == Some(CatalogMcpTransport::Stdio)
         }
+        ExecutablePlanningSurface::McpHostGrant { .. } => {
+            catalog.workload.is_none()
+                && catalog.mcp_transport == Some(CatalogMcpTransport::HostGrant)
+        }
     }
 }
 
@@ -155,7 +160,8 @@ fn plan_surface(
 ) -> UseResult<RuntimeSurfacePlan> {
     match surface {
         ExecutablePlanningSurface::ToolTaskNative { .. }
-        | ExecutablePlanningSurface::McpStdio { .. } => Err(bundle_plan_error(
+        | ExecutablePlanningSurface::McpStdio { .. }
+        | ExecutablePlanningSurface::McpHostGrant { .. } => Err(bundle_plan_error(
             "Package-native launchers are owned by the static A3S provider, not Runtime.",
         )),
         ExecutablePlanningSurface::ToolTask {
@@ -243,7 +249,8 @@ fn representable_policy(
         .ok_or_else(unsupported_authority)?;
     let shape_matches = match surface {
         ExecutablePlanningSurface::ToolTaskNative { .. }
-        | ExecutablePlanningSurface::McpStdio { .. } => return Err(unsupported_authority()),
+        | ExecutablePlanningSurface::McpStdio { .. }
+        | ExecutablePlanningSurface::McpHostGrant { .. } => return Err(unsupported_authority()),
         ExecutablePlanningSurface::ToolTask { descriptor, .. } => {
             let ToolWorkloadContract::Task {
                 timeout_ms,

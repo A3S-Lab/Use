@@ -30,6 +30,10 @@ pub struct PluginManagerSearchInput {
     pub cursor: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u16>,
+    /// Restrict this page to one enabled Registry. A cursor already names its
+    /// issuing Registry; if both are present they must name the same source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,9 +141,13 @@ impl PluginManagerSearchInput {
                 .cursor
                 .as_deref()
                 .is_some_and(|cursor| !valid_cursor(cursor))
+            || self
+                .registry_name
+                .as_deref()
+                .is_some_and(|name| !valid_registry_name(name))
         {
             return Err(manager_input_error(
-                "The plugin catalog query, cursor, or page limit is invalid.",
+                "The plugin catalog query, cursor, page limit, or Registry name is invalid.",
             ));
         }
         Ok(())
@@ -392,6 +400,15 @@ fn valid_text(value: &str, max_bytes: usize) -> bool {
 
 fn valid_cursor(value: &str) -> bool {
     !value.is_empty() && value.len() <= MAX_CURSOR_BYTES && !value.chars().any(char::is_control)
+}
+
+fn valid_registry_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 63
+        && matches!(value.as_bytes().first(), Some(b'a'..=b'z'))
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 fn manager_input_error(message: impl Into<String>) -> UseError {

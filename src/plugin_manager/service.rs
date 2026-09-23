@@ -87,14 +87,8 @@ impl PluginManagerService {
     ) -> UseResult<PluginManagerSearchResult> {
         input.validate()?;
         let page_limit = input.page_limit();
-        let (selected_registry, catalog_cursor) = input
-            .cursor
-            .as_deref()
-            .map(decode_catalog_cursor)
-            .transpose()?
-            .map_or((None, None), |(registry, cursor)| {
-                (Some(registry), Some(cursor))
-            });
+        let (selected_registry, catalog_cursor) =
+            select_catalog_registry(input.registry_name.as_deref(), input.cursor.as_deref())?;
         let search = PluginCatalogSearch {
             query: input.query,
             kind: input.kind,
@@ -814,6 +808,32 @@ const fn channel_rank(channel: PluginReleaseChannel) -> u8 {
     }
 }
 
+/// Select the Registry for one catalog page.
+///
+/// An explicit name restricts the first page. A cursor already names the
+/// Registry that issued it. Pagination is invalid when those names differ,
+/// because following another source's cursor would skip or mix pages.
+pub(super) fn select_catalog_registry(
+    registry_name: Option<&str>,
+    cursor: Option<&str>,
+) -> UseResult<(Option<String>, Option<String>)> {
+    let decoded = cursor.map(decode_catalog_cursor).transpose()?;
+    let cursor_registry = decoded.as_ref().map(|(name, _)| name.clone());
+    let catalog_cursor = decoded.map(|(_, cursor)| cursor);
+    if let (Some(requested), Some(issued)) = (registry_name, cursor_registry.as_deref()) {
+        if requested != issued {
+            return Err(UseError::new(
+                "use.plugin.manager_cursor_invalid",
+                "The catalog cursor belongs to a different Registry than the selected source.",
+            ));
+        }
+    }
+    Ok((
+        registry_name.map(str::to_owned).or(cursor_registry),
+        catalog_cursor,
+    ))
+}
+
 fn encode_catalog_cursor(registry_name: &str, cursor: &str) -> UseResult<String> {
     if !valid_registry_name(registry_name)
         || cursor.is_empty()
@@ -914,4 +934,27 @@ fn list_cursor_invalid() -> UseError {
 
 fn service_error(message: impl Into<String>) -> UseError {
     UseError::new(MANAGER_SERVICE_ERROR, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_catalog_registry;
+
+    #[test]
+    fn a_named_source_selects_the_first_page_without_a_cursor() {
+        let (registry, cursor) = select_catalog_registry(Some("official"), None).unwrap();
+        assert_eq!(registry.as_deref(), Some("official"));
+        assert!(cursor.is_none());
+    }
+
+    #[test]
+    fn a_cursor_must_belong_to_the_selected_source() {
+        let encoded = "v1.official.next-page";
+        let (registry, cursor) = select_catalog_registry(Some("official"), Some(encoded)).unwrap();
+        assert_eq!(registry.as_deref(), Some("official"));
+        assert_eq!(cursor.as_deref(), Some("next-page"));
+
+        let mismatch = select_catalog_registry(Some("modelscope"), Some(encoded)).unwrap_err();
+        assert_eq!(mismatch.code, "use.plugin.manager_cursor_invalid");
+    }
 }

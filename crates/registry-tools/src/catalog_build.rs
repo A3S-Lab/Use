@@ -5,9 +5,9 @@ use std::path::Path;
 
 use a3s_use_core::{
     CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage, CatalogSurface,
-    ExecutablePlanningSurface, PlanningSurfaceActivation, PluginCatalogRecord,
-    PluginPermissionCeiling, PluginPlanningBundle, PluginReleaseChannel, PluginSurfaceKind,
-    PluginSurfaceRef, ToolWorkloadClass, UseResult, PLUGIN_CATALOG_SCHEMA_V3,
+    ExecutablePlanningSurface, McpEndpointGrantContract, PlanningSurfaceActivation,
+    PluginCatalogRecord, PluginPermissionCeiling, PluginPlanningBundle, PluginReleaseChannel,
+    PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass, UseResult, PLUGIN_CATALOG_SCHEMA_V3,
     PLUGIN_PERMISSION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
 use a3s_use_extension::{
@@ -228,6 +228,7 @@ fn catalog_surfaces(manifest: &ExtensionManifest) -> UseResult<Vec<CatalogSurfac
             mcp_transport: Some(match mcp.launch {
                 PluginMcpLaunch::Stdio { .. } => CatalogMcpTransport::Stdio,
                 PluginMcpLaunch::StreamableHttp { .. } => CatalogMcpTransport::StreamableHttp,
+                PluginMcpLaunch::HostGrant { .. } => CatalogMcpTransport::HostGrant,
             }),
             mcp_tool_count: None,
             okf_bundle: None,
@@ -434,6 +435,33 @@ fn planning_target(
                 executable: portable_path(executable)?,
                 args: args.clone(),
             },
+            PluginMcpLaunch::HostGrant { contract } => {
+                let bytes =
+                    std::fs::read(admission.package_directory.join(contract)).map_err(|error| {
+                        tools_error(
+                            "registry_tools.planning_invalid",
+                            &format!(
+                                "Package '{}' host-grant contract could not be read: {error}",
+                                admission.package_id
+                            ),
+                        )
+                    })?;
+                let parsed = McpEndpointGrantContract::from_json(&bytes).map_err(|error| {
+                    tools_error(
+                        "registry_tools.planning_invalid",
+                        &format!(
+                            "Package '{}' host-grant contract is invalid: {}",
+                            admission.package_id, error.message
+                        ),
+                    )
+                })?;
+                ExecutablePlanningSurface::McpHostGrant {
+                    id: mcp.id.clone(),
+                    activation,
+                    contract_digest: McpEndpointGrantContract::digest(&bytes)?,
+                    allowed_hosts: parsed.allowed_hosts,
+                }
+            }
             PluginMcpLaunch::StreamableHttp { .. } => {
                 return Err(unsupported_release_surface(
                     &admission.package_id,

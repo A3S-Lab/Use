@@ -31,6 +31,11 @@ use runtime_tasks::runtime_task_evidence_from_store;
 mod managed_mcp;
 #[cfg(feature = "extensions")]
 use managed_mcp::mcp_evidence_from_store;
+#[cfg(feature = "extensions")]
+#[path = "capability_registry/executable_tools.rs"]
+mod executable_tools;
+#[cfg(feature = "extensions")]
+use executable_tools::executable_tool_evidence_from_package;
 #[path = "capability_registry/lease.rs"]
 mod lease;
 use lease::CapabilityUpstreamEvidence;
@@ -147,6 +152,7 @@ impl CapabilityRegistry {
         capabilities.extend(extensions);
         capabilities.sort_by(|left, right| left.id.cmp(&right.id));
         validate_unique_tool_task_names(&capabilities)?;
+        validate_unique_executable_tool_names(&capabilities)?;
         validate_unique_mcp_server_names(&capabilities)?;
 
         let revision = revision(
@@ -469,6 +475,13 @@ pub enum McpLaunchProjection {
         release: PathBuf,
         runtime: McpRuntimeProjection,
     },
+    /// Host-configured endpoint. The projection carries the signed allowlist
+    /// only; the URL and authorization stay in the host grant store.
+    HostGrant {
+        contract: PathBuf,
+        contract_digest: String,
+        allowed_hosts: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -644,7 +657,7 @@ pub struct CapabilityBinding {
     pub activity_bar: Vec<ActivityBarContribution>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_tasks: Vec<ToolTaskProjection>,
-    /// Package-local Executable Tools (host-projected; often empty until wired).
+    /// Package-local Executable Tools (file evidence; never Runtime BindingStore).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub executable_tools: Vec<ExecutableToolProjection>,
 }
@@ -664,6 +677,36 @@ fn validate_unique_tool_task_names(capabilities: &[CapabilityBinding]) -> UseRes
                 "use.capability.runtime_task_name_conflict",
                 "Two Runtime Tool Tasks resolve to the same host tool identity.",
             ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_executable_tool_names(capabilities: &[CapabilityBinding]) -> UseResult<()> {
+    let mut names = std::collections::BTreeSet::new();
+    for tool in capabilities
+        .iter()
+        .flat_map(|capability| capability.executable_tools.iter())
+    {
+        if !names.insert(tool.tool_name.as_str()) {
+            return Err(UseError::new(
+                "use.capability.executable_tool_name_conflict",
+                "Two package-local Executable Tools resolve to the same host tool identity.",
+            ));
+        }
+    }
+    for capability in capabilities {
+        for tool in &capability.executable_tools {
+            if capability
+                .tool_tasks
+                .iter()
+                .any(|task| task.tool_name == tool.tool_name)
+            {
+                return Err(UseError::new(
+                    "use.capability.tool_name_conflict",
+                    "A package-local Executable Tool and a Runtime Tool Task share the same host tool identity.",
+                ));
+            }
         }
     }
     Ok(())
@@ -1197,6 +1240,7 @@ async fn project_extension(
         &scope,
     )
     .await?;
+    let executable_tool_evidence = executable_tool_evidence_from_package(extension).await?;
     let mcp_evidence = mcp_evidence_from_store(
         extension,
         &RuntimeBindingStore::from_extension_paths(paths),
@@ -1207,6 +1251,7 @@ async fn project_extension(
     for (surface, state) in runtime_task_evidence
         .observations
         .into_iter()
+        .chain(executable_tool_evidence.observations)
         .chain(mcp_evidence.observations)
         .chain(knowledge_evidence.failures)
     {
@@ -1227,6 +1272,7 @@ async fn project_extension(
             knowledge_bindings: &knowledge_evidence.bindings,
             runtime_tasks: &runtime_task_evidence.projections,
             mcp_projections: &mcp_evidence.projections,
+            executable_tools: &executable_tool_evidence.projections,
         },
     )
     .await
@@ -1249,6 +1295,7 @@ async fn project_extension_for_host(
             knowledge_bindings: &[],
             runtime_tasks: &[],
             mcp_projections: &[],
+            executable_tools: &[],
         },
     )
     .await
@@ -1262,6 +1309,7 @@ struct CapabilityHostProjectionContext<'a> {
     knowledge_bindings: &'a [OkfKnowledgeBinding],
     runtime_tasks: &'a [ToolTaskProjection],
     mcp_projections: &'a [McpServerProjection],
+    executable_tools: &'a [ExecutableToolProjection],
 }
 
 #[cfg(feature = "extensions")]
@@ -1329,6 +1377,7 @@ async fn project_extension_for_host_with_evidence(
     let mut flows = Vec::new();
     let mut knowledge = Vec::new();
     let mut tool_tasks = Vec::new();
+    let mut executable_tools = Vec::new();
     let surface_graph = if active {
         extension.manifest.plugin_surfaces()?
     } else {
@@ -1347,6 +1396,13 @@ async fn project_extension_for_host_with_evidence(
                 .runtime_tasks
                 .iter()
                 .filter(|task| snapshot.publishes(PluginSurfaceKind::Tool, &task.surface_id))
+                .cloned(),
+        );
+        executable_tools.extend(
+            context
+                .executable_tools
+                .iter()
+                .filter(|tool| snapshot.publishes(PluginSurfaceKind::Tool, &tool.surface_id))
                 .cloned(),
         );
     }
@@ -1476,7 +1532,7 @@ async fn project_extension_for_host_with_evidence(
         knowledge,
         activity_bar,
         tool_tasks,
-        executable_tools: Vec::new(),
+        executable_tools,
     })
 }
 
@@ -1497,8 +1553,12 @@ async fn surface_observations(
                 && matches!(
                     &tool.workload,
                     a3s_use_extension::ToolWorkload::Task(task)
-                        if matches!(&task.source, a3s_use_extension::ToolTaskSource::Release { .. })
-                            && !task.interactive
+                        if !task.interactive
+                            && matches!(
+                                &task.source,
+                                a3s_use_extension::ToolTaskSource::Release { .. }
+                                    | a3s_use_extension::ToolTaskSource::Executable { .. }
+                            )
                 )
         }),
         PluginSurfaceKind::Okf => !extension
@@ -1515,7 +1575,7 @@ async fn surface_observations(
     }) {
         return Err(UseError::new(
             "use.capability.host_observation_invalid",
-            "Production host observations must reference only their admitted Flow, Runtime Tool, MCP, or OKF surfaces.",
+            "Production host observations must reference only their admitted Flow, Runtime/Executable Tool, MCP, or OKF surfaces.",
         ));
     }
     if !inspect_enabled_surfaces {
@@ -2179,6 +2239,7 @@ extension "acme/workflow" {
                 knowledge_bindings: &evidence.bindings,
                 runtime_tasks: &[],
                 mcp_projections: &[],
+                executable_tools: &[],
             },
         )
         .await
@@ -2281,6 +2342,7 @@ extension "acme/workflow" {
                 knowledge_bindings: &evidence.bindings,
                 runtime_tasks: &[],
                 mcp_projections: &[],
+                executable_tools: &[],
             },
         )
         .await
@@ -2388,6 +2450,7 @@ extension "acme/workflow" {
                 knowledge_bindings: &[],
                 runtime_tasks: &[],
                 mcp_projections: &[],
+                executable_tools: &[],
             },
         )
         .await
@@ -2551,6 +2614,7 @@ extension "acme/workflow" {
                 knowledge_bindings: &[],
                 runtime_tasks: &[],
                 mcp_projections: &[],
+                executable_tools: &[],
             },
         )
         .await
@@ -2731,6 +2795,7 @@ extension "acme/workflow" {
                 knowledge_bindings: &[],
                 runtime_tasks: &[],
                 mcp_projections: &[],
+                executable_tools: &[],
             },
         )
         .await

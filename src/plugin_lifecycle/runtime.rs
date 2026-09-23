@@ -204,6 +204,13 @@ impl RuntimePluginSurfaceLifecycleHost {
                 idempotency_key,
                 files.digest(),
             ),
+            PluginMcpLaunch::HostGrant { .. } => static_launcher_evidence(
+                "mcp-host-grant-prepared",
+                intent,
+                &surface.id,
+                idempotency_key,
+                files.digest(),
+            ),
             PluginMcpLaunch::StreamableHttp { .. } => {
                 self.prepare_runtime_mcp(intent, surface, idempotency_key, files.digest())
                     .await
@@ -655,6 +662,15 @@ impl PluginMcpLifecycleHost for RuntimePluginSurfaceLifecycleHost {
                     idempotency_key,
                 )
             }
+            PluginMcpLaunch::HostGrant { .. } => {
+                validate_surface(intent, PluginSurfaceKind::Mcp, &surface.id)?;
+                projection_evidence(
+                    "mcp-host-grant-hidden",
+                    intent,
+                    &surface.id,
+                    idempotency_key,
+                )
+            }
             PluginMcpLaunch::StreamableHttp { .. } => {
                 self.stop_runtime(
                     intent,
@@ -679,6 +695,15 @@ impl PluginMcpLifecycleHost for RuntimePluginSurfaceLifecycleHost {
                 validate_surface(intent, PluginSurfaceKind::Mcp, &surface.id)?;
                 projection_evidence(
                     "mcp-stdio-launcher-removed",
+                    intent,
+                    &surface.id,
+                    idempotency_key,
+                )
+            }
+            PluginMcpLaunch::HostGrant { .. } => {
+                validate_surface(intent, PluginSurfaceKind::Mcp, &surface.id)?;
+                projection_evidence(
+                    "mcp-host-grant-removed",
                     intent,
                     &surface.id,
                     idempotency_key,

@@ -26,6 +26,7 @@ mod installation_snapshot;
 mod installed_plan;
 mod manager;
 mod manager_input;
+mod mcp_endpoint_grant;
 mod package_dependency;
 mod package_lock;
 mod package_resolution;
@@ -119,6 +120,9 @@ pub use manager_input::{
     PluginManagerApplyPlanInput, PluginManagerInspectInput, PluginManagerInstallPlanInput,
     PluginManagerListInstalledInput, PluginManagerOperationInput, PluginManagerOperationWatchInput,
     PluginManagerPackageScopeInput, PluginManagerSearchInput, PluginManagerUpgradePlanInput,
+};
+pub use mcp_endpoint_grant::{
+    McpEndpointGrantContract, MCP_ENDPOINT_GRANT_SCHEMA, MCP_ENDPOINT_GRANT_TRANSPORT,
 };
 pub use package_dependency::{PluginPackageDependency, MAX_PLUGIN_PACKAGE_DEPENDENCIES};
 pub use package_lock::{

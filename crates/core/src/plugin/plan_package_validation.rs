@@ -284,6 +284,12 @@ fn validate_surface_permissions(
                 Some(CatalogMcpTransport::StreamableHttp) => {
                     !permission.native_execution && permission.private_service && long_running
                 }
+                Some(CatalogMcpTransport::HostGrant) => {
+                    !permission.native_execution
+                        && !permission.private_service
+                        && long_running
+                        && !permission.network_egress.is_empty()
+                }
                 None => false,
             },
             PluginSurfaceKind::Ui => true,

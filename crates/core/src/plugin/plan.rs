@@ -398,7 +398,7 @@ impl PluginOperationPlanEnvelope {
             _ => {
                 return Err(plan_error(
                     "The operation plan and envelope must carry candidate and prior package-lock evidence together.",
-                ))
+                ));
             }
         }
         Ok(())

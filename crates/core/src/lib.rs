@@ -5,11 +5,30 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub mod environment_lock;
+mod environment_recipe;
 mod filesystem;
 pub mod okf;
 pub mod plugin;
 pub mod release;
 
+pub use environment_lock::{
+    analysis_session_receipt, authorize_literature_search, classify_environment_preflight,
+    decide_environment_install, failed_environment_probe, lease_built_image,
+    lease_literature_connector, literature_search_refusal, pin_environment_execution,
+    pin_published_capability, publish_environment_capability, read_environment_lease,
+    read_published_capability, read_retained_capabilities, read_retained_environment_leases,
+    render_runtime_image_recipe, scientist_openalex_connector, scientist_python_analysis_lock,
+    scientist_r_analysis_lock, scientist_sciverse_connector, scientist_sciverse_package_digest,
+    scientist_switch_prompt_locks, write_environment_lease, EnvironmentExecutionPinV1,
+    EnvironmentImageBindingV1, EnvironmentInstallDecisionV1, EnvironmentLanguageV1,
+    EnvironmentLeaseV1, EnvironmentLockV1, EnvironmentPackagePinV1, EnvironmentPreflightStatusV1,
+    EnvironmentPreflightV1, ScienceArtifactReceiptV1, ScienceCapabilityGenerationV1,
+    ScienceConnectorLeaseV1, ScienceConnectorV1, ScienceSessionReceiptV1,
+    ENVIRONMENT_LEASE_SCHEMA_V1, ENVIRONMENT_LOCK_SCHEMA_V1, SCIENCE_CAPABILITY_SCHEMA_V1,
+    SCIENCE_CONNECTOR_LEASE_SCHEMA_V1, SCIENCE_CONNECTOR_SCHEMA_V1, SCIENCE_OPENALEX_CONNECTOR_ID,
+    SCIENCE_PYTHON_ANALYSIS_LOCK_ID, SCIENCE_R_ANALYSIS_LOCK_ID, SCIENCE_SCIVERSE_CONNECTOR_ID,
+};
 pub use filesystem::metadata_is_link_or_reparse_point;
 #[cfg(windows)]
 #[doc(hidden)]
@@ -33,9 +52,9 @@ pub use plugin::{
     FilesystemAccess, FilesystemPermission, FilesystemScope, HttpMethod, InstallationId,
     InstallationKind, InstallationPackageSelection, InstallationRootSelection,
     InstallationSnapshot, InstalledPluginPlanEvidence, InvocationRef, LockedPluginPackage,
-    LockedPluginPackageDependency, NetworkEgressPermission, PlanActor, PlanAuthority,
-    PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole, PlanPolicyDecision,
-    PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOkfSurfaceChange,
+    LockedPluginPackageDependency, McpEndpointGrantContract, NetworkEgressPermission, PlanActor,
+    PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
+    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOkfSurfaceChange,
     PlannedOperationImpact, PlannedPackageState, PlannedPackageTransition, PlannedPluginRelease,
     PlannedProviderEvidence, PlannedSecretChange, PlannedSecretChangeKind, PlannedStateEvidence,
     PlannedSurfaceChange, PlannedWorkspaceGrantChange, PlannedWorkspaceImpact, PlanningArtifactRef,
@@ -70,13 +89,13 @@ pub use plugin::{
     MAX_CAPABILITY_CONSUMER_EXTENSIONS, MAX_INSTALLATION_PACKAGES, MAX_INSTALLATION_ROOTS,
     MAX_INSTALLATION_SNAPSHOT_BYTES, MAX_PLUGIN_CONTRACT_BYTES,
     MAX_PLUGIN_HOST_OPERATION_WATCH_TIMEOUT_MS, MAX_PLUGIN_PACKAGE_DEPENDENCIES,
-    MAX_PLUGIN_PLAN_ITEMS, MAX_PLUGIN_RESOLUTION_CANDIDATES, PLUGIN_CATALOG_SCHEMA_V3,
-    PLUGIN_GRANT_CONFIRMATION_SCHEMA, PLUGIN_HOST_APPLY_REQUEST_SCHEMA,
-    PLUGIN_HOST_APPLY_RESULT_SCHEMA, PLUGIN_HOST_CANCEL_REQUEST_SCHEMA,
-    PLUGIN_HOST_CANCEL_RESULT_SCHEMA, PLUGIN_HOST_CAPABILITIES_SCHEMA_V6,
-    PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA,
-    PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA, PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA,
-    PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA,
+    MAX_PLUGIN_PLAN_ITEMS, MAX_PLUGIN_RESOLUTION_CANDIDATES, MCP_ENDPOINT_GRANT_SCHEMA,
+    MCP_ENDPOINT_GRANT_TRANSPORT, PLUGIN_CATALOG_SCHEMA_V3, PLUGIN_GRANT_CONFIRMATION_SCHEMA,
+    PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
+    PLUGIN_HOST_CANCEL_REQUEST_SCHEMA, PLUGIN_HOST_CANCEL_RESULT_SCHEMA,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V6, PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA,
     PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA,
     PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V6,
     PLUGIN_MANAGED_SCOPE_SCHEMA_V2, PLUGIN_MANAGER_TOOLSET_SCHEMA_V4,

@@ -1309,8 +1309,8 @@ fn validate_schema_value(value: &Value, depth: usize) -> UseResult<()> {
                         || names.iter().any(|name| !properties.contains_key(*name))
                     {
                         return Err(capability_error(
-                        "An agent JSON schema required set must be sorted and present in properties.",
-                    ));
+                            "An agent JSON schema required set must be sorted and present in properties.",
+                        ));
                     }
                 }
             } else if object.contains_key("required") {

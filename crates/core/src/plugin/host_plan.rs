@@ -143,7 +143,7 @@ impl PluginHostPlanRequest {
             _ => {
                 return Err(plan_request_error(
                     "Install and upgrade require one exact catalog candidate; uninstall does not.",
-                ))
+                ));
             }
         }
         Ok(())
@@ -328,7 +328,7 @@ fn verify_plan_selection(
             return Err(UseError::new(
                 "use.plugin.host_plan_result_mismatch",
                 "The uninstall plan contains unrequested candidate package evidence.",
-            ))
+            ));
         }
     }
     Ok(())

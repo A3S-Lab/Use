@@ -86,6 +86,19 @@ pub fn plan_native_provider_evidence(
                     package.package_id, surface.id
                 )));
             }
+            if matches!(planning, ExecutablePlanningSurface::McpHostGrant { .. }) {
+                if permission.native_execution || permission.private_service {
+                    return Err(native_provider_error(format!(
+                        "Host-grant MCP surface '{}/{}' cannot claim native execution or a private service.",
+                        package.package_id, surface.id
+                    )));
+                }
+                providers.push(native_provider_evidence(
+                    reference,
+                    &state.release.package_sha256,
+                )?);
+                continue;
+            }
             if !is_native_planning_surface(planning) {
                 continue;
             }
@@ -131,6 +144,7 @@ fn is_native_planning_surface(surface: &ExecutablePlanningSurface) -> bool {
         surface,
         ExecutablePlanningSurface::ToolTaskNative { .. }
             | ExecutablePlanningSurface::McpStdio { .. }
+            | ExecutablePlanningSurface::McpHostGrant { .. }
     )
 }
 
@@ -155,6 +169,10 @@ fn planning_matches_catalog(
         }
         ExecutablePlanningSurface::McpStdio { .. } => {
             catalog.workload.is_none() && catalog.mcp_transport == Some(CatalogMcpTransport::Stdio)
+        }
+        ExecutablePlanningSurface::McpHostGrant { .. } => {
+            catalog.workload.is_none()
+                && catalog.mcp_transport == Some(CatalogMcpTransport::HostGrant)
         }
     }
 }

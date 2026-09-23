@@ -446,6 +446,7 @@ async fn catalog_for_runtime_fixture(root: &Path) -> VerifiedPluginCatalogRecord
                     crate::PluginMcpLaunch::StreamableHttp { .. } => {
                         CatalogMcpTransport::StreamableHttp
                     }
+                    crate::PluginMcpLaunch::HostGrant { .. } => CatalogMcpTransport::HostGrant,
                 });
             CatalogSurface {
                 kind: surface.surface.kind,

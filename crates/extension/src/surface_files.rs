@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
-    inspect_okf_bundle_files, ExecutablePlanningSurface, McpReleaseDescriptor, OkfBundleFile,
-    PlanningSurfaceActivation, PluginPlanningBundle, ToolReleaseDescriptor,
-    ToolWorkloadContract as ToolReleaseWorkload, UseError, UseResult, MAX_RELEASE_DESCRIPTOR_BYTES,
+    inspect_okf_bundle_files, ExecutablePlanningSurface, McpEndpointGrantContract,
+    McpReleaseDescriptor, OkfBundleFile, PlanningSurfaceActivation, PluginPlanningBundle,
+    ToolReleaseDescriptor, ToolWorkloadContract as ToolReleaseWorkload, UseError, UseResult,
+    MAX_RELEASE_DESCRIPTOR_BYTES,
 };
 use sha2::{Digest, Sha256};
 use tokio::fs;
@@ -16,6 +17,7 @@ use super::package::{
 use super::{ExtensionManifest, PluginMcpLaunch, SurfaceActivation, ToolTaskSource, ToolWorkload};
 
 const MAX_TOOL_API_CONTRACT_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_ENDPOINT_GRANT_BYTES: u64 = 16 * 1024;
 const MAX_FLOW_SOURCE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_SKILL_BYTES: u64 = 2 * 1024 * 1024;
 const SURFACE_FILE_EVIDENCE_SCHEMA: &[u8] = b"a3s.use.plugin-surface-files.v1\0";
@@ -89,6 +91,9 @@ pub(super) async fn validate_named_surface_files(
                 .await?;
                 McpReleaseDescriptor::from_json(&bytes)
                     .map_err(|error| release_descriptor_error("MCP", &path, error))?;
+            }
+            PluginMcpLaunch::HostGrant { contract } => {
+                validate_endpoint_grant(contract, canonical_root, package_root).await?;
             }
         }
     }
@@ -307,6 +312,40 @@ pub(crate) async fn validate_planning_bundle_package_binding(
                     )));
                 }
             }
+            ExecutablePlanningSurface::McpHostGrant {
+                id,
+                activation,
+                contract_digest,
+                allowed_hosts,
+            } => {
+                let mcp = manifest_mcp(manifest, id)?;
+                let PluginMcpLaunch::HostGrant { contract } = &mcp.launch else {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'mcp/{id}' is not the manifest host-grant contract."
+                    )));
+                };
+                let path = package_root.join(contract);
+                let bytes = read_bounded_file(
+                    "MCP endpoint grant",
+                    &path,
+                    MAX_ENDPOINT_GRANT_BYTES,
+                    "use.plugin.mcp_endpoint_grant_invalid",
+                )
+                .await?;
+                let parsed = McpEndpointGrantContract::from_json(&bytes).map_err(|_| {
+                    planning_package_error(format!(
+                        "Planning surface 'mcp/{id}' has an invalid host-grant contract."
+                    ))
+                })?;
+                if !activation_matches(*activation, mcp.activation)
+                    || &McpEndpointGrantContract::digest(&bytes)? != contract_digest
+                    || &parsed.allowed_hosts != allowed_hosts
+                {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'mcp/{id}' does not match its host-grant contract."
+                    )));
+                }
+            }
         }
     }
     Ok(())
@@ -463,8 +502,38 @@ pub async fn inspect_mcp_surface_files(
                 .map_err(|error| release_descriptor_error("MCP", &path, error))?;
             release.clone()
         }
+        PluginMcpLaunch::HostGrant { contract } => {
+            validate_endpoint_grant(contract, &canonical_root, package_root).await?;
+            contract.clone()
+        }
     };
     digest_surface_files(package_root, &canonical_root, vec![path]).await
+}
+
+async fn validate_endpoint_grant(
+    contract: &Path,
+    canonical_root: &Path,
+    package_root: &Path,
+) -> UseResult<McpEndpointGrantContract> {
+    let path = package_root.join(contract);
+    validate_surface_file("MCP endpoint grant", canonical_root, &path, false).await?;
+    let bytes = read_bounded_file(
+        "MCP endpoint grant",
+        &path,
+        MAX_ENDPOINT_GRANT_BYTES,
+        "use.plugin.mcp_endpoint_grant_invalid",
+    )
+    .await?;
+    McpEndpointGrantContract::from_json(&bytes).map_err(|error| {
+        UseError::new(
+            "use.plugin.mcp_endpoint_grant_invalid",
+            format!(
+                "MCP endpoint grant '{}' is invalid: {}",
+                path.display(),
+                error.message
+            ),
+        )
+    })
 }
 
 /// Revalidate and read the signed release descriptor backing one managed
@@ -475,10 +544,10 @@ pub(crate) async fn read_mcp_surface_file(
 ) -> UseResult<(PluginSurfaceFileEvidence, McpReleaseDescriptor)> {
     let release = match &surface.launch {
         super::PluginMcpLaunch::StreamableHttp { release } => release,
-        super::PluginMcpLaunch::Stdio { .. } => {
+        super::PluginMcpLaunch::Stdio { .. } | super::PluginMcpLaunch::HostGrant { .. } => {
             return Err(UseError::new(
                 "use.artifact_store.runtime_surface_invalid",
-                "A stdio MCP launcher has no managed Runtime Service release descriptor.",
+                "A host-owned MCP launcher has no managed Runtime Service release descriptor.",
             ));
         }
     };

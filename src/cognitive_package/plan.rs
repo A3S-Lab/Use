@@ -845,7 +845,18 @@ pub(super) fn static_provider_evidence<'a>(
                         "An executable cognitive-package surface omitted its permission ceiling.",
                     )
                 })?;
-            if !permission.native_execution || permission.private_service {
+            if is_host_grant_surface(manifest, surface.kind, &surface.id) {
+                if permission.native_execution || permission.private_service {
+                    return Err(package_manager_error(
+                        "use.plugin.runtime_provider_required",
+                        format!(
+                            "Host-grant MCP surface '{}/{}' cannot claim native execution or a private service.",
+                            package.package_id(),
+                            surface.id
+                        ),
+                    ));
+                }
+            } else if !permission.native_execution || permission.private_service {
                 return Err(package_manager_error(
                     "use.plugin.runtime_provider_required",
                     format!(
@@ -950,6 +961,17 @@ fn validate_static_surface(
     }
 }
 
+fn is_host_grant_surface(
+    manifest: &ExtensionManifest,
+    kind: PluginSurfaceKind,
+    surface_id: &str,
+) -> bool {
+    kind == PluginSurfaceKind::Mcp
+        && manifest.mcp_servers.iter().any(|surface| {
+            surface.id == surface_id && matches!(surface.launch, PluginMcpLaunch::HostGrant { .. })
+        })
+}
+
 fn is_static_surface(
     manifest: &ExtensionManifest,
     kind: PluginSurfaceKind,
@@ -965,7 +987,11 @@ fn is_static_surface(
                 )
         }),
         PluginSurfaceKind::Mcp => manifest.mcp_servers.iter().any(|surface| {
-            surface.id == surface_id && matches!(surface.launch, PluginMcpLaunch::Stdio { .. })
+            surface.id == surface_id
+                && matches!(
+                    surface.launch,
+                    PluginMcpLaunch::Stdio { .. } | PluginMcpLaunch::HostGrant { .. }
+                )
         }),
         _ => false,
     }

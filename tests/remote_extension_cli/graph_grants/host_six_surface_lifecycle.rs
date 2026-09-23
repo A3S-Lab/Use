@@ -609,6 +609,9 @@ fn cognitive_six_surface_targets(
                     a3s_use_extension::PluginMcpLaunch::StreamableHttp { .. } => {
                         CatalogMcpTransport::StreamableHttp
                     }
+                    a3s_use_extension::PluginMcpLaunch::HostGrant { .. } => {
+                        CatalogMcpTransport::HostGrant
+                    }
                 }),
             mcp_tool_count: None,
             okf_bundle: parsed

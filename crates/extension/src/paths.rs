@@ -25,6 +25,20 @@ impl UsePaths {
             return Ok(Self::new(root.join("data"), root.join("state")));
         }
 
+        let explicit = std::env::var_os("A3S_DATA_HOME").is_some()
+            || std::env::var_os("A3S_STATE_HOME").is_some()
+            || std::env::var_os("XDG_DATA_HOME").is_some()
+            || std::env::var_os("XDG_STATE_HOME").is_some();
+        if !explicit {
+            if let Some(home) = std::env::var_os("HOME").filter(|value| !value.is_empty()) {
+                let home = PathBuf::from(home);
+                return Ok(Self::new(
+                    absolute(home.join(".a3s").join("use").join("data"))?,
+                    absolute(home.join(".a3s").join("use").join("state"))?,
+                ));
+            }
+        }
+
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let data_root = configured_root(
             "A3S_DATA_HOME",

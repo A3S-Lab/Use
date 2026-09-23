@@ -101,6 +101,14 @@ pub enum ExecutablePlanningSurface {
         executable: String,
         args: Vec<String>,
     },
+    /// Host-owned Streamable HTTP MCP. The signed contract pins allowed hosts;
+    /// the endpoint URL and authorization are supplied by the host after install.
+    McpHostGrant {
+        id: String,
+        activation: PlanningSurfaceActivation,
+        contract_digest: String,
+        allowed_hosts: Vec<String>,
+    },
 }
 
 impl PluginPlanningBundle {
@@ -217,7 +225,8 @@ impl PluginPlanningBundle {
                 Some(descriptor.descriptor_digest()?)
             }
             ExecutablePlanningSurface::ToolTaskNative { .. }
-            | ExecutablePlanningSurface::McpStdio { .. } => None,
+            | ExecutablePlanningSurface::McpStdio { .. }
+            | ExecutablePlanningSurface::McpHostGrant { .. } => None,
         };
         Ok(digest)
     }
@@ -275,7 +284,9 @@ impl ExecutablePlanningSurface {
                 kind: PluginSurfaceKind::Tool,
                 id: id.clone(),
             },
-            Self::McpService { id, .. } | Self::McpStdio { id, .. } => PluginSurfaceRef {
+            Self::McpService { id, .. }
+            | Self::McpStdio { id, .. }
+            | Self::McpHostGrant { id, .. } => PluginSurfaceRef {
                 kind: PluginSurfaceKind::Mcp,
                 id: id.clone(),
             },
@@ -327,9 +338,11 @@ impl ExecutablePlanningSurface {
                     } if !interactive
                         && descriptor_timeout == timeout_ms
                         && success_exit_codes.as_slice() == [0] => {}
-                    _ => return Err(planning_error(
-                        "A Tool Task release does not match its install-time launcher contract.",
-                    )),
+                    _ => {
+                        return Err(planning_error(
+                            "A Tool Task release does not match its install-time launcher contract.",
+                        ));
+                    }
                 }
                 artifact.validate_for(&descriptor.artifact.digest, &descriptor.artifact.media_type)
             }
@@ -357,7 +370,7 @@ impl ExecutablePlanningSurface {
                     _ => {
                         return Err(planning_error(
                             "A Tool Service release does not match its HTTP contract.",
-                        ))
+                        ));
                     }
                 }
                 artifact.validate_for(&descriptor.artifact.digest, &descriptor.artifact.media_type)
@@ -389,6 +402,27 @@ impl ExecutablePlanningSurface {
                 }
                 Ok(())
             }
+            Self::McpHostGrant {
+                id,
+                contract_digest,
+                allowed_hosts,
+                ..
+            } => {
+                validate_surface_id(id)?;
+                if !valid_sha256(contract_digest)
+                    || allowed_hosts.is_empty()
+                    || allowed_hosts.len() > 8
+                    || !strictly_sorted_unique(allowed_hosts)
+                    || allowed_hosts
+                        .iter()
+                        .any(|host| !super::validation::valid_dns_name(host))
+                {
+                    return Err(planning_error(
+                        "An MCP host-grant planning contract is invalid.",
+                    ));
+                }
+                Ok(())
+            }
         }
     }
 
@@ -413,6 +447,10 @@ impl ExecutablePlanningSurface {
             Self::McpStdio { .. } => {
                 catalog.workload.is_none()
                     && catalog.mcp_transport == Some(CatalogMcpTransport::Stdio)
+            }
+            Self::McpHostGrant { .. } => {
+                catalog.workload.is_none()
+                    && catalog.mcp_transport == Some(CatalogMcpTransport::HostGrant)
             }
         };
         if !shape_matches {

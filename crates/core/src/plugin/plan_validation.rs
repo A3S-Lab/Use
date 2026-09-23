@@ -341,7 +341,7 @@ pub(super) fn planned_okf_changes(
             (false, false) => {
                 return Err(plan_error(
                     "A planned OKF impact has no before or after bundle contract.",
-                ))
+                ));
             }
         };
         changes.push(PlannedOkfSurfaceChange {
@@ -433,7 +433,16 @@ impl PlannedProviderEvidence {
         let permission = permission_for(plan, required).ok_or_else(|| {
             plan_error("A selected runtime provider has no resolved permission ceiling.")
         })?;
-        let enforcement_matches = if permission.native_execution {
+        // Host-grant MCP is neither a package binary nor a Runtime container.
+        // The host process opens a user-confirmed HTTPS request to an exact
+        // signed host, so NativeUnconfined is the only honest profile.
+        let host_grant = required.surface.kind == PluginSurfaceKind::Mcp
+            && !permission.native_execution
+            && !permission.private_service
+            && !permission.network_egress.is_empty();
+        let enforcement_matches = if host_grant {
+            self.enforcement == PlanEnforcementProfile::NativeUnconfined
+        } else if permission.native_execution {
             matches!(
                 self.enforcement,
                 PlanEnforcementProfile::Sandbox | PlanEnforcementProfile::NativeUnconfined

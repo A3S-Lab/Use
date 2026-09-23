@@ -335,9 +335,11 @@ impl PluginPackageLock {
                     validate_prior_state(before, transition)?;
                     validate_candidate_transition(after, transition)?;
                 }
-                _ => return Err(lock_error(
-                    "An upgrade transition does not match the exact prior/candidate lock delta.",
-                )),
+                _ => {
+                    return Err(lock_error(
+                        "An upgrade transition does not match the exact prior/candidate lock delta.",
+                    ));
+                }
             }
         }
         Ok(())

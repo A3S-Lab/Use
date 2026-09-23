@@ -573,7 +573,15 @@ fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     assert!(workflow.contains("scripts/verify-release-rebuild.py"));
     assert!(workflow.contains(".reproducibility.json"));
     assert!(workflow.contains("needs: [validate, binaries, reproducibility, publish-crates]"));
-    assert!(workflow.contains("test \"${#release_files[@]}\" -eq 17"));
+    // USE-3: Intel macOS rebuild may be waived; require 16–17 staged files and
+    // hard-require the four non-waived reproducibility records.
+    assert!(workflow.contains("continue-on-error: ${{ matrix.name == 'darwin-x86_64' }}"));
+    assert!(workflow.contains("USE-3 known debt: darwin-x86_64 independent-rebuild"));
+    assert!(workflow.contains("test \"${#release_files[@]}\" -ge 16"));
+    assert!(workflow.contains("test \"${#release_files[@]}\" -le 17"));
+    assert!(workflow
+        .contains("for platform in darwin-arm64 linux-arm64 linux-x86_64 windows-x86_64; do"));
+    assert!(!workflow.contains("test \"${#release_files[@]}\" -eq 17"));
     let rebuild_job = &workflow
         [position(workflow, "\n  reproducibility:")..position(workflow, "\n  publish-crates:")];
     assert!(

@@ -708,6 +708,7 @@ fn verified_catalog(candidate: &ExtensionLifecyclePackage) -> VerifiedPluginCata
                 .map(|mcp| match &mcp.launch {
                     PluginMcpLaunch::Stdio { .. } => CatalogMcpTransport::Stdio,
                     PluginMcpLaunch::StreamableHttp { .. } => CatalogMcpTransport::StreamableHttp,
+                    PluginMcpLaunch::HostGrant { .. } => CatalogMcpTransport::HostGrant,
                 });
             CatalogSurface {
                 kind: surface.surface.kind,

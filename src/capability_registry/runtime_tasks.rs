@@ -352,6 +352,7 @@ extension "acme/research" {
                 knowledge_bindings: &[],
                 runtime_tasks: &evidence.projections,
                 mcp_projections: &[],
+                executable_tools: &[],
             },
         )
         .await
@@ -412,6 +413,7 @@ extension "acme/research" {
                 knowledge_bindings: &[],
                 runtime_tasks: &evidence.projections,
                 mcp_projections: &[],
+                executable_tools: &[],
             },
         )
         .await

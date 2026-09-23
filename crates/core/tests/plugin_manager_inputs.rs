@@ -18,6 +18,24 @@ fn manager_inputs_accept_the_frozen_tool_shapes() {
     search.validate().unwrap();
     assert_eq!(search.kind, Some(PluginSurfaceKind::Okf));
     assert_eq!(search.page_limit(), 20);
+    assert!(search.registry_name.is_none());
+
+    let named: PluginManagerSearchInput = serde_json::from_value(serde_json::json!({
+        "query": "cognitive",
+        "registryName": "official"
+    }))
+    .unwrap();
+    named.validate().unwrap();
+    assert_eq!(named.registry_name.as_deref(), Some("official"));
+    let invalid = PluginManagerSearchInput {
+        query: "cognitive".to_owned(),
+        kind: None,
+        channel: None,
+        cursor: None,
+        limit: None,
+        registry_name: Some("Official".to_owned()),
+    };
+    assert!(invalid.validate().is_err());
 
     let inspect: PluginManagerInspectInput = serde_json::from_value(serde_json::json!({
         "packageId": "acme/cognitive",

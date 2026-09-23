@@ -81,6 +81,9 @@ pub struct CatalogSurface {
 pub enum CatalogMcpTransport {
     Stdio,
     StreamableHttp,
+    /// Host-configured Streamable HTTP endpoint. The signed contract pins
+    /// allowed hosts; the URL and authorization are a host grant, not a release.
+    HostGrant,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -259,8 +262,8 @@ impl PluginCatalogRecord {
                             && long_running_resources => {}
                     _ => {
                         return Err(catalog_error(
-                                "A Tool permission ceiling does not match its Task or Service workload.",
-                            ));
+                            "A Tool permission ceiling does not match its Task or Service workload.",
+                        ));
                     }
                 },
                 PluginSurfaceKind::Mcp => {
@@ -273,6 +276,11 @@ impl PluginCatalogRecord {
                             if !permission.native_execution
                                 && permission.private_service
                                 && long_running_resources => {}
+                        Some(CatalogMcpTransport::HostGrant)
+                            if !permission.native_execution
+                                && !permission.private_service
+                                && long_running_resources
+                                && !permission.network_egress.is_empty() => {}
                         _ => {
                             return Err(catalog_error(
                                 "An MCP permission ceiling does not match its declared transport.",
@@ -317,7 +325,7 @@ impl PluginCatalogRecord {
             _ => {
                 return Err(catalog_error(
                     "Catalog records must carry one planning target exactly when they contain executable surfaces.",
-                ))
+                ));
             }
         }
         self.package.validate()?;

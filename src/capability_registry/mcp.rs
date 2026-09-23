@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use a3s_use_core::{
-    McpReleaseDescriptor, PlanQualifiedSurfaceRef, PlanScope, PluginSurfaceKind, PluginSurfaceRef,
-    UseError, UseResult, MAX_RELEASE_DESCRIPTOR_BYTES,
+    McpEndpointGrantContract, McpReleaseDescriptor, PlanQualifiedSurfaceRef, PlanScope,
+    PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult, MAX_RELEASE_DESCRIPTOR_BYTES,
 };
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, InstalledExtension, PluginMcpLaunch, SurfaceActivation,
@@ -174,6 +174,22 @@ pub(super) async fn mcp_evidence_from_store(
                     },
                 }
             }
+            PluginMcpLaunch::HostGrant { contract } => {
+                match read_host_grant(&extension.receipt.package_root.join(contract)).await {
+                    Ok((grant, contract_digest)) => {
+                        observations.insert(reference, SurfaceObservedState::Prepared);
+                        McpLaunchProjection::HostGrant {
+                            contract: contract.clone(),
+                            contract_digest,
+                            allowed_hosts: grant.allowed_hosts,
+                        }
+                    }
+                    Err(_) => {
+                        observations.insert(reference, SurfaceObservedState::Failed);
+                        continue;
+                    }
+                }
+            }
         };
         projections.push(McpServerProjection {
             id: surface.id.clone(),
@@ -209,6 +225,27 @@ fn readable_segment(value: &str) -> String {
         .take(10)
         .map(|character| if character == '-' { '_' } else { character })
         .collect()
+}
+
+async fn read_host_grant(path: &Path) -> UseResult<(McpEndpointGrantContract, String)> {
+    let bytes = tokio::fs::read(path).await.map_err(|error| {
+        UseError::new(
+            "use.plugin.mcp_endpoint_grant_invalid",
+            format!(
+                "Failed to read projected MCP endpoint grant '{}': {error}",
+                path.display()
+            ),
+        )
+    })?;
+    if bytes.is_empty() || bytes.len() > 16 * 1024 {
+        return Err(UseError::new(
+            "use.plugin.mcp_endpoint_grant_invalid",
+            "A projected MCP endpoint grant is empty or too large.",
+        ));
+    }
+    let grant = McpEndpointGrantContract::from_json(&bytes)?;
+    let digest = McpEndpointGrantContract::digest(&bytes)?;
+    Ok((grant, digest))
 }
 
 async fn read_mcp_descriptor(path: &Path) -> UseResult<McpReleaseDescriptor> {
@@ -489,6 +526,7 @@ extension "acme/research" {
                 knowledge_bindings: &[],
                 runtime_tasks: &[],
                 mcp_projections: &evidence.projections,
+                executable_tools: &[],
             },
         )
         .await
@@ -556,6 +594,7 @@ extension "acme/research" {
                 knowledge_bindings: &[],
                 runtime_tasks: &[],
                 mcp_projections: &evidence.projections,
+                executable_tools: &[],
             },
         )
         .await
@@ -635,6 +674,7 @@ extension "acme/research" {
                 knowledge_bindings: &[],
                 runtime_tasks: &[],
                 mcp_projections: &missing.projections,
+                executable_tools: &[],
             },
         )
         .await
@@ -683,6 +723,7 @@ extension "acme/research" {
                 knowledge_bindings: &[],
                 runtime_tasks: &[],
                 mcp_projections: &evidence.projections,
+                executable_tools: &[],
             },
         )
         .await

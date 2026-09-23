@@ -110,6 +110,7 @@ async fn search(args: &[String]) -> UseResult<CommandOutput> {
                     .transpose()?,
                 cursor: option_argument(args, "--cursor")?.map(str::to_owned),
                 limit: unsigned_option(args, "--limit")?,
+                registry_name: None,
             },
             registry_access(args)?,
         )

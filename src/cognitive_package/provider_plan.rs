@@ -564,6 +564,7 @@ fn has_managed_surfaces(bundle: &PluginPlanningBundle) -> bool {
             surface,
             ExecutablePlanningSurface::ToolTaskNative { .. }
                 | ExecutablePlanningSurface::McpStdio { .. }
+                | ExecutablePlanningSurface::McpHostGrant { .. }
         )
     })
 }

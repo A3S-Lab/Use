@@ -98,6 +98,7 @@ impl PluginMcpSurface {
         match &self.launch {
             PluginMcpLaunch::Stdio { executable, .. } => vec![executable.as_path()],
             PluginMcpLaunch::StreamableHttp { release } => vec![release.as_path()],
+            PluginMcpLaunch::HostGrant { contract } => vec![contract.as_path()],
         }
     }
 }
@@ -111,6 +112,11 @@ pub enum PluginMcpLaunch {
     },
     StreamableHttp {
         release: PathBuf,
+    },
+    /// Package-local signed endpoint contract. The host supplies URL and
+    /// authorization after install; this path never contains a secret.
+    HostGrant {
+        contract: PathBuf,
     },
 }
 
@@ -325,6 +331,7 @@ pub(crate) fn parse_mcp(block: &Block) -> UseResult<PluginMcpSurface> {
             "executable",
             "args",
             "release",
+            "contract",
             "activation",
             "optional",
         ],
@@ -333,7 +340,7 @@ pub(crate) fn parse_mcp(block: &Block) -> UseResult<PluginMcpSurface> {
     let optional = optional_bool_attribute(block, "optional")?.unwrap_or(false);
     let (activation, launch) = match transport.as_str() {
         "stdio" => {
-            reject_present_attributes(block, &["release"])?;
+            reject_present_attributes(block, &["release", "contract"])?;
             (
                 parse_activation(block, SurfaceActivation::Lazy)?,
                 PluginMcpLaunch::Stdio {
@@ -343,11 +350,20 @@ pub(crate) fn parse_mcp(block: &Block) -> UseResult<PluginMcpSurface> {
             )
         }
         "streamable-http" => {
-            reject_present_attributes(block, &["executable", "args"])?;
+            reject_present_attributes(block, &["executable", "args", "contract"])?;
             (
                 parse_activation(block, SurfaceActivation::Eager)?,
                 PluginMcpLaunch::StreamableHttp {
                     release: path_attribute(block, "release")?,
+                },
+            )
+        }
+        "host-grant" => {
+            reject_present_attributes(block, &["executable", "args", "release"])?;
+            (
+                parse_activation(block, SurfaceActivation::Lazy)?,
+                PluginMcpLaunch::HostGrant {
+                    contract: path_attribute(block, "contract")?,
                 },
             )
         }
