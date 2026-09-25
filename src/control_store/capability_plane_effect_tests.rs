@@ -4,7 +4,16 @@ use std::sync::Arc;
 #[cfg(feature = "mcp")]
 use crate::plugin_runtime::RuntimeServiceBindingReceipt;
 #[cfg(feature = "mcp")]
+use a3s_runtime::contract::{
+    HealthCheckKind, IsolationLevel, NetworkMode, ResourceControl, RuntimeCapabilities,
+    RuntimeFeature, RuntimeObservation, RuntimeServiceEndpoint, RuntimeUnitClass,
+};
+#[cfg(not(feature = "mcp"))]
 use a3s_runtime::contract::{RuntimeObservation, RuntimeServiceEndpoint};
+#[cfg(feature = "mcp")]
+use a3s_runtime::{
+    ProviderId, RuntimeClient, RuntimeClientRegistry, RuntimeProviderFactory, RuntimeResult,
+};
 use a3s_use_core::{
     CapabilityConsumerExtension, CapabilityDescriptionProof,
     CapabilityDescriptionSignatureAlgorithm, CapabilityDescriptionSignaturePayload,
@@ -12,21 +21,39 @@ use a3s_use_core::{
     CapabilityPublicationEvidence, CapabilityToolAnnotations, InvocationRef, PluginOperationAction,
     PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, SignedCapabilityDescription,
 };
+#[cfg(feature = "mcp")]
+use a3s_use_core::{
+    CatalogMcpTransport, CatalogSurface, PlanEnforcementProfile, PlanQualifiedSurfaceRef,
+    PlanScope, PlanScopeKind, PlannedProviderEvidence, PluginCatalogRecord, PluginPackageLock,
+    PluginPackageLockHost, PluginPackageResolver, ToolWorkloadClass, VerifiedCatalogProvenance,
+    VerifiedPluginCatalogRecord,
+};
 use a3s_use_extension::{CapabilityDescriptionTrustKey, CapabilityDescriptionTrustStore};
 #[cfg(feature = "mcp")]
-use a3s_use_extension::{PluginMcpSurface, ToolSurface};
+use a3s_use_extension::{
+    ExtensionLifecyclePackage, ExtensionPaths, PluginMcpLaunch, PluginMcpSurface, ToolSurface,
+    ToolWorkload,
+};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 
 #[cfg(feature = "mcp")]
 use crate::capability_gateway::{
     CapabilityGatewayCompositionOptions, CapabilityGatewayExternalLease,
-    CapabilityGatewayInvocation, CapabilityGatewayInvocationProvider, CapabilityGatewayMcpServer,
-    CapabilityGatewayRequestContext, CapabilityGatewaySessionFactory,
+    CapabilityGatewayHttpConfig, CapabilityGatewayInvocation, CapabilityGatewayInvocationProvider,
+    CapabilityGatewayMcpServer, CapabilityGatewayRequestContext, CapabilityGatewaySessionFactory,
 };
 #[cfg(feature = "mcp")]
 use crate::control_store::effect_owner::capability_plane::ControlCapabilityGatewayInvocationFactory;
 #[cfg(feature = "mcp")]
-use rmcp::model::ResourceContents;
+use rmcp::model::{CallToolRequestParam, ResourceContents};
+#[cfg(feature = "mcp")]
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+};
+#[cfg(feature = "mcp")]
+use rmcp::{ClientHandler, ServiceExt};
+#[cfg(feature = "mcp")]
+use tokio_util::sync::CancellationToken;
 
 use super::aggregate_tests::fixtures::{
     apply_all_effects, claim, control_installation, digest, initialized_store, observation,
@@ -57,14 +84,33 @@ use super::model::{
     ControlEffectOutcome, ControlEffectOwner, ControlEffectStatus, ControlProjectionHistory,
     ReviewedControlOperation,
 };
+#[cfg(feature = "mcp")]
+use super::production::{ProductionControlHostDependencies, ProductionControlLifecycle};
 use super::ControlStore;
 use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
+#[cfg(feature = "mcp")]
+use crate::cognitive_package::{
+    CognitivePackageAuthorizationEvidence, PlannedWorkspaceGrantOperation,
+};
+#[cfg(feature = "mcp")]
+use crate::plugin_runtime::test_support::{artifact, task_descriptor, task_surface, FakeRuntime};
+#[cfg(feature = "mcp")]
+use crate::plugin_runtime::{
+    plan_tool_task_release, runtime_capabilities_digest, RuntimeSurfaceContext, RuntimeSurfacePlan,
+    RuntimeSurfacePlanKey, RuntimeSurfacePlanPublication, RuntimeTaskInvocation,
+};
 
 struct EmptyCatalogProjection;
 
 struct UnauthorizedCatalogProjection;
 
 struct ExactResourceCatalogProjection;
+
+#[cfg(feature = "mcp")]
+/// Grant Tool fixture projector that admits descriptors through the same
+/// `ControlCapabilityDescriptorProjection` gate used by Durable/SignedDurable
+/// production hosts, instead of bypassing schema/attestation checks.
+struct StrictToolCatalogProjection;
 
 struct OptionalResourceCatalogProjection;
 
@@ -282,6 +328,37 @@ impl ControlCapabilityCatalogProjectionPort for ExactResourceCatalogProjection {
             )
             .unwrap(),
         )
+    }
+}
+
+#[cfg(feature = "mcp")]
+#[async_trait::async_trait]
+impl ControlCapabilityCatalogProjectionPort for StrictToolCatalogProjection {
+    async fn project(
+        &self,
+        authority: &ControlCapabilityEffectAuthority,
+    ) -> ControlEffectPortOutcome<CapabilityGatewayCatalog> {
+        // Uninstall / empty generations project an empty catalog; Install and
+        // Upgrade admit the convert Tool only when Runtime attestation binds.
+        let Some(descriptor) = exact_tool_descriptor(authority) else {
+            return ControlEffectPortOutcome::applied(
+                CapabilityGatewayCatalog::new(
+                    authority.generation.snapshot.installation.clone(),
+                    authority.generation.capability.generation,
+                    Vec::new(),
+                )
+                .unwrap(),
+            );
+        };
+        let signer = "registry/acme";
+        let package_id = descriptor.package_id.as_str().to_owned();
+        let proof = CapabilityDescriptionProof::from_verified(descriptor, signer).unwrap();
+        let projector = ControlCapabilityDescriptorProjection::new(
+            vec![proof],
+            signer_policy_for(&package_id, signer),
+        )
+        .unwrap();
+        projector.project(authority).await
     }
 }
 
@@ -833,6 +910,221 @@ async fn control_gateway_reconciliation_swaps_from_the_prior_control_lease() {
     );
 }
 
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn control_cutover_reconcile_notifies_independent_client_list_changed() {
+    use std::future::Future;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::Notify;
+
+    #[derive(Debug, Clone, Default)]
+    struct IndexNotifyClient {
+        tools: Arc<AtomicUsize>,
+        resources: Arc<AtomicUsize>,
+        prompts: Arc<AtomicUsize>,
+        notified: Arc<Notify>,
+    }
+
+    impl IndexNotifyClient {
+        async fn wait_for_all(&self, expected: usize) {
+            loop {
+                if self.tools.load(Ordering::SeqCst) >= expected
+                    && self.resources.load(Ordering::SeqCst) >= expected
+                    && self.prompts.load(Ordering::SeqCst) >= expected
+                {
+                    return;
+                }
+                self.notified.notified().await;
+            }
+        }
+    }
+
+    impl ClientHandler for IndexNotifyClient {
+        fn on_tool_list_changed(
+            &self,
+            _context: rmcp::service::NotificationContext<rmcp::RoleClient>,
+        ) -> impl Future<Output = ()> + Send + '_ {
+            self.tools.fetch_add(1, Ordering::SeqCst);
+            self.notified.notify_waiters();
+            std::future::ready(())
+        }
+
+        fn on_resource_list_changed(
+            &self,
+            _context: rmcp::service::NotificationContext<rmcp::RoleClient>,
+        ) -> impl Future<Output = ()> + Send + '_ {
+            self.resources.fetch_add(1, Ordering::SeqCst);
+            self.notified.notify_waiters();
+            std::future::ready(())
+        }
+
+        fn on_prompt_list_changed(
+            &self,
+            _context: rmcp::service::NotificationContext<rmcp::RoleClient>,
+        ) -> impl Future<Output = ()> + Send + '_ {
+            self.prompts.fetch_add(1, Ordering::SeqCst);
+            self.notified.notify_waiters();
+            std::future::ready(())
+        }
+    }
+
+    let fixture = installed_capability_plane("operation:capability-plane:index-list-changed").await;
+    let paths = fixture._owner_fixture.paths.clone();
+    let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        super::composition::ControlEffectCompositionDependencies {
+            runtime_registry: Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: Arc::new(CompositionReadiness),
+            catalog_projection: Arc::new(EmptyCatalogProjection),
+            flow: Arc::new(UnexpectedDynamicSurfacePort),
+            clock: Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+
+    let prior_lease = fixture.plane.reopen_published().await.unwrap().unwrap();
+    let factory = CapabilityGatewaySessionFactory::new(
+        super::composition::ControlStoreRuntimeComposition::gateway_server_from_control_lease(
+            prior_lease,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .unwrap(),
+    );
+    let prior_key = factory.current_key().unwrap();
+
+    let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
+    let serving = factory.clone();
+    let server_handle = tokio::spawn(async move {
+        serving
+            .live_server()
+            .serve(server_transport)
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let notification_client = IndexNotifyClient::default();
+    let client = notification_client
+        .clone()
+        .serve(client_transport)
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if factory.notification_hub().peer_count().await == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("independent client must register with the Index notification hub");
+
+    let prior = fixture.store.current_generation().await.unwrap().unwrap();
+    let mut history = ControlProjectionHistory::default();
+    history.observe(&prior).unwrap();
+    let upgrade = operation_at(
+        "operation:capability-plane:index-list-changed-upgrade",
+        PluginOperationAction::Upgrade,
+        1,
+        1,
+    );
+    fixture
+        .store
+        .register_operation(upgrade.clone())
+        .await
+        .unwrap();
+    fixture
+        .store
+        .commit_transition(projected_transition(&upgrade, &prior, &history))
+        .await
+        .unwrap();
+    for sequence in 0..2_u32 {
+        let now_ms = 200 + u64::from(sequence) * 20;
+        let claim_token = format!("claim:capability-plane:index-list-changed:{sequence}");
+        let claimed = fixture
+            .store
+            .claim_next_effect(claim(
+                upgrade.operation_id(),
+                &claim_token,
+                now_ms,
+                now_ms + 10,
+                false,
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(claimed.intent.sequence, sequence);
+        fixture
+            .store
+            .record_effect_observation(observation(
+                upgrade.operation_id(),
+                &claimed.intent,
+                &claimed.claim_token,
+                ControlEffectOutcome::Applied,
+                char::from_digit(sequence, 16).unwrap(),
+                now_ms + 5,
+            ))
+            .await
+            .unwrap();
+    }
+    assert_dispatch(
+        &fixture.dispatcher,
+        &upgrade,
+        "claim:capability-plane:index-list-changed-cutover",
+        2,
+        1,
+        ControlEffectOutcome::Applied,
+        false,
+    )
+    .await;
+
+    let target_cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    assert!(target_cursor.capability_generation > prior_key.generation);
+    let result = composition
+        .reconcile_published_capability_gateway(
+            &factory,
+            Arc::new(EmptyGatewayProvider),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap()
+        .expect("the target Control publication must be available");
+    let super::composition::ControlCapabilityGatewayReconciliation::Replaced(replacement) = result
+    else {
+        panic!("Control Index cutover must replace the live Gateway publication");
+    };
+    assert_eq!(
+        replacement
+            .notification
+            .as_ref()
+            .map(|report| report.notified_peers),
+        Some(1)
+    );
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        notification_client.wait_for_all(1),
+    )
+    .await
+    .expect("independent client must observe tools/resources/prompts list_changed");
+    assert_eq!(
+        factory.current_key().unwrap().digest,
+        target_cursor.catalog.digest
+    );
+    assert_eq!(
+        factory.current_key().unwrap().generation,
+        target_cursor.capability_generation
+    );
+    // Discovery still works on the same live connection after Index cutover.
+    let _ = client.list_all_tools().await.unwrap();
+    client.cancel().await.unwrap();
+    drop(factory);
+    let _ = server_handle.await;
+}
+
 #[tokio::test]
 async fn published_cutover_key_follows_the_published_generation_not_current_generation() {
     let fixture =
@@ -1133,6 +1425,1385 @@ async fn control_gateway_invocation_resolves_only_exact_published_descriptors() 
         error.code,
         "use.control.capability_payload_retention_cursor_stale"
     );
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn production_invocation_factory_requires_committed_control_grant() {
+    let fixture = installed_capability_plane_with_projection(
+        "operation:capability-plane:production-grant",
+        Arc::new(ExactResourceCatalogProjection),
+    )
+    .await;
+    let paths = fixture._owner_fixture.paths.clone();
+    let cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    let descriptor_snapshot = ControlCapabilityDescriptorSnapshot::new(
+        ControlCapabilityDescriptorSnapshotKey::new(
+            cursor.installation.clone(),
+            cursor.installation_generation,
+            cursor.capability_generation,
+            cursor.descriptor_digest.clone(),
+        )
+        .unwrap(),
+        Vec::new(),
+        ControlCapabilitySignerPolicy::new(BTreeMap::new()).unwrap(),
+    )
+    .unwrap();
+    ControlCapabilityDescriptorSnapshotStore::from_extension_paths(&paths)
+        .publish(&descriptor_snapshot)
+        .await
+        .unwrap();
+    let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        super::composition::ControlEffectCompositionDependencies {
+            runtime_registry: Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: Arc::new(CompositionReadiness),
+            catalog_projection: Arc::new(EmptyCatalogProjection),
+            flow: Arc::new(UnexpectedDynamicSurfacePort),
+            clock: Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+
+    let lease = fixture.plane.reopen_published().await.unwrap().unwrap();
+    let descriptor = lease.catalog().descriptors()[0].clone();
+    let provider = composition.production_gateway_invocation_provider();
+    let context = CapabilityGatewayRequestContext::stdio();
+
+    // Default capability-plane install fixtures commit no Grants. Production
+    // open must fail closed before provider I/O.
+    let generation = fixture.store.current_generation().await.unwrap().unwrap();
+    assert!(generation.grants.is_empty());
+    let error = provider
+        .read_resource(&descriptor, &context)
+        .await
+        .expect_err("production factory requires a committed Control Grant");
+    assert_eq!(error.code, "use.plugin.capability_gateway_forbidden");
+}
+
+#[cfg(feature = "mcp")]
+#[derive(Clone, Debug, Default)]
+struct IndependentGatewayClient;
+
+#[cfg(feature = "mcp")]
+impl ClientHandler for IndependentGatewayClient {}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_rust_client_discovers_control_published_gateway_without_shared_package_fs() {
+    let fixture = installed_capability_plane_with_projection(
+        "operation:capability-plane:independent-client",
+        Arc::new(ExactResourceCatalogProjection),
+    )
+    .await;
+    let paths = fixture._owner_fixture.paths.clone();
+    let cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    let descriptor_snapshot = ControlCapabilityDescriptorSnapshot::new(
+        ControlCapabilityDescriptorSnapshotKey::new(
+            cursor.installation.clone(),
+            cursor.installation_generation,
+            cursor.capability_generation,
+            cursor.descriptor_digest.clone(),
+        )
+        .unwrap(),
+        Vec::new(),
+        ControlCapabilitySignerPolicy::new(BTreeMap::new()).unwrap(),
+    )
+    .unwrap();
+    ControlCapabilityDescriptorSnapshotStore::from_extension_paths(&paths)
+        .publish(&descriptor_snapshot)
+        .await
+        .unwrap();
+    let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        super::composition::ControlEffectCompositionDependencies {
+            runtime_registry: Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: Arc::new(CompositionReadiness),
+            catalog_projection: Arc::new(EmptyCatalogProjection),
+            flow: Arc::new(UnexpectedDynamicSurfacePort),
+            clock: Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+
+    let session = composition
+        .reopen_published_capability_gateway(
+            composition.production_gateway_invocation_provider(),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap()
+        .expect("Control must reopen the published Gateway catalog");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let server_handle = tokio::spawn(
+        session.serve_streamable_http(
+            listener,
+            CapabilityGatewayHttpConfig::for_principal(
+                "independent-client-token",
+                "agent/independent-rust",
+            )
+            .unwrap(),
+            shutdown.clone(),
+        ),
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    let transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("independent-client-token"),
+    );
+    let client = IndependentGatewayClient.serve(transport).await.unwrap();
+    let resources = client.list_all_resources().await.unwrap();
+    assert_eq!(resources.len(), 1);
+    assert!(resources[0].uri.contains("resource"));
+
+    client.cancel().await.unwrap();
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_rust_client_is_denied_with_wrong_gateway_token() {
+    let fixture = installed_capability_plane_with_projection(
+        "operation:capability-plane:independent-denied",
+        Arc::new(ExactResourceCatalogProjection),
+    )
+    .await;
+    let paths = fixture._owner_fixture.paths.clone();
+    let cursor = fixture.store.published_capability().await.unwrap().unwrap();
+    let descriptor_snapshot = ControlCapabilityDescriptorSnapshot::new(
+        ControlCapabilityDescriptorSnapshotKey::new(
+            cursor.installation.clone(),
+            cursor.installation_generation,
+            cursor.capability_generation,
+            cursor.descriptor_digest.clone(),
+        )
+        .unwrap(),
+        Vec::new(),
+        ControlCapabilitySignerPolicy::new(BTreeMap::new()).unwrap(),
+    )
+    .unwrap();
+    ControlCapabilityDescriptorSnapshotStore::from_extension_paths(&paths)
+        .publish(&descriptor_snapshot)
+        .await
+        .unwrap();
+    let composition = super::composition::ControlStoreRuntimeComposition::from_extension_paths(
+        &paths,
+        super::composition::ControlEffectCompositionDependencies {
+            runtime_registry: Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            runtime_readiness: Arc::new(CompositionReadiness),
+            catalog_projection: Arc::new(EmptyCatalogProjection),
+            flow: Arc::new(UnexpectedDynamicSurfacePort),
+            clock: Arc::new(SystemControlEffectClock),
+        },
+    )
+    .unwrap();
+    composition.initialize().await.unwrap();
+    let session = composition
+        .reopen_published_capability_gateway(
+            composition.production_gateway_invocation_provider(),
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let server_handle = tokio::spawn(
+        session.serve_streamable_http(
+            listener,
+            CapabilityGatewayHttpConfig::for_principal("correct-token", "agent/independent-rust")
+                .unwrap(),
+            shutdown.clone(),
+        ),
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    let transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("wrong-token"),
+    );
+    let error = IndependentGatewayClient
+        .serve(transport)
+        .await
+        .expect_err("wrong bearer token must fail closed before discovery");
+    let message = error.to_string().to_lowercase();
+    assert!(
+        message.contains("401")
+            || message.contains("unauthorized")
+            || message.contains("auth required"),
+        "unexpected denial signal: {message}"
+    );
+
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
+#[cfg(feature = "mcp")]
+struct GrantToolControlFixture {
+    _temporary: tempfile::TempDir,
+    paths: ExtensionPaths,
+    runtime: Arc<FakeRuntime>,
+}
+
+#[cfg(feature = "mcp")]
+impl GrantToolControlFixture {
+    async fn install() -> Self {
+        let temporary = tempfile::tempdir().unwrap();
+        let installation = control_installation();
+        let package_source = temporary.path().join("managed-task-package");
+        write_grant_tool_task_package(&package_source).await;
+        let candidate =
+            ExtensionLifecyclePackage::prepare_local("acme/research", &package_source, true)
+                .await
+                .unwrap();
+        let catalog = verified_grant_tool_catalog(&candidate);
+        let package_lock = PluginPackageResolver::new(
+            PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap(),
+        )
+        .resolve(catalog, Vec::new())
+        .unwrap();
+        let paths = ExtensionPaths::new(
+            temporary.path().join("data"),
+            temporary.path().join("state"),
+            installation.clone(),
+        )
+        .unwrap();
+        let artifact_admission = paths
+            .artifact_store()
+            .acquire_reference_admission()
+            .await
+            .unwrap();
+        paths
+            .artifact_store()
+            .admit_prepared_package(&artifact_admission, &candidate)
+            .await
+            .unwrap();
+        drop(artifact_admission);
+
+        let surface = PluginSurfaceRef {
+            kind: PluginSurfaceKind::Tool,
+            id: "convert".to_string(),
+        };
+        let placeholder_provider = PlannedProviderEvidence {
+            surface: PlanQualifiedSurfaceRef {
+                package_id: candidate.package_id().to_string(),
+                surface: surface.clone(),
+            },
+            provider_id: "test-runtime".to_string(),
+            provider_build_id: "build-1".to_string(),
+            capability_digest: digest('6'),
+            semantics_profile_digest: digest('7'),
+            enforcement: PlanEnforcementProfile::Sandbox,
+        };
+        let proposal_seed = super::aggregate_tests::grant_fixtures::reviewed_grant_operation_for(
+            &installation,
+            "operation:capability-plane:grant-tool-invoke",
+            PluginOperationAction::Install,
+            None,
+            None,
+            Some(package_lock.clone()),
+            Some(vec![placeholder_provider]),
+        );
+        let proposal = proposal_seed
+            .authorization
+            .grant_transition
+            .as_ref()
+            .and_then(|transition| transition.change_set.changes[0].after.as_ref())
+            .expect("grant install must carry a proposal");
+        let proposal_digest = proposal.descriptor_digest().unwrap();
+        let plan = plan_tool_task_release(
+            RuntimeSurfaceContext::new(
+                proposal.package_id.clone(),
+                proposal.package_digest.clone(),
+                PlanScope {
+                    kind: PlanScopeKind::Workspace,
+                    id: proposal.scope_id.clone(),
+                },
+                proposal_digest.clone(),
+                surface.clone(),
+                1,
+            )
+            .unwrap(),
+            &task_surface(),
+            &schema_bearing_task_descriptor(),
+            artifact(
+                &schema_bearing_task_descriptor().artifact.digest,
+                &schema_bearing_task_descriptor().artifact.media_type,
+            ),
+            RuntimeTaskInvocation::new("invoke", Vec::new()).unwrap(),
+            grant_tool_task_policy(),
+            NetworkMode::None,
+        )
+        .unwrap();
+        assert!(
+            plan.tool_schema_attestation().is_some(),
+            "Grant Tool plans must carry Runtime schema attestation for strict admission"
+        );
+        let runtime_capabilities = grant_tool_runtime_capabilities(&plan);
+        let runtime = Arc::new(FakeRuntime::new(runtime_capabilities.clone(), true));
+        let provider_evidence = PlannedProviderEvidence {
+            surface: PlanQualifiedSurfaceRef {
+                package_id: candidate.package_id().to_string(),
+                surface,
+            },
+            provider_id: "test-runtime".to_string(),
+            provider_build_id: "build-1".to_string(),
+            capability_digest: runtime_capabilities_digest(&runtime_capabilities).unwrap(),
+            semantics_profile_digest: plan.spec().semantics_profile_digest.clone().unwrap(),
+            enforcement: PlanEnforcementProfile::Sandbox,
+        };
+        let reviewed = super::aggregate_tests::grant_fixtures::reviewed_grant_operation_for(
+            &installation,
+            "operation:capability-plane:grant-tool-invoke",
+            PluginOperationAction::Install,
+            None,
+            None,
+            Some(package_lock),
+            Some(vec![provider_evidence.clone()]),
+        );
+        assert_eq!(
+            reviewed
+                .authorization
+                .grant_transition
+                .as_ref()
+                .and_then(|transition| transition.change_set.changes[0].after.as_ref())
+                .unwrap()
+                .descriptor_digest()
+                .unwrap(),
+            proposal_digest
+        );
+        let publication = RuntimeSurfacePlanPublication::new(
+            RuntimeSurfacePlanKey::from_plan(&plan, &provider_evidence).unwrap(),
+            plan,
+        )
+        .unwrap();
+
+        let mut registry = RuntimeClientRegistry::new();
+        registry
+            .register(Arc::new(GrantToolRuntimeFactory {
+                provider_id: ProviderId::parse("test-runtime").unwrap(),
+                client: runtime.clone(),
+            }))
+            .unwrap();
+        let lifecycle = ProductionControlLifecycle::from_extension_paths(
+            &paths,
+            ProductionControlHostDependencies::with_system_clock(
+                Arc::new(registry),
+                Arc::new(CompositionReadiness),
+                Arc::new(StrictToolCatalogProjection),
+                Arc::new(UnexpectedDynamicSurfacePort),
+            ),
+        )
+        .unwrap();
+        lifecycle.initialize().await.unwrap();
+        let authorization = CognitivePackageAuthorizationEvidence {
+            operation_confirmation: reviewed.authorization.operation_confirmation.clone(),
+            grant_confirmations: reviewed.authorization.grant_confirmations.clone(),
+        };
+        let grants = PlannedWorkspaceGrantOperation {
+            snapshot: reviewed
+                .authorization
+                .grant_transition
+                .as_ref()
+                .unwrap()
+                .snapshot
+                .clone(),
+            change_set: reviewed
+                .authorization
+                .grant_transition
+                .as_ref()
+                .unwrap()
+                .change_set
+                .clone(),
+            ceilings: Vec::new(),
+        };
+        let maintenance = Arc::new(
+            a3s_use_extension::StateMaintenanceLock::new(paths.state_root())
+                .acquire_shared()
+                .await
+                .unwrap(),
+        );
+        lifecycle
+            .apply_reviewed_operation(
+                &reviewed.envelope,
+                &authorization,
+                Some(&grants),
+                reviewed.reviewed_at_ms,
+                reviewed.reviewed_at_ms + 10,
+                &[publication],
+                maintenance,
+            )
+            .await
+            .unwrap();
+        let cursor = lifecycle
+            .composition()
+            .store()
+            .published_capability()
+            .await
+            .unwrap()
+            .unwrap();
+        publish_grant_tool_descriptor_snapshot(&paths, &cursor).await;
+        // Drop the admitting lifecycle; callers reopen from durable paths.
+        drop(lifecycle);
+        Self {
+            _temporary: temporary,
+            paths,
+            runtime,
+        }
+    }
+
+    fn reopen_lifecycle(&self) -> ProductionControlLifecycle {
+        let mut registry = RuntimeClientRegistry::new();
+        registry
+            .register(Arc::new(GrantToolRuntimeFactory {
+                provider_id: ProviderId::parse("test-runtime").unwrap(),
+                client: self.runtime.clone(),
+            }))
+            .unwrap();
+        let lifecycle = ProductionControlLifecycle::from_extension_paths(
+            &self.paths,
+            ProductionControlHostDependencies::with_system_clock(
+                Arc::new(registry),
+                Arc::new(CompositionReadiness),
+                Arc::new(StrictToolCatalogProjection),
+                Arc::new(UnexpectedDynamicSurfacePort),
+            ),
+        )
+        .unwrap();
+        // Reopen against already-initialized Control; initialize is idempotent
+        // for an existing root.
+        lifecycle
+    }
+
+    /// Replace the installed Grant Tool package with a newer local candidate
+    /// under the same Control root, publishing a fresh Runtime plan + Grant.
+    async fn apply_live_upgrade(&self, lifecycle: &ProductionControlLifecycle) {
+        let prior = lifecycle
+            .composition()
+            .store()
+            .current_generation()
+            .await
+            .unwrap()
+            .expect("install must leave a generation");
+        let package_source = self._temporary.path().join("managed-task-package-v2");
+        write_grant_tool_task_package_at(
+            &package_source,
+            "2.1.0",
+            "# Grant Tool Task fixture v2\n",
+        )
+        .await;
+        let candidate =
+            ExtensionLifecyclePackage::prepare_local("acme/research", &package_source, true)
+                .await
+                .unwrap();
+        let catalog = verified_grant_tool_catalog(&candidate);
+        let package_lock = PluginPackageResolver::new(
+            PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap(),
+        )
+        .resolve(catalog, Vec::new())
+        .unwrap();
+        let artifact_admission = self
+            .paths
+            .artifact_store()
+            .acquire_reference_admission()
+            .await
+            .unwrap();
+        self.paths
+            .artifact_store()
+            .admit_prepared_package(&artifact_admission, &candidate)
+            .await
+            .unwrap();
+        drop(artifact_admission);
+
+        let surface = PluginSurfaceRef {
+            kind: PluginSurfaceKind::Tool,
+            id: "convert".to_string(),
+        };
+        let placeholder_provider = PlannedProviderEvidence {
+            surface: PlanQualifiedSurfaceRef {
+                package_id: candidate.package_id().to_string(),
+                surface: surface.clone(),
+            },
+            provider_id: "test-runtime".to_string(),
+            provider_build_id: "build-1".to_string(),
+            capability_digest: digest('6'),
+            semantics_profile_digest: digest('7'),
+            enforcement: PlanEnforcementProfile::Sandbox,
+        };
+        let proposal_seed = super::aggregate_tests::grant_fixtures::reviewed_grant_operation_for(
+            &prior.snapshot.installation,
+            "operation:capability-plane:grant-tool-upgrade",
+            PluginOperationAction::Upgrade,
+            Some(&prior),
+            None,
+            Some(package_lock.clone()),
+            Some(vec![placeholder_provider]),
+        );
+        let proposal = proposal_seed
+            .authorization
+            .grant_transition
+            .as_ref()
+            .and_then(|transition| transition.change_set.changes[0].after.as_ref())
+            .expect("grant upgrade must carry a proposal");
+        let proposal_digest = proposal.descriptor_digest().unwrap();
+        // Upgrade allocates the next package lifecycle incarnation (install was 1).
+        let lifecycle_generation = prior
+            .package_lifecycles
+            .iter()
+            .map(|lifecycle| lifecycle.lifecycle_generation)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        let plan = plan_tool_task_release(
+            RuntimeSurfaceContext::new(
+                proposal.package_id.clone(),
+                proposal.package_digest.clone(),
+                PlanScope {
+                    kind: PlanScopeKind::Workspace,
+                    id: proposal.scope_id.clone(),
+                },
+                proposal_digest.clone(),
+                surface.clone(),
+                lifecycle_generation,
+            )
+            .unwrap(),
+            &task_surface(),
+            &schema_bearing_task_descriptor(),
+            artifact(
+                &schema_bearing_task_descriptor().artifact.digest,
+                &schema_bearing_task_descriptor().artifact.media_type,
+            ),
+            RuntimeTaskInvocation::new("invoke", Vec::new()).unwrap(),
+            grant_tool_task_policy(),
+            NetworkMode::None,
+        )
+        .unwrap();
+        assert!(plan.tool_schema_attestation().is_some());
+        // Reuse the fixture FakeRuntime capability digest so the upgraded
+        // provider selection still joins the same provider lease.
+        let runtime_capabilities = self.runtime.capabilities().await.unwrap();
+        let provider_evidence = PlannedProviderEvidence {
+            surface: PlanQualifiedSurfaceRef {
+                package_id: candidate.package_id().to_string(),
+                surface,
+            },
+            provider_id: "test-runtime".to_string(),
+            provider_build_id: "build-1".to_string(),
+            capability_digest: runtime_capabilities_digest(&runtime_capabilities).unwrap(),
+            semantics_profile_digest: plan.spec().semantics_profile_digest.clone().unwrap(),
+            enforcement: PlanEnforcementProfile::Sandbox,
+        };
+        let reviewed = super::aggregate_tests::grant_fixtures::reviewed_grant_operation_for(
+            &prior.snapshot.installation,
+            "operation:capability-plane:grant-tool-upgrade",
+            PluginOperationAction::Upgrade,
+            Some(&prior),
+            None,
+            Some(package_lock),
+            Some(vec![provider_evidence.clone()]),
+        );
+        assert_eq!(
+            reviewed
+                .authorization
+                .grant_transition
+                .as_ref()
+                .and_then(|transition| transition.change_set.changes[0].after.as_ref())
+                .unwrap()
+                .descriptor_digest()
+                .unwrap(),
+            proposal_digest
+        );
+        let publication = RuntimeSurfacePlanPublication::new(
+            RuntimeSurfacePlanKey::from_plan(&plan, &provider_evidence).unwrap(),
+            plan,
+        )
+        .unwrap();
+        let authorization = CognitivePackageAuthorizationEvidence {
+            operation_confirmation: reviewed.authorization.operation_confirmation.clone(),
+            grant_confirmations: reviewed.authorization.grant_confirmations.clone(),
+        };
+        let grants = PlannedWorkspaceGrantOperation {
+            snapshot: reviewed
+                .authorization
+                .grant_transition
+                .as_ref()
+                .unwrap()
+                .snapshot
+                .clone(),
+            change_set: reviewed
+                .authorization
+                .grant_transition
+                .as_ref()
+                .unwrap()
+                .change_set
+                .clone(),
+            ceilings: Vec::new(),
+        };
+        let maintenance = Arc::new(
+            a3s_use_extension::StateMaintenanceLock::new(self.paths.state_root())
+                .acquire_shared()
+                .await
+                .unwrap(),
+        );
+        lifecycle
+            .apply_reviewed_operation(
+                &reviewed.envelope,
+                &authorization,
+                Some(&grants),
+                reviewed.reviewed_at_ms,
+                reviewed.reviewed_at_ms + 10,
+                &[publication],
+                maintenance,
+            )
+            .await
+            .unwrap();
+        let cursor = lifecycle
+            .composition()
+            .store()
+            .published_capability()
+            .await
+            .unwrap()
+            .unwrap();
+        publish_grant_tool_descriptor_snapshot(&self.paths, &cursor).await;
+    }
+}
+
+#[cfg(feature = "mcp")]
+async fn assert_independent_convert_tool_invoke(lifecycle: &ProductionControlLifecycle) {
+    let session = lifecycle
+        .open_published_capability_gateway(CapabilityGatewayCompositionOptions::default())
+        .await
+        .unwrap()
+        .expect("Control must reopen the Grant-backed Tool catalog");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let server_handle = tokio::spawn(
+        session.serve_streamable_http(
+            listener,
+            CapabilityGatewayHttpConfig::for_principal(
+                "grant-tool-token",
+                "agent/independent-rust",
+            )
+            .unwrap(),
+            shutdown.clone(),
+        ),
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header("grant-tool-token"),
+    );
+    let client = IndependentGatewayClient.serve(transport).await.unwrap();
+    let tools = client.list_all_tools().await.unwrap();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].name, "convert");
+    let result = client
+        .call_tool(CallToolRequestParam {
+            name: "convert".into(),
+            arguments: Some(
+                serde_json::json!({ "args": [] })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        result.is_error,
+        Some(false),
+        "Tool Task invoke failed: {:?}",
+        result.structured_content
+    );
+    assert_eq!(
+        result
+            .structured_content
+            .as_ref()
+            .and_then(|value| value.get("exitCode"))
+            .and_then(|value| value.as_i64()),
+        Some(0)
+    );
+    client.cancel().await.unwrap();
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grant_tool_publishes_signed_schema_bearing_descriptor_snapshot() {
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    let cursor = lifecycle
+        .composition()
+        .store()
+        .published_capability()
+        .await
+        .unwrap()
+        .unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(&fixture.paths);
+    let key = ControlCapabilityDescriptorSnapshotKey::new(
+        cursor.installation.clone(),
+        cursor.installation_generation,
+        cursor.capability_generation,
+        cursor.descriptor_digest.clone(),
+    )
+    .unwrap();
+    let snapshot = store
+        .get(&key)
+        .await
+        .unwrap()
+        .expect("Grant Tool install must publish a descriptor snapshot");
+    assert!(
+        snapshot.signed_descriptions().is_some(),
+        "Grant Tool must retain signed envelopes, not proof-only snapshots"
+    );
+    let signer = "registry/acme";
+    let (_, trust_store) = signed_descriptor_for(
+        snapshot.proofs()[0].descriptor().clone(),
+        signer,
+        1_000,
+        2_000,
+    );
+    let proofs = snapshot.reverify_signed(&trust_store, 1_500).unwrap();
+    assert_eq!(proofs.len(), 1);
+    match &proofs[0].descriptor().capability {
+        CapabilityDescriptorKind::Tool {
+            input_schema,
+            output_schema,
+            runtime_descriptor_digest: Some(runtime_digest),
+            ..
+        } => {
+            assert_eq!(input_schema, &grant_tool_input_schema());
+            assert_eq!(output_schema, &grant_tool_output_schema());
+            assert!(runtime_digest.starts_with("sha256:"));
+        }
+        other => panic!("expected schema-bearing Tool descriptor, got {other:?}"),
+    }
+    let projector = ControlCapabilityDescriptorProjection::from_signed_snapshot_store_at(
+        store,
+        trust_store,
+        1_500,
+    )
+    .unwrap();
+    // Re-admit through the product SignedDurable projector against the same
+    // published catalog identity the independent clients already invoke.
+    let published = CapabilityGatewayCatalogStore::from_extension_paths(&fixture.paths)
+        .get(&cursor.catalog.digest)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        published.descriptors()[0].capability,
+        proofs[0].descriptor().capability
+    );
+    drop(projector);
+    assert_independent_convert_tool_invoke(&lifecycle).await;
+    drop(lifecycle);
+
+    // Product hosts inject Registry trust material into the signed catalog
+    // projector. Construction must succeed against the published signed
+    // snapshot root (invoke still uses the durable catalog payload).
+    let (_, trust_store_for_host) =
+        signed_descriptor_for(published.descriptors()[0].clone(), signer, 1_000, 2_000);
+    let dependencies = ProductionControlHostDependencies::standalone_with_signed_catalog(
+        &fixture.paths,
+        Arc::new(RuntimeClientRegistry::new()),
+        trust_store_for_host,
+        None,
+    )
+    .expect("signed catalog production dependencies must compose");
+    let _ = ProductionControlLifecycle::from_extension_paths(&fixture.paths, dependencies)
+        .expect("signed catalog production lifecycle must compose");
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_rust_client_invokes_tool_task_under_committed_control_grant() {
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    assert_eq!(
+        lifecycle
+            .composition()
+            .store()
+            .current_generation()
+            .await
+            .unwrap()
+            .unwrap()
+            .grants
+            .len(),
+        1
+    );
+    assert_independent_convert_tool_invoke(&lifecycle).await;
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_rust_client_invokes_grant_tool_after_control_process_restart() {
+    let fixture = GrantToolControlFixture::install().await;
+    // Model process restart: new lifecycle composition over the same durable
+    // Control root, FakeRuntime registry, and published catalog/receipts.
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    assert!(lifecycle
+        .composition()
+        .store()
+        .published_capability()
+        .await
+        .unwrap()
+        .is_some());
+    assert_independent_convert_tool_invoke(&lifecycle).await;
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_rust_client_grant_tool_denied_for_foreign_installation_scope() {
+    let fixture = GrantToolControlFixture::install().await;
+    // Peer installation with its own Control root must not observe or serve the
+    // Grant Tool publication committed under workspace-01.
+    let foreign_temporary = tempfile::tempdir().unwrap();
+    let foreign_installation = a3s_use_core::InstallationId::new(
+        a3s_use_core::InstallationKind::Workspace,
+        "workspace-99",
+    )
+    .unwrap();
+    let foreign_paths = ExtensionPaths::new(
+        foreign_temporary.path().join("data"),
+        foreign_temporary.path().join("state"),
+        foreign_installation,
+    )
+    .unwrap();
+    let mut registry = RuntimeClientRegistry::new();
+    registry
+        .register(Arc::new(GrantToolRuntimeFactory {
+            provider_id: ProviderId::parse("test-runtime").unwrap(),
+            client: fixture.runtime.clone(),
+        }))
+        .unwrap();
+    let foreign = ProductionControlLifecycle::from_extension_paths(
+        &foreign_paths,
+        ProductionControlHostDependencies::with_system_clock(
+            Arc::new(registry),
+            Arc::new(CompositionReadiness),
+            Arc::new(StrictToolCatalogProjection),
+            Arc::new(UnexpectedDynamicSurfacePort),
+        ),
+    )
+    .unwrap();
+    foreign.initialize().await.unwrap();
+    assert!(
+        foreign
+            .composition()
+            .store()
+            .published_capability()
+            .await
+            .unwrap()
+            .is_none(),
+        "a foreign installation scope must not observe another scope's published cursor"
+    );
+    let opened = foreign
+        .open_published_capability_gateway(CapabilityGatewayCompositionOptions::default())
+        .await
+        .unwrap();
+    assert!(
+        opened.is_none(),
+        "foreign installation scope must fail closed before serving Grant Tool invoke"
+    );
+    // The original scope remains serveable after the foreign probe.
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    assert_independent_convert_tool_invoke(&lifecycle).await;
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_rust_client_grant_tool_fails_closed_after_uninstall() {
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    let prior = lifecycle
+        .composition()
+        .store()
+        .current_generation()
+        .await
+        .unwrap()
+        .expect("install must leave a generation");
+    let uninstall = super::aggregate_tests::grant_fixtures::reviewed_grant_operation_for(
+        &prior.snapshot.installation,
+        "operation:capability-plane:grant-tool-uninstall",
+        PluginOperationAction::Uninstall,
+        Some(&prior),
+        None,
+        None,
+        None,
+    );
+    let authorization = CognitivePackageAuthorizationEvidence {
+        operation_confirmation: uninstall.authorization.operation_confirmation.clone(),
+        grant_confirmations: uninstall.authorization.grant_confirmations.clone(),
+    };
+    let grants = uninstall
+        .authorization
+        .grant_transition
+        .as_ref()
+        .map(|transition| PlannedWorkspaceGrantOperation {
+            snapshot: transition.snapshot.clone(),
+            change_set: transition.change_set.clone(),
+            ceilings: Vec::new(),
+        });
+    let maintenance = Arc::new(
+        a3s_use_extension::StateMaintenanceLock::new(fixture.paths.state_root())
+            .acquire_shared()
+            .await
+            .unwrap(),
+    );
+    lifecycle
+        .apply_reviewed_operation(
+            &uninstall.envelope,
+            &authorization,
+            grants.as_ref(),
+            uninstall.reviewed_at_ms,
+            uninstall.reviewed_at_ms + 10,
+            &[],
+            maintenance,
+        )
+        .await
+        .unwrap();
+    let after = lifecycle
+        .composition()
+        .store()
+        .current_generation()
+        .await
+        .unwrap()
+        .expect("uninstall must commit");
+    assert!(after.grants.is_empty());
+    // Catalog may still reopen empty, but Grant-backed Tool invoke must not
+    // succeed without a committed Grant.
+    let session = lifecycle
+        .open_published_capability_gateway(CapabilityGatewayCompositionOptions::default())
+        .await
+        .unwrap();
+    if let Some(session) = session {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let shutdown = CancellationToken::new();
+        let server_handle = tokio::spawn(
+            session.serve_streamable_http(
+                listener,
+                CapabilityGatewayHttpConfig::for_principal(
+                    "grant-tool-token",
+                    "agent/independent-rust",
+                )
+                .unwrap(),
+                shutdown.clone(),
+            ),
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        let transport = StreamableHttpClientTransport::from_config(
+            StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+                .auth_header("grant-tool-token"),
+        );
+        let client = IndependentGatewayClient.serve(transport).await.unwrap();
+        let tools = client.list_all_tools().await.unwrap();
+        assert!(
+            tools.is_empty(),
+            "uninstall must retire Grant Tool discovery"
+        );
+        client.cancel().await.unwrap();
+        shutdown.cancel();
+        server_handle.await.unwrap().unwrap();
+    }
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_rust_client_invokes_grant_tool_after_live_upgrade() {
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    let prior_generation = lifecycle
+        .composition()
+        .store()
+        .published_capability()
+        .await
+        .unwrap()
+        .unwrap()
+        .capability_generation;
+    fixture.apply_live_upgrade(&lifecycle).await;
+    let after = lifecycle
+        .composition()
+        .store()
+        .published_capability()
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        after.capability_generation > prior_generation,
+        "live upgrade must advance the published capability generation"
+    );
+    assert_eq!(
+        lifecycle
+            .composition()
+            .store()
+            .current_generation()
+            .await
+            .unwrap()
+            .unwrap()
+            .grants
+            .len(),
+        1
+    );
+    assert_independent_convert_tool_invoke(&lifecycle).await;
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_rust_client_grant_tool_prior_generation_drains_on_live_upgrade() {
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    let prior_session = lifecycle
+        .open_published_capability_gateway(CapabilityGatewayCompositionOptions::default())
+        .await
+        .unwrap()
+        .expect("gen1 Grant Tool catalog must open");
+    let prior_key = prior_session.current_key().unwrap();
+    // Package-generation leases retained by the gen1 Gateway session fence
+    // Upgrade Remove/Prepare drain. Prior-generation drain is the host
+    // releasing that endpoint before the Replace cutover can complete.
+    drop(prior_session);
+    fixture.apply_live_upgrade(&lifecycle).await;
+    let target = lifecycle
+        .composition()
+        .store()
+        .published_capability()
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        target.capability_generation > prior_key.generation,
+        "drained prior generation must be replaced by a newer published catalog"
+    );
+    let replacement = lifecycle
+        .open_published_capability_gateway(CapabilityGatewayCompositionOptions::default())
+        .await
+        .unwrap()
+        .expect("upgraded Grant Tool catalog must open");
+    assert_ne!(
+        replacement.current_key().unwrap(),
+        prior_key,
+        "post-drain Gateway session must not reuse the prior publication key"
+    );
+    assert_eq!(
+        replacement.current_key().unwrap().digest,
+        target.catalog.digest
+    );
+    assert_independent_convert_tool_invoke(&lifecycle).await;
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn production_retained_gateway_cutover_activates_during_upgrade_drain() {
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    let options = CapabilityGatewayCompositionOptions::default();
+    let session = lifecycle
+        .open_published_capability_gateway(options.clone())
+        .await
+        .unwrap()
+        .expect("gen1 Grant Tool catalog must open");
+    let prior_key = session.current_key().unwrap();
+    // Retain the live session across upgrade: production drain must activate
+    // cutover after CapabilityCutover so prior-generation leases release before
+    // Remove/Prepare (without requiring the host to drop the endpoint first).
+    lifecycle.attach_retained_gateway_cutover(session.clone(), options);
+    fixture.apply_live_upgrade(&lifecycle).await;
+    let next_key = session.current_key().unwrap();
+    assert_ne!(
+        next_key, prior_key,
+        "retained Gateway must swap to the upgraded Control publication during drain"
+    );
+    assert!(
+        next_key.generation > prior_key.generation,
+        "cutover activation must advance the live session generation"
+    );
+    lifecycle.clear_retained_gateway_cutover();
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn production_gateway_reconcile_is_unchanged_for_the_current_grant_tool_publication() {
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    let session = lifecycle
+        .open_published_capability_gateway(CapabilityGatewayCompositionOptions::default())
+        .await
+        .unwrap()
+        .expect("Grant Tool catalog must open");
+    let key = session.current_key().unwrap();
+    let reconciled = lifecycle
+        .reconcile_published_capability_gateway(
+            &session,
+            CapabilityGatewayCompositionOptions::default(),
+        )
+        .await
+        .unwrap()
+        .expect("current publication must reconcile");
+    assert!(matches!(
+        reconciled,
+        super::composition::ControlCapabilityGatewayReconciliation::Unchanged(_)
+    ));
+    assert_eq!(session.current_key().unwrap(), key);
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn public_cognitive_package_manager_gateway_face_after_grant_tool_install() {
+    use std::time::Duration;
+
+    use a3s_use_extension::ExtensionRegistry;
+    use tokio_util::sync::CancellationToken;
+
+    use crate::cognitive_package::CognitivePackageManager;
+
+    let fixture = GrantToolControlFixture::install().await;
+    // Public embedding face only — no private ProductionControlLifecycle.
+    let manager =
+        CognitivePackageManager::new(ExtensionRegistry::new(fixture.paths.clone())).unwrap();
+    let options = CapabilityGatewayCompositionOptions::default();
+    let session = manager
+        .open_published_capability_gateway(options.clone())
+        .await
+        .unwrap()
+        .expect("Grant Tool catalog must open through the public manager face");
+    let key = session.current_key().unwrap();
+    let _activation = manager
+        .gateway_cutover_activation(session.clone(), options.clone())
+        .await
+        .expect("public cutover activation must be constructible for a retained session");
+    let shutdown = CancellationToken::new();
+    let watch_manager = manager.clone();
+    let watch_session = session.clone();
+    let watch_shutdown = shutdown.clone();
+    let watch = tokio::spawn(async move {
+        watch_manager
+            .watch_and_reconcile_published_capability_gateway(
+                &watch_session,
+                options,
+                &watch_shutdown,
+                Duration::from_millis(20),
+            )
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    assert_eq!(session.current_key().unwrap(), key);
+    shutdown.cancel();
+    watch.await.unwrap().unwrap();
+    manager
+        .drain_and_retain_published_capability_gateway(&session, Duration::from_secs(1))
+        .await
+        .expect("public drain must succeed for the Control-selected publication");
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn production_retained_gateway_watch_reconciles_then_drains_on_shutdown() {
+    use tokio_util::sync::CancellationToken;
+
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    let session = lifecycle
+        .open_published_capability_gateway(CapabilityGatewayCompositionOptions::default())
+        .await
+        .unwrap()
+        .expect("Grant Tool catalog must open");
+    let key = session.current_key().unwrap();
+    let shutdown = CancellationToken::new();
+    let watch_lifecycle = lifecycle.clone();
+    let watch_session = session.clone();
+    let watch_shutdown = shutdown.clone();
+    let watch = tokio::spawn(async move {
+        watch_lifecycle
+            .watch_and_reconcile_published_capability_gateway(
+                &watch_session,
+                CapabilityGatewayCompositionOptions::default(),
+                &watch_shutdown,
+                std::time::Duration::from_millis(20),
+            )
+            .await
+    });
+    // One poll tick must observe Unchanged for the current publication.
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    assert_eq!(session.current_key().unwrap(), key);
+    shutdown.cancel();
+    watch.await.unwrap().unwrap();
+    let retention = lifecycle
+        .drain_and_retain_published_capability_gateway(
+            &session,
+            std::time::Duration::from_secs(1),
+            &[],
+            &[],
+        )
+        .await
+        .expect("shutdown drain must retain the Control-selected payloads");
+    assert!(retention.catalog.retained_record_count >= 1);
+}
+
+#[cfg(feature = "mcp")]
+fn independent_clients_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/independent_clients")
+}
+
+#[cfg(feature = "mcp")]
+fn ensure_typescript_client_deps() {
+    let ts_root = independent_clients_root().join("ts");
+    if ts_root
+        .join("node_modules")
+        .join("@modelcontextprotocol")
+        .exists()
+    {
+        return;
+    }
+    let status = std::process::Command::new("npm")
+        .args(["install", "--no-fund", "--no-audit"])
+        .current_dir(&ts_root)
+        .status()
+        .expect("npm must be available to install the independent TypeScript MCP client");
+    assert!(
+        status.success(),
+        "npm install failed for independent TS client"
+    );
+}
+
+#[cfg(feature = "mcp")]
+fn ensure_python_client_deps() {
+    let requirements = independent_clients_root().join("python/requirements.txt");
+    let mut command = python_command();
+    let status = command
+        .args([
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            requirements.to_str().unwrap(),
+            "--quiet",
+        ])
+        .status()
+        .expect("Python must be available to install the independent MCP client");
+    assert!(
+        status.success(),
+        "pip install failed for independent Python MCP client"
+    );
+}
+
+#[cfg(feature = "mcp")]
+fn python_command() -> std::process::Command {
+    for (executable, prefix) in [
+        ("python3", &[][..]),
+        ("python", &[][..]),
+        ("py", &["-3"][..]),
+    ] {
+        let mut probe = std::process::Command::new(executable);
+        probe.args(prefix).arg("--version");
+        if probe.output().is_ok_and(|output| output.status.success()) {
+            let mut command = std::process::Command::new(executable);
+            command.args(prefix);
+            return command;
+        }
+    }
+    panic!("Python 3 is required for the independent Python MCP client");
+}
+
+#[cfg(feature = "mcp")]
+async fn assert_external_client_invokes_convert(
+    lifecycle: &ProductionControlLifecycle,
+    launch: impl FnOnce(&str, &str) -> std::process::Output + Send + 'static,
+) {
+    let session = lifecycle
+        .open_published_capability_gateway(CapabilityGatewayCompositionOptions::default())
+        .await
+        .unwrap()
+        .expect("Control must reopen the Grant-backed Tool catalog");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let shutdown = CancellationToken::new();
+    let server_handle = tokio::spawn(
+        session.serve_streamable_http(
+            listener,
+            CapabilityGatewayHttpConfig::for_principal(
+                "grant-tool-token",
+                "agent/independent-external",
+            )
+            .unwrap(),
+            shutdown.clone(),
+        ),
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let endpoint = format!("http://127.0.0.1:{port}/mcp");
+    let output = tokio::task::spawn_blocking(move || launch(&endpoint, "grant-tool-token"))
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "independent client failed: status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    shutdown.cancel();
+    server_handle.await.unwrap().unwrap();
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_typescript_client_invokes_tool_task_under_committed_control_grant() {
+    ensure_typescript_client_deps();
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    let script = independent_clients_root().join("ts/call_convert.mjs");
+    assert_external_client_invokes_convert(&lifecycle, move |endpoint, token| {
+        std::process::Command::new("node")
+            .arg(&script)
+            .env("A3S_GATEWAY_ENDPOINT", endpoint)
+            .env("A3S_GATEWAY_TOKEN", token)
+            .output()
+            .expect("node must launch the independent TypeScript MCP client")
+    })
+    .await;
+}
+
+#[cfg(feature = "mcp")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn independent_python_client_invokes_tool_task_under_committed_control_grant() {
+    ensure_python_client_deps();
+    let fixture = GrantToolControlFixture::install().await;
+    let lifecycle = fixture.reopen_lifecycle();
+    lifecycle.initialize().await.unwrap();
+    let script = independent_clients_root().join("python/call_convert.py");
+    assert_external_client_invokes_convert(&lifecycle, move |endpoint, token| {
+        let mut command = python_command();
+        command
+            .arg(&script)
+            .env("A3S_GATEWAY_ENDPOINT", endpoint)
+            .env("A3S_GATEWAY_TOKEN", token)
+            .output()
+            .expect("Python must launch the independent MCP client")
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -2452,6 +4123,408 @@ async fn assert_dispatch(
              outcome={expected_outcome:?}, observation_changed=true), got {other:?}"
         ),
     }
+}
+
+#[cfg(feature = "mcp")]
+fn exact_tool_descriptor(
+    authority: &ControlCapabilityEffectAuthority,
+) -> Option<CapabilityDescriptor> {
+    let (package_id, surface) = authority
+        .materializations
+        .iter()
+        .find_map(|materialization| {
+            let super::model::ControlEffectSubject::Surface {
+                package_id,
+                surface,
+                ..
+            } = &materialization.intent.subject
+            else {
+                return None;
+            };
+            (surface.kind == PluginSurfaceKind::Tool && surface.id == "convert")
+                .then(|| (package_id.clone(), surface.clone()))
+        })?;
+    let package = authority
+        .generation
+        .snapshot
+        .package_selection(&package_id)?;
+    let lifecycle_generation = authority
+        .generation
+        .package_lifecycles
+        .iter()
+        .find(|lifecycle| lifecycle.package_id == package_id)?
+        .lifecycle_generation;
+    let route = ControlCapabilityDescriptorProjection::route_binding(
+        authority,
+        &PluginPackageId::parse(package_id.clone()).unwrap(),
+        &surface,
+    )
+    .unwrap();
+    let attestation = route.runtime_schema_attestation.as_ref()?;
+    let catalog_surface = package
+        .package
+        .catalog
+        .record
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.reference() == surface)
+        .expect("the descriptor surface must be in the package catalog");
+    let input_schema = grant_tool_input_schema();
+    let output_schema = grant_tool_output_schema();
+    Some(CapabilityDescriptor {
+        schema: a3s_use_core::CAPABILITY_DESCRIPTOR_SCHEMA_V1.to_owned(),
+        package_id: PluginPackageId::parse(package_id).unwrap(),
+        surface: surface.clone(),
+        generation: lifecycle_generation,
+        package_digest: package
+            .package
+            .catalog
+            .record
+            .package
+            .sha256
+            .clone()
+            .unwrap(),
+        manifest_digest: package
+            .package
+            .catalog
+            .record
+            .package
+            .manifest_sha256
+            .clone()
+            .unwrap(),
+        title: "Convert Tool".to_owned(),
+        description: "A Tool Task projected from committed Grant + Runtime evidence.".to_owned(),
+        invocation_ref: route.invocation_ref.clone(),
+        artifact_ref: route.artifact_ref.clone(),
+        endpoint_ref: route.endpoint_ref.clone(),
+        dependencies: catalog_surface.requires.clone(),
+        required_extensions: Vec::new(),
+        publication: CapabilityPublicationEvidence {
+            catalog_record_digest: package
+                .package
+                .catalog
+                .provenance
+                .catalog_record_digest
+                .clone(),
+            signature_digest: digest('e'),
+        },
+        capability: CapabilityDescriptorKind::Tool {
+            name: surface.id.clone(),
+            input_schema,
+            output_schema,
+            annotations: CapabilityToolAnnotations::new(false, false, false, false),
+            runtime_descriptor_digest: Some(attestation.descriptor_digest.clone()),
+        },
+    })
+}
+
+#[cfg(feature = "mcp")]
+fn grant_tool_input_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "args": {
+                "type": "array",
+                "items": { "type": "string" }
+            },
+            "invocationId": { "type": "string" }
+        },
+        "additionalProperties": false
+    })
+}
+
+#[cfg(feature = "mcp")]
+fn grant_tool_output_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "exitCode": { "type": "integer" },
+            "stdout": { "type": "string" },
+            "stderr": { "type": "string" },
+            "truncated": { "type": "boolean" }
+        },
+        "required": ["exitCode", "stderr", "stdout", "truncated"],
+        "additionalProperties": false
+    })
+}
+
+#[cfg(feature = "mcp")]
+fn schema_bearing_task_descriptor() -> a3s_use_core::ToolReleaseDescriptor {
+    let mut descriptor = task_descriptor();
+    descriptor.input_schema = Some(grant_tool_input_schema());
+    descriptor.output_schema = Some(grant_tool_output_schema());
+    descriptor
+}
+
+#[cfg(feature = "mcp")]
+async fn publish_grant_tool_descriptor_snapshot(
+    paths: &ExtensionPaths,
+    cursor: &super::model::ControlPublishedCapabilityCursor,
+) {
+    let catalog = CapabilityGatewayCatalogStore::from_extension_paths(paths)
+        .get(&cursor.catalog.digest)
+        .await
+        .unwrap()
+        .expect("Grant Tool cutover must publish a catalog before the descriptor snapshot");
+    let signer = "registry/acme";
+    let key = ControlCapabilityDescriptorSnapshotKey::new(
+        cursor.installation.clone(),
+        cursor.installation_generation,
+        cursor.capability_generation,
+        cursor.descriptor_digest.clone(),
+    )
+    .unwrap();
+    let store = ControlCapabilityDescriptorSnapshotStore::from_extension_paths(paths);
+    if catalog.descriptors().is_empty() {
+        store
+            .publish(
+                &ControlCapabilityDescriptorSnapshot::new(
+                    key,
+                    Vec::new(),
+                    ControlCapabilitySignerPolicy::new(BTreeMap::new()).unwrap(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        return;
+    }
+    let now_unix_seconds = 1_500;
+    let mut signed_descriptions = Vec::with_capacity(catalog.descriptors().len());
+    let mut trust_store = None;
+    for descriptor in catalog.descriptors() {
+        let (signed, store_for_descriptor) =
+            signed_descriptor_for(descriptor.clone(), signer, 1_000, 2_000);
+        trust_store = Some(store_for_descriptor);
+        signed_descriptions.push(signed);
+    }
+    let policy = signer_policy_for(catalog.descriptors()[0].package_id.as_str(), signer);
+    store
+        .publish_signed(
+            key,
+            signed_descriptions,
+            policy,
+            trust_store.as_ref().unwrap(),
+            now_unix_seconds,
+        )
+        .await
+        .unwrap();
+}
+
+#[cfg(feature = "mcp")]
+fn grant_tool_task_policy() -> crate::plugin_runtime::RuntimeWorkloadPolicy {
+    use crate::plugin_runtime::{RuntimeResourcePolicy, RuntimeWorkloadPolicy};
+    RuntimeWorkloadPolicy {
+        isolation: IsolationLevel::Sandbox,
+        resources: RuntimeResourcePolicy {
+            cpu_millis: 500,
+            memory_bytes: 256 * 1024 * 1024,
+            pids: 64,
+            ephemeral_storage_bytes: Some(512 * 1024 * 1024),
+        },
+        mounts: Vec::new(),
+        secrets: Vec::new(),
+        non_secret_environment: std::collections::BTreeMap::from([(
+            "A3S_PLUGIN_MODE".to_string(),
+            "managed".to_string(),
+        )]),
+        working_directory: None,
+    }
+}
+
+#[cfg(feature = "mcp")]
+fn grant_tool_runtime_capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {
+    RuntimeCapabilities {
+        schema: RuntimeCapabilities::SCHEMA.to_string(),
+        provider_id: ProviderId::parse("test-runtime").unwrap(),
+        provider_build: "build-1".to_string(),
+        unit_classes: vec![RuntimeUnitClass::Task, RuntimeUnitClass::Service],
+        artifact_media_types: vec![plan.spec().artifact.media_type.clone()],
+        isolation_levels: vec![IsolationLevel::Sandbox, IsolationLevel::Container],
+        network_modes: vec![NetworkMode::None, NetworkMode::Service],
+        mount_kinds: Vec::new(),
+        health_check_kinds: vec![HealthCheckKind::Http],
+        resource_controls: vec![
+            ResourceControl::Cpu,
+            ResourceControl::Memory,
+            ResourceControl::Pids,
+            ResourceControl::EphemeralStorage,
+            ResourceControl::ExecutionTimeout,
+        ],
+        features: vec![
+            RuntimeFeature::DurableIdentity,
+            RuntimeFeature::ServiceTcp,
+            RuntimeFeature::Logs,
+            RuntimeFeature::Stop,
+            RuntimeFeature::Remove,
+        ],
+    }
+}
+
+#[cfg(feature = "mcp")]
+struct GrantToolRuntimeFactory {
+    provider_id: ProviderId,
+    client: Arc<dyn RuntimeClient>,
+}
+
+#[cfg(feature = "mcp")]
+#[async_trait::async_trait]
+impl RuntimeProviderFactory for GrantToolRuntimeFactory {
+    fn provider_id(&self) -> &ProviderId {
+        &self.provider_id
+    }
+
+    async fn create(&self) -> RuntimeResult<Arc<dyn RuntimeClient>> {
+        Ok(self.client.clone())
+    }
+}
+
+#[cfg(feature = "mcp")]
+fn verified_grant_tool_catalog(
+    candidate: &ExtensionLifecyclePackage,
+) -> VerifiedPluginCatalogRecord {
+    let mut record = PluginCatalogRecord::from_json(include_bytes!(
+        "../../crates/core/fixtures/plugins/catalog-record-v3.json"
+    ))
+    .unwrap();
+    let manifest = candidate.manifest();
+    let prior_version = record.version.clone();
+    record.package_id = manifest.package_id.clone();
+    record.version = manifest.version.clone();
+    if prior_version != record.version {
+        record.archive.target_name = record
+            .archive
+            .target_name
+            .replace(
+                &format!("/{prior_version}/"),
+                &format!("/{}/", record.version),
+            )
+            .replace(
+                &format!("-{prior_version}-"),
+                &format!("-{}-", record.version),
+            );
+        if let Some(planning) = &mut record.planning {
+            planning.target_name = planning.target_name.replace(
+                &format!("/{prior_version}/"),
+                &format!("/{}/", record.version),
+            );
+        }
+    }
+    record.dependencies = manifest.dependencies.clone();
+    record.surfaces = manifest
+        .plugin_surfaces()
+        .unwrap()
+        .into_iter()
+        .map(|surface| {
+            let workload = manifest
+                .tools
+                .iter()
+                .find(|tool| {
+                    surface.surface.kind == PluginSurfaceKind::Tool && tool.id == surface.surface.id
+                })
+                .map(|tool| match &tool.workload {
+                    ToolWorkload::Task(_) => ToolWorkloadClass::Task,
+                    ToolWorkload::Service(_) => ToolWorkloadClass::Service,
+                });
+            let mcp_transport = manifest
+                .mcp_servers
+                .iter()
+                .find(|mcp| {
+                    surface.surface.kind == PluginSurfaceKind::Mcp && mcp.id == surface.surface.id
+                })
+                .map(|mcp| match &mcp.launch {
+                    PluginMcpLaunch::Stdio { .. } => CatalogMcpTransport::Stdio,
+                    PluginMcpLaunch::StreamableHttp { .. } => CatalogMcpTransport::StreamableHttp,
+                });
+            CatalogSurface {
+                kind: surface.surface.kind,
+                id: surface.surface.id,
+                optional: surface.optional,
+                workload,
+                mcp_transport,
+                mcp_tool_count: None,
+                okf_bundle: None,
+                requires: surface.dependencies,
+            }
+        })
+        .collect();
+    record.permission_ceiling.surfaces.retain(|permission| {
+        record
+            .surfaces
+            .iter()
+            .any(|surface| surface.reference() == permission.surface)
+    });
+    record
+        .permission_ceiling
+        .surfaces
+        .sort_by(|left, right| left.surface.cmp(&right.surface));
+    record.permission_ceiling_digest = record.permission_ceiling.descriptor_digest().unwrap();
+    record.package.expanded_bytes = candidate.expanded_bytes();
+    record.package.file_count = candidate.file_count();
+    record.package.sha256 = Some(candidate.package_digest().to_string());
+    record.package.manifest_sha256 = Some(candidate.manifest_digest().to_string());
+    let provenance = VerifiedCatalogProvenance {
+        registry_name: "fixture".to_string(),
+        registry_url: "https://packages.example.test/catalog/".to_string(),
+        root_sha256: digest('4'),
+        root_version: 1,
+        timestamp_version: 1,
+        snapshot_version: 1,
+        targets_version: 1,
+        catalog_record_digest: record.descriptor_digest().unwrap(),
+    };
+    VerifiedPluginCatalogRecord::new(record, provenance).unwrap()
+}
+
+#[cfg(feature = "mcp")]
+async fn write_grant_tool_task_package(root: &std::path::Path) {
+    write_grant_tool_task_package_at(root, "2.0.0", "# Grant Tool Task fixture\n").await;
+}
+
+#[cfg(feature = "mcp")]
+async fn write_grant_tool_task_package_at(root: &std::path::Path, version: &str, readme: &str) {
+    tokio::fs::create_dir_all(root.join("releases"))
+        .await
+        .unwrap();
+    tokio::fs::write(root.join("README.md"), readme)
+        .await
+        .unwrap();
+    tokio::fs::write(
+        root.join("releases/task.json"),
+        serde_json::to_vec_pretty(&schema_bearing_task_descriptor()).unwrap(),
+    )
+    .await
+    .unwrap();
+    let acl = format!(
+        r#"extension "acme/research" {{
+  schema_version = 3
+  version        = "{version}"
+  route          = "research"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["execute"]
+
+  repository {{
+    url      = "https://github.com/acme/research"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }}
+
+  tool "convert" {{
+    workload    = "task"
+    interface   = "cli"
+    release     = "releases/task.json"
+    command     = "acme-convert"
+    json_output = true
+    interactive = false
+    timeout_ms  = 120000
+    activation  = "lazy"
+    optional    = false
+  }}
+}}
+"#
+    );
+    tokio::fs::write(root.join("a3s-use-extension.acl"), acl)
+        .await
+        .unwrap();
 }
 
 fn exact_resource_descriptor(authority: &ControlCapabilityEffectAuthority) -> CapabilityDescriptor {

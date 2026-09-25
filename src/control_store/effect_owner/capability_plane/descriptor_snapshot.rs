@@ -618,3 +618,4 @@ fn path_invalid() -> UseError {
 fn path_error(action: &str, path: &Path, error: io::Error) -> UseError {
     snapshot_io(format!("Failed to {action} '{}': {error}", path.display()))
 }
+

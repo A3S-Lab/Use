@@ -120,23 +120,6 @@ impl CapabilitySnapshotCursor {
     pub fn is_fully_leasable(&self) -> bool {
         self.unleasable_packages.is_empty()
     }
-
-    #[cfg(feature = "extensions")]
-    fn matches_extension_cursor(
-        &self,
-        extension: &a3s_use_extension::ExtensionSnapshotCursor,
-    ) -> bool {
-        self.generation == extension.generation
-            && self.installation == extension.installation
-            && self.registry_revision == extension.revision
-            && self.unleasable_packages == extension.unleasable_packages
-            && self.packages
-                == extension
-                    .packages
-                    .iter()
-                    .map(CapabilityPackageGeneration::from)
-                    .collect::<Vec<_>>()
-    }
 }
 
 /// One immutable capability projection plus its complete upstream RAII lease.
@@ -214,17 +197,88 @@ pub(super) async fn acquire_snapshot_lease_from(
     #[cfg(feature = "extensions")]
     let extension = {
         let extension_registry = registry.extension_registry();
-        let extension_cursor = extension_registry.published_snapshot().await?.cursor()?;
-        if !expected.matches_extension_cursor(&extension_cursor) {
-            return Ok(None);
+        let paths = extension_registry.paths();
+        let installation = crate::control_store::read_current_installation_snapshot(
+            &paths.installation_state_root(),
+            paths.installation(),
+        )
+        .await?;
+        match installation.as_ref() {
+            Some(installation) => {
+                let extension_cursor = a3s_use_extension::ExtensionSnapshotCursor {
+                    schema: a3s_use_extension::EXTENSION_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+                    installation: expected.installation.clone(),
+                    generation: expected.generation,
+                    revision: expected.registry_revision.clone(),
+                    packages: expected
+                        .packages
+                        .iter()
+                        .map(|package| a3s_use_extension::ExtensionSnapshotPackage {
+                            package_id: package.package_id.clone(),
+                            lifecycle_generation: package.lifecycle_generation,
+                            package_digest: package.package_digest.clone(),
+                            manifest_digest: package.manifest_digest.clone(),
+                        })
+                        .collect(),
+                    unleasable_packages: expected.unleasable_packages.clone(),
+                };
+                let Some(lease) = extension_registry
+                    .acquire_control_snapshot(&extension_cursor, installation)
+                    .await?
+                else {
+                    return Ok(None);
+                };
+                let confirmed_installation =
+                    crate::control_store::read_current_installation_snapshot(
+                        &paths.installation_state_root(),
+                        paths.installation(),
+                    )
+                    .await?;
+                if confirmed_installation.as_ref() != Some(installation) {
+                    return Ok(None);
+                }
+                lease
+            }
+            None => {
+                let state_root = paths.installation_state_root();
+                if !crate::control_store::control_database_present(&state_root) {
+                    return Err(UseError::new(
+                        "use.capability.control_required",
+                        "Capability snapshot leasing requires an initialized Control Store.",
+                    )
+                    .with_suggestion(
+                        "Initialize Control Store for this installation before acquiring a capability lease.",
+                    ));
+                }
+                crate::control_store::reject_legacy_authority_paths(&state_root)?;
+                if !expected.packages.is_empty() {
+                    return Ok(None);
+                }
+                let extension_cursor = a3s_use_extension::ExtensionSnapshotCursor {
+                    schema: a3s_use_extension::EXTENSION_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+                    installation: expected.installation.clone(),
+                    generation: expected.generation,
+                    revision: expected.registry_revision.clone(),
+                    packages: Vec::new(),
+                    unleasable_packages: expected.unleasable_packages.clone(),
+                };
+                let Some(lease) = extension_registry
+                    .acquire_empty_control_snapshot(&extension_cursor)
+                    .await?
+                else {
+                    return Ok(None);
+                };
+                let confirmed = crate::control_store::read_current_installation_snapshot(
+                    &state_root,
+                    paths.installation(),
+                )
+                .await?;
+                if confirmed.is_some() {
+                    return Ok(None);
+                }
+                lease
+            }
         }
-        let Some(lease) = extension_registry
-            .acquire_published_snapshot(&extension_cursor)
-            .await?
-        else {
-            return Ok(None);
-        };
-        lease
     };
 
     let confirmed = registry.snapshot().await?;
@@ -264,20 +318,34 @@ impl CapabilityUpstreamEvidence {
         installation: Option<&InstallationSnapshot>,
     ) -> UseResult<Self> {
         let cursor = snapshot.cursor()?;
+        let (packages, unleasable_packages, generation, registry_revision) = match installation {
+            Some(installation) => (
+                control_leasable_packages(installation)?,
+                Vec::new(),
+                installation.generation,
+                installation.descriptor_digest()?,
+            ),
+            None => (
+                cursor
+                    .packages
+                    .iter()
+                    .map(CapabilityPackageGeneration::from)
+                    .collect(),
+                cursor.unleasable_packages,
+                cursor.generation,
+                cursor.revision,
+            ),
+        };
         Ok(Self {
             installation: cursor.installation,
             installation_generation: installation.map(|snapshot| snapshot.generation),
             installation_snapshot_digest: installation
                 .map(InstallationSnapshot::descriptor_digest)
                 .transpose()?,
-            generation: cursor.generation,
-            registry_revision: cursor.revision,
-            packages: cursor
-                .packages
-                .iter()
-                .map(CapabilityPackageGeneration::from)
-                .collect(),
-            unleasable_packages: cursor.unleasable_packages,
+            generation,
+            registry_revision,
+            packages,
+            unleasable_packages,
         })
     }
 
@@ -308,6 +376,44 @@ impl From<&a3s_use_extension::ExtensionSnapshotPackage> for CapabilityPackageGen
             manifest_digest: package.manifest_digest.clone(),
         }
     }
+}
+
+#[cfg(feature = "extensions")]
+fn control_leasable_packages(
+    installation: &InstallationSnapshot,
+) -> UseResult<Vec<CapabilityPackageGeneration>> {
+    let mut packages = Vec::new();
+    for selection in installation
+        .packages
+        .iter()
+        .filter(|selection| selection.enabled)
+    {
+        let record = &selection.package.catalog.record.package;
+        let (Some(package_sha256), Some(manifest_sha256)) =
+            (record.sha256.as_deref(), record.manifest_sha256.as_deref())
+        else {
+            return Err(UseError::new(
+                "use.capability.snapshot_unleasable",
+                "A Control-selected package is missing immutable digest evidence for capability leasing.",
+            ));
+        };
+        packages.push(CapabilityPackageGeneration {
+            package_id: selection.package_id().to_owned(),
+            lifecycle_generation: selection.state_generation,
+            package_digest: if package_sha256.starts_with("sha256:") {
+                package_sha256.to_owned()
+            } else {
+                format!("sha256:{package_sha256}")
+            },
+            manifest_digest: if manifest_sha256.starts_with("sha256:") {
+                manifest_sha256.to_owned()
+            } else {
+                format!("sha256:{manifest_sha256}")
+            },
+        });
+    }
+    packages.sort();
+    Ok(packages)
 }
 
 fn cursor_error(message: impl Into<String>) -> UseError {
@@ -421,7 +527,7 @@ mod tests {
             installation_snapshot_digest: cursor.installation_snapshot_digest.clone(),
             generation: cursor.generation,
             revision: cursor.revision.clone(),
-            capabilities: vec![super::super::box_capability()],
+            capabilities: vec![super::super::product_seeds::box_capability()],
             cursor,
         };
         let json = serde_json::to_value(snapshot).unwrap();
@@ -438,7 +544,6 @@ mod tests {
         assert_send_sync::<CapabilitySnapshotCursor>();
         assert_send_sync::<CapabilitySnapshotLease>();
     }
-
     #[cfg(feature = "extensions")]
     #[test]
     fn injected_registry_acquires_one_exact_use_snapshot_lease() {
@@ -460,80 +565,27 @@ mod tests {
     #[cfg(feature = "extensions")]
     async fn injected_registry_snapshot_lease() {
         let temporary = tempfile::tempdir().unwrap();
-        let extension_registry = a3s_use_extension::ExtensionRegistry::new(
-            a3s_use_extension::ExtensionPaths::new(
-                temporary.path().join("data"),
-                temporary.path().join("state"),
-                InstallationId::new(a3s_use_core::InstallationKind::Workspace, "lease-tests")
-                    .unwrap(),
-            )
-            .unwrap(),
-        );
-        let fixture = temporary.path().join("package");
-        tokio::fs::create_dir_all(fixture.join("skills/guide"))
-            .await
-            .unwrap();
-        tokio::fs::write(fixture.join("README.md"), b"# Guide\n")
-            .await
-            .unwrap();
-        tokio::fs::write(
-            fixture.join("skills/guide/SKILL.md"),
-            b"---\nname: guide\ndescription: Test guide.\n---\n\n# Guide\n",
+        let installation =
+            InstallationId::new(a3s_use_core::InstallationKind::Workspace, "lease-tests").unwrap();
+        let paths = a3s_use_extension::ExtensionPaths::new(
+            temporary.path().join("data"),
+            temporary.path().join("state"),
+            installation.clone(),
+        )
+        .unwrap();
+        crate::cognitive_package::open_control_lifecycle(
+            &paths,
+            std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+            None,
         )
         .await
         .unwrap();
-        tokio::fs::write(
-            fixture.join("a3s-use-extension.acl"),
-            br#"extension "acme/guide" {
-  schema_version = 3
-  version        = "1.0.0"
-  route          = "guide"
-  requires_use   = ">=0.3.0, <0.4.0"
-  actions        = ["read"]
-
-  repository {
-    url      = "https://github.com/acme/guide"
-    revision = "0123456789abcdef0123456789abcdef01234567"
-  }
-
-  skill "guide" {
-    path          = "skills/guide/SKILL.md"
-    requires_tool = []
-    requires_mcp  = []
-    optional      = false
-  }
-}
-"#,
-        )
-        .await
-        .unwrap();
-        let package = a3s_use_extension::ExtensionLifecyclePackage::prepare_local(
-            "acme/guide",
-            &fixture,
-            true,
-        )
-        .await
-        .unwrap();
-        let identity = a3s_use_extension::ExtensionLifecycleIdentity::new(
-            package.package_id(),
-            package.package_digest(),
-            package.manifest_digest(),
-            31,
-        )
-        .unwrap();
-        extension_registry
-            .commit_lifecycle_package(&identity, &package)
-            .await
-            .unwrap();
-        extension_registry
-            .publish_lifecycle_package(&identity)
-            .await
-            .unwrap();
-
+        let extension_registry = a3s_use_extension::ExtensionRegistry::new(paths);
         let registry = super::super::CapabilityRegistry::new(extension_registry.clone());
         let snapshot = registry.snapshot().await.unwrap();
-        assert_eq!(snapshot.cursor().packages.len(), 1);
-        assert_eq!(snapshot.cursor().packages[0].package_id, "acme/guide");
+        assert!(snapshot.capabilities.is_empty());
+        assert!(snapshot.cursor().packages.is_empty());
+
         let other_installation =
             InstallationId::new(a3s_use_core::InstallationKind::User, "lease-tests").unwrap();
         let other_registry =
@@ -553,23 +605,61 @@ mod tests {
                 .code,
             "use.capability.snapshot_scope_mismatch"
         );
+
         let lease = registry
             .acquire_snapshot_lease(snapshot.cursor())
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(lease.package_count(), 1);
+        assert_eq!(lease.package_count(), 0);
         assert_eq!(lease.cursor(), snapshot.cursor());
 
-        extension_registry
-            .hide_lifecycle_package_with_evidence(&identity)
-            .await
-            .unwrap();
-        assert!(registry
+        // Empty Control remains authoritative: a second lease for the same
+        // cursor still resolves while the Control-backed snapshot is current.
+        let again = registry
             .acquire_snapshot_lease(snapshot.cursor())
             .await
             .unwrap()
-            .is_none());
-        assert_eq!(lease.package_count(), 1);
+            .unwrap();
+        assert_eq!(again.package_count(), 0);
+        assert_eq!(again.cursor(), snapshot.cursor());
+    }
+
+    #[cfg(feature = "extensions")]
+    #[test]
+    fn snapshot_lease_fails_closed_without_control_store() {
+        std::thread::Builder::new()
+            .name("capability-snapshot-lease-no-control".to_owned())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        let temporary = tempfile::tempdir().unwrap();
+                        let installation = InstallationId::new(
+                            a3s_use_core::InstallationKind::Workspace,
+                            "lease-no-control",
+                        )
+                        .unwrap();
+                        let paths = a3s_use_extension::ExtensionPaths::new(
+                            temporary.path().join("data"),
+                            temporary.path().join("state"),
+                            installation,
+                        )
+                        .unwrap();
+                        std::fs::create_dir_all(paths.state_root()).unwrap();
+                        let extension_registry =
+                            a3s_use_extension::ExtensionRegistry::new(paths);
+                        let registry =
+                            super::super::CapabilityRegistry::new(extension_registry);
+                        let error = registry.snapshot().await.unwrap_err();
+                        assert_eq!(error.code, "use.capability.control_required");
+                    });
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }

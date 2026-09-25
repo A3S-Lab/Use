@@ -292,13 +292,18 @@ durable payload before composing an MCP endpoint.
   uses a conditional source swap. The inactive Control kernel now provides the
   durable cursor binding; selecting it in production and implementing lease
   retirement remain lifecycle responsibilities.
-- [ ] Add Gateway CLI/service wiring and the independent Rust/TypeScript/Python
-  client recovery matrix. Streamable HTTP `/mcp` now has host-configured bearer
-  authentication, optional exact Origin checking, duplicate-header rejection,
-  bounded in-flight/rolling-window admission, and sanitized challenge/backoff
-  responses; the helper remains TLS-by-caller. The remaining work is Gateway
-  CLI/service composition and the independent Rust/TypeScript/Python recovery
-  matrix.
+- [x] Add Gateway CLI/service wiring (`a3s-use mcp serve gateway`) that reopens
+  the durable Control publication through
+  `production_gateway_invocation_provider` and composition-owned live endpoint
+  routes. Standalone Control mints opaque Gateway bindings and projects catalogs
+  from the descriptor-snapshot store.
+- [ ] Complete the independent Rust/TypeScript/Python client recovery matrix
+  against that product Gateway endpoint (install → invoke → upgrade/drain →
+  uninstall/restart → denied cross-scope; no shared package FS). Streamable HTTP
+  `/mcp` already has host-configured bearer authentication, optional exact
+  Origin checking, duplicate-header rejection, bounded in-flight/rolling-window
+  admission, and sanitized challenge/backoff responses; the helper remains
+  TLS-by-caller.
 
 The typed consumer boundary is now available as
 `CapabilityConsumerProfile`/`CapabilityConsumerNegotiation`. Generic MCP is

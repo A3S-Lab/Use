@@ -12,10 +12,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::enablement::{
-    project_installed_state, reconcile_state, require_materialized_enablement,
+    project_installed_state_control, require_materialized_enablement,
     CognitivePackageEnablementRequest, CognitivePackageEnablementResult,
 };
-use super::enablement_store::operation_conflict;
 use super::plan::{
     enablement_draft, enablement_operation, now_ms, package_state_revision, PLAN_LIFETIME_MS,
 };
@@ -358,96 +357,41 @@ impl CognitivePackageManager {
         let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let _mutation = self.installation_mutation_lock().acquire().await?;
         request.validate()?;
-        let store = self.enablement_store();
-        let _operation_guard = store
-            .lock_operation(self.scope(), &request.operation_id)
-            .await?;
-        let _package_guard = store
-            .lock_package(self.scope(), &request.package_id)
-            .await?;
+        self.prepare_enablement_through_control(request).await
+    }
+
+    async fn prepare_enablement_through_control(
+        &self,
+        request: &CognitivePackageEnablementRequest,
+    ) -> UseResult<CognitivePackageEnablementPreparation> {
         let planned_at_ms = now_ms()?;
-
-        if let Some(operation) = store
-            .get_operation(self.scope(), &request.operation_id)
-            .await?
-        {
-            if operation.request != *request {
-                return Err(operation_conflict());
-            }
-            let plan = operation.envelope.clone();
-            let result = self
-                .replay_enablement_operation(&store, request, operation)
-                .await?;
+        if let Some(replayed) = self.control_enablement_replay(request, None).await? {
             return CognitivePackageEnablementPlanResult::completed(
                 request.clone(),
                 planned_at_ms,
-                plan,
-                result,
+                self.ensure_control()
+                    .await?
+                    .observe_operation(&request.operation_id)
+                    .await?
+                    .ok_or_else(|| {
+                        package_manager_error(
+                            "use.plugin.package_enablement_state_invalid",
+                            "Control lost the completed enablement during replay planning.",
+                        )
+                    })?
+                    .envelope,
+                replayed,
             )
             .map(Box::new)
             .map(CognitivePackageEnablementPreparation::Outcome);
         }
-
-        let mut current = store.get_state(self.scope(), &request.package_id).await?;
-        if let Some(pending) = current
-            .as_ref()
-            .filter(|state| state.active.is_some())
-            .cloned()
-        {
-            let completed = self.complete_pending_enablement(&store, &pending).await?;
-            current = Some(completed.state_after.clone());
-            if completed.request.operation_id == request.operation_id {
-                if completed.request != *request {
-                    return Err(operation_conflict());
-                }
-                return CognitivePackageEnablementPlanResult::completed(
-                    request.clone(),
-                    planned_at_ms,
-                    completed.envelope,
-                    completed.result,
-                )
-                .map(Box::new)
-                .map(CognitivePackageEnablementPreparation::Outcome);
-            }
-        }
-
-        if let Some(operation) = store
-            .get_operation(self.scope(), &request.operation_id)
-            .await?
-        {
-            if operation.request != *request {
-                return Err(operation_conflict());
-            }
-            let plan = operation.envelope.clone();
-            let result = self
-                .replay_enablement_operation(&store, request, operation)
-                .await?;
-            return CognitivePackageEnablementPlanResult::completed(
-                request.clone(),
-                planned_at_ms,
-                plan,
-                result,
-            )
-            .map(Box::new)
-            .map(CognitivePackageEnablementPreparation::Outcome);
-        }
-
         let (extension, package_selection, installation_snapshot) = self
             .required_enablement_extension(&request.package_id)
             .await?;
         require_materialized_enablement(&extension, &package_selection)?;
         self.lifecycle
             .validate_manifest_for_planning(&extension.manifest)?;
-        let reconciled = reconcile_state(
-            self.scope(),
-            &request.package_id,
-            current.as_ref(),
-            &extension,
-            &installation_snapshot,
-            &package_selection,
-            planned_at_ms,
-        )?;
-        if reconciled.state_generation != request.expected_package_generation {
+        if package_selection.state_generation != request.expected_package_generation {
             return Err(package_manager_error(
                 "use.plugin.package_generation_changed",
                 format!(
@@ -461,16 +405,15 @@ impl CognitivePackageManager {
             )
             .with_detail(
                 "actualPackageGeneration",
-                serde_json::json!(reconciled.state_generation),
+                serde_json::json!(package_selection.state_generation),
             ));
         }
-
-        let snapshot = self.registry.snapshot().await?;
-        let state = project_installed_state(&extension, &package_selection, &snapshot, None)?;
-        if current.as_ref() != Some(&reconciled) {
-            store.put_state(&reconciled).await?;
-        }
-        if reconciled.enabled == request.enabled {
+        let state = project_installed_state_control(
+            &extension,
+            &package_selection,
+            &installation_snapshot,
+        )?;
+        if package_selection.enabled == request.enabled {
             return CognitivePackageEnablementPlanResult::no_change(
                 request.clone(),
                 planned_at_ms,
@@ -492,12 +435,9 @@ impl CognitivePackageManager {
                 )
             })?;
 
+        let capability_generation = installation_snapshot.generation;
         let grant_snapshot = self
-            .grant_store()
-            .snapshot_scope(
-                &self.scope().id,
-                package_state_revision(snapshot.generation)?,
-            )
+            .planned_grant_snapshot(package_state_revision(capability_generation)?)
             .await?;
         let receipt_digest = extension.receipt.descriptor_digest()?;
         let draft = enablement_draft(
@@ -505,7 +445,7 @@ impl CognitivePackageManager {
             &package_selection.package,
             &package_selection.selected_surfaces,
             receipt_digest.clone(),
-            snapshot.generation,
+            capability_generation,
         )?;
         let expires_at_ms = planned_at_ms.checked_add(PLAN_LIFETIME_MS).ok_or_else(|| {
             package_manager_error(
@@ -542,7 +482,7 @@ impl CognitivePackageManager {
                 package: package_selection.package,
                 manifest: extension.manifest,
                 receipt_digest,
-                registry_generation: snapshot.generation,
+                registry_generation: capability_generation,
             },
         )))
     }

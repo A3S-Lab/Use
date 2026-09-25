@@ -8,6 +8,7 @@ use a3s_use_core::{
 };
 
 #[test]
+#[ignore = "obsolete under Control sole authority; replaced by control_host_grant_recovery"]
 fn killed_host_protocol_install_apply_replays_offline_without_reauthorization() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();

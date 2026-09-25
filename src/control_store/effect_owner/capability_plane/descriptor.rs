@@ -583,6 +583,48 @@ fn validate_descriptor_kind(
             // or by a Runtime surface.  The route/evidence checks above still
             // require a prepared owner and exact opaque references.
         }
+        CapabilityDescriptorKind::Flow { .. } => {
+            if route.runtime_schema_attestation.is_some() {
+                return Err(projection_error(
+                    "Flow descriptors cannot carry Runtime schema attestation evidence.",
+                ));
+            }
+            if descriptor.surface.kind != PluginSurfaceKind::Flow
+                || !matches!(owner, ControlEffectOwner::FlowHost)
+            {
+                return Err(projection_error(
+                    "A Flow descriptor must bind a prepared Flow surface owner.",
+                ));
+            }
+        }
+        CapabilityDescriptorKind::Knowledge { .. } => {
+            if route.runtime_schema_attestation.is_some() {
+                return Err(projection_error(
+                    "Knowledge descriptors cannot carry Runtime schema attestation evidence.",
+                ));
+            }
+            if descriptor.surface.kind != PluginSurfaceKind::Okf
+                || !matches!(owner, ControlEffectOwner::KnowledgeHost)
+            {
+                return Err(projection_error(
+                    "A Knowledge descriptor must bind a prepared OKF Knowledge owner.",
+                ));
+            }
+        }
+        CapabilityDescriptorKind::Ui { .. } => {
+            if route.runtime_schema_attestation.is_some() {
+                return Err(projection_error(
+                    "UI descriptors cannot carry Runtime schema attestation evidence.",
+                ));
+            }
+            if descriptor.surface.kind != PluginSurfaceKind::Ui
+                || !matches!(owner, ControlEffectOwner::UiHost)
+            {
+                return Err(projection_error(
+                    "A UI descriptor must bind a prepared UI surface owner.",
+                ));
+            }
+        }
     }
     Ok(())
 }

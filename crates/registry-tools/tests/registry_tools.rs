@@ -1,4 +1,4 @@
-//! End-to-end tests for the registry tools binary: keygen → pack →
+//! End-to-end tests for the registry tools binary: keygen → lint → pack →
 //! assemble → verify, plus the failure paths that must stay closed.
 
 use std::fs;
@@ -173,6 +173,43 @@ fn setup_registry(root: &Path, entries: &[(&str, &str, &str)]) -> (PathBuf, Stri
         .expect("assemble reports the root digest")
         .to_owned();
     (out_root, root_sha256)
+}
+
+#[test]
+fn skill_package_lints_before_pack() {
+    let root = tempfile::tempdir().unwrap();
+    let package = write_skill_package(root.path());
+    let (stdout, stderr, ok) =
+        run(binary().args(["lint", "--package-dir", package.to_str().unwrap()]));
+    assert!(ok, "lint failed: {stderr}");
+    let report: Value = serde_json::from_str(&stdout).expect("lint prints JSON");
+    assert_eq!(report["packageId"], "a3s/registry-demo");
+    assert_eq!(report["version"], "0.1.0");
+    assert_eq!(report["schemaVersion"], 3);
+    assert!(report["manifestSha256"]
+        .as_str()
+        .unwrap()
+        .starts_with("sha256:"));
+    assert_eq!(report["fingerprint"]["sha256"].as_str().unwrap().len(), 64);
+    assert!(report["surfaceKinds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|kind| kind == "skill"));
+}
+
+#[test]
+fn lint_fails_closed_when_skill_file_is_missing() {
+    let root = tempfile::tempdir().unwrap();
+    let package = write_skill_package(root.path());
+    fs::remove_file(package.join("skills/demo/SKILL.md")).unwrap();
+    let (_stdout, stderr, ok) =
+        run(binary().args(["lint", "--package-dir", package.to_str().unwrap()]));
+    assert!(!ok, "lint must fail when a declared skill file is missing");
+    assert!(
+        stderr.contains("skill") || stderr.contains("Skill") || stderr.contains("README"),
+        "unexpected lint error: {stderr}"
+    );
 }
 
 #[test]
@@ -382,6 +419,332 @@ fn republication_advances_the_metadata_version_the_client_accepts() {
         .unwrap();
         assert_eq!(targets["signed"]["version"], version);
     }
+}
+
+#[test]
+fn offline_custody_recovery_rebuilds_the_same_bootstrap_pin() {
+    // Exercises docs/registry-key-custody.md offline recovery:
+    // restore keys, rebuild from the same admissions, verify the pin.
+    // Threshold multi-custodian ceremony remains a separate production drill.
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let keys = root.path().join("keys");
+    let (stdout, stderr, ok) = run(binary().args(["keygen", "--keys-dir", keys.to_str().unwrap()]));
+    assert!(ok, "keygen failed: {stderr}\n{stdout}");
+
+    let registry = root.path().join("registry");
+    let expires = "2099-01-01T00:00:00Z";
+    let (stdout, stderr, ok) = run(binary().args([
+        "assemble",
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--admissions",
+        admissions.to_str().unwrap(),
+        "--out-root",
+        registry.to_str().unwrap(),
+        "--root-expires",
+        expires,
+        "--metadata-expires",
+        expires,
+    ]));
+    assert!(ok, "initial assemble failed: {stderr}\n{stdout}");
+    let first: Value = serde_json::from_str(&stdout).expect("assemble prints JSON");
+    let pin = first["rootSha256"]
+        .as_str()
+        .expect("assemble reports the root digest")
+        .to_string();
+
+    fs::remove_dir_all(&registry).expect("wipe staged registry for recovery");
+    assert!(!registry.exists());
+
+    let (stdout, stderr, ok) = run(binary().args([
+        "assemble",
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--admissions",
+        admissions.to_str().unwrap(),
+        "--out-root",
+        registry.to_str().unwrap(),
+        "--root-expires",
+        expires,
+        "--metadata-expires",
+        expires,
+    ]));
+    assert!(ok, "recovery assemble failed: {stderr}\n{stdout}");
+    let recovered: Value = serde_json::from_str(&stdout).expect("recovery assemble prints JSON");
+    assert_eq!(
+        recovered["rootSha256"].as_str(),
+        Some(pin.as_str()),
+        "offline recovery must reproduce the bootstrap pin for identical inputs"
+    );
+
+    let (stdout, stderr, ok) = run(binary().args([
+        "verify",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--expected-root-sha256",
+        &pin,
+    ]));
+    assert!(ok, "recovery verify failed: {stderr}\n{stdout}");
+    let report: Value = serde_json::from_str(&stdout).expect("verify prints JSON");
+    assert_eq!(report["targetsChecked"], 1);
+    assert!(report["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value
+            .as_str()
+            .unwrap()
+            .starts_with("a3s/registry-demo@0.1.0")));
+}
+
+#[test]
+fn threshold_root_ceremony_assembles_and_verifies_with_two_of_three_shares() {
+    // Offline threshold drill from docs/registry-key-custody.md:
+    // three root shares, threshold 2, assemble with all shares present.
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let keys = root.path().join("keys");
+    let (stdout, stderr, ok) = run(binary().args([
+        "keygen",
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--root-share-count",
+        "3",
+        "--root-threshold",
+        "2",
+    ]));
+    assert!(ok, "threshold keygen failed: {stderr}\n{stdout}");
+    let keygen: Value = serde_json::from_str(&stdout).expect("keygen prints JSON");
+    assert_eq!(keygen["rootPolicy"]["threshold"], 2);
+    assert_eq!(keygen["rootPolicy"]["shareCount"], 3);
+    assert_eq!(keygen["roleKeyIds"]["root"].as_array().unwrap().len(), 3);
+    assert!(keys.join("root-0.key").exists());
+    assert!(keys.join("root-1.key").exists());
+    assert!(keys.join("root-2.key").exists());
+    assert!(keys.join("root.policy.json").exists());
+    assert!(!keys.join("root.key").exists());
+
+    let registry = root.path().join("registry");
+    let (stdout, stderr, ok) = run(binary().args([
+        "assemble",
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--admissions",
+        admissions.to_str().unwrap(),
+        "--out-root",
+        registry.to_str().unwrap(),
+    ]));
+    assert!(ok, "threshold assemble failed: {stderr}\n{stdout}");
+    let assembled: Value = serde_json::from_str(&stdout).expect("assemble prints JSON");
+    let pin = assembled["rootSha256"].as_str().unwrap().to_string();
+
+    let root_meta: Value =
+        serde_json::from_slice(&fs::read(registry.join("metadata").join("root.json")).unwrap())
+            .unwrap();
+    assert_eq!(root_meta["signed"]["roles"]["root"]["threshold"], 2);
+    assert_eq!(
+        root_meta["signed"]["roles"]["root"]["keyids"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(root_meta["signatures"].as_array().unwrap().len(), 3);
+
+    let (stdout, stderr, ok) = run(binary().args([
+        "verify",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--expected-root-sha256",
+        &pin,
+    ]));
+    assert!(ok, "threshold verify failed: {stderr}\n{stdout}");
+}
+
+#[test]
+fn threshold_assemble_fails_closed_when_too_few_root_shares_are_present() {
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let keys = root.path().join("keys");
+    let (stdout, stderr, ok) = run(binary().args([
+        "keygen",
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--root-share-count",
+        "3",
+        "--root-threshold",
+        "2",
+    ]));
+    assert!(ok, "threshold keygen failed: {stderr}\n{stdout}");
+    fs::remove_file(keys.join("root-2.key")).unwrap();
+    fs::remove_file(keys.join("root-1.key")).unwrap();
+
+    let registry = root.path().join("registry");
+    let (stdout, stderr, ok) = run(binary().args([
+        "assemble",
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--admissions",
+        admissions.to_str().unwrap(),
+        "--out-root",
+        registry.to_str().unwrap(),
+    ]));
+    assert!(!ok, "assemble must refuse under-threshold root custody");
+    assert!(
+        stderr.contains("registry_tools.keys_read_failed")
+            || stdout.contains("registry_tools.keys_read_failed"),
+        "stderr={stderr}\nstdout={stdout}"
+    );
+}
+
+#[test]
+fn root_rotation_retains_the_previous_root_and_requires_a_new_bootstrap_pin() {
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let previous_keys = root.path().join("keys-previous");
+    let (stdout, stderr, ok) = run(binary().args([
+        "keygen",
+        "--keys-dir",
+        previous_keys.to_str().unwrap(),
+        "--root-share-count",
+        "3",
+        "--root-threshold",
+        "2",
+    ]));
+    assert!(ok, "previous keygen failed: {stderr}\n{stdout}");
+
+    let registry = root.path().join("registry");
+    let (stdout, stderr, ok) = run(binary().args([
+        "assemble",
+        "--keys-dir",
+        previous_keys.to_str().unwrap(),
+        "--admissions",
+        admissions.to_str().unwrap(),
+        "--out-root",
+        registry.to_str().unwrap(),
+    ]));
+    assert!(ok, "assemble failed: {stderr}\n{stdout}");
+    let assembled: Value = serde_json::from_str(&stdout).unwrap();
+    let old_pin = assembled["rootSha256"].as_str().unwrap().to_string();
+
+    let next_keys = root.path().join("keys-next");
+    let (stdout, stderr, ok) = run(binary().args([
+        "keygen",
+        "--keys-dir",
+        next_keys.to_str().unwrap(),
+        "--root-share-count",
+        "3",
+        "--root-threshold",
+        "2",
+    ]));
+    assert!(ok, "next keygen failed: {stderr}\n{stdout}");
+
+    let (stdout, stderr, ok) = run(binary().args([
+        "rotate-root",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--previous-keys-dir",
+        previous_keys.to_str().unwrap(),
+        "--next-keys-dir",
+        next_keys.to_str().unwrap(),
+    ]));
+    assert!(ok, "rotate-root failed: {stderr}\n{stdout}");
+    let rotated: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(rotated["previousRootVersion"], 1);
+    assert_eq!(rotated["rootVersion"], 2);
+    assert_ne!(rotated["rootSha256"].as_str().unwrap(), old_pin.as_str());
+    assert!(registry.join("metadata/root.history/root.1.json").exists());
+
+    let (stdout, stderr, ok) = run(binary().args([
+        "verify",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--expected-root-sha256",
+        old_pin.as_str(),
+    ]));
+    assert!(!ok, "old bootstrap pin must fail after rotation");
+    assert!(
+        stderr.contains("registry_tools.verify_failed")
+            || stdout.contains("registry_tools.verify_failed"),
+        "stderr={stderr}\nstdout={stdout}"
+    );
+
+    let new_pin = rotated["rootSha256"].as_str().unwrap();
+    let (stdout, stderr, ok) = run(binary().args([
+        "verify",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--expected-root-sha256",
+        new_pin,
+    ]));
+    assert!(ok, "new bootstrap pin must verify: {stderr}\n{stdout}");
+}
+
+#[test]
+fn root_rotation_fails_closed_when_previous_keys_do_not_match_published_root() {
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let published_keys = root.path().join("keys-published");
+    let (stdout, stderr, ok) =
+        run(binary().args(["keygen", "--keys-dir", published_keys.to_str().unwrap()]));
+    assert!(ok, "published keygen failed: {stderr}\n{stdout}");
+    let registry = root.path().join("registry");
+    let (stdout, stderr, ok) = run(binary().args([
+        "assemble",
+        "--keys-dir",
+        published_keys.to_str().unwrap(),
+        "--admissions",
+        admissions.to_str().unwrap(),
+        "--out-root",
+        registry.to_str().unwrap(),
+    ]));
+    assert!(ok, "assemble failed: {stderr}\n{stdout}");
+
+    let wrong_previous = root.path().join("keys-wrong");
+    let next_keys = root.path().join("keys-next");
+    let (stdout, stderr, ok) =
+        run(binary().args(["keygen", "--keys-dir", wrong_previous.to_str().unwrap()]));
+    assert!(ok, "wrong previous keygen failed: {stderr}\n{stdout}");
+    let (stdout, stderr, ok) =
+        run(binary().args(["keygen", "--keys-dir", next_keys.to_str().unwrap()]));
+    assert!(ok, "next keygen failed: {stderr}\n{stdout}");
+
+    let (stdout, stderr, ok) = run(binary().args([
+        "rotate-root",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--previous-keys-dir",
+        wrong_previous.to_str().unwrap(),
+        "--next-keys-dir",
+        next_keys.to_str().unwrap(),
+    ]));
+    assert!(!ok, "rotation must refuse mismatched previous custody");
+    assert!(
+        stderr.contains("registry_tools.rotate_failed")
+            || stdout.contains("registry_tools.rotate_failed"),
+        "stderr={stderr}\nstdout={stdout}"
+    );
 }
 
 #[test]
@@ -622,4 +985,267 @@ extension "a3s/mock-compose" {
         .map(|surface| surface["kind"].as_str().unwrap())
         .collect();
     assert_eq!(kinds, ["mcp-stdio", "tool-task-native"]);
+}
+
+#[test]
+fn check_expiry_passes_for_a_freshly_assembled_registry() {
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let keys = root.path().join("keys");
+    let (stdout, stderr, ok) = run(binary().args(["keygen", "--keys-dir", keys.to_str().unwrap()]));
+    assert!(ok, "keygen failed: {stderr}\n{stdout}");
+    let registry = root.path().join("registry");
+    let (stdout, stderr, ok) = run(binary().args([
+        "assemble",
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--admissions",
+        admissions.to_str().unwrap(),
+        "--out-root",
+        registry.to_str().unwrap(),
+    ]));
+    assert!(ok, "assemble failed: {stderr}\n{stdout}");
+    let (stdout, stderr, ok) = run(binary().args([
+        "check-expiry",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--warn-within-hours",
+        "24",
+    ]));
+    assert!(
+        ok,
+        "fresh registry must pass expiry check: {stderr}\n{stdout}"
+    );
+    let report: Value = serde_json::from_str(&stdout).unwrap();
+    assert!(report["expired"].as_array().unwrap().is_empty());
+    assert!(report["expiringSoon"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn check_expiry_fails_closed_when_metadata_expires_inside_the_warn_window() {
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let keys = root.path().join("keys");
+    let (stdout, stderr, ok) = run(binary().args(["keygen", "--keys-dir", keys.to_str().unwrap()]));
+    assert!(ok, "keygen failed: {stderr}\n{stdout}");
+    // One hour ahead: inside the default 72h warn window.
+    let soon = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 3600) as i64;
+    let expires = format_unix_rfc3339(soon);
+    let registry = root.path().join("registry");
+    let (stdout, stderr, ok) = run(binary().args([
+        "assemble",
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--admissions",
+        admissions.to_str().unwrap(),
+        "--out-root",
+        registry.to_str().unwrap(),
+        "--root-expires",
+        &expires,
+        "--metadata-expires",
+        &expires,
+    ]));
+    assert!(ok, "assemble failed: {stderr}\n{stdout}");
+    let (stdout, stderr, ok) = run(binary().args([
+        "check-expiry",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--warn-within-hours",
+        "72",
+    ]));
+    assert!(!ok, "near-expiry registry must fail closed");
+    assert!(
+        stderr.contains("registry_tools.expiry_warning")
+            || stdout.contains("registry_tools.expiry_warning"),
+        "stderr={stderr}\nstdout={stdout}"
+    );
+}
+
+fn format_unix_rfc3339(secs: i64) -> String {
+    let days_since_epoch = secs.div_euclid(86_400);
+    let time_of_day = secs.rem_euclid(86_400) as u64;
+    let z = days_since_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 }.div_euclid(146_097);
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    let hour = time_of_day / 3600;
+    let minute = (time_of_day % 3600) / 60;
+    let second = time_of_day % 60;
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+#[test]
+fn compare_mirrors_accepts_identical_trees_and_rejects_drift() {
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let keys = root.path().join("keys");
+    let (stdout, stderr, ok) = run(binary().args(["keygen", "--keys-dir", keys.to_str().unwrap()]));
+    assert!(ok, "keygen failed: {stderr}\n{stdout}");
+    let left = root.path().join("left");
+    let right = root.path().join("right");
+    let expires = "2099-01-01T00:00:00Z";
+    for out in [&left, &right] {
+        let (stdout, stderr, ok) = run(binary().args([
+            "assemble",
+            "--keys-dir",
+            keys.to_str().unwrap(),
+            "--admissions",
+            admissions.to_str().unwrap(),
+            "--out-root",
+            out.to_str().unwrap(),
+            "--root-expires",
+            expires,
+            "--metadata-expires",
+            expires,
+        ]));
+        assert!(ok, "assemble failed: {stderr}\n{stdout}");
+    }
+    let (stdout, stderr, ok) = run(binary().args([
+        "compare-mirrors",
+        "--left",
+        left.to_str().unwrap(),
+        "--right",
+        right.to_str().unwrap(),
+    ]));
+    assert!(
+        ok,
+        "identical mirrors must compare equal: {stderr}\n{stdout}"
+    );
+
+    // Drift a target byte under the right tree.
+    let target = find_first_file(&right.join("targets")).expect("assembled tree has targets");
+    let mut bytes = std::fs::read(&target).unwrap();
+    bytes.push(b'x');
+    std::fs::write(&target, bytes).unwrap();
+    let (stdout, stderr, ok) = run(binary().args([
+        "compare-mirrors",
+        "--left",
+        left.to_str().unwrap(),
+        "--right",
+        right.to_str().unwrap(),
+    ]));
+    assert!(!ok, "drifted mirror must fail closed");
+    assert!(
+        stderr.contains("registry_tools.mirror_mismatch")
+            || stdout.contains("registry_tools.mirror_mismatch"),
+        "stderr={stderr}\nstdout={stdout}"
+    );
+}
+
+fn find_first_file(root: &Path) -> Option<PathBuf> {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        for entry in std::fs::read_dir(&current).ok()? {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn withdraw_targets_removes_a_package_while_keeping_the_bootstrap_pin() {
+    let root = tempfile::tempdir().unwrap();
+    write_skill_package(root.path());
+    let admissions = write_admissions(
+        root.path(),
+        &[("a3s/registry-demo", "packages/registry-demo", "")],
+    );
+    let keys = root.path().join("keys");
+    let (stdout, stderr, ok) = run(binary().args(["keygen", "--keys-dir", keys.to_str().unwrap()]));
+    assert!(ok, "keygen failed: {stderr}\n{stdout}");
+    let expires = "2099-01-01T00:00:00Z";
+    let registry = root.path().join("registry");
+    let (stdout, stderr, ok) = run(binary().args([
+        "assemble",
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--admissions",
+        admissions.to_str().unwrap(),
+        "--out-root",
+        registry.to_str().unwrap(),
+        "--root-expires",
+        expires,
+        "--metadata-expires",
+        expires,
+    ]));
+    assert!(ok, "assemble failed: {stderr}\n{stdout}");
+    let assembled: Value = serde_json::from_str(&stdout).unwrap();
+    let pin = assembled["rootSha256"].as_str().unwrap().to_string();
+    let target = "extensions/a3s/registry-demo/0.1.0/stable/any/a3s-registry-demo-0.1.0-any.tar.gz";
+    assert!(registry.join("targets").join(target).exists());
+
+    let (stdout, stderr, ok) = run(binary().args([
+        "withdraw-targets",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--target",
+        target,
+        "--metadata-expires",
+        expires,
+    ]));
+    assert!(ok, "withdraw-targets failed: {stderr}\n{stdout}");
+    let withdrawn: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(withdrawn["rootSha256"].as_str().unwrap(), pin.as_str());
+    assert_eq!(withdrawn["remainingTargets"], 0);
+    assert!(!registry.join("targets").join(target).exists());
+
+    let (stdout, stderr, ok) = run(binary().args([
+        "verify",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--expected-root-sha256",
+        &pin,
+    ]));
+    assert!(
+        ok,
+        "withdrawn registry must still verify: {stderr}\n{stdout}"
+    );
+    let report: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(report["targetsChecked"], 0);
+
+    let (stdout, stderr, ok) = run(binary().args([
+        "withdraw-targets",
+        "--registry",
+        registry.to_str().unwrap(),
+        "--keys-dir",
+        keys.to_str().unwrap(),
+        "--target",
+        target,
+    ]));
+    assert!(!ok, "second withdraw of the same target must fail closed");
+    assert!(
+        stderr.contains("registry_tools.withdraw_failed")
+            || stdout.contains("registry_tools.withdraw_failed"),
+        "stderr={stderr}\nstdout={stdout}"
+    );
 }

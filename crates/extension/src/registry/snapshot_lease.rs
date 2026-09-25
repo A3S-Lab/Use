@@ -266,6 +266,139 @@ impl ExtensionRegistry {
             leases,
         }))
     }
+
+    /// Acquire every callable package generation selected by one Control
+    /// installation snapshot without reading `registry.json` publication.
+    ///
+    /// Acquisition is all-or-nothing against the supplied Control selections.
+    /// `None` means the expected cursor packages diverged from Control, a
+    /// generation could not be leased, or Control selection changed underfoot.
+    pub async fn acquire_control_snapshot(
+        &self,
+        expected: &ExtensionSnapshotCursor,
+        installation: &a3s_use_core::InstallationSnapshot,
+    ) -> UseResult<Option<ExtensionSnapshotLease>> {
+        expected.validate()?;
+        if expected.installation != *self.installation()
+            || expected.installation != installation.installation
+        {
+            return Err(UseError::new(
+                "use.extension.snapshot_scope_mismatch",
+                "The extension snapshot cursor belongs to a different installation.",
+            ));
+        }
+        if !expected.is_fully_leasable() {
+            return Err(UseError::new(
+                "use.extension.snapshot_unleasable",
+                "The Control installation snapshot contains a callable package without immutable lifecycle generation evidence.",
+            )
+            .with_detail("packageIds", expected.unleasable_packages.clone())
+            .with_suggestion(
+                "Reinstall the package before using exact-generation admission.",
+            ));
+        }
+        if expected.generation != installation.generation {
+            return Ok(None);
+        }
+        let control_packages = control_snapshot_packages(installation)?;
+        if control_packages != expected.packages {
+            return Ok(None);
+        }
+
+        let mut leases = Vec::with_capacity(expected.packages.len());
+        for package in &expected.packages {
+            let identity = package.lifecycle_identity()?;
+            let Some(selection) = installation.packages.iter().find(|selection| {
+                selection.enabled
+                    && selection.package_id() == package.package_id.as_str()
+                    && selection.state_generation == package.lifecycle_generation
+            }) else {
+                return Ok(None);
+            };
+            let Some(lease) = self
+                .acquire_control_lifecycle_generation(selection, &identity)
+                .await?
+            else {
+                return Ok(None);
+            };
+            if !package.matches_extension(lease.extension()) {
+                return Err(UseError::new(
+                    "use.extension.snapshot_lease_mismatch",
+                    "An acquired Control lease differs from its exact snapshot package identity.",
+                ));
+            }
+            leases.push(lease);
+        }
+
+        Ok(Some(ExtensionSnapshotLease {
+            cursor: expected.clone(),
+            leases,
+        }))
+    }
+
+    /// Acquire the empty Control face without reading `registry.json`.
+    ///
+    /// Used when Control is initialized but has no installation snapshot yet.
+    /// `None` means the expected cursor is not the deterministic empty face.
+    pub async fn acquire_empty_control_snapshot(
+        &self,
+        expected: &ExtensionSnapshotCursor,
+    ) -> UseResult<Option<ExtensionSnapshotLease>> {
+        expected.validate()?;
+        if expected.installation != *self.installation() {
+            return Err(UseError::new(
+                "use.extension.snapshot_scope_mismatch",
+                "The extension snapshot cursor belongs to a different installation.",
+            ));
+        }
+        if !expected.packages.is_empty() || !expected.unleasable_packages.is_empty() {
+            return Ok(None);
+        }
+        let empty = ExtensionRegistrySnapshot::empty(self.installation().clone())?;
+        let empty_cursor = empty.cursor()?;
+        if empty_cursor != *expected {
+            return Ok(None);
+        }
+        Ok(Some(ExtensionSnapshotLease {
+            cursor: expected.clone(),
+            leases: Vec::new(),
+        }))
+    }
+}
+
+fn control_snapshot_packages(
+    installation: &a3s_use_core::InstallationSnapshot,
+) -> UseResult<Vec<ExtensionSnapshotPackage>> {
+    let mut packages = Vec::new();
+    for selection in installation.packages.iter().filter(|selection| selection.enabled) {
+        let record = &selection.package.catalog.record.package;
+        let (Some(package_sha256), Some(manifest_sha256)) =
+            (record.sha256.as_deref(), record.manifest_sha256.as_deref())
+        else {
+            return Err(UseError::new(
+                "use.extension.snapshot_unleasable",
+                "A Control-selected package is missing immutable digest evidence.",
+            ));
+        };
+        let package = ExtensionSnapshotPackage {
+            package_id: selection.package_id().to_owned(),
+            lifecycle_generation: selection.state_generation,
+            package_digest: if package_sha256.starts_with("sha256:") {
+                package_sha256.to_owned()
+            } else {
+                format!("sha256:{package_sha256}")
+            },
+            manifest_digest: if manifest_sha256.starts_with("sha256:") {
+                manifest_sha256.to_owned()
+            } else {
+                format!("sha256:{manifest_sha256}")
+            },
+        };
+        package.lifecycle_identity()?;
+        packages.push(package);
+    }
+    packages.sort();
+    Ok(packages)
 }
 
 fn snapshot_cursor_error(message: impl Into<String>) -> UseError {

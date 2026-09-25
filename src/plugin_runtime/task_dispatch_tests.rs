@@ -1,8 +1,5 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
 
-use a3s_runtime::contract::{NetworkMode, RuntimeLogStream};
 use a3s_runtime::{
     ProviderId, RuntimeClient, RuntimeClientRegistry, RuntimeProviderFactory, RuntimeResult,
 };
@@ -14,10 +11,9 @@ use a3s_use_extension::{
 use async_trait::async_trait;
 use tempfile::TempDir;
 use tokio::fs;
-use tokio::sync::Notify;
 
 use super::test_support::{
-    artifact, capabilities, evidence, log_chunk, policy, task_descriptor, FakeRuntime,
+    artifact, capabilities, evidence, policy, task_descriptor, FakeRuntime,
 };
 use super::*;
 
@@ -49,94 +45,69 @@ fn dispatcher_contracts_are_send_and_sync() {
 }
 
 #[tokio::test]
-async fn dispatcher_survives_restart_and_rejects_a_stale_upgrade_generation() {
-    let fixture = DispatchFixture::new(None).await;
-    let first = fixture.install_generation(7).await;
-    let dispatcher = fixture.dispatcher();
-
-    let initial = dispatcher
-        .invoke(request(&first, "invoke-01", "request-01"))
-        .await
-        .unwrap();
-    assert_eq!(initial.stdout, "{\"ok\":true}\n");
-
-    // A new dispatcher has only durable Registry/binding state plus the host's
-    // configured provider registry. No operation-plan record is retained.
-    let restarted = fixture.dispatcher();
-    restarted
-        .invoke(request(&first, "invoke-02", "request-02"))
-        .await
-        .unwrap();
-
-    let next = fixture.install_generation(8).await;
-    let stale = restarted
-        .invoke(request(&first, "invoke-stale", "request-stale"))
+async fn dispatcher_fails_closed_without_control_installation_authority() {
+    let fixture = LegacyPublishFixture::new().await;
+    let identity = fixture.install_published_generation(7).await;
+    let error = fixture
+        .dispatcher()
+        .invoke(request(&identity, "invoke-01", "request-01"))
         .await
         .unwrap_err();
-    assert_eq!(stale.code, "use.plugin.runtime.generation_unavailable");
-
-    restarted
-        .invoke(request(&next, "invoke-03", "request-03"))
-        .await
-        .unwrap();
-    assert_eq!(fixture.runtime.apply_count.load(Ordering::SeqCst), 3);
-    assert_eq!(fixture.runtime.remove_count.load(Ordering::SeqCst), 3);
+    // Legacy extensions/ publication must not authorize invoke; Control is required.
+    assert!(
+        error.code == "use.control_store.legacy_state_unsupported"
+            || error.code == "use.plugin.runtime.generation_unavailable"
+            || error.code == "use.plugin.grant_store.control_authority_required"
+            || error.code.starts_with("use.control"),
+        "unexpected fail-closed code {}",
+        error.code
+    );
 }
 
 #[tokio::test]
-async fn dispatcher_lease_blocks_retirement_and_hide_rejects_new_calls() {
-    let started = Arc::new(Notify::new());
-    let release = Arc::new(Notify::new());
-    let fixture = DispatchFixture::new(Some((started.clone(), release.clone()))).await;
-    let identity = fixture.install_generation(7).await;
-    let dispatcher = fixture.dispatcher();
-    let active_request = request(&identity, "invoke-active", "request-active");
-    let active = tokio::spawn(async move { dispatcher.invoke(active_request).await });
+async fn dispatcher_fails_closed_when_control_has_no_matching_selection() {
+    let fixture = LegacyPublishFixture::new().await;
+    let paths = fixture.registry.paths();
+    let lifecycle = crate::control_store::ProductionControlLifecycle::from_extension_paths(
+        paths,
+        crate::control_store::ProductionControlHostDependencies::standalone(
+            paths,
+            Arc::new(RuntimeClientRegistry::new()),
+            None,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    lifecycle.initialize().await.unwrap();
 
-    tokio::time::timeout(Duration::from_secs(1), started.notified())
-        .await
-        .unwrap();
-    fixture
-        .registry
-        .hide_lifecycle_package(&identity)
-        .await
-        .unwrap();
-    let drain = fixture
-        .registry
-        .drain_lifecycle_package(&identity, Duration::from_millis(10))
-        .await
-        .unwrap_err();
-    assert_eq!(drain.code, "use.extension.drain_timeout");
-
-    let rejected = fixture
+    let identity = ExtensionLifecycleIdentity::new(
+        "acme/research",
+        format!("sha256:{}", "a".repeat(64)),
+        format!("sha256:{}", "b".repeat(64)),
+        7,
+    )
+    .unwrap();
+    let error = fixture
         .dispatcher()
-        .invoke(request(&identity, "invoke-late", "request-late"))
+        .invoke(request(&identity, "invoke-missing", "request-missing"))
         .await
         .unwrap_err();
-    assert_eq!(rejected.code, "use.plugin.runtime.generation_unavailable");
-    assert_eq!(fixture.runtime.apply_count.load(Ordering::SeqCst), 1);
-
-    release.notify_one();
-    active.await.unwrap().unwrap();
-    fixture
-        .registry
-        .drain_lifecycle_package(&identity, Duration::from_secs(1))
-        .await
-        .unwrap();
+    assert_eq!(error.code, "use.plugin.runtime.generation_unavailable");
 }
 
-struct DispatchFixture {
+/// Pre-Control publication fixture used only to prove invoke no longer accepts
+/// legacy `extensions/` / `registry.json` authority.
+struct LegacyPublishFixture {
     _temporary: TempDir,
     candidate: ExtensionLifecyclePackage,
     registry: ExtensionRegistry,
     bindings: RuntimeBindingStore,
     providers: Arc<RuntimeClientRegistry>,
-    runtime: Arc<FakeRuntime>,
     scope: PlanScope,
 }
 
-impl DispatchFixture {
-    async fn new(apply_gate: Option<(Arc<Notify>, Arc<Notify>)>) -> Self {
+impl LegacyPublishFixture {
+    async fn new() -> Self {
         let temporary = TempDir::new().unwrap();
         let source = temporary.path().join("package");
         write_release_task_package(&source).await;
@@ -156,22 +127,12 @@ impl DispatchFixture {
         let registry = ExtensionRegistry::new(paths.clone());
         let bindings = RuntimeBindingStore::from_extension_paths(&paths);
         let bootstrap_plan = task_plan(&candidate, &scope, 7);
-        let runtime_capabilities = capabilities(&bootstrap_plan);
-        let mut runtime = FakeRuntime::new(runtime_capabilities, true).with_logs(vec![log_chunk(
-            RuntimeLogStream::Stdout,
-            1,
-            "stdout-1",
-            "{\"ok\":true}\n",
-        )]);
-        if let Some((started, release)) = apply_gate {
-            runtime = runtime.with_apply_gate(started, release);
-        }
-        let runtime = Arc::new(runtime);
+        let runtime = Arc::new(FakeRuntime::new(capabilities(&bootstrap_plan), true));
         let mut providers = RuntimeClientRegistry::new();
         providers
             .register(Arc::new(StaticRuntimeFactory {
                 provider_id: ProviderId::parse("test-runtime").unwrap(),
-                client: runtime.clone(),
+                client: runtime,
             }))
             .unwrap();
         Self {
@@ -180,12 +141,11 @@ impl DispatchFixture {
             registry,
             bindings,
             providers: Arc::new(providers),
-            runtime,
             scope,
         }
     }
 
-    async fn install_generation(&self, generation: u64) -> ExtensionLifecycleIdentity {
+    async fn install_published_generation(&self, generation: u64) -> ExtensionLifecycleIdentity {
         let identity = ExtensionLifecycleIdentity::new(
             self.candidate.package_id(),
             self.candidate.package_digest(),
@@ -253,7 +213,7 @@ fn task_plan(
         artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
         RuntimeTaskInvocation::new("planning-template", Vec::new()).unwrap(),
         policy(),
-        NetworkMode::None,
+        a3s_runtime::contract::NetworkMode::None,
     )
     .unwrap()
 }

@@ -79,6 +79,13 @@ fn scan_files(
     if active_plan_digest.is_none() {
         reject_active_restore(paths.state_root())?;
     }
+    let control_authority =
+        crate::control_store::control_database_present(&paths.installation_state_root());
+    if control_authority {
+        // Live SQLite is not portable backup evidence. Control export wiring is
+        // separate; fail closed on dual legacy authority beside Control.
+        crate::control_store::reject_legacy_authority_paths(&paths.installation_state_root())?;
+    }
     let mut files = Vec::new();
     let mut visited_entries = 0u64;
     let mut portable_paths = BTreeSet::new();
@@ -86,6 +93,7 @@ fn scan_files(
         paths.data_root(),
         StateBackupRoot::Data,
         paths.installation(),
+        control_authority,
         &mut files,
         &mut visited_entries,
         &mut portable_paths,
@@ -95,6 +103,7 @@ fn scan_files(
         paths.state_root(),
         StateBackupRoot::State,
         paths.installation(),
+        control_authority,
         &mut files,
         &mut visited_entries,
         &mut portable_paths,
@@ -109,6 +118,7 @@ fn scan_root(
     root: &Path,
     kind: StateBackupRoot,
     installation: &InstallationId,
+    control_authority: bool,
     files: &mut Vec<ScannedFile>,
     visited_entries: &mut u64,
     portable_paths: &mut BTreeSet<(StateBackupRoot, String)>,
@@ -194,8 +204,11 @@ fn scan_root(
                     "Use-owned backup state contains a link or reparse point.",
                 ));
             }
-            validate_layout(kind, &relative, metadata.is_dir())?;
+            validate_layout(kind, &relative, metadata.is_dir(), control_authority)?;
             if excluded_derived_root(kind, &relative, &metadata) {
+                continue;
+            }
+            if excluded_control_store_leaf(kind, &relative) {
                 continue;
             }
             if is_nonterminal(kind, &relative, &absolute, &metadata)? {
@@ -215,7 +228,7 @@ fn scan_root(
             if excluded_lock(kind, &relative) {
                 continue;
             }
-            let family = expected_family(kind, &portable)?;
+            let family = expected_family(kind, &portable, control_authority)?;
             let (length, digest) = hash_file(
                 &absolute,
                 &metadata,
@@ -332,7 +345,12 @@ fn excluded_active_restore_entry(
     Ok(true)
 }
 
-fn validate_layout(root: StateBackupRoot, relative: &Path, directory: bool) -> UseResult<()> {
+fn validate_layout(
+    root: StateBackupRoot,
+    relative: &Path,
+    directory: bool,
+    control_authority: bool,
+) -> UseResult<()> {
     if root == StateBackupRoot::Data {
         return Err(state_backup_layout_unsupported(
             "Installation data payloads are not portable authority; immutable package bytes belong to the global Artifact Store.",
@@ -340,6 +358,18 @@ fn validate_layout(root: StateBackupRoot, relative: &Path, directory: bool) -> U
     }
     let mut components = relative.components();
     let first = normal_component(components.next())?;
+    let portable = portable_path(relative)?;
+    if control_authority {
+        if !crate::control_store::backup_admits_control_installation_path(&portable, directory) {
+            return Err(state_backup_layout_unsupported(
+                "Control installation backup inventory admits only the Control export and registered external payload owners.",
+            ));
+        }
+        if portable.starts_with("capability-gateway/") || portable == "capability-gateway" {
+            capability_payload::validate_layout(&portable, directory)?;
+        }
+        return Ok(());
+    }
     if components.next().is_none()
         && !installation_state_layout::supported_root_entry(first, directory)
     {
@@ -351,7 +381,6 @@ fn validate_layout(root: StateBackupRoot, relative: &Path, directory: bool) -> U
         .components()
         .map(|component| normal_component(Some(component)))
         .collect::<UseResult<Vec<_>>>()?;
-    let portable = parts.join("/");
     if parts.first() == Some(&"capability-gateway") {
         capability_payload::validate_layout(&portable, directory)?;
     }
@@ -396,6 +425,19 @@ fn excluded_lock(root: StateBackupRoot, relative: &Path) -> bool {
         return installation_state_layout::excluded_root_lock(name);
     }
     name.ends_with(".lock")
+}
+
+/// Skip live Control SQLite and WAL sidecars from hashed FS inventory.
+///
+/// Portable Control evidence is a verified export, not a live database copy.
+fn excluded_control_store_leaf(root: StateBackupRoot, relative: &Path) -> bool {
+    if root != StateBackupRoot::State || relative.components().count() != 1 {
+        return false;
+    }
+    let Some(name) = relative.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    name == "control.sqlite3" || installation_state_layout::excluded_operational_state_file(name)
 }
 
 fn excluded_derived_root(
@@ -511,14 +553,22 @@ fn read_bounded_json(path: &Path, metadata: &std::fs::Metadata) -> UseResult<ser
         .map_err(|_| state_backup_invalid("A durable operation record contains invalid JSON."))
 }
 
-pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<StateBackupFamily> {
+pub(super) fn expected_family(
+    root: StateBackupRoot,
+    path: &str,
+    control_authority: bool,
+) -> UseResult<StateBackupFamily> {
     let mut parts = path.split('/');
     let first = parts.next().unwrap_or_default();
     match root {
         StateBackupRoot::Data => Err(state_backup_layout_unsupported(
             "The backup manifest cannot contain installation data payloads or global artifacts.",
         )),
-        StateBackupRoot::State => match first {
+        StateBackupRoot::State => {
+            if control_authority {
+                return expected_control_family(first, parts.next(), path);
+            }
+            match first {
             "capability-gateway" => {
                 capability_payload::record_kind(path)?;
                 Ok(StateBackupFamily::CapabilityPayloads)
@@ -541,6 +591,9 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
                 )),
             },
             "installation-snapshot.json" => Ok(StateBackupFamily::PackageGraph),
+            crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH => {
+                Ok(StateBackupFamily::PackageGraph)
+            }
             "knowledge" => Ok(StateBackupFamily::Knowledge),
             "package-enablement" => Ok(StateBackupFamily::Enablement),
             "plugin-host-manager" => Ok(StateBackupFamily::HostManager),
@@ -551,7 +604,41 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
             _ => Err(state_backup_layout_unsupported(
                 "The backup manifest contains an unknown state family.",
             )),
+        }
+        }
+    }
+}
+
+fn expected_control_family(
+    first: &str,
+    operation: Option<&str>,
+    path: &str,
+) -> UseResult<StateBackupFamily> {
+    match first {
+        "capability-gateway" => {
+            capability_payload::record_kind(path)?;
+            Ok(StateBackupFamily::CapabilityPayloads)
+        }
+        crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH => {
+            Ok(StateBackupFamily::PackageGraph)
+        }
+        "knowledge" => Ok(StateBackupFamily::Knowledge),
+        "plugin-host-manager" => Ok(StateBackupFamily::HostManager),
+        "runtime-plans" => Ok(StateBackupFamily::RuntimePlans),
+        "operations" => match operation {
+            Some(
+                "package-downloads"
+                | "package-resolutions"
+                | "package-diagnostic-history"
+                | "state-restores",
+            ) => Ok(StateBackupFamily::PackageOperations),
+            _ => Err(state_backup_layout_unsupported(
+                "Control backup inventory rejects unregistered operation families.",
+            )),
         },
+        _ => Err(state_backup_layout_unsupported(
+            "Control backup inventory rejects families outside the Control export and registered payload owners.",
+        )),
     }
 }
 
@@ -810,7 +897,7 @@ fn unix_mode(_metadata: &std::fs::Metadata) -> Option<u32> {
 }
 
 impl StateBackupEntry {
-    fn cmp_key(&self) -> (StateBackupRoot, &str) {
+    pub(super) fn cmp_key(&self) -> (StateBackupRoot, &str) {
         (self.root, &self.path)
     }
 }

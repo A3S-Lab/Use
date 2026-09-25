@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use super::super::mutation::{configure_no_follow_async, file_identity, sync_directory};
 use super::{
     CapabilityGatewayCatalogRetentionEntry, CapabilityGatewayCatalogRetentionPlan,
     CAPABILITY_GATEWAY_CATALOG_RETENTION_JOURNAL_SCHEMA, CATALOG_RETENTION_JOURNAL,
@@ -267,7 +268,7 @@ impl RetentionJournal {
         let parent = self.path.parent().ok_or_else(|| {
             super::retention_invalid("The catalog-retention journal has no parent.")
         })?;
-        super::super::sync_directory(parent).await
+        sync_directory(parent).await
     }
 
     async fn append(&mut self, state: JournalState) -> super::UseResult<()> {
@@ -502,10 +503,10 @@ async fn read_journal(path: &Path) -> super::UseResult<Option<Vec<u8>>> {
             "The catalog-retention journal is not a bounded owned regular file.",
         ));
     }
-    let before = super::super::file_identity(&metadata);
+    let before = file_identity(&metadata);
     let mut options = fs::OpenOptions::new();
     options.read(true);
-    super::super::configure_no_follow_async(&mut options);
+    configure_no_follow_async(&mut options);
     let mut file = options
         .open(path)
         .await
@@ -517,7 +518,7 @@ async fn read_journal(path: &Path) -> super::UseResult<Option<Vec<u8>>> {
     if a3s_use_core::metadata_is_link_or_reparse_point(&opened)
         || !opened.is_file()
         || opened.len() != metadata.len()
-        || super::super::file_identity(&opened) != before
+        || file_identity(&opened) != before
     {
         return Err(super::retention_invalid(
             "The catalog-retention journal changed while it was opened.",
@@ -534,7 +535,7 @@ async fn read_journal(path: &Path) -> super::UseResult<Option<Vec<u8>>> {
         .map_err(|error| journal_io("reinspect catalog-retention journal", path, error))?;
     if a3s_use_core::metadata_is_link_or_reparse_point(&after)
         || !after.is_file()
-        || super::super::file_identity(&after) != before
+        || file_identity(&after) != before
         || bytes.len() as u64 != opened.len()
     {
         return Err(super::retention_invalid(
@@ -547,7 +548,7 @@ async fn read_journal(path: &Path) -> super::UseResult<Option<Vec<u8>>> {
 async fn create_journal(path: &Path, bytes: &[u8]) -> super::UseResult<()> {
     let mut options = fs::OpenOptions::new();
     options.create_new(true).write(true);
-    super::super::configure_no_follow_async(&mut options);
+    configure_no_follow_async(&mut options);
     #[cfg(unix)]
     options.mode(0o600);
     let mut file = options
@@ -565,7 +566,7 @@ async fn create_journal(path: &Path, bytes: &[u8]) -> super::UseResult<()> {
         return Err(journal_io("write catalog-retention journal", path, error));
     }
     drop(file);
-    super::super::sync_directory(
+    sync_directory(
         path.parent().ok_or_else(|| {
             super::retention_invalid("The catalog-retention journal has no parent.")
         })?,
@@ -590,10 +591,10 @@ async fn append_journal(path: &Path, bytes: &[u8]) -> super::UseResult<()> {
             "The catalog-retention journal is not an appendable bounded regular file.",
         ));
     }
-    let before = super::super::file_identity(&metadata);
+    let before = file_identity(&metadata);
     let mut options = fs::OpenOptions::new();
     options.append(true).write(true);
-    super::super::configure_no_follow_async(&mut options);
+    configure_no_follow_async(&mut options);
     let mut file = options
         .open(path)
         .await
@@ -604,7 +605,7 @@ async fn append_journal(path: &Path, bytes: &[u8]) -> super::UseResult<()> {
         .map_err(|error| journal_io("inspect appendable catalog-retention journal", path, error))?;
     if a3s_use_core::metadata_is_link_or_reparse_point(&opened)
         || !opened.is_file()
-        || super::super::file_identity(&opened) != before
+        || file_identity(&opened) != before
     {
         return Err(super::retention_invalid(
             "The catalog-retention journal changed before append.",
@@ -658,7 +659,7 @@ async fn truncate_journal(path: &Path, length: u64) -> super::UseResult<()> {
     }
     let mut options = fs::OpenOptions::new();
     options.write(true);
-    super::super::configure_no_follow_async(&mut options);
+    configure_no_follow_async(&mut options);
     let file = options
         .open(path)
         .await

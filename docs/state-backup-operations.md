@@ -131,7 +131,8 @@ winner.
 | Lifecycle operations | terminal package lifecycle checkpoint records |
 | Package operations | terminal resolution diagnostics and retained operation history; pending graph/download records are rejected |
 | Knowledge | SQLite main/WAL/SHM files and terminal restore evidence |
-| Installation snapshot | `state/installation-snapshot.json` |
+| Installation snapshot (legacy) | `state/installation-snapshot.json` |
+| Control Store export (Control installs) | portable `control-store-export.json` leaf (verified `a3s.use.control-store-export.v11`); live `control.sqlite3` is never copied |
 | Package enablement | snapshot-bound recovery projections and completed enablement operations |
 | Host Manager | reviewed requests, observations, cancellations, and outcomes |
 

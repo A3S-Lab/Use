@@ -70,10 +70,19 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
     assert!(!partial.exists());
     assert!(observation.is_file());
     assert!(blob.is_file());
-    assert!(!scoped_state(&home, "extensions/acme/root.json").exists());
+    // Kill before package publication: no legacy authority and no installed lock.
+    assert!(!scoped_state(&home, "extensions").exists());
     assert!(!scoped_state(&home, "installation-snapshot.json").exists());
-    assert!(!scoped_state(&home, "operations/package-graphs/install/acme/root.json").exists());
+    assert!(!scoped_state(&home, "operations/package-graphs").exists());
     assert!(!artifact.exists());
+    if scoped_state(&home, "control.sqlite3").is_file() {
+        let locks = CognitivePackageManager::new(ExtensionRegistry::new(extension_paths(&home)))
+            .unwrap()
+            .installed_package_locks()
+            .await_in_test()
+            .unwrap();
+        assert!(locks.is_empty());
+    }
 
     server.clear_requests();
     let recovered =
@@ -83,13 +92,15 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
     assert!(!partial.exists());
     assert!(observation.is_file());
     assert!(blob.is_file());
-    assert!(scoped_state(&home, "extensions/acme/root.json").is_file());
-    assert!(scoped_state(&home, "installation-snapshot.json").is_file());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    assert!(!scoped_state(&home, "registry.json").exists());
     assert!(artifact.is_dir());
 }
 
 #[test]
-fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
+fn killed_artifact_staging_reclaims_and_replays_exact_control_install() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
     let package = skill_target_with_payload(
@@ -106,10 +117,6 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
         .parent()
         .unwrap()
         .to_path_buf();
-    let pending_path = scoped_state(&home, "operations/package-graphs/install/acme/root.json");
-    let receipt_path = scoped_state(&home, "extensions/acme/root.json");
-    let graph_path = scoped_state(&home, "installation-snapshot.json");
-    let lifecycle_path = lifecycle_journal_path(&home, "acme/root");
 
     configure_registry(&server, &repository, &home, &[]);
     server.clear_requests();
@@ -131,12 +138,10 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
     if !reached_staging {
         let process_status = interrupted.try_wait().unwrap();
         let staged_files = lifecycle_staging_payload_count(&package_parent);
-        let pending = std::fs::read_to_string(&pending_path).ok();
-        let lifecycle = std::fs::read_to_string(&lifecycle_path).ok();
         let _ = interrupted.kill();
         let _ = interrupted.wait();
         panic!(
-            "install did not pause during lifecycle package copy: status={process_status:?}, staged_files={staged_files:?}, pending={pending:?}, lifecycle={lifecycle:?}"
+            "install did not pause during Artifact Store staging: status={process_status:?}, staged_files={staged_files:?}"
         );
     }
 
@@ -144,18 +149,17 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
     interrupted.wait().unwrap();
     let staged_files = lifecycle_staging_payload_count(&package_parent).unwrap();
     assert!(staged_files > 0 && staged_files < EXTRACTION_PAYLOAD_FILES);
-    assert!(pending_path.is_file());
-    assert!(!receipt_path.exists());
-    assert!(!graph_path.exists());
-    let lifecycle: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&lifecycle_path).unwrap()).unwrap();
-    assert_eq!(lifecycle["status"], "applying");
-    assert!(lifecycle["receipts"].as_array().is_none_or(Vec::is_empty));
-    let snapshot_path = scoped_state(&home, "registry.json");
-    if snapshot_path.exists() {
-        let snapshot: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&snapshot_path).unwrap()).unwrap();
-        assert!(snapshot["packages"].as_array().unwrap().is_empty());
+    // Staging is Artifact-owned; Control must not yet own an installed lock.
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    assert!(!scoped_state(&home, "operations/package-graphs").exists());
+    if scoped_state(&home, "control.sqlite3").is_file() {
+        let locks = CognitivePackageManager::new(ExtensionRegistry::new(extension_paths(&home)))
+            .unwrap()
+            .installed_package_locks()
+            .await_in_test()
+            .unwrap();
+        assert!(locks.is_empty());
     }
 
     server.clear_requests();
@@ -163,9 +167,10 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
         cognitive_registry_install(&server, &repository, &home, "acme/root", &["--offline"]);
     assert!(recovered.status.success(), "{recovered:?}");
     assert!(server.requests().is_empty());
-    assert!(!pending_path.exists());
-    assert!(receipt_path.is_file());
-    assert!(graph_path.is_file());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    assert!(!scoped_state(&home, "registry.json").exists());
     assert!(std::fs::read_dir(&package_parent).unwrap().all(|entry| {
         !entry
             .unwrap()
@@ -173,27 +178,15 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
             .to_string_lossy()
             .starts_with(".artifact-staging-")
     }));
-    let lifecycle: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&lifecycle_path).unwrap()).unwrap();
-    assert_eq!(lifecycle["status"], "completed");
-    assert_eq!(
-        lifecycle["receipts"].as_array().unwrap().len(),
-        lifecycle["intent"]["checkpoints"].as_array().unwrap().len()
-    );
-    let snapshot: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(snapshot_path).unwrap()).unwrap();
-    assert_eq!(snapshot["generation"], 1);
-    assert!(snapshot["packages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|package| {
-            package["packageId"] == "acme/root" && package["lifecycleGeneration"] == 1
-        }));
+    let manager =
+        CognitivePackageManager::new(ExtensionRegistry::new(extension_paths(&home))).unwrap();
+    let locks = manager.installed_package_locks().await_in_test().unwrap();
+    assert_eq!(locks.len(), 1);
+    assert_eq!(locks[0].root_package_id, "acme/root");
 }
 
 #[test]
-fn uninstall_retires_scope_authority_without_deleting_global_artifact() {
+fn uninstall_retires_control_selection_without_deleting_global_artifact() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
     let package = skill_target_with_payload(
@@ -202,74 +195,59 @@ fn uninstall_retires_scope_authority_without_deleting_global_artifact() {
         EXTRACTION_PAYLOAD_FILES,
         EXTRACTION_PAYLOAD_FILE_BYTES,
     );
+    let package_digest = target_package_digest(&package);
     let repository = TestRepository::with_targets(vec![package], 101, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
 
-    let receipt_path = scoped_state(&home, "extensions/acme/root.json");
-    let receipt: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&receipt_path).unwrap()).unwrap();
-    let package_root = std::path::PathBuf::from(receipt["packageRoot"].as_str().unwrap());
-    let payload_root = package_root.join("payload");
+    let artifact = expanded_package_artifact(&home, &package_digest);
+    let payload_root = artifact.join("payload");
+    assert!(artifact.is_dir());
     assert_eq!(
         std::fs::read_dir(&payload_root).unwrap().count(),
         EXTRACTION_PAYLOAD_FILES
     );
-    let pending_path = scoped_state(&home, "operations/package-graphs/uninstall/acme/root.json");
-    let graph_path = scoped_state(&home, "installation-snapshot.json");
-    let snapshot_path = scoped_state(&home, "registry.json");
-    let lifecycle_path = lifecycle_journal_path(&home, "acme/root");
-    let generation_before =
-        serde_json::from_slice::<serde_json::Value>(&std::fs::read(&snapshot_path).unwrap())
-            .unwrap()["generation"]
-            .as_u64()
-            .unwrap();
-    let installation_generation_before =
-        serde_json::from_slice::<serde_json::Value>(&std::fs::read(&graph_path).unwrap()).unwrap()
-            ["generation"]
-            .as_u64()
-            .unwrap();
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+
+    let manager =
+        CognitivePackageManager::new(ExtensionRegistry::new(extension_paths(&home))).unwrap();
+    let before = manager
+        .observe_package("acme/root")
+        .await_in_test()
+        .unwrap();
+    assert_eq!(before.desired, PluginDesiredState::Enabled);
+    let generation_before = before.package_generation.expect("installed generation");
 
     let removed = cognitive_uninstall(&home, "acme/root");
     assert!(removed.status.success(), "{removed:?}");
-    assert!(package_root.is_dir());
+    assert!(artifact.is_dir());
     assert_eq!(
         std::fs::read_dir(&payload_root).unwrap().count(),
         EXTRACTION_PAYLOAD_FILES
     );
-    assert!(!receipt_path.exists());
-    assert!(!pending_path.exists());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "operations/package-graphs").exists());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
 
-    let installation_snapshot: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&graph_path).unwrap()).unwrap();
-    assert_eq!(
-        installation_snapshot["generation"],
-        installation_generation_before + 1
-    );
-    assert!(installation_snapshot["roots"]
-        .as_array()
+    let after_manager =
+        CognitivePackageManager::new(ExtensionRegistry::new(extension_paths(&home))).unwrap();
+    assert!(after_manager
+        .installed_package_locks()
+        .await_in_test()
         .unwrap()
         .is_empty());
-    assert!(installation_snapshot["packages"]
-        .as_array()
-        .unwrap()
-        .is_empty());
-    let lifecycle: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&lifecycle_path).unwrap()).unwrap();
-    assert_eq!(lifecycle["status"], "completed");
-    assert_eq!(
-        lifecycle["receipts"].as_array().unwrap().len(),
-        lifecycle["intent"]["checkpoints"].as_array().unwrap().len()
+    let after = after_manager
+        .observe_package("acme/root")
+        .await_in_test()
+        .unwrap();
+    assert_eq!(after.desired, PluginDesiredState::Absent);
+    assert!(
+        after.package_generation.is_none() || after.package_generation != Some(generation_before)
     );
-    let snapshot: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(snapshot_path).unwrap()).unwrap();
-    assert_eq!(snapshot["generation"], generation_before + 1);
-    assert!(snapshot["packages"].as_array().unwrap().is_empty());
-    assert!(snapshot["pendingCutovers"]
-        .as_array()
-        .is_none_or(Vec::is_empty));
 }
 
 fn skill_target_with_payload(
@@ -354,4 +332,24 @@ fn wait_for_partial_lifecycle_staging(package_parent: &std::path::Path) -> bool 
         std::thread::sleep(Duration::from_millis(1));
     }
     false
+}
+
+trait AwaitInTest {
+    type Output;
+    fn await_in_test(self) -> Self::Output;
+}
+
+impl<F> AwaitInTest for F
+where
+    F: std::future::Future,
+{
+    type Output = F::Output;
+
+    fn await_in_test(self) -> Self::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(self)
+    }
 }

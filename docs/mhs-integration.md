@@ -1,7 +1,7 @@
 # Model Hardware Standard Integration Profile
 
 Status: research-preview integration
-Last updated: 2026-08-28
+Last updated: 2026-09-23
 
 ## Decision
 
@@ -158,6 +158,25 @@ The checked-in tests prove that:
 
 They do not claim MHS protocol conformance. Conformance tests belong with the
 future adapter implementation and a published MHS specification.
+
+## Enterprise GA / A6 exit (external ownership)
+
+A3S Use does not own the MHS adapter source or the virtual industrial
+laboratory. Closing architecture track A6 requires evidence **outside** this
+crate:
+
+1. An owning adapter repository (eventually linked as `crates/mhs` only when
+   that ownership exists — do not invent a Use-owned hardware crate).
+2. Signed package artifacts + Use-Registry admission records for the adapter,
+   published through the same TUF path as other packages.
+3. A separate virtual-lab repository that speaks the same MHS control-gateway
+   contract as physical adapters and qualifies: least-authority Grants,
+   gateway health, dependency publication, single-attempt mutation /
+   unknown-outcome handling, and fail-closed revoke/disable.
+
+Until those external deliverables exist, Use keeps the research-preview
+fixture and profile above as the integration contract, and Registry
+production bootstrap remains independent of MHS.
 
 ## Conditions for revisiting the decision
 

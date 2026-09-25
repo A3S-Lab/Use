@@ -12,13 +12,12 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 use super::diagnostic::{
-    bounded_count, diagnose_enablement_operation, diagnostic_state_error,
-    PluginOperationDiagnostic, PluginOperationHistoryDiagnostic, PluginRetainedOperationDiagnostic,
+    bounded_count, diagnostic_state_error, PluginOperationDiagnostic,
+    PluginOperationHistoryDiagnostic, PluginRetainedOperationDiagnostic,
     PluginRetainedOperationOutcome, MAX_RETAINED_PLUGIN_OPERATION_DIAGNOSTICS,
     MAX_RETAINED_PLUGIN_OPERATION_HISTORY_BYTES, PLUGIN_OPERATION_HISTORY_DIAGNOSTIC_SCHEMA,
 };
-use super::enablement_store::PendingCognitivePackageEnablement;
-use super::store::{PendingPackageGraphOperation, PendingPackageGraphStore};
+use super::store::PendingPackageGraphOperation;
 use super::CognitivePackageManager;
 
 const PLUGIN_OPERATION_HISTORY_SCHEMA: &str = "a3s.use.plugin-operation-history.v1";
@@ -261,30 +260,34 @@ impl CognitivePackageManager {
             .await
     }
 
-    pub(super) async fn retain_and_remove_graph_operation(
+    /// Retain a Control-native Host cancel without writing `operations/package-graphs`.
+    pub(super) async fn retain_host_cancelled_graph_diagnostic(
         &self,
-        store: &PendingPackageGraphStore,
-        pending: &PendingPackageGraphOperation,
-        outcome: PluginRetainedOperationOutcome,
+        envelope: &a3s_use_core::PluginOperationPlanEnvelope,
+        package_id: &str,
+        cancelled_at_ms: u64,
     ) -> UseResult<bool> {
-        self.retain_graph_operation_diagnostic(pending, outcome)
+        let diagnostic = self
+            .diagnose_cancelled_host_graph(package_id, envelope, cancelled_at_ms)
             .await?;
-        store.remove(pending).await
+        self.operation_history_store()
+            .retain(&diagnostic, PluginRetainedOperationOutcome::Cancelled)
+            .await
     }
 
-    /// Retain a completed enable/disable projection while its exact active
-    /// state still exists. Callers persist the terminal operation first and
-    /// clear active recovery authority only after this returns.
-    pub(super) async fn retain_enablement_operation_diagnostic(
+    /// True when operation history already retained this exact cancelled graph.
+    pub(super) async fn has_retained_cancelled_graph(
         &self,
-        active: &PendingCognitivePackageEnablement,
+        package_id: &str,
+        operation_id: &str,
+        plan_digest: &str,
     ) -> UseResult<bool> {
-        let diagnostic =
-            diagnose_enablement_operation(self, active.request.package_id.as_str(), active.clone())
-                .await?;
-        self.operation_history_store()
-            .retain(&diagnostic, PluginRetainedOperationOutcome::Completed)
-            .await
+        let history = self.diagnose_operation_history(package_id).await?;
+        Ok(history.operations.iter().any(|retained| {
+            retained.outcome == PluginRetainedOperationOutcome::Cancelled
+                && retained.diagnostic.operation.operation_id == operation_id
+                && retained.diagnostic.operation.plan_digest == plan_digest
+        }))
     }
 }
 

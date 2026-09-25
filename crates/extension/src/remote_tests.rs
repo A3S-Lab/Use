@@ -17,6 +17,74 @@ const COMPLETE_CATALOG: &[u8] =
     include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v3.json");
 
 #[tokio::test]
+async fn capability_description_trust_store_loads_from_signed_tuf_target() {
+    use a3s_use_core::CapabilityDescriptionSignatureAlgorithm;
+    use ring::signature::{Ed25519KeyPair, KeyPair};
+
+    let key_pair = Ed25519KeyPair::from_seed_unchecked(&[9_u8; 32]).unwrap();
+    let public_key = key_pair
+        .public_key()
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let store = crate::CapabilityDescriptionTrustStore::new(vec![
+        crate::CapabilityDescriptionTrustKey::new(
+            "registry/official/2026",
+            "registry/official",
+            CapabilityDescriptionSignatureAlgorithm::Ed25519,
+            public_key,
+            900,
+            2_500,
+            None,
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    let store_bytes = store.canonical_bytes().unwrap();
+
+    let package = TestTarget::raw(
+        format!(
+            "extensions/a3s/science/{PACKAGE_VERSION}/stable/{}/science-fixture-{PACKAGE_VERSION}-{}.tar.gz",
+            host_target().unwrap(),
+            host_target().unwrap()
+        ),
+        extension_archive(PACKAGE_VERSION),
+    );
+    let trust_target = TestTarget::with_signed_custom(
+        CAPABILITY_DESCRIPTION_TRUST_STORE_TARGET,
+        store_bytes.clone(),
+        description_trust_store_custom(),
+    );
+    let repository = TestRepository::with_targets(vec![package, trust_target], 11, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+
+    let verified = load_capability_description_trust_store(&trusted)
+        .await
+        .expect("signed description trust store must load");
+    verified.validate().unwrap();
+    assert_eq!(verified.registry_name, "fixture");
+    assert_eq!(
+        verified.target_name,
+        CAPABILITY_DESCRIPTION_TRUST_STORE_TARGET
+    );
+    assert_eq!(verified.target_byte_length, store_bytes.len() as u64);
+    assert_eq!(verified.store().keys().len(), 1);
+    assert_eq!(verified.store().keys()[0].key_id, "registry/official/2026");
+    assert!(server
+        .requests()
+        .iter()
+        .any(|request| request.contains("description-trust-store-v1.json")));
+
+    let cached = load_cached_capability_description_trust_store(&trusted)
+        .await
+        .expect("cached description trust store must reload");
+    assert_eq!(cached.store().canonical_bytes().unwrap(), store_bytes);
+}
+
+#[tokio::test]
 async fn tuf_refresh_verifies_metadata_without_downloading_targets() {
     let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 7, FUTURE);
     let server = TestServer::start(repository.routes.clone());

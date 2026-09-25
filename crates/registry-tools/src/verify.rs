@@ -138,14 +138,45 @@ pub(crate) async fn verify_registry(
         } else if target.custom.contains_key("a3sPlanning") {
             PluginPlanningBundle::from_json(&bytes)?;
             seen_planning.insert(name.to_string());
+        } else if target
+            .custom
+            .contains_key("a3sCapabilityDescriptionTrustStore")
+        {
+            if name != a3s_use_extension::CAPABILITY_DESCRIPTION_TRUST_STORE_TARGET {
+                return Err(tools_error(
+                    "registry_tools.verify_failed",
+                    &format!(
+                        "Description trust store target '{name}' must use the fixed path '{}'.",
+                        a3s_use_extension::CAPABILITY_DESCRIPTION_TRUST_STORE_TARGET
+                    ),
+                ));
+            }
+            let marker = target.custom.get("a3sCapabilityDescriptionTrustStore");
+            if marker
+                != Some(&serde_json::json!({
+                    "schema": a3s_use_extension::CAPABILITY_DESCRIPTION_TRUST_STORE_SCHEMA_V1
+                }))
+            {
+                return Err(tools_error(
+                    "registry_tools.verify_failed",
+                    "The description trust store target has invalid signed role metadata.",
+                ));
+            }
+            a3s_use_extension::CapabilityDescriptionTrustStore::from_json(&bytes).map_err(
+                |error| {
+                    tools_error(
+                        "registry_tools.verify_failed",
+                        &format!(
+                            "The description trust store target is invalid: {}",
+                            error.message
+                        ),
+                    )
+                },
+            )?;
         }
     }
-    if packages.is_empty() {
-        return Err(tools_error(
-            "registry_tools.verify_failed",
-            "The registry contains no catalog package targets.",
-        ));
-    }
+    // Empty package catalogs are valid after emergency withdrawal; signature
+    // and planning-target consistency still apply.
     if seen_planning != expected_planning {
         return Err(tools_error(
             "registry_tools.verify_failed",

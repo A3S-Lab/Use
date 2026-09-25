@@ -2,34 +2,12 @@
 //! outside the Control Store transaction.
 //!
 //! This module registers identities, fixed backup policies, safety bounds,
-//! and canonical snapshot evidence. The Knowledge owner has a qualified
-//! snapshot, offline verifier, and clean-target staged restore/activation. The
-//! planning-and-diagnostic owner has the same qualified boundary for terminal
-//! records. The Host projection owner now has the same qualified clean-target
-//! restore boundary for its semantic records and canonical derived indexes.
-//! The Restore Coordinator owner snapshots and offline-verifies only its
-//! bounded terminal history while excluding active recovery evidence. Its
-//! restore adapter preserves the exact active restore and replayably replaces
-//! only terminal history. The Runtime plan owner snapshots immutable,
-//! installation-scoped plan payloads and rehydrates them before Host
-//! projection activation. The Capability payload owner snapshots the
-//! installation-scoped immutable Gateway catalog and descriptor-snapshot
-//! family under `capability-gateway` and rehydrates them after Runtime plans
-//! and before Host projection activation. No owner participates in the
-//! production state-backup path yet. The complete-set snapshot coordinator
-//! now publishes and offline-verifies one no-clobber archive containing the
-//! Control export and every registered owner receipt plus each present
-//! payload. Coordinated clean-target staging now binds the same complete set
-//! beneath one retained exclusive fence without touching live authority.
-//! Qualification activation preflights every candidate, then publishes and
-//! checkpoints Control, Runtime plans, Capability, Host, Knowledge,
-//! observations, and Restore Coordinator state in one fixed order. Its global
-//! marker is retired only after all seven checkpoints are durable. The seven
-//! staging trees are then retired in fixed order, leaving the exact attempt
-//! descriptor and complete journal as a terminal receipt. Subprocess tests
-//! cover every top-level effect and retirement boundary. Production
-//! backup/restore wiring and the indivisible authority cutover remain
-//! separate.
+//! and canonical snapshot evidence. Coordinated Control-backed
+//! `state_backup` inventory admits only the Control export leaf plus these
+//! registered owner live locations (see
+//! [`backup_admits_control_installation_path`]). Owner-native complete-set
+//! snapshot/restore remains the stronger portable archive path; production
+//! restore wiring continues to converge on that registry.
 
 use a3s_use_core::{UseError, UseResult};
 use olpc_cjson::CanonicalFormatter;
@@ -224,6 +202,45 @@ impl ControlPayloadOwnerId {
                 .any(|location| matches!(location, ControlPayloadLiveLocation::OperationRoot(value) if *value == name))
         })
     }
+}
+
+/// Whether one installation-state path is admissible in a Control-backed
+/// coordinated backup inventory.
+///
+/// Admits only the Control export leaf and registered external payload-owner
+/// live locations. Operational locks, Control SQLite sidecars, and derived
+/// indexes may appear so the scanner can skip them; they are not portable
+/// inventory. Legacy layout families (`extensions/`, `grants/`, …) are not
+/// admitted even when `installation_state_layout` still lists them.
+pub(crate) fn backup_admits_control_installation_path(relative: &str, is_directory: bool) -> bool {
+    use crate::installation_state_layout;
+    use a3s_use_extension::ACTIVE_STATE_RESTORE_MARKER;
+
+    let mut parts = relative.split('/');
+    let Some(first) = parts.next().filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let nested = parts.next().is_some();
+    if !nested {
+        if !is_directory {
+            return first == super::snapshot_read::CONTROL_STORE_EXPORT_BACKUP_PATH
+                || first == "control.sqlite3"
+                || installation_state_layout::excluded_operational_state_file(first)
+                || installation_state_layout::excluded_root_lock(first)
+                || first == ACTIVE_STATE_RESTORE_MARKER;
+        }
+        if installation_state_layout::excluded_derived_root(first) || first == "operations" {
+            return true;
+        }
+        return ControlPayloadOwnerId::owner_for_state_root(first).is_some();
+    }
+    if first == "operations" {
+        let Some(operation) = relative.split('/').nth(1) else {
+            return false;
+        };
+        return ControlPayloadOwnerId::owner_for_operation_root(operation).is_some();
+    }
+    ControlPayloadOwnerId::owner_for_state_root(first).is_some()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

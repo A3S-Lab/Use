@@ -291,7 +291,13 @@ pub(super) async fn acquire_capability_lease(
     }
 
     let paths = manager.registry().paths();
-    let snapshot = manager.registry().snapshot().await?;
+    let control = manager.ensure_control().await?;
+    let snapshot = control.current_snapshot().await?.ok_or_else(|| {
+        embedded_error(
+            "use.plugin.embedded_capability_hidden",
+            "The Control installation has no committed capability snapshot.",
+        )
+    })?;
     if snapshot.generation != state.capability_generation
         || snapshot.descriptor_digest()? != state.capability_revision
     {
@@ -300,29 +306,40 @@ pub(super) async fn acquire_capability_lease(
             "The capability snapshot changed while the cognitive lease was being acquired.",
         ));
     }
-    let binding = snapshot
-        .packages
-        .iter()
-        .find(|binding| binding.package_id == package_id && binding.enabled)
+    let selection = snapshot
+        .package_selection(package_id)
         .ok_or_else(|| {
             embedded_error(
                 "use.plugin.embedded_capability_hidden",
-                "The exact cognitive package generation is no longer published.",
+                "The exact cognitive package generation is no longer selected in Control.",
             )
-        })?;
-    let generation = binding.lifecycle_generation.ok_or_else(|| {
-        embedded_error(
-            "use.plugin.embedded_capability_evidence_invalid",
-            "The published cognitive package binding omitted its lifecycle generation.",
-        )
-    })?;
-    if binding.version != version
-        || binding.package_sha256.as_deref() != package_digest.strip_prefix("sha256:")
-        || binding.manifest_sha256 != manifest_digest.trim_start_matches("sha256:")
+        })?
+        .clone();
+    if !selection.enabled {
+        return Err(embedded_error(
+            "use.plugin.embedded_capability_hidden",
+            "The exact cognitive package generation is no longer enabled in Control.",
+        ));
+    }
+    let generation = selection.state_generation;
+    let catalog = &selection.package.catalog.record;
+    let package_sha256 = catalog
+        .package
+        .sha256
+        .as_deref()
+        .and_then(|digest| digest.strip_prefix("sha256:"));
+    let manifest_sha256 = catalog
+        .package
+        .manifest_sha256
+        .as_deref()
+        .map(|digest| digest.trim_start_matches("sha256:"));
+    if selection.package.version() != version
+        || package_sha256 != package_digest.strip_prefix("sha256:")
+        || manifest_sha256 != Some(manifest_digest.trim_start_matches("sha256:"))
     {
         return Err(embedded_error(
             "use.plugin.embedded_capability_snapshot_drift",
-            "The capability snapshot binding differs from the selected package generation.",
+            "The Control package selection differs from the selected package generation.",
         ));
     }
 
@@ -330,7 +347,7 @@ pub(super) async fn acquire_capability_lease(
         package_id: package_id.to_owned(),
         surface,
     };
-    let store = OkfKnowledgeBindingStore::from_extension_paths(paths);
+    let store = OkfKnowledgeBindingStore::for_control_authority(paths);
     let binding = store
         .get(selected_scope, &qualified, generation)
         .await?
@@ -404,7 +421,7 @@ pub(super) async fn acquire_capability_lease(
         SqliteOkfKnowledgeAdapter::from_extension_paths(paths),
     ));
     let provider = OkfKnowledgeLeaseProvider::new(manager.registry().clone(), client);
-    let Some(knowledge) = provider.acquire(&projection).await? else {
+    let Some(knowledge) = provider.acquire_control(&selection, &projection).await? else {
         return Ok(None);
     };
     if knowledge.scope() != selected_scope || knowledge.projection() != &projection {

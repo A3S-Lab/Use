@@ -17,8 +17,8 @@ use crate::okf_knowledge::{
     OkfKnowledgeBindingStore, OkfKnowledgeClient, SqliteOkfKnowledgeAdapter,
 };
 use crate::plugin_lifecycle::{
-    ExtensionCapabilityLifecycleHost, ExtensionPackageLifecycleHost, OkfKnowledgeLifecycleHost,
-    PluginFlowLifecycleHost, PluginLifecycleCoordinator, PluginLifecycleEvidence,
+    ExtensionCapabilityLifecycleHost, ExtensionPackageLifecycleHost, LifecycleProviderSet,
+    OkfKnowledgeLifecycleHost, PluginFlowLifecycleHost, PluginLifecycleEvidence,
     PluginLifecycleHosts, PluginLifecycleIntent, PluginMcpServiceReadiness,
     PluginRuntimeServiceReadinessHost, PluginUiLifecycleHostFactory,
     RuntimePluginSurfaceLifecycleHost, StaticPluginSurfaceLifecycleHost,
@@ -54,6 +54,8 @@ pub struct ManagedCognitivePackageLifecycleFactory {
     selection: RuntimeProviderSelection,
     runtime_registry: Arc<RuntimeClientRegistry>,
     readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    control_runtime_readiness:
+        Option<Arc<dyn super::ControlRuntimeServiceReadinessPort>>,
     ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<PathBuf>,
 }
@@ -121,9 +123,21 @@ impl ManagedCognitivePackageLifecycleFactory {
             selection,
             runtime_registry,
             readiness,
+            control_runtime_readiness: None,
             ui_factory: Arc::new(StaticPluginSurfaceLifecycleHostFactory),
             flow_compiler_binary: None,
         }
+    }
+
+    /// Inject the Control-shaped Runtime Service readiness port used when
+    /// opening production Control. Without this, Control mints opaque
+    /// `gateway:` endpoint identities (standalone default).
+    pub fn with_control_runtime_readiness(
+        mut self,
+        readiness: Arc<dyn super::ControlRuntimeServiceReadinessPort>,
+    ) -> Self {
+        self.control_runtime_readiness = Some(readiness);
+        self
     }
 
     /// Replace the default static UI host with one trusted embedding-host
@@ -162,17 +176,45 @@ impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFac
         "standalone"
     }
 
+    fn supported_lifecycle(&self) -> super::CognitiveLifecycleSupport {
+        super::CognitiveLifecycleSupport {
+            tool_task_executable: true,
+            tool_task_runtime: false,
+            tool_service_runtime: false,
+            mcp_stdio: true,
+            mcp_streamable_http: false,
+            skill: true,
+            okf: true,
+            flow: self.flow_compiler_binary.is_some(),
+            ui: true,
+        }
+    }
+
+    fn flow_compiler_binary(&self) -> Option<&Path> {
+        self.flow_compiler_binary.as_deref()
+    }
+
     fn validate_manifest(&self, manifest: &ExtensionManifest) -> UseResult<()> {
         validate_available_hosts(manifest, self.flow_compiler_binary())
     }
 
-    fn install_coordinator(
+    fn validate_manifest_for_planning(&self, manifest: &ExtensionManifest) -> UseResult<()> {
+        // Standalone has no deferred Runtime selection: planning uses the same
+        // host availability check as install.
+        self.validate_manifest(manifest)
+    }
+
+    fn validate_manifest_for_retirement(&self, manifest: &ExtensionManifest) -> UseResult<()> {
+        self.validate_manifest(manifest)
+    }
+
+    fn install_providers(
         &self,
         registry: ExtensionRegistry,
         candidate: ExtensionLifecyclePackage,
         package_root: std::path::PathBuf,
-    ) -> UseResult<PluginLifecycleCoordinator> {
-        install_coordinator(
+    ) -> UseResult<LifecycleProviderSet> {
+        install_providers(
             registry,
             candidate,
             package_root,
@@ -180,26 +222,70 @@ impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFac
         )
     }
 
-    fn published_install_coordinator(
+    fn published_install_providers(
         &self,
         registry: ExtensionRegistry,
         package_root: std::path::PathBuf,
-    ) -> UseResult<PluginLifecycleCoordinator> {
-        published_install_coordinator(registry, package_root, self.flow_compiler_binary())
+    ) -> UseResult<LifecycleProviderSet> {
+        published_install_providers(registry, package_root, self.flow_compiler_binary())
     }
 
-    fn uninstall_coordinator(
+    fn uninstall_providers(
         &self,
         registry: ExtensionRegistry,
         package_root: std::path::PathBuf,
-    ) -> UseResult<PluginLifecycleCoordinator> {
-        uninstall_coordinator(registry, package_root, self.flow_compiler_binary())
+    ) -> UseResult<LifecycleProviderSet> {
+        uninstall_providers(registry, package_root, self.flow_compiler_binary())
+    }
+
+    fn enablement_providers(
+        &self,
+        registry: ExtensionRegistry,
+        package_root: std::path::PathBuf,
+    ) -> UseResult<LifecycleProviderSet> {
+        // Enablement reuses the published install host set for this factory;
+        // it does not invent a second provider composition.
+        self.published_install_providers(registry, package_root)
     }
 }
 
 impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactory {
     fn name(&self) -> &'static str {
         "managed-runtime-gateway"
+    }
+
+    fn supported_lifecycle(&self) -> super::CognitiveLifecycleSupport {
+        super::CognitiveLifecycleSupport {
+            tool_task_executable: true,
+            tool_task_runtime: true,
+            tool_service_runtime: true,
+            mcp_stdio: true,
+            mcp_streamable_http: true,
+            skill: true,
+            okf: true,
+            flow: self.flow_compiler_binary.is_some(),
+            ui: true,
+        }
+    }
+
+    fn flow_compiler_binary(&self) -> Option<&Path> {
+        self.flow_compiler_binary.as_deref()
+    }
+
+    fn control_runtime_readiness(
+        &self,
+    ) -> Option<Arc<dyn super::ControlRuntimeServiceReadinessPort>> {
+        self.control_runtime_readiness.clone()
+    }
+
+    fn runtime_client_registry(&self) -> Arc<RuntimeClientRegistry> {
+        self.runtime_registry.clone()
+    }
+
+    fn runtime_plan_publications(
+        &self,
+    ) -> UseResult<Vec<crate::plugin_runtime::RuntimeSurfacePlanPublication>> {
+        self.selection.plan_publications()
     }
 
     fn validate_manifest(&self, manifest: &ExtensionManifest) -> UseResult<()> {
@@ -218,13 +304,13 @@ impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactor
         validate_managed_host_availability(manifest, self.flow_compiler_binary.as_deref())
     }
 
-    fn install_coordinator(
+    fn install_providers(
         &self,
         registry: ExtensionRegistry,
         candidate: ExtensionLifecyclePackage,
         package_root: std::path::PathBuf,
-    ) -> UseResult<PluginLifecycleCoordinator> {
-        managed_install_coordinator(
+    ) -> UseResult<LifecycleProviderSet> {
+        managed_install_providers(
             registry,
             candidate,
             package_root,
@@ -234,12 +320,12 @@ impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactor
         )
     }
 
-    fn published_install_coordinator(
+    fn published_install_providers(
         &self,
         registry: ExtensionRegistry,
         package_root: std::path::PathBuf,
-    ) -> UseResult<PluginLifecycleCoordinator> {
-        managed_published_install_coordinator(
+    ) -> UseResult<LifecycleProviderSet> {
+        managed_published_install_providers(
             registry,
             package_root,
             self.runtime_composition(),
@@ -248,18 +334,26 @@ impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactor
         )
     }
 
-    fn uninstall_coordinator(
+    fn uninstall_providers(
         &self,
         registry: ExtensionRegistry,
         package_root: std::path::PathBuf,
-    ) -> UseResult<PluginLifecycleCoordinator> {
-        managed_uninstall_coordinator(
+    ) -> UseResult<LifecycleProviderSet> {
+        managed_uninstall_providers(
             registry,
             package_root,
             self.runtime_composition(),
             self.ui_factory.clone(),
             self.flow_compiler_binary.as_deref(),
         )
+    }
+
+    fn enablement_providers(
+        &self,
+        registry: ExtensionRegistry,
+        package_root: std::path::PathBuf,
+    ) -> UseResult<LifecycleProviderSet> {
+        self.published_install_providers(registry, package_root)
     }
 }
 
@@ -425,18 +519,18 @@ fn validate_managed_host_availability(
     Ok(())
 }
 
-pub(super) fn install_coordinator(
+pub(super) fn install_providers(
     registry: ExtensionRegistry,
     candidate: ExtensionLifecyclePackage,
     package_root: impl Into<std::path::PathBuf>,
     flow_compiler_binary: Option<&Path>,
-) -> UseResult<PluginLifecycleCoordinator> {
+) -> UseResult<LifecycleProviderSet> {
     let paths = registry.paths().clone();
     let package = Arc::new(ExtensionPackageLifecycleHost::new(
         registry.clone(),
         candidate,
     ));
-    coordinator(
+    provider_set(
         registry,
         package,
         package_root,
@@ -451,16 +545,16 @@ pub(super) fn install_coordinator(
     )
 }
 
-pub(super) fn uninstall_coordinator(
+pub(super) fn uninstall_providers(
     registry: ExtensionRegistry,
     package_root: impl Into<std::path::PathBuf>,
     flow_compiler_binary: Option<&Path>,
-) -> UseResult<PluginLifecycleCoordinator> {
+) -> UseResult<LifecycleProviderSet> {
     let paths = registry.paths().clone();
     let package = Arc::new(ExtensionPackageLifecycleHost::for_installed(
         registry.clone(),
     ));
-    coordinator(
+    provider_set(
         registry,
         package,
         package_root,
@@ -478,16 +572,16 @@ pub(super) fn uninstall_coordinator(
 /// Resume an install whose exact generation is already committed and visible.
 /// The installed package host deliberately carries no candidate: a replay may
 /// finish publication journals, but it cannot recommit missing package bytes.
-pub(super) fn published_install_coordinator(
+pub(super) fn published_install_providers(
     registry: ExtensionRegistry,
     package_root: impl Into<std::path::PathBuf>,
     flow_compiler_binary: Option<&Path>,
-) -> UseResult<PluginLifecycleCoordinator> {
+) -> UseResult<LifecycleProviderSet> {
     let paths = registry.paths().clone();
     let package = Arc::new(ExtensionPackageLifecycleHost::for_installed(
         registry.clone(),
     ));
-    coordinator(
+    provider_set(
         registry,
         package,
         package_root,
@@ -502,20 +596,20 @@ pub(super) fn published_install_coordinator(
     )
 }
 
-fn managed_install_coordinator(
+fn managed_install_providers(
     registry: ExtensionRegistry,
     candidate: ExtensionLifecyclePackage,
     package_root: impl Into<std::path::PathBuf>,
     runtime: RuntimeLifecycleComposition,
     ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
-) -> UseResult<PluginLifecycleCoordinator> {
+) -> UseResult<LifecycleProviderSet> {
     let paths = registry.paths().clone();
     let package = Arc::new(ExtensionPackageLifecycleHost::new(
         registry.clone(),
         candidate,
     ));
-    coordinator(
+    provider_set(
         registry,
         package,
         package_root,
@@ -526,18 +620,18 @@ fn managed_install_coordinator(
     )
 }
 
-fn managed_uninstall_coordinator(
+fn managed_uninstall_providers(
     registry: ExtensionRegistry,
     package_root: impl Into<std::path::PathBuf>,
     runtime: RuntimeLifecycleComposition,
     ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
-) -> UseResult<PluginLifecycleCoordinator> {
+) -> UseResult<LifecycleProviderSet> {
     let paths = registry.paths().clone();
     let package = Arc::new(ExtensionPackageLifecycleHost::for_installed(
         registry.clone(),
     ));
-    coordinator(
+    provider_set(
         registry,
         package,
         package_root,
@@ -548,14 +642,14 @@ fn managed_uninstall_coordinator(
     )
 }
 
-fn managed_published_install_coordinator(
+fn managed_published_install_providers(
     registry: ExtensionRegistry,
     package_root: impl Into<std::path::PathBuf>,
     runtime: RuntimeLifecycleComposition,
     ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
-) -> UseResult<PluginLifecycleCoordinator> {
-    managed_uninstall_coordinator(
+) -> UseResult<LifecycleProviderSet> {
+    managed_uninstall_providers(
         registry,
         package_root,
         runtime,
@@ -564,7 +658,7 @@ fn managed_published_install_coordinator(
     )
 }
 
-fn coordinator(
+fn provider_set(
     registry: ExtensionRegistry,
     package: Arc<dyn crate::plugin_lifecycle::PluginPackageLifecycleHost>,
     package_root: impl Into<std::path::PathBuf>,
@@ -572,14 +666,14 @@ fn coordinator(
     runtime: RuntimeLifecycleComposition,
     ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
-) -> UseResult<PluginLifecycleCoordinator> {
+) -> UseResult<LifecycleProviderSet> {
     let package_root = package_root.into();
     let capability = Arc::new(ExtensionCapabilityLifecycleHost::new(registry));
     let runtime = Arc::new(RuntimePluginSurfaceLifecycleHost::new(
         &package_root,
         runtime.selection,
         runtime.registry,
-        RuntimeBindingStore::from_extension_paths(paths),
+        RuntimeBindingStore::for_control_authority(paths),
         runtime.readiness,
     ));
     let static_surfaces = Arc::new(StaticPluginSurfaceLifecycleHost::new(package_root.clone()));
@@ -589,7 +683,7 @@ fn coordinator(
         OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths(
             paths,
         ))),
-        OkfKnowledgeBindingStore::from_extension_paths(paths),
+        OkfKnowledgeBindingStore::for_control_authority(paths),
     ));
     let flow: Arc<dyn PluginFlowLifecycleHost> = match flow_compiler_binary {
         Some(compiler_binary) => Arc::new(A3sFlowLifecycleHost::new(
@@ -600,7 +694,7 @@ fn coordinator(
                 .data_root()
                 .join("artifacts")
                 .join("flow-native-ts"),
-            FlowRuntimeBindingStore::from_extension_paths(paths),
+            FlowRuntimeBindingStore::for_control_authority(paths),
         )?),
         None => Arc::new(UnavailableFlowLifecycleHost),
     };
@@ -614,8 +708,8 @@ fn coordinator(
         static_surfaces.clone(),
         ui,
     );
-    Ok(PluginLifecycleCoordinator::new(
-        crate::plugin_lifecycle::PluginLifecycleJournalStore::from_extension_paths(paths),
+    Ok(LifecycleProviderSet::new(
+        crate::plugin_lifecycle::PluginLifecycleJournalStore::for_control_authority(paths),
         hosts,
     ))
 }
@@ -727,214 +821,5 @@ fn provider_error(code: &'static str, message: impl Into<String>) -> UseError {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    use super::*;
-
-    struct InjectedLifecycleFactory;
-
-    struct RecordingUiFactory(Arc<AtomicBool>);
-
-    impl PluginUiLifecycleHostFactory for RecordingUiFactory {
-        fn create(
-            &self,
-            package_root: PathBuf,
-        ) -> Arc<dyn crate::plugin_lifecycle::PluginUiLifecycleHost> {
-            self.0.store(true, Ordering::SeqCst);
-            Arc::new(StaticPluginSurfaceLifecycleHost::new(package_root))
-        }
-    }
-
-    impl CognitivePackageLifecycleFactory for InjectedLifecycleFactory {
-        fn name(&self) -> &'static str {
-            "test-injected"
-        }
-
-        fn validate_manifest(&self, _manifest: &ExtensionManifest) -> UseResult<()> {
-            Ok(())
-        }
-
-        fn install_coordinator(
-            &self,
-            _registry: ExtensionRegistry,
-            _candidate: ExtensionLifecyclePackage,
-            _package_root: std::path::PathBuf,
-        ) -> UseResult<PluginLifecycleCoordinator> {
-            Err(provider_error(
-                "use.plugin.test_factory_not_applied",
-                "The test factory does not compose an install coordinator.",
-            ))
-        }
-
-        fn published_install_coordinator(
-            &self,
-            _registry: ExtensionRegistry,
-            _package_root: std::path::PathBuf,
-        ) -> UseResult<PluginLifecycleCoordinator> {
-            Err(provider_error(
-                "use.plugin.test_factory_not_applied",
-                "The test factory does not compose a replay coordinator.",
-            ))
-        }
-
-        fn uninstall_coordinator(
-            &self,
-            _registry: ExtensionRegistry,
-            _package_root: std::path::PathBuf,
-        ) -> UseResult<PluginLifecycleCoordinator> {
-            Err(provider_error(
-                "use.plugin.test_factory_not_applied",
-                "The test factory does not compose an uninstall coordinator.",
-            ))
-        }
-    }
-
-    #[test]
-    fn runtime_services_fail_before_lifecycle_composition_without_an_injected_provider() {
-        let manifest = ExtensionManifest::parse_acl(include_str!(
-            "../../crates/extension/fixtures/manifests/plugin-v3.acl"
-        ))
-        .unwrap();
-        let error = validate_available_hosts(&manifest, None).unwrap_err();
-        assert_eq!(error.code, "use.plugin.runtime_provider_required");
-    }
-
-    #[test]
-    fn standalone_accepts_okf_surfaces_with_the_local_knowledge_backend() {
-        let manifest = ExtensionManifest::parse_acl(include_str!(
-            "../../crates/extension/fixtures/manifests/plugin-v3-okf.acl"
-        ))
-        .unwrap();
-        validate_available_hosts(&manifest, None).unwrap();
-    }
-
-    #[test]
-    fn managed_factory_requires_an_exact_selection_for_each_runtime_surface() {
-        let manifest = ExtensionManifest::parse_acl(include_str!(
-            "../../crates/extension/fixtures/manifests/plugin-v3.acl"
-        ))
-        .unwrap();
-        let factory = ManagedCognitivePackageLifecycleFactory::new(
-            RuntimeProviderSelection::default(),
-            Arc::new(RuntimeClientRegistry::new()),
-            Arc::new(UnavailableRuntimeServiceReadinessHost),
-        );
-
-        let error = factory.validate_manifest(&manifest).unwrap_err();
-        assert_eq!(factory.name(), "managed-runtime-gateway");
-        assert_eq!(error.code, "use.plugin.runtime_provider_required");
-    }
-
-    #[test]
-    fn managed_factory_retires_runtime_surfaces_without_a_candidate_selection() {
-        let manifest = ExtensionManifest::parse_acl(include_str!(
-            "../../crates/extension/fixtures/manifests/plugin-v3.acl"
-        ))
-        .unwrap();
-        let factory = ManagedCognitivePackageLifecycleFactory::new(
-            RuntimeProviderSelection::default(),
-            Arc::new(RuntimeClientRegistry::new()),
-            Arc::new(UnavailableRuntimeServiceReadinessHost),
-        );
-
-        factory.validate_manifest_for_retirement(&manifest).unwrap();
-    }
-
-    #[test]
-    fn managed_factory_uses_the_embedding_hosts_ui_composition() {
-        let temp = tempfile::tempdir().unwrap();
-        let created = Arc::new(AtomicBool::new(false));
-        let factory = ManagedCognitivePackageLifecycleFactory::new(
-            RuntimeProviderSelection::default(),
-            Arc::new(RuntimeClientRegistry::new()),
-            Arc::new(UnavailableRuntimeServiceReadinessHost),
-        )
-        .with_ui_lifecycle_factory(Arc::new(RecordingUiFactory(created.clone())));
-        let registry = ExtensionRegistry::new(crate::test_extension_paths(temp.path()));
-
-        factory
-            .published_install_coordinator(registry, temp.path().join("package"))
-            .unwrap();
-
-        assert!(created.load(Ordering::SeqCst));
-    }
-
-    #[test]
-    fn flow_surfaces_fail_before_lifecycle_composition_without_a3s_flow() {
-        let manifest = flow_manifest();
-        let factory = StandaloneCognitivePackageLifecycleFactory::default();
-        let error = factory.validate_manifest(&manifest).unwrap_err();
-        assert_eq!(error.code, "use.plugin.flow_provider_required");
-    }
-
-    #[test]
-    fn explicit_absolute_a3s_flow_compiler_admits_flow_surfaces() {
-        let temp = tempfile::tempdir().unwrap();
-        let factory = StandaloneCognitivePackageLifecycleFactory::with_flow_compiler(
-            temp.path().join("a3s-flow-native-compiler"),
-        )
-        .unwrap();
-
-        factory.validate_manifest(&flow_manifest()).unwrap();
-    }
-
-    #[test]
-    fn relative_a3s_flow_compiler_is_rejected_before_composition() {
-        let error = StandaloneCognitivePackageLifecycleFactory::with_flow_compiler(
-            "bin/a3s-flow-native-compiler",
-        )
-        .unwrap_err();
-
-        assert_eq!(error.code, "use.plugin.flow_compiler_path_invalid");
-    }
-
-    fn flow_manifest() -> ExtensionManifest {
-        ExtensionManifest::parse_acl(
-            r#"
-extension "acme/flow" {
-  schema_version = 3
-  version        = "1.0.0"
-  route          = "flow"
-  requires_use   = ">=0.3.0, <0.4.0"
-  actions        = ["read"]
-
-  repository {
-    url      = "https://github.com/acme/flow"
-    revision = "0123456789abcdef0123456789abcdef01234567"
-  }
-
-  flow "review" {
-    engine        = "a3s-flow"
-    runtime       = "native-ts"
-    source        = "flows/review.ts"
-    export        = "run"
-    requires_tool = []
-    requires_mcp  = []
-    requires_okf  = []
-    optional      = false
-  }
-}
-"#,
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn embedding_hosts_can_replace_the_standalone_lifecycle_factory() {
-        let temp = tempfile::tempdir().unwrap();
-        let registry = ExtensionRegistry::new(crate::test_extension_paths(temp.path()));
-        let manager = super::super::CognitivePackageManager::with_lifecycle(
-            registry,
-            Arc::new(InjectedLifecycleFactory),
-        )
-        .unwrap();
-        let manifest = ExtensionManifest::parse_acl(include_str!(
-            "../../crates/extension/fixtures/manifests/plugin-v3-okf.acl"
-        ))
-        .unwrap();
-
-        assert_eq!(manager.lifecycle().name(), "test-injected");
-        manager.lifecycle().validate_manifest(&manifest).unwrap();
-    }
-}
+#[path = "hosts_tests.rs"]
+mod tests;

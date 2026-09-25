@@ -1,7 +1,8 @@
 # Capability description signatures
 
-Status: qualified trust-boundary mechanism; production Registry and Control
-activation are still pending.
+Status: Registry/TUF trust-store target and loader are implemented;
+production hosts must still wire that load path (not fixture keys) into
+live Control activation.
 
 An MCP Tool description is executable policy input, not presentation-only
 metadata. A package must not be able to change its name, JSON schemas, or
@@ -55,9 +56,22 @@ invalid signature. The verifier accepts an explicit clock value so production
 and restore tests cannot silently use different time assumptions.
 
 The trust store is public policy, not private key custody. A production host
-must load it from the Registry/TUF trust root or another independently
-authenticated configuration source. Private signing keys never enter Use,
-agent arguments, package archives, or receipts.
+must load it from the Registry/TUF trust root through
+`load_capability_description_trust_store` (or the cached twin). The fixed
+signed target is `capability/description-trust-store-v1.json`, with custom
+role metadata `a3sCapabilityDescriptionTrustStore` bound to schema
+`a3s.use.capability-description-trust-store.v1`. Registry operators publish
+that target with `a3s-use-registry-tools assemble --description-trust-store`.
+`ProductionControlHostDependencies::standalone_with_signed_catalog_from_registry`
+accepts only a `VerifiedCapabilityDescriptionTrustStore` from that load path.
+Product Control open goes through
+`CognitivePackageManager::ensure_control_for_registry`: Gateway serve accepts
+`--registry-name` (or the configured default), loads the signed target, and
+injects it before Control initialize. Empty Registry source configuration keeps
+the unsigned preview projector. Private signing keys never enter Use, agent
+arguments, package archives, or receipts. Preview fixtures may still construct
+an in-memory `CapabilityDescriptionTrustStore` for tests; that path is not
+production evidence.
 
 ## Replay and restore
 
@@ -87,9 +101,10 @@ Gateway catalog owner and descriptor-snapshot owner now each expose a
 separate plan-bound clean-target restore adapter with durable
 candidate/activation replay and strict no-clobber target semantics; neither
 adapter chooses lifecycle state. The remaining activation work is to source
-the trust store and signed envelopes from the official Registry/TUF authority,
-coordinate both restore/retention primitives with the live lifecycle, and
-route the Gateway through the A2 Control authority. Until then
-CapabilityDescriptionProof::from_verified
+the trust store and signed envelopes from the official Registry/TUF authority
+(`capability/description-trust-store-v1.json` via
+`load_capability_description_trust_store`), coordinate both restore/retention
+primitives with the live lifecycle, and route the Gateway through the A2
+Control authority. Until then CapabilityDescriptionProof::from_verified
 remains a compatibility constructor for explicitly host-verified preview
 integrations and must not be treated as cryptographic evidence.

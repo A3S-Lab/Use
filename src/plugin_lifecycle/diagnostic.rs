@@ -72,6 +72,11 @@ pub enum PluginLifecycleCheckpointDiagnosticStatus {
 }
 
 impl PluginLifecycleDiagnostic {
+    /// Empty Control-native projection when the legacy journal leaf is absent.
+    pub(crate) fn empty(scope: &PlanScope, package_id: &str) -> UseResult<Self> {
+        Self::from_records(scope, package_id, None, None)
+    }
+
     pub(super) fn from_records(
         scope: &PlanScope,
         package_id: &str,

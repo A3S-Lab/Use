@@ -300,6 +300,7 @@ pub(super) fn hide_key(envelope: &PluginOperationPlanEnvelope) -> UseResult<Stri
     Ok(format!("sha256:{:x}", Sha256::digest(identity.as_bytes())))
 }
 
+#[cfg(test)]
 pub(super) fn grant_rollback_key(envelope: &PluginOperationPlanEnvelope) -> UseResult<String> {
     envelope.validate()?;
     let identity = format!(

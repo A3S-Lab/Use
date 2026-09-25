@@ -3,6 +3,7 @@ use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{UseError, UseResult};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use super::package::{io_error, MAX_PACKAGE_BYTES, MAX_PACKAGE_FILES};
@@ -19,7 +20,8 @@ struct PackageFile {
 /// This is the same domain-separated digest the Artifact Store uses at
 /// admission, so registry assembly and install-time verification agree on
 /// package content identity by construction.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PackageFingerprint {
     pub sha256: String,
     pub file_count: u64,

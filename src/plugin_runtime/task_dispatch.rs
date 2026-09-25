@@ -123,20 +123,38 @@ impl RuntimeTaskDispatcher {
         }
     }
 
-    /// Invoke one exact currently published Runtime Task generation.
+    /// Invoke one exact Control-selected Runtime Task generation.
     ///
-    /// The Registry lease is held until provider cleanup finishes, so disable,
-    /// upgrade, and uninstall drain accepted calls before removing the binding.
-    /// Provider identity is recovered from the durable receipt and reverified;
-    /// current host assignments can never silently redirect an installed Task.
+    /// Installation authority is Control-only: the dispatcher pins the
+    /// generation from the committed Control installation snapshot and never
+    /// reads legacy `registry.json` / `extensions/` publication. The generation
+    /// lease is held until provider cleanup finishes, so disable, upgrade, and
+    /// uninstall drain accepted calls before removing the binding. Provider
+    /// identity is recovered from the durable receipt and reverified; current
+    /// host assignments can never silently redirect an installed Task.
     pub async fn invoke(
         &self,
         request: RuntimeTaskDispatchRequest,
     ) -> UseResult<RuntimeTaskExecution> {
         request.validate()?;
+        let paths = self.registry.paths();
+        let snapshot = crate::control_store::read_current_installation_snapshot(
+            &paths.installation_state_root(),
+            paths.installation(),
+        )
+        .await?
+        .ok_or_else(|| generation_unavailable(&request))?;
+        let selection = snapshot
+            .packages
+            .iter()
+            .find(|selection| selection_matches_identity(selection, request.identity()))
+            .ok_or_else(|| generation_unavailable(&request))?;
+        if !selection.enabled {
+            return Err(generation_unavailable(&request));
+        }
         let lease = self
             .registry
-            .acquire_published_lifecycle_generation(request.identity())
+            .acquire_control_lifecycle_generation(selection, request.identity())
             .await?
             .ok_or_else(|| generation_unavailable(&request))?;
         validate_manifest_surface(lease.extension(), request.surface_id())?;
@@ -149,7 +167,7 @@ impl RuntimeTaskDispatcher {
             .ok_or_else(|| {
                 UseError::new(
                     "use.plugin.runtime.binding_missing",
-                    "The published Runtime Task generation has no durable binding receipt.",
+                    "The Control-selected Runtime Task generation has no durable binding receipt.",
                 )
             })?;
         let RuntimeBindingReceipt::Task(binding) = receipt else {
@@ -188,6 +206,20 @@ fn validate_manifest_surface(
         return Err(binding_mismatch());
     }
     Ok(())
+}
+
+fn selection_matches_identity(
+    selection: &a3s_use_core::InstallationPackageSelection,
+    identity: &ExtensionLifecycleIdentity,
+) -> bool {
+    if selection.package_id() != identity.package_id()
+        || selection.state_generation != identity.generation()
+    {
+        return false;
+    }
+    let record = &selection.package.catalog.record;
+    record.package.sha256.as_deref() == Some(identity.package_digest())
+        && record.package.manifest_sha256.as_deref() == Some(identity.manifest_digest())
 }
 
 fn validate_dispatch_binding(

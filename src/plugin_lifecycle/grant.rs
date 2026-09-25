@@ -1,9 +1,13 @@
+#[cfg(test)]
 use std::collections::BTreeSet;
 
+#[cfg(test)]
 use a3s_use_core::{
     PlanPackageChangeKind, PlanPolicyDecision, PluginOperationPlanEnvelope,
-    ResolvedWorkspaceGrantChangeSet, UseError, UseResult,
+    ResolvedWorkspaceGrantChangeSet,
 };
+use a3s_use_core::{UseError, UseResult};
+#[cfg(test)]
 use a3s_use_extension::{
     WorkspaceGrantCandidateCeiling, WorkspaceGrantCutoverEvidence, WorkspaceGrantLifecyclePhase,
     WorkspaceGrantOperationJournal, WorkspaceGrantStore, WORKSPACE_GRANT_CUTOVER_SCHEMA,
@@ -58,6 +62,7 @@ impl PluginCapabilityCutoverEvidence {
         Ok(())
     }
 
+    #[cfg(test)]
     fn validate_against(&self, resolved: &ResolvedWorkspaceGrantChangeSet) -> UseResult<()> {
         self.validate()?;
         if self.capability_generation_before != resolved.capability_generation_before
@@ -73,9 +78,9 @@ impl PluginCapabilityCutoverEvidence {
 
 /// One plan-bound grant sub-saga composed around package graph publication.
 ///
-/// The resolved grants and exact signed ceilings are immutable for the unit's
-/// lifetime. Candidate receipts are durable before package or Runtime prepare;
-/// prior receipts can retire only after an exact capability snapshot cutover.
+/// Test-only: production Grant authority is Control (`control.sqlite3`). File-store
+/// `grants/` journals must not remain a public production composition API.
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct PluginGrantLifecycleUnit {
     store: WorkspaceGrantStore,
@@ -84,6 +89,7 @@ pub struct PluginGrantLifecycleUnit {
     ceilings: Vec<WorkspaceGrantCandidateCeiling>,
 }
 
+#[cfg(test)]
 impl PluginGrantLifecycleUnit {
     pub fn new(
         store: WorkspaceGrantStore,
@@ -223,6 +229,7 @@ impl PluginGrantLifecycleUnit {
     }
 }
 
+#[cfg(test)]
 fn validate_binding(
     envelope: &PluginOperationPlanEnvelope,
     resolved: &ResolvedWorkspaceGrantChangeSet,

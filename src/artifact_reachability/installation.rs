@@ -15,6 +15,10 @@ use crate::cognitive_package::{
     acquire_existing_package_graph_lock_shared, inspect_pending_artifact_references_locked,
     PendingPackageGraphArtifactReferences,
 };
+use crate::control_store::{
+    control_database_present, inspect_installation_artifact_references,
+    ControlInstallationArtifactReference,
+};
 use crate::installation_state_layout;
 use crate::plugin_runtime::RuntimeSurfacePlanStore;
 
@@ -119,6 +123,7 @@ async fn scan_installation(
     let mut lifecycle_operations = None;
     let mut runtime_plans = None;
     let mut capability_gateway = None;
+    let mut control_database = false;
     let mut entries = fs::read_dir(state_root)
         .await
         .map_err(|error| inventory_io("read installation state directory", state_root, error))?;
@@ -150,6 +155,7 @@ async fn scan_installation(
                 "use.artifact_reachability.state_unstable",
                 "Artifact references cannot be collected while an installation restore is active.",
             )),
+            "control.sqlite3" => control_database = true,
             INSTALLATION_SNAPSHOT_FILE => snapshot = Some(path),
             "extensions" => current_receipts = Some(path),
             "extension-generations" => retained_receipts = Some(path),
@@ -164,38 +170,48 @@ async fn scan_installation(
         }
     }
 
-    // Additions acquire global reference admission before the graph lock. The
-    // collector already owns the inverse side of that global boundary, so one
-    // shared graph lock makes the snapshot and pending-operation view coherent
-    // without introducing a new authority.
     let mut facts = SourceFacts::default();
-    if snapshot.is_some() || pending_operations.is_some() {
-        let _package_graph_lock = acquire_existing_package_graph_lock_shared(state_root).await?;
-        if let Some(path) = snapshot {
-            facts.merge(scan_snapshot(&path, location).await?)?;
+    if control_database || control_database_present(state_root) {
+        // Control is sole package-graph authority. Legacy snapshot/receipt/
+        // package-graph leaves are rejected by the inspect path.
+        facts.merge(scan_control_authority(state_root, location, budget).await?)?;
+    } else {
+        // Additions acquire global reference admission before the graph lock. The
+        // collector already owns the inverse side of that global boundary, so one
+        // shared graph lock makes the snapshot and pending-operation view coherent
+        // without introducing a new authority.
+        if snapshot.is_some() || pending_operations.is_some() {
+            let _package_graph_lock =
+                acquire_existing_package_graph_lock_shared(state_root).await?;
+            if let Some(path) = snapshot {
+                facts.merge(scan_snapshot(&path, location).await?)?;
+            }
+            if let Some(root) = pending_operations {
+                facts.merge(scan_pending(&root, location).await?)?;
+            }
         }
-        if let Some(root) = pending_operations {
-            facts.merge(scan_pending(&root, location).await?)?;
+        if current_receipts.is_some() || retained_receipts.is_some() {
+            // Do not nest unrelated installation locks. Global admission freezes
+            // additions across both sources; a retirement between source scans can
+            // therefore only leave conservative extra references.
+            let _registry_lock =
+                receipts::acquire_existing_registry_lock_shared(state_root).await?;
+            if let Some(root) = current_receipts {
+                facts.merge(
+                    receipts::scan_current(&root, location, &paths.artifact_store(), budget)
+                        .await?,
+                )?;
+            }
+            if let Some(root) = retained_receipts {
+                facts.merge(
+                    receipts::scan_retained(&root, location, &paths.artifact_store(), budget)
+                        .await?,
+                )?;
+            }
         }
-    }
-    if current_receipts.is_some() || retained_receipts.is_some() {
-        // Do not nest unrelated installation locks. Global admission freezes
-        // additions across both sources; a retirement between source scans can
-        // therefore only leave conservative extra references.
-        let _registry_lock = receipts::acquire_existing_registry_lock_shared(state_root).await?;
-        if let Some(root) = current_receipts {
-            facts.merge(
-                receipts::scan_current(&root, location, &paths.artifact_store(), budget).await?,
-            )?;
+        if let Some(root) = lifecycle_operations {
+            facts.merge(lifecycle::scan(&root, location, budget).await?)?;
         }
-        if let Some(root) = retained_receipts {
-            facts.merge(
-                receipts::scan_retained(&root, location, &paths.artifact_store(), budget).await?,
-            )?;
-        }
-    }
-    if let Some(root) = lifecycle_operations {
-        facts.merge(lifecycle::scan(&root, location, budget).await?)?;
     }
     if let Some(root) = runtime_plans {
         let maintenance = StateMaintenanceLock::new(state_root)
@@ -212,6 +228,51 @@ async fn scan_installation(
         facts.merge(capability::scan(&root, location, budget).await?)?;
     }
     Ok(facts)
+}
+
+async fn scan_control_authority(
+    state_root: &Path,
+    location: &InstallationLocation,
+    budget: &mut InventoryBudget,
+) -> UseResult<SourceFacts> {
+    budget.observe_entry()?;
+    let (installation, references) =
+        inspect_installation_artifact_references(state_root, location.kind, &location.storage_key)
+            .await
+            .map_err(|error| {
+                inventory_invalid(format!(
+                    "Control Store artifact references are not readable: {}",
+                    error.message
+                ))
+                .with_detail("cause_code", error.code.clone())
+            })?;
+    location.validate_identity(&installation)?;
+    let mut facts = SourceFacts::with_identity(installation.clone());
+    for reference in references {
+        budget.observe_entry()?;
+        facts
+            .references
+            .push(control_reference_to_raw(reference, installation.clone()));
+    }
+    Ok(facts)
+}
+
+fn control_reference_to_raw(
+    reference: ControlInstallationArtifactReference,
+    installation: InstallationId,
+) -> RawArtifactReference {
+    RawArtifactReference {
+        kind: reference.kind,
+        digest: reference.digest,
+        source: if reference.committed {
+            ArtifactReferenceSource::ControlCommittedGeneration
+        } else {
+            ArtifactReferenceSource::ControlNonterminalOperation
+        },
+        installation: Some(installation),
+        expected_bytes: reference.expected_bytes,
+        expected_files: reference.expected_files,
+    }
 }
 
 async fn scan_runtime_plans(

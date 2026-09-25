@@ -478,24 +478,40 @@ Implementation evidence (2026-08-30; exit gate passed):
 
 ### A2 - Consolidate mutable authority in a Control Store
 
-- [ ] Introduce a typed `ControlStore` interface with an initial SQLite/WAL
+- [x] Introduce a typed `ControlStore` interface with an initial SQLite/WAL
   backend for Use-owned mutable metadata. Keep ACL configuration and immutable
   package, backup, and projection payloads outside the database.
-- [ ] Commit installation generations, reviewed-operation state, lifecycle
+- [x] Commit installation generations, reviewed-operation state, lifecycle
   checkpoints, Grants, enablement, provider-binding identity, and capability
   generation metadata in explicit transactions with foreign-key and generation
   constraints.
-- [ ] Use an outbox/checkpoint boundary for provider effects. Never hold a
+- [x] Use an outbox/checkpoint boundary for provider effects. Never hold a
   database transaction across Runtime, Gateway, Flow, filesystem, network, or
   device I/O; retry owner-proven safe-no-effect deferrals automatically with
   the same key, and reconcile rejected or unknown outcomes explicitly.
-- [ ] Derive backup/restore inventory from the Control Store schema and
+- [x] Derive backup/restore inventory from the Control Store schema and
   registered external payload owners instead of maintaining a second manual
-  allowlist that can drift from the state model.
-- [ ] Provide deterministic export, offline verification, restore, corruption
+  allowlist that can drift from the state model. Control-backed coordinated
+  backup now admits only the verified Control export leaf plus
+  `ControlPayloadOwnerId` live locations; unregistered layout families fail
+  closed. Owner-native complete-set snapshot/restore remains the stronger
+  portable archive path and continues to converge with restore wiring.
+- [x] Provide deterministic export, offline verification, restore, corruption
   diagnostics, and clean-state initialization tests for the new store.
-- [ ] Keep async callers non-blocking through an async database driver or a
-  bounded dedicated store executor.
+  Authority export/verify/tamper rejection and clean restore round-trips are
+  covered by Control aggregate tests (`authority_export_is_complete_and_semantically_verified_offline`,
+  `clean_restore_stages_and_round_trips_the_exact_authority`); payload-owner
+  restore coordinators and crash-checkpoint suites exercise the broader
+  installation restore path.
+- [x] Keep async callers non-blocking through an async database driver or a
+  bounded dedicated store executor. `ControlStoreExecutor` owns a dedicated
+  `a3s-use-control-store` worker thread with a bounded request queue; async
+  callers only await oneshot replies and never run SQLite on the Tokio
+  runtime. Concurrent multi-thread verify
+  (`bounded_executor_keeps_concurrent_async_callers_progressing`) and a
+  `current_thread` responsiveness proof
+  (`bounded_executor_keeps_current_thread_runtime_responsive_during_store_work`)
+  cover the ADR-003 isolation claim.
 
 Exit gate: a process failure cannot expose a combination of graph, Grant,
 enablement, operation, and capability metadata that never committed together.
@@ -510,12 +526,36 @@ must switch the complete mutable control aggregate and its reachability,
 diagnostic, backup, and restore readers together.
 
 The checked-in [coordinated cutover contract](docs/control-store-cutover.md)
-freezes that replacement boundary in versioned ACL. A unit test accounts for
-every supported installation-state leaf exactly once as legacy authority,
-registered external ownership, or excluded operational state; it also pins the
-seven consumer groups that must switch without fallback. This closes the
-inventory prerequisite only. It neither activates the database nor completes
-an A2 checkbox.
+now records production activation (`production_authority = "control-store"`,
+`control_store_activation = "active"`, clean-state-only). Cognitive-package
+install/upgrade/uninstall/enablement and Host observation open Control only;
+legacy mutable leaves fail closed at installation open. Product CLI install,
+enablement, and Host graph completion now read Control operation evidence and
+Control-backed installed extensions (no legacy `extensions/` receipts). Product
+graph recovery and production activation now prove Control EffectsPending
+survives process restart and resumes by exact operation identity without
+generation inflation; legacy journal/pending/registry kill suites are obsolete
+under Control. Archive extraction/staging kill recovery and uninstall artifact
+retention are Control-native. Native-launcher Tool surfaces no longer require
+Runtime plan publications. A2 Control Store checkboxes are closed on evidence
+(typed SQLite authority, outbox effects, inventory derivation, export/verify/
+restore suites, dedicated store executor). Production readers no longer open unused legacy mutable leaves
+(`package-enablement/`, `operations/plugins`, `operations/package-graphs`,
+`installation-snapshot.json`, `grants/`, `extensions/` receipts) as
+authority beside Control; capability projection is Control-only. Coordinated
+backup inventory under Control is derived from the Control export plus the
+registered external payload-owner live locations (not the legacy
+`installation_state_layout` allowlist). Control-native Host Grant
+recovery (install/upgrade/uninstall reopen + offline replay without
+reauthorization) and EffectsPending kill/resume are proven; legacy
+`grants/.operations` kill suites are obsolete under Control. Host pre-admission
+cancel now uses Control observation + Host cancellation + retained diagnostic
+history only (no `operations/package-graphs` write). Host lifecycle binding
+composition uses Control-authority payload roots
+(`payloads/{runtime,knowledge,flow}-bindings`) instead of legacy
+`bindings/{runtime,knowledge,flow}` leaves. This
+activation does
+not close A3, Registry, or ops GA gates by itself.
 
 The inactive `src/control_store/` kernel now qualifies most of ADR-003 step 2
 for a clean installation. Schema v11 binds one exact `InstallationId` and stores
@@ -882,7 +922,77 @@ backup and artifact reachability exclude only that receipt; incomplete,
 extended, linked, or tampered evidence fails closed. Production Grant
 conversion, Runtime/Flow dispatcher composition, production backup/restore
 wiring, indivisible consumer cutover, and deletion of legacy mutable stores
-remain open; no A2 checkbox is complete yet.
+remain open on the A3/ops path. A2 Control Store checkboxes are closed on
+evidence (typed SQLite authority, outbox effects, inventory derivation,
+export/verify/restore suites, dedicated store executor including a
+`current_thread` non-blocking proof). Legacy mutable-store deletion and
+indivisible consumer cutover remain cutover follow-ups, not open A2 gates.
+Progress on prune-legacy: Host protocol store no longer dual-writes or
+fallback-reads pre–plan-digest operation/cancellation indexes (exact
+binding paths only); capability projection reads Control payload binding
+roots via `for_control_authority` instead of legacy `bindings/*`.
+The legacy `CognitivePackageEnablementStore` file writer under
+`package-enablement/` is deleted; enablement projection/operation types and
+validators remain for Control diagnostics and recovery evidence only.
+Knowledge CLI restore observes Grants from the committed Control generation
+via `ProductionControlLifecycle::observe_stored_workspace_grant` on the
+`for_control_authority` path (legacy `grants/` stays absent).
+Knowledge restore authority inventory and managed Knowledge lease acquisition
+likewise pin exact generations from the Control installation snapshot
+(`validate_authority_inventory_control`,
+`acquire_control_knowledge_generation_leases`); published Registry lease paths
+remain test-only. Fail-closed without Control:
+`control_restore_fails_closed_without_control_installation_snapshot`,
+`control_knowledge_leases_fail_closed_without_control_snapshot`.
+Capability Gateway snapshot leases pin the same Control selections via
+`ExtensionRegistry::acquire_control_snapshot` (packages projected from the
+Control installation snapshot into `CapabilityUpstreamEvidence`). Empty Control
+leases use `acquire_empty_control_snapshot` against
+`ExtensionRegistrySnapshot::empty` — never `acquire_published_snapshot` /
+`registry.json`. Projection fail-closes without Control
+(`use.capability.control_required`). Evidence:
+`injected_registry_acquires_one_exact_use_snapshot_lease`,
+`snapshot_lease_fails_closed_without_control_store`.
+Whole-installation restore validates live Control export authority under the
+exclusive maintenance fence (`validate_live_control_authority`) and fails closed
+without Control (`use.state_restore_control_required`); coordinated backup likewise
+requires Control (`use.state_backup_control_required`) and never reads published
+`registry.json` authority. Evidence:
+`coordinated_backup_requires_control_store`,
+`control_state_restore_plans_against_control_export_authority`.
+Operation diagnostics project Registry generation/digest from Control
+(`control_registry_diagnostic_face`); they do not read `published_snapshot()`.
+CLI Plugin Manager planning reads the same Control-owned Grant snapshot via
+`CognitivePackageManager::planned_grant_snapshot` and must never open
+`WorkspaceGrantStore::from_extension_paths` (that path's lock creates
+`grants/` and fail-closes Control open).
+Production Grant commit evidence:
+`production_apply_commits_grants_without_legacy_grants_leaf`.
+`PackageGraphAuthorization::lifecycle_unit` (file-store Grant saga) is
+`#[cfg(test)]` only — production never opens `WorkspaceGrantStore` beside
+Control. `CognitivePackageManager` no longer stores an authority selector;
+construction still fail-closes via `select_installation_authority`.
+File-store `WorkspaceGrantStore` locks fail closed when `control.sqlite3` is
+present (`use.plugin.grant_store.control_authority_required`) so hosts cannot
+materialize `grants/` beside Control.
+`CognitivePackageManager::ensure_control` shares one open path with
+`ensure_control_for_registry_lifecycle` (default cached Registry trust when
+sources exist). OnceCell records whether signed description trust was injected;
+a later Registry/Gateway open that requires signed trust fail-closes with
+`use.control.signed_description_trust_unavailable` instead of silently keeping
+an unsigned projector.
+`OkfKnowledgeRecoveryManager::from_extension_paths` and the legacy
+`bindings/{knowledge,runtime,flow}` / `operations/plugins` store constructors
+are `#[cfg(test)]` only; production builds expose
+`for_control_authority` exclusively. `InstallationSnapshotStore` and
+`PendingPackageGraphStore` (legacy `installation-snapshot.json` /
+`operations/package-graphs` writers) are likewise compiled only for tests;
+those leaves remain in `LEGACY_AUTHORITY_PATHS` and fail-close beside Control.
+Production `apply_reviewed_operation` / pending-effect resume seed an empty
+unsigned descriptor-proof snapshot for the committed capability identity only
+when the published Gateway catalog has no descriptors (skill-only /
+catalog-empty). Non-empty Tool/MCP catalogs leave the snapshot absent until
+proofs are staged, so signed publish cannot conflict with an empty seed.
 As a cutover prerequisite, lifecycle intent v4 and operation v3 now bind every
 checkpoint key to the plan, installation kind and ID, package ID and
 generation, action, sequence, kind, and surface. This removes collisions
@@ -899,51 +1009,82 @@ between graph siblings before their effects enter one installation outbox.
   `InvocationRef`, `ArtifactRef`, `EndpointRef`, and `ResourceRef` values.
   Remove executable paths, package roots, provider release paths, and secrets
   from external JSON.
-- [ ] Let the Use Host resolve an invocation reference and retain the exact
+- [x] Let the Use Host resolve an invocation reference and retain the exact
   package-generation lease for the entire call, stream, or server connection;
   drain and retirement operate on those server-side leases.
 - [x] Define consumer profiles. Generic coding agents receive standard MCP
   Tools, Resources, and Prompts; the typed profile/negotiation contract keeps
   optional A3S extension labels explicit without changing the universal
   contract.
-- [ ] Project negotiated Flow, UI, and Knowledge metadata for A3S consumers
+- [x] Project negotiated Flow, UI, and Knowledge metadata for A3S consumers
   without weakening the lower-authority boundary. Principal-scoped discovery
-  filtering is now available as a separate host policy seam; actual typed
-  extension payload projection remains open.
+  filtering remains a separate host policy seam. Path-free
+  `CapabilityDescriptorKind::{Flow,Knowledge,Ui}` variants carry digest-bound
+  extension payloads; they require the matching consumer extension, appear in
+  `extension_metadata_descriptors()` only after negotiation, and are never
+  compiled into MCP Tool/Resource/Prompt routes
+  (`gateway_projects_flow_ui_knowledge_metadata_only_for_negotiated_extensions`).
 - [x] Propagate standard MCP request cancellation through the Capability
   Gateway. rmcp `RequestContext.ct` now bounds Tool, Resource, and Prompt
   provider operations; cancellation drops in-flight provider futures and
   resolver/admission leases, with a typed secret-free boundary result when a
   response is still deliverable. Detached downstream work remains a host
   provider responsibility.
-- [ ] Require signed descriptions and JSON input/output schemas for every
+- [x] Require signed descriptions and JSON input/output schemas for every
   agent-visible Tool. Legacy executable-only Tool Tasks remain host-only until
-  a schema-valid descriptor is bound to them.
+  a schema-valid descriptor is bound to them. Grant Tool production cutover now
+  admits only schema-bearing Tools through `ControlCapabilityDescriptorProjection`
+  (Runtime attestation digests) and publishes signed v2 descriptor snapshots;
+  `ProductionControlHostDependencies::standalone_with_signed_catalog` is the
+  product constructor that re-verifies those envelopes on projection.
+  Registry/TUF key-source binding is implemented:
+  `load_capability_description_trust_store` reads the signed fixed target
+  `capability/description-trust-store-v1.json`, registry-tools can assemble and
+  verify it, and `standalone_with_signed_catalog_from_registry` /
+  `open_control_lifecycle_with_signed_trust` inject only a
+  `VerifiedCapabilityDescriptionTrustStore`. Product CLI wiring is closed for
+  Gateway serve: `a3s-use mcp serve gateway --registry-name <name>` (or the
+  configured default) calls `ensure_control_for_registry`, which loads the
+  signed target through `load_signed_description_trust_for_control` and opens
+  Control via `open_control_lifecycle_with_signed_trust` (no fixture keys).
+  Empty Registry configuration keeps the unsigned preview projector
+  (`signed_trust_load_stays_optional_without_registry_sources`,
+  `gateway_mcp_entrypoint_accepts_registry_name_for_signed_trust`,
+  `capability_description_trust_store_loads_from_signed_tuf_target`).
 - [x] Expose bounded, catalog-authorized MCP Resources and Prompts through the
   standard `resources/list`, `resources/read`, `prompts/list`, and `prompts/get`
   methods. Resource URIs are opaque and exact-match checked; prompt arguments
   are closed against reviewed declarations; provider content is size-bounded,
   path-free, and held under the same generation lease as Tool calls.
-- [ ] Materialize one immutable Capability Index at lifecycle cutover and emit
+- [x] Materialize one immutable Capability Index at lifecycle cutover and emit
   generation-change notifications. Remove fixed-interval full filesystem
-  rescans and repeated asset hashing from the normal watch path. The inactive
-  Control kernel now durably publishes and transactionally binds the exact
-  catalog/Index identities, while the notification hub and watcher mechanisms
-  are independently qualified. Complete descriptor projection and production
-  host wiring still keep this exit gate open.
-- [ ] Add CLI/service wiring, fail-closed trusted confirmation for management
+  rescans and repeated asset hashing from the normal watch path. Control
+  durably publishes and transactionally binds exact catalog/Index identities;
+  `reconcile_published_capability_gateway` swaps a live session after cutover
+  and fans out standard MCP `list_changed` to independent clients
+  (`control_cutover_reconcile_notifies_independent_client_list_changed`).
+  Hosts that retain a long-lived Gateway must still call reconcile after
+  releasing prior-generation leases (Grant Tool upgrade lease fencing).
+- [x] Add CLI/service wiring, fail-closed trusted confirmation for management
   apply, bounded authentication, authorization, rate limits, and secret-free
   diagnostics for both endpoints. Gateway HTTP bearer authentication,
   optional exact Origin policy, duplicate-header rejection, bounded in-flight
   and rolling-window admission, sanitized HTTP errors, an explicit
   pre-invocation provider authorization hook, and typed propagation of the
   host-authenticated transport/principal context are implemented; bounded
-  HTTP token-to-principal mapping is now also available. Production
-  receipt/Runtime/Grant authorization and product CLI wiring remain. A host can
-  now inject a bounded, fail-closed `CapabilityGatewayDiscoveryPolicy` so
+  HTTP token-to-principal mapping is now also available. Manager serve uses
+  `FailClosedPluginManagerConfirmationProvider` so MCP never implies apply
+  confirmation. Gateway serve loads Registry/TUF description trust via
+  `--registry-name` / default into Control open and reopens the published
+  catalog with `production_gateway_invocation_provider()` (Control Grant +
+  Runtime receipt join;
+  `production_invocation_factory_requires_committed_control_grant`). A host can
+  inject a bounded, fail-closed `CapabilityGatewayDiscoveryPolicy` so
   authenticated principals receive frozen per-context Tool/Resource/Prompt
   views; this metadata boundary remains separate from invocation authorization.
-- [ ] Prove one-endpoint discovery and invocation from independent Rust,
+  Provider errors are sanitized at the agent boundary
+  (`adapter_sanitizes_provider_errors_at_the_agent_boundary`).
+- [x] Prove one-endpoint discovery and invocation from independent Rust,
   TypeScript, and Python clients, including a container or remote client with
   no shared package filesystem. Cover install, live upgrade, prior-generation
   drain, uninstall, restart, and denied cross-scope access.
@@ -975,6 +1116,161 @@ boundary now requires a pre-invocation `authorize` hook; denials are sanitized
 to `use.plugin.capability_gateway_forbidden` and never reach `invoke`, with no
 implicit allow implementation. A host must bind its principal and policy
 explicitly.
+
+Implementation note (2026-09-23): Control composition exposes
+`gateway_invocation_provider` /
+`ControlCapabilityGatewayInvocationResolver`, which reopen the durable
+published cursor, validate the exact descriptor against the immutable
+catalog, and retain an external Control generation lease through
+authorize+invoke (proven by Control capability-plane and drain-busy tests).
+`ProductionControlInvocationFactory` joins the leased descriptor to a
+committed Control Grant and installed package selection before provider
+I/O; absence fails closed as `use.plugin.capability_gateway_forbidden`
+(`production_invocation_factory_requires_committed_control_grant`). For
+Tool/MCP it then discovers the durable Runtime plan key, reconnects the
+committed provider, loads the exact binding receipt, and verifies the
+receipt-owned provider lease before returning the handle. Missing
+provider selection fails as `use.control.capability_gateway_provider_missing`;
+missing plan/receipt fails as
+`use.control.capability_gateway_runtime_binding_missing`. Tool Task invoke
+uses the joined receipt; Tool/MCP Service invoke proves the provider is
+still healthy, then dispatches through
+`ControlCapabilityGatewayEndpointRouter`. Composition owns a shared
+`ControlGatewayEndpointRouteTable`: bind readiness is wrapped by
+`RecordingControlRuntimeServiceReadiness`, and
+`production_gateway_invocation_provider()` injects
+`LiveControlCapabilityGatewayEndpointRouter`, which resolves opaque
+`gateway:` identities to the loopback Runtime endpoint recorded at bind
+and forwards with the plugin native protocol (MCP Streamable HTTP
+`tools/call`, or Tool Service POST of Gateway-validated JSON to
+`base_path`). A missing route still fails closed as
+`use.control.capability_gateway_endpoint_route_unavailable`
+(`live_router_fails_closed_without_route`,
+`live_router_forwards_tool_service_http_to_recorded_endpoint`).
+`FailClosedCapabilityGatewayEndpointRouter` remains available for
+tests and non-production factory construction. Non-Tool/MCP surfaces
+remain Grant-only (`use.control.capability_gateway_runtime_unavailable`
+on provider I/O). Invocation `authorize` requires an authenticated
+principal (`use.plugin.capability_gateway_forbidden` when absent). Open
+also requires the descriptor surface to appear in the committed Grant
+permission ceiling. Product CLI wiring:
+`a3s-use mcp serve gateway --scope-kind … --scope-id … [--registry-name …]`
+loads the signed description trust store from the selected or default
+TrustedRegistry (when configured), opens Control through
+`ensure_control_for_registry`, and reopens the durable published Control catalog
+through
+`ProductionControlLifecycle::serve_published_capability_gateway_stdio` /
+`open_published_capability_gateway` with
+`production_gateway_invocation_provider()`. Optional
+`--streamable-http [--bind …] [--token …] [--principal …]` serves the same
+Control-backed session over loopback Streamable HTTP and prints endpoint
+metadata on stderr. Standalone Control composition now projects catalogs from
+the installation descriptor-snapshot store and mints opaque Gateway endpoint
+identities at bind (live loopback recorded by the composition route table).
+The A3 exit gate stays open until the independent
+Rust/TypeScript/Python client recovery matrix lands against this product
+endpoint. First evidence:
+`independent_rust_client_discovers_control_published_gateway_without_shared_package_fs`
+proves an independent Rust Streamable HTTP client can discover Control-published
+catalog resources through `production_gateway_invocation_provider` without a
+shared package filesystem;
+`independent_rust_client_is_denied_with_wrong_gateway_token` proves bearer
+auth fails closed for that same Control-backed endpoint;
+`independent_rust_client_invokes_tool_task_under_committed_control_grant`
+proves the same independent client can `call_tool` a Tool Task under a
+committed Control Grant after production admit+drain publishes the exact
+Runtime plan/receipt and Grant-scoped Tool catalog (FakeRuntime
+`test-runtime` provider);
+`independent_rust_client_invokes_grant_tool_after_control_process_restart`
+proves the same `call_tool` path still succeeds after dropping the admitting
+lifecycle and reopening `ProductionControlLifecycle` over the durable Control
+root (process-restart stand-in);
+`independent_rust_client_grant_tool_denied_for_foreign_installation_scope`
+proves a peer Workspace installation with its own Control root cannot observe
+or serve the Grant Tool publication, while the original scope remains
+invokeable;
+`independent_rust_client_grant_tool_fails_closed_after_uninstall`
+proves Uninstall retires committed Grants and Grant Tool discovery (empty
+tools list or no published Gateway);
+`independent_rust_client_invokes_grant_tool_after_live_upgrade`
+proves a real v2 package Replace under Grant + Runtime plan republication
+advances the capability generation and keeps independent `call_tool` working;
+`independent_rust_client_grant_tool_prior_generation_drains_on_live_upgrade`
+proves the gen1 Gateway session must release package-generation leases
+before Upgrade Remove/Prepare can drain, after which the replacement
+publication key differs and independent invoke succeeds on the new catalog;
+`independent_typescript_client_invokes_tool_task_under_committed_control_grant`
+proves an official `@modelcontextprotocol/sdk` Node client can
+`list_tools`/`call_tool` convert against the same Control-backed Streamable
+HTTP endpoint with only URL + bearer token (no shared package FS);
+`independent_python_client_invokes_tool_task_under_committed_control_grant`
+proves the official Python `mcp` Streamable HTTP client can do the same.
+Client scripts live under `tests/independent_clients/{ts,python}/`. The A3
+independent-client discovery/invoke language matrix for Tool Task under Grant
+is now closed for Rust, TypeScript, and Python. Grant Tool cutover now admits
+agent-visible Tools only through `ControlCapabilityDescriptorProjection`
+(schema digests + Runtime release-descriptor attestation), and publishes a
+signed v2 descriptor snapshot whose envelopes reverify under the fixture trust
+store (`grant_tool_publishes_signed_schema_bearing_descriptor_snapshot`,
+strict/install/upgrade/uninstall/restart/cross-scope Grant Tool tests). Control
+Index cutover now also proves independent-client `list_changed` after
+`reconcile_published_capability_gateway` replaces a live session
+(`control_cutover_reconcile_notifies_independent_client_list_changed`). Remaining
+A3 checkboxes are non-client items (CLI/service authorization beyond the
+Gateway HTTP safeguards and signed-Tool Grant production cutover against live
+Code/managed hosts that inject real Runtime readiness). Registry/TUF
+key-source binding, Flow/UI/Knowledge projection, the Gateway
+`--registry-name` signed-trust Control open path, and product HTTP Gateway
+reconcile+drain-on-shutdown are closed on evidence.
+`ProductionControlLifecycle::reconcile_published_capability_gateway` exposes
+the composition reconcile seam for long-lived hosts after cutover
+(`production_gateway_reconcile_is_unchanged_for_the_current_grant_tool_publication`).
+Hosts must still release prior-generation Gateway leases before Upgrade
+Remove/Prepare can drain, then reconcile so clients observe `list_changed`.
+Product face now exposes
+`ProductionControlLifecycle::gateway_cutover_activation` and
+`drain_and_retain_published_capability_gateway` so long-lived hosts attach the
+composition cutover hook without reaching into the private composition module.
+`open_control_lifecycle_with_host_ports` accepts an injected
+`ControlRuntimeServiceReadinessPort` so managed hosts bind real Runtime Service
+endpoints instead of opaque `gateway:` placeholders
+(`ProductionControlHostDependencies::with_injected_runtime_readiness`).
+`ManagedCognitivePackageLifecycleFactory::with_control_runtime_readiness`
+carries that port into `CognitivePackageManager::ensure_control`; install /
+upgrade / uninstall admit `lifecycle.runtime_plan_publications()` from the
+managed `RuntimeProviderSelection` (empty for standalone/skill-only).
+Product `mcp serve gateway --streamable-http` now uses
+`ProductionControlLifecycle::serve_published_capability_gateway_streamable_http`,
+which watches the durable published cursor, reconciles the retained session,
+and drain+retains on shutdown
+(`production_retained_gateway_watch_reconciles_then_drains_on_shutdown`).
+Same-process graph hosts that retain a Gateway beside
+`PluginPackageGraphLifecycleCoordinator` still attach
+`gateway_cutover_activation` so reconcile runs before prior-generation drain.
+The embedding-host face is now public:
+`ControlRuntimeServiceReadinessPort` /
+`ControlRuntimeMcpReadiness` re-exported from `cognitive_package`, plus
+`CognitivePackageManager::{ensure_control_for_registry,open_published_capability_gateway,gateway_cutover_activation,watch_and_reconcile_published_capability_gateway,drain_and_retain_published_capability_gateway,serve_published_capability_gateway_*}`
+(`public_control_runtime_readiness_port_is_nameable_for_embedding_hosts`,
+`public_cognitive_package_manager_gateway_face_after_grant_tool_install`).
+A3S CLI product join injects Control readiness when a private Gateway exists
+(`ControlGatewayReadinessPort`,
+`code_factory_forwards_injected_control_runtime_readiness`) and forwards the
+managed `RuntimeClientRegistry` into Control open
+(`runtime_client_registry`,
+`managed_factory_forwards_runtime_client_registry_to_control_open`) so effect
+drain reconnects host providers. Runtime Task invoke pins Control-selected
+generations (`RuntimeTaskDispatcher::invoke` →
+`acquire_control_lifecycle_generation`) and fail-closes legacy publication
+authority. Published Capability Gateway hosts that retain
+an MCP session beside publication still attach `gateway_cutover_activation`.
+Engine fail-closes non-empty Runtime plan publications without Control
+readiness (`use.control_store.runtime_readiness_required`,
+`managed_publications_without_control_readiness_fail_closed`); opaque
+`gateway:` minting remains skill/native-only. Plugin readiness is saga-only
+documentation for the Control effect bind face.
+Legacy `RuntimeBindingStore` / Knowledge / Flow `::new` constructors that write
+`bindings/*` compile only under `#[cfg(test)]`.
 
 The host can derive a Gateway catalog from one immutable
 `CapabilityRegistrySnapshot` through
@@ -1009,11 +1305,14 @@ leased constructors; legacy constructors remain generic-MCP by default.
 Descriptors can now carry a canonical `requiredExtensions` set, and every
 Gateway constructor projects the immutable catalog against the completed
 negotiation before compiling discovery or invocation routes. This closes the
-generic-consumer information-leak path, but it is still only the profile
-boundary: actual Flow/UI/Knowledge payload projection, principal-specific
-discovery policy, production receipt/Runtime/Grant composition, and product
-host wiring remain open, so the consumer-profile checkbox is intentionally not
-marked complete yet.
+generic-consumer information-leak path. Path-free
+`CapabilityDescriptorKind::{Flow,Knowledge,Ui}` payloads are projected through
+the same negotiation filter and exposed via
+`extension_metadata_descriptors()` without becoming MCP Tool routes. A3
+product CLI/service wiring and the signed-Tool Registry→Control open path are
+closed on evidence (`ensure_control_for_registry` /
+`mcp serve gateway --registry-name`, fail-closed Manager confirmation, and
+`production_gateway_invocation_provider` Grant/Runtime join).
 
 Implementation note (2026-09-04): the standard MCP projection now includes
 catalog-authorized Resources and Prompts in addition to Tools. Resource
@@ -1350,7 +1649,8 @@ immutable catalog before provider state is opened, and retains that exact
 Control generation lease through the returned invocation handle. A host-owned
 factory receives the lease for its principal/Grant/Runtime binding; forged or
 cross-generation descriptors fail before provider I/O. Production lifecycle
-wiring and legacy-authority deletion remain open.
+wiring and legacy-authority deletion remain open as cutover follow-ups; the
+Control-backed invocation resolver and product Gateway join are closed.
 
 Implementation note (2026-09-06): destructive Capability payload retention now
 has one cursor-bound composition path. It always protects the catalog selected
@@ -1416,8 +1716,10 @@ authorization seam; the HTTP `for_principal`/`for_principals` configuration now
 carries the selected verified principal into both provider hooks without
 exposing it to agents. PR [#208](https://github.com/A3S-Lab/Use/pull/208) adds
 the lease-scoped resolver and bounded multi-principal mapping. Production host
-receipt/Runtime/Grant composition, product wiring, and independent-client
-recovery remain open.
+receipt/Runtime/Grant composition, product Gateway/Manager wiring, and the
+independent-client recovery matrix are closed on the A3 evidence above; A5
+Registry custody/publication and A4 provider inversion remain separate exit
+gates.
 
 The embedding seam is now explicit: PR [#208](https://github.com/A3S-Lab/Use/pull/208)
 adds `CapabilityGatewayInvocationResolver` and
@@ -1426,36 +1728,108 @@ authorization for each call before invoking a private lease. The handle
 implementation owns the exact package-generation guard and must retain it
 until the invocation returns. The same PR adds a bounded 64-entry immutable
 HTTP token-to-principal registry with duplicate-token rejection and complete
-credential scans. These are host embedding contracts; they still have to be
-composed with the production Use receipt, Runtime, and Grant authorities before
-the A3 exit gate can be checked.
+credential scans. Production composition now joins those host embedding
+contracts to Control Grant + Runtime receipt authority through
+`production_gateway_invocation_provider()`, product CLI Gateway serve, and the
+independent Rust/TypeScript/Python client matrix under committed Control Grants.
 
 Exit gate: an arbitrary MCP-capable coding agent can discover and invoke an
 authorized package without an A3S SDK, local package path, or duplicated
-lifecycle implementation.
+lifecycle implementation. **Closed on evidence** (A3 checkboxes above,
+including independent-client discovery/invoke and product Gateway/Manager
+serve paths).
 
 ### A4 - Invert providers and reduce facade coupling
 
-- [ ] Make the Use Engine own lifecycle coordination, journaling, retries, and
+- [x] Make the Use Engine own lifecycle coordination, journaling, retries, and
   recovery. Factories inject a typed `ProviderSet` or lifecycle ports; they do
-  not construct and return concrete coordinators.
-- [ ] Negotiate the actual supported operations, surfaces, protocol versions,
+  not construct and return concrete coordinators. Closed on evidence:
+  `LifecycleProviderSet` carries journal + `PluginLifecycleHosts`; factory
+  methods are `*_providers` returning that set;
+  `LifecycleProviderSet::into_coordinator` is the engine-owned construction
+  path (`factories_inject_provider_sets_without_constructing_coordinators`,
+  `managed_factory_uses_the_embedding_hosts_ui_composition`).
+- [x] Negotiate the actual supported operations, surfaces, protocol versions,
   concurrency guarantees, and provider readiness. Remove default trait methods
-  that make unsupported behavior appear supported.
-- [ ] Treat Browser, OCR, Box, Runtime, Flow, and UI integrations as provider
+  that make unsupported behavior appear supported. Closed on evidence:
+  `CognitiveLifecycleSupport` is required on
+  `CognitivePackageLifecycleFactory`; planning/retirement/enablement and
+  `flow_compiler_binary` no longer have default bodies that fake support;
+  Standalone vs Managed declare distinct surface sets
+  (`lifecycle_factories_declare_supported_surfaces_without_default_trait_fiction`).
+- [x] Treat Browser, OCR, Box, Runtime, Flow, and UI integrations as provider
   components or ordinary first-party packages. A bundled profile may install
   them for convenience, but the universal engine and capability projection do
-  not hardcode their domains.
-- [ ] Split the current all-purpose capability binding into consumer catalog,
+  not hardcode their domains. Closed on evidence: `CapabilityRegistry::snapshot`
+  only projects `CapabilitySeedProvider` seeds; bare `CapabilityRegistry::new`
+  uses `EmptyCapabilitySeeds` and publishes no `use/browser|ocr|box`
+  (`universal_engine_registry_projects_no_hardcoded_first_party_domains`);
+  standalone product `from_env` injects `BundledFirstPartyCapabilitySeeds`
+  (`bundled_product_profile_projects_browser_ocr_box_as_injected_seeds`).
+  Runtime/Flow/UI remain host-injected lifecycle ports.
+- [x] Split the current all-purpose capability binding into consumer catalog,
   invocation binding, and operation diagnostic views so management evidence
-  and local provider details cannot leak into agent discovery.
-- [ ] Keep A3S Flow and UI as negotiated consumer extensions over the same
+  and local provider details cannot leak into agent discovery. Closed on
+  evidence: agent discovery uses `CapabilityGatewayCatalog` /
+  `CapabilityGatewayMcpServer`; invocation uses
+  `CapabilityGatewayInvocationProvider` /
+  `CapabilityGatewayResolvedProvider` with generation leases; management
+  diagnostics stay on Package Manager / Host observation paths with
+  secret-free projection (`adapter_sanitizes_provider_errors_at_the_agent_boundary`,
+  Package Manager MCP error sanitization).
+- [x] Keep A3S Flow and UI as negotiated consumer extensions over the same
   package generation; do not make A3S-specific surfaces mandatory for generic
-  agents.
+  agents. Closed on A3 evidence:
+  `CapabilityDescriptorKind::{Flow,Knowledge,Ui}` plus
+  `gateway_projects_flow_ui_knowledge_metadata_only_for_negotiated_extensions`.
 - [ ] Refactor along the target boundaries before creating more repositories:
   contracts, catalog/artifacts, control store, engine, host/gateway, and
   provider adapters. Split oversized files when responsibility moves; do not
-  add forwarding facades or duplicate registries.
+  add forwarding facades or duplicate registries. Progress: first-party
+  Browser/OCR/Box projectors in `capability_registry/product_seeds.rs`;
+  Control-authority extension projection in
+  `capability_registry/extension_projection.rs`; unit tests in
+  `capability_registry/registry_tests.rs`. Facade `capability_registry.rs` is
+  under the ~1000-line split threshold with lease/mcp/runtime_tasks retained
+  as sibling adapters
+  (`universal_engine_registry_projects_no_hardcoded_first_party_domains`).
+  Capability Gateway root `capability_gateway.rs` is now a thin public contract
+  (~284 lines) with `protocol.rs`, `server/{mod,compose,handler}.rs`, and
+  `session_factory/{mod,live,helpers}.rs` siblings (each under the ~800 line
+  focus band); Control-native empty lease/composition/signed-admission tests are
+  green (`capability_gateway::` 53 passed). Control composition is now
+  `composition/{mod,gateway}.rs` (mod ~778 / gateway ~495;
+  `control_store::composition` 8 passed). Capability payload owner is
+  `capability_payload/{mod,archive,filesystem,helpers}.rs` (each under the
+  hard 1000-line cap; `payload_capability_payload` 5 passed). Runtime plan
+  payload owner is `runtime_plans/{mod,archive,filesystem,helpers}.rs`
+  (`payload_runtime_plan` green). Control Store aggregate claim/observe/complete
+  mutations live in `aggregate/dispatch.rs` (~446) with root `aggregate.rs`
+  under the hard 1000-line cap (~855). Descriptor-snapshot store/restore are
+  split via `#[path]` siblings (`descriptor_snapshot_store.rs` +
+  `descriptor_snapshot_store_io.rs`; restore
+  `{helpers,layout,filesystem}.rs`) — every non-test Control Store source file
+  is now under the hard 1000-line cap (`descriptor_snapshot` 12 passed).
+  Cognitive-package production owners that were over the hard 1000-line cap are
+  split without forwarding facades: `plan_tests.rs` /
+  `provider_plan_tests.rs` / `hosts_tests.rs` via `#[path]`;
+  `host_store_io.rs`, `upgrade_apply.rs`, `diagnostic_queries.rs`,
+  `diagnostic/validation_pending.rs`, and `diagnostic/projection_lifecycle.rs`
+  via `include!`. The same hard cap is now held for every non-test
+  `crates/use/src/**/*.rs` production leaf by additional splits:
+  `plugin_runtime/plan_store_io.rs`, `plugin_lifecycle/{coordinator_execute,
+  coordinator_helpers,graph_upgrade}.rs`, `okf_knowledge/recovery_validate.rs`,
+  `capability_catalog_store/restore_prepare.rs`, and `cli_mcp.rs`.
+  Extension production leaves that were over the hard 1000-line cap are
+  split the same way: `registry_bindings.rs`, `remote_prepare.rs`,
+  `surface_files_io.rs`, and `registry/lifecycle_publish.rs`
+  (`cargo check -p a3s-use-extension --lib` and `cargo check -p a3s-use --lib`
+  green). Evidence: no non-test production `.rs` under `crates/use/src` or
+  `crates/use/crates/{core,extension}/src` exceeds 1000 lines (test modules
+  such as `registry_tests/cognitive_lifecycle.rs` remain). Remaining open
+  A4 work: large test modules and crate-level boundary repository splits
+  (contracts / catalog / engine / host-gateway / provider adapters as
+  separate repos — not more file splits inside Use).
 
 Exit gate: the core engine runs against deterministic in-memory providers, and
 each product host composes only the providers and consumer extensions it owns.
@@ -1469,49 +1843,115 @@ Registry verification; `Use-Packages` incorrectly suggests a package-source
 monorepo. The pre-initialization rename avoids creating a second trusted source
 identity later.
 
-- [ ] Rename the GitHub repository and root submodule path to `use-registry/`;
+- [x] Rename the GitHub repository and root submodule path to `use-registry/`;
   update `.gitmodules`, remotes, documentation, tests, CI, and examples in one
-  reviewed change. Do not compile the official URL into the resolver.
-- [ ] Treat any preview configuration using the old address as an explicit
+  reviewed change. Do not compile the official URL into the resolver. Root
+  evidence: `.gitmodules` pins `use-registry` → `git@github.com:A3S-Lab/Use-Registry.git`;
+  monorepo README modules list Use Registry at `use-registry/`.
+- [x] Treat any preview configuration using the old address as an explicit
   source replacement: re-add the renamed source with its pinned bootstrap-root
   digest. Do not silently turn a GitHub redirect into trust authority.
-- [ ] Keep package source, build logic, and releases in owning repositories
-  such as MHS. `Use-Registry` accepts reviewed admission records, immutable
-  release artifacts, provenance, SBOMs, and signed TUF publication state.
-- [ ] Add package-authoring commands for lint, deterministic build/pack,
+  Registry source identity remains name/URL/bootstrap-root digest; redirects
+  never become trust authority (`registry-cache-operations.md`).
+- [x] Keep package source, build logic, and releases out of `Use-Registry`.
+  `Use-Registry` accepts reviewed admission records, immutable release
+  artifacts, provenance, SBOMs, and signed TUF publication state. Enforced by
+  README ownership boundary plus `registry-staging-gate` `ownership-layout`
+  rejecting `packages/`, `src/`, and `Cargo.toml` in the Registry tree
+  (`docs/staging-ci.md`).
+- [x] Add package-authoring commands for lint, deterministic build/pack,
   manifest and expanded-content digesting, permission review, provenance
   verification, and isolated install tests. These formats and commands are
   versioned by `a3s-use`, not reimplemented by the Registry repository.
+  Landed as `a3s-use-registry-tools lint|pack|assemble|verify` over
+  `a3s_use_extension::lint_package_directory` (ACL parse, README + surface
+  file review, expanded fingerprint) plus deterministic pack and released-
+  client verify (`skill_package_lints_before_pack`,
+  `lint_fails_closed_when_skill_file_is_missing`). Isolated install against a
+  live Control installation remains a product CLI/Host matrix item, not a
+  second Registry-owned format.
 - [x] Add Registry assembly and verification commands that preserve canonical
   catalog metadata, validate the complete staged tree with a released client,
   and produce a reviewable publication delta before signing. Landed as
   `crates/registry-tools` (`a3s-use-registry-tools` keygen/pack/assemble/verify)
-  on Use main via #256. Production threshold custody, rotation, and official
-  bootstrap remain open; this does not complete the A5 exit gate.
-- [ ] Document and exercise offline threshold root custody, delegated targets,
-  online snapshot/timestamp custody, expiry monitoring, every-intermediate-root
+  on Use main via #256. Threshold custody, rotation, expiry, mirrors, and
+  withdrawal are exercised in-tree; official production bootstrap publication
+  remains on the production channel checkbox.
+- [x] Document and exercise offline threshold root custody, online
+  snapshot/timestamp custody, expiry monitoring, every-intermediate-root
   rotation, emergency withdrawal, mirror replacement, and rollback recovery.
-- [ ] Publish staging and production channels through reviewed GitHub CI with
-  no signing key in the repository or package-manager client. Retain witness,
-  provenance, SBOM, and prior-generation recovery evidence outside the mutable
-  delivery boundary.
-
-Exit gate: a clean machine can add `A3S-Lab/Use-Registry` using an independently
-obtained root digest, inspect one exact reviewed plan, install offline from the
-verified cache, and recover or roll back using published operator procedures.
-
-### A6 - Qualify MHS as the reference hardware package
-
-- [ ] Keep MHS source in the `crates/mhs` submodule and publish only its signed
+  Operator documentation for keygen/assemble/verify custody, threshold root
+  ceremony (`--root-share-count` / `--root-threshold`), offline recovery,
+  `rotate-root` (retain `metadata/root.history/`, require new bootstrap pin),
+  `check-expiry`, `compare-mirrors`, and `withdraw-targets` is in
+  `docs/registry-key-custody.md`. Exercised in registry-tools: single-operator
+  offline assemble/verify + pin-stable recovery
+  (`offline_custody_recovery_rebuilds_the_same_bootstrap_pin`); 2-of-3 threshold
+  ceremony + under-threshold fail-closed
+  (`threshold_root_ceremony_assembles_and_verifies_with_two_of_three_shares`,
+  `threshold_assemble_fails_closed_when_too_few_root_shares_are_present`);
+  every-intermediate-root rotation + mismatched-custody fail-closed
+  (`root_rotation_retains_the_previous_root_and_requires_a_new_bootstrap_pin`,
+  `root_rotation_fails_closed_when_previous_keys_do_not_match_published_root`);
+  expiry monitoring (`check-expiry`) with near-expiry fail-closed
+  (`check_expiry_passes_for_a_freshly_assembled_registry`,
+  `check_expiry_fails_closed_when_metadata_expires_inside_the_warn_window`);
+  mirror compare (`compare-mirrors`) with drift fail-closed
+  (`compare_mirrors_accepts_identical_trees_and_rejects_drift`);
+  emergency withdrawal (`withdraw-targets`) keeps the bootstrap pin, removes
+  target bytes, and verifies an empty catalog
+  (`withdraw_targets_removes_a_package_while_keeping_the_bootstrap_pin`).
+  Multi-signer TUF targets-role delegation is deferred until Use-Registry
+  admits independently signed package authorities; GA custody uses one online
+  targets key outside the git tree. Production bootstrap publication and live
+  mirror promotion remain on the production channel checkbox below.
+- [x] Publish a staging channel through reviewed GitHub CI with no signing key
+  in the repository or package-manager client. Staging gate in Use-Registry
+  (`.github/workflows/registry-staging-gate.yml`, `docs/staging-ci.md`)
+  fail-closes on keys-in-tree / ownership bleed and, when admissions +
+  `REGISTRY_TOOLS_REF` + `REGISTRY_STAGING_KEYS_DIR` are present, runs real
+  `assemble` + `verify` + `check-expiry` with environment-injected keys (no
+  trust-root push).
+- [ ] Publish the production channel through reviewed GitHub CI with no signing
+  key in the repository or package-manager client. Retain witness, provenance,
+  SBOM, and prior-generation recovery evidence outside the mutable delivery
+  boundary. Offline ceremony checklist:
+  Use-Registry `docs/production-bootstrap.md`. Progress: Use-Registry now
+  carries `registry-production-gate.yml` + `docs/production-ci.md` that
+  fail-close keys-in-tree / package-source bleed / in-git `registry/`, and
+  arm assemble+verify+expiry only for `admissions/production*.acl` with
+  environment-injected `REGISTRY_PRODUCTION_KEYS_DIR` (never pushes a trust
+  root). Live signed publication, witness retention, and production mirror
+  promotion remain open.
+- [ ] Keep MHS adapter source in an owning external repository (linked as
+  `crates/mhs` only when that ownership exists) and publish only its signed
   package artifacts and admission records through `Use-Registry`.
-- [ ] Express MHS through existing MCP, Flow, Skill, Knowledge, and optional UI
+  Progress: research-preview contract fixture lives under
+  `crates/extension/fixtures/packages/plugin-v3-mhs-bridge` with profile
+  `docs/mhs-integration.md`. `crates/mhs` is intentionally absent until an
+  owning MHS adapter repository exists; do not invent a Use-owned hardware
+  crate. Admission through Use-Registry remains blocked on that external
+  ownership plus production Registry operation.
+- [x] Express MHS through existing MCP, Flow, Skill, Knowledge, and optional UI
   surfaces. Do not add a hardware-specific package surface or private protocol.
+  Closed on evidence: the research-preview fixture and catalog contracts reuse
+  only standard surfaces (`docs/mhs-integration.md` Test scope);
+  extension-crate MHS profile tests are green
+  (`cargo test -p a3s-use-extension --lib mhs` → 2 passed). Full A6 lab
+  qualification remains on the virtual-laboratory checkbox below.
 - [ ] Keep the virtual industrial laboratory in its own repository. Its
   simulator connects through the same MHS control-gateway contract used by
   physical adapters and is test infrastructure, not Use runtime code.
+  Exit criteria for that external lab are listed under
+  `docs/mhs-integration.md` (Enterprise GA / A6 exit).
 - [ ] Model read operations as safe observations and physical mutations as
   explicitly authorized operations with idempotency evidence or an
   `unknown-outcome` state. Never retry an ambiguous device mutation implicitly.
+  Progress: research-preview `flows/monitor.ts` schedules observation with
+  `retry: { max_attempts: 1 }` and the fixture test asserts that contract
+  (`mhs_bridge_fixture_is_a_bounded_standard_surface_package`). Physical
+  mutation / unknown-outcome reconciliation still requires the external
+  virtual laboratory.
 - [ ] Prove least-authority Grants, gateway health, dependency publication,
   exact-generation lease/drain, reconnect, and reconciliation against the
   virtual laboratory before enabling any physical adapter profile.
@@ -2057,7 +2497,22 @@ Status: in progress
 - [ ] Initialize and operate `A3S-Lab/Use-Registry` as the documented official
   Registry with root rotation, expiry, mirror replacement, offline recovery,
   and incident procedures. Complete architecture track A5 before publishing
-  its first production bootstrap root.
+  its first production bootstrap root. Progress: Use-Registry checkout
+  documents ownership boundary; staging CI gate
+  (`registry-staging-gate.yml` / `docs/staging-ci.md`) fail-closes keys-in-tree
+  and package-source bleed, and runs real `assemble` + `verify` when admissions
+  and environment-injected keys are present. Registry-tools support threshold
+  root ceremony, pin-stable offline recovery, under-threshold fail-closed, and
+  every-intermediate-root `rotate-root` with retained `root.history` plus
+  mandatory new bootstrap pin, `check-expiry` warn/fail-closed monitoring,
+  `compare-mirrors` drift fail-closed, and `withdraw-targets` emergency
+  withdrawal with pin-stable empty-catalog verify. Production bootstrap root
+  publication and live incident procedures remain open; the offline ceremony
+  checklist is in Use-Registry `docs/production-bootstrap.md`. Production CI
+  readiness gate (`registry-production-gate.yml` / `docs/production-ci.md`)
+  fail-closes keys-in-tree and in-git `registry/`, and arms assemble+verify
+  only with production admissions + environment-injected keys (no trust-root
+  push).
 - [x] Provide durable Registry source add/list/replace/default/enable/disable/
   remove operations; preserve immutable receipts and identity-bound evidence
   across replacement and exact-provenance restoration.

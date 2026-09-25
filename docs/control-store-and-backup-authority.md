@@ -1,7 +1,8 @@
 # Control Store and backup authority boundary
 
 Status: development preview  
-Applies to Use tip with the inactive A2 Control Store kernel (ADR-003).
+Applies to Use tip with Control Store as production mutable authority (ADR-003;
+clean-state-only activation).
 
 ## Decision
 
@@ -37,13 +38,19 @@ in [`control-store-cutover.md`](control-store-cutover.md):
 
 ## Relation to today’s `state_backup` allowlist
 
-`state_backup/inventory.rs` still scans the live filesystem layout. That is
-correct **until** production cutover. After cutover:
+`state_backup/inventory.rs` still retains a legacy filesystem allowlist for
+pre-Control installations. When `control.sqlite3` is present:
 
-1. Mutable control evidence is one Control Store DB export (schema-derived).
-2. External owners come from `ControlPayloadOwnerRegistry`, not a second
-   handwritten path matrix.
-3. Dual-write and legacy fallback reads remain forbidden (ADR-003).
+1. Mutable control evidence is the verified `control-store-export.json` leaf
+   (schema-derived Control export), not a live SQLite copy.
+2. Legacy authority paths beside Control are rejected (`legacy_state_unsupported`).
+3. Portable inventory admits only registered `ControlPayloadOwnerId` live
+   locations; unregistered layout families fail closed even when
+   `installation_state_layout` still lists them.
+4. Dual-write and legacy fallback reads remain forbidden (ADR-003).
+
+Owner-native complete-set snapshot/restore remains the stronger portable
+archive path and continues to converge with restore wiring.
 
 ## Current implementation posture
 

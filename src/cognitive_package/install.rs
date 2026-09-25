@@ -1,30 +1,22 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use a3s_use_core::{
-    InstallationPackageSelection, PlanScope, PluginOperationAction, PluginReleaseChannel,
-    PluginSurfaceRef, UseResult,
+    PlanScope, PluginOperationAction, PluginReleaseChannel, PluginSurfaceRef, UseResult,
 };
 use a3s_use_extension::{
-    ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest, InstalledExtension,
-    TrustedRegistry,
-};
-
-use crate::plugin_lifecycle::{
-    ExtensionGraphCapabilityLifecycleHost, PluginLifecycleAction, PluginLifecycleIntent,
-    PluginLifecycleIntentSpec, PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
+    ExtensionLifecyclePackage, ExtensionManifest, ExtensionReceipt, ExtensionTrust,
+    InstalledExtension, TrustedRegistry, EXTENSION_RECEIPT_SCHEMA_VERSION,
 };
 
 use super::download_attempt::PendingPackageDownloadAttempt;
-use super::plan::{
-    install_generations, install_operation, install_plan_packages, now_ms,
-    operation_provider_evidence, package_state_revision, state_surface_refs,
-};
+use super::plan::{install_operation, now_ms, package_state_revision};
 use super::registry_access::{download_selected_packages, resolve_package_lock, RegistryAccess};
 use super::resolution_attempt::PendingPackageResolutionAttempt;
 use super::store::PendingPackageGraphOperation;
 use super::{
-    installed_matches_lock, package_manager_error, CognitivePackageInstallResult,
-    CognitivePackageManager, InstallDisposition,
+    package_manager_error, CognitivePackageInstallResult, CognitivePackageManager,
+    InstallDisposition,
 };
 
 struct PreparedInstallPackage {
@@ -45,7 +37,10 @@ impl CognitivePackageManager {
         access: RegistryAccess,
         requested_root_surfaces: Option<&[PluginSurfaceRef]>,
     ) -> UseResult<CognitivePackageInstallResult> {
-        let _maintenance = self.maintenance_lock().acquire_shared().await?;
+        // Hold the installation mutation lock for the whole install. Acquire the
+        // shared maintenance fence only after Registry resolve/download so TUF
+        // HTTP work does not sit under the fence (and so Control drain can nest
+        // shared maintenance safely once package bytes exist).
         let _mutation = self.installation_mutation_lock().acquire().await?;
         self.require_graph_mutation_domain(PluginOperationAction::Install, package_id)
             .await?;
@@ -127,33 +122,6 @@ impl CognitivePackageManager {
                 ));
             }
             self.verify_published_closure(&lock, &installed).await?;
-            let pending_store = self.pending_store();
-            let pending = pending_store
-                .get(PluginOperationAction::Install, &lock.root_package_id)
-                .await?;
-            if let Some(pending) = &pending {
-                self.replay_published_install(&lock, pending, &installed)
-                    .await?;
-            }
-            let selections = install_snapshot_selections(
-                &self.snapshot_store(),
-                &lock,
-                &surface_selections,
-                pending.as_ref().map(|pending| &pending.generations),
-                &installed,
-            )
-            .await?;
-            self.snapshot_store()
-                .put(&lock, now_ms()?, selections)
-                .await?;
-            if let Some(pending) = &pending {
-                self.retain_and_remove_graph_operation(
-                    &pending_store,
-                    pending,
-                    super::PluginRetainedOperationOutcome::Completed,
-                )
-                .await?;
-            }
             let root = installed
                 .get(&lock.root_package_id)
                 .cloned()
@@ -255,186 +223,137 @@ impl CognitivePackageManager {
             })
             .map(|(package_id, manifest)| (package_id.clone(), manifest.clone()))
             .collect();
-        let pending_store = self.pending_store();
-        let pending = match pending_store
-            .get(PluginOperationAction::Install, &lock.root_package_id)
-            .await?
-        {
-            Some(pending) => {
-                validate_replay(
-                    &pending,
-                    &lock,
-                    &dispositions,
-                    &surface_selections,
-                    &manifests,
-                    &changed_manifests,
-                    self.scope(),
-                    self.authorization.as_ref(),
-                )?;
-                pending
-            }
-            None => {
-                let snapshot = self.registry.snapshot().await?;
-                let grant_snapshot = self
-                    .grant_store()
-                    .snapshot_scope(
-                        &self.scope().id,
-                        package_state_revision(snapshot.generation)?,
-                    )
-                    .await?;
-                let generated = install_operation(
-                    &lock,
-                    &dispositions,
-                    &surface_selections,
-                    &manifests,
-                    snapshot.generation,
-                    self.scope(),
-                    now_ms()?,
-                    &grant_snapshot,
-                    self.authorization.as_ref(),
-                )?;
-                let planned_at_ms = generated.envelope.plan.created_at_ms;
-                let generated = PendingPackageGraphOperation::planned(
-                    generated.envelope,
-                    planned_at_ms,
-                    generated.generations,
-                    changed_manifests,
-                )?;
-                pending_store.put(&generated).await?;
-                generated
-            }
-        };
+        let capability_generation = self.current_capability_generation().await?;
+        let grant_snapshot = self
+            .planned_grant_snapshot(package_state_revision(capability_generation)?)
+            .await?;
+        let generated = install_operation(
+            &lock,
+            &dispositions,
+            &surface_selections,
+            &manifests,
+            capability_generation,
+            self.scope(),
+            now_ms()?,
+            &grant_snapshot,
+            self.authorization.as_ref(),
+        )?;
+        let planned_at_ms = generated.envelope.plan.created_at_ms;
+        let pending = PendingPackageGraphOperation::planned(
+            generated.envelope,
+            planned_at_ms,
+            generated.generations,
+            changed_manifests,
+        )?;
         if let Some(attempt) = download_attempt.take() {
             attempt.finish().await?;
         }
         let pending = self
-            .admit_planned_graph_operation(&pending_store, pending)
+            .admit_planned_graph_operation_in_memory(pending)
             .await?;
         self.authorization.verify_plan(&pending.envelope)?;
         let apply_time = now_ms()?;
+        let maintenance = Arc::new(self.maintenance_lock().acquire_shared().await?);
+        self.apply_control_install(
+            &lock,
+            lock_digest,
+            &pending,
+            &prepared,
+            &dispositions,
+            &surface_selections,
+            apply_time,
+            maintenance,
+        )
+        .await
+    }
 
-        let mut units = Vec::with_capacity(prepared.len());
-        for prepared in prepared {
-            let package_id = prepared.manifest.package_id.clone();
-            if pending.manifests.get(&package_id) != Some(&prepared.manifest) {
+    async fn apply_control_install(
+        &self,
+        lock: &a3s_use_core::PluginPackageLock,
+        lock_digest: String,
+        pending: &PendingPackageGraphOperation,
+        prepared: &[PreparedInstallPackage],
+        dispositions: &BTreeMap<String, InstallDisposition>,
+        surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
+        _apply_time: u64,
+        maintenance: Arc<a3s_use_extension::StateMaintenanceGuard>,
+    ) -> UseResult<CognitivePackageInstallResult> {
+        let artifact_store = self.registry.paths().artifact_store();
+        let artifact_admission = artifact_store.acquire_reference_admission().await?;
+        for package in prepared {
+            if pending.manifests.get(&package.manifest.package_id) != Some(&package.manifest) {
                 return Err(package_manager_error(
                     "use.plugin.package_changed",
                     format!(
                         "Prepared package '{}' no longer matches its pending admitted manifest.",
-                        package_id
+                        package.manifest.package_id
                     ),
                 ));
             }
+            artifact_store
+                .admit_prepared_package(&artifact_admission, &package.package)
+                .await?;
+        }
+        // Release reachability admission before Control drain. Effect owners
+        // acquire their own shared package leases; holding admission across
+        // drain nested-locks the same reachability file and deadlocks on Windows.
+        drop(artifact_admission);
+        // Managed factories that configured RuntimeProviderSelection supply
+        // deterministic Tool/MCP plan publications; standalone/skill-only stay empty.
+        let publications = self.lifecycle.runtime_plan_publications()?;
+        super::control_authority::require_control_runtime_readiness_for_publications(
+            self.lifecycle.control_runtime_readiness().as_ref(),
+            &publications,
+        )?;
+        let control = self.ensure_control().await?;
+        let _snapshot = super::control_authority::apply_pending_through_control(
+            control,
+            pending,
+            &publications,
+            maintenance,
+        )
+        .await?;
+
+        let mut installed_by_id = BTreeMap::new();
+        for package in prepared {
+            let package_id = package.manifest.package_id.clone();
             let generation = *pending.generations.get(&package_id).ok_or_else(|| {
                 package_manager_error(
                     "use.plugin.package_graph_invalid",
                     "A prepared package has no retained lifecycle generation.",
                 )
             })?;
-            if let Some(current) = installed.get(&package_id) {
-                if current.receipt.lifecycle_generation != Some(generation) {
-                    return Err(package_manager_error(
-                        "use.plugin.package_generation_changed",
-                        format!(
-                            "Prepared package '{}' no longer matches its pending lifecycle generation.",
-                            package_id
-                        ),
-                    ));
-                }
-            }
-            let identity = ExtensionLifecycleIdentity::new(
-                &package_id,
-                prepared.package.package_digest(),
-                prepared.package.manifest_digest(),
-                generation,
-            )?;
-            let package_root = self.registry.lifecycle_package_root(&identity);
-            let transition = pending
-                .envelope
-                .plan
-                .packages
-                .iter()
-                .find(|transition| transition.package_id == package_id)
-                .and_then(|transition| transition.after.as_ref())
-                .ok_or_else(|| {
-                    package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A prepared package omitted its selected candidate state.",
-                    )
-                })?;
-            let selected_surfaces = state_surface_refs(transition);
-            let intent = PluginLifecycleIntent::from_manifest_selection(
-                PluginLifecycleIntentSpec {
-                    operation_id: pending.envelope.plan.operation_id.clone(),
-                    plan_digest: pending.envelope.plan_digest.clone(),
-                    scope: self.scope().clone(),
-                    package_id: package_id.clone(),
-                    package_digest: prepared.package.package_digest().to_string(),
-                    manifest_digest: prepared.package.manifest_digest().to_string(),
+            let selected_surfaces =
+                surface_selections
+                    .get(&package_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        package_manager_error(
+                            "use.plugin.package_graph_invalid",
+                            "A prepared package omitted its selected surfaces.",
+                        )
+                    })?;
+            let package_root =
+                artifact_store.expanded_package_path(package.package.package_digest())?;
+            installed_by_id.insert(
+                package_id,
+                installed_extension_from_prepared(
+                    self.scope(),
+                    package,
                     generation,
-                    action: PluginLifecycleAction::Install,
-                    retained_ui_state_surfaces: Vec::new(),
-                },
-                &prepared.manifest,
-                &selected_surfaces,
-            )?;
-            let coordinator = self.lifecycle.install_coordinator(
-                self.registry.clone(),
-                prepared.package,
-                package_root,
-            )?;
-            units.push(PluginPackageLifecycleUnit::new(
-                coordinator,
-                intent,
-                prepared.manifest,
-            )?);
+                    selected_surfaces,
+                    package_root,
+                    true,
+                ),
+            );
         }
-
-        let graph = PluginPackageGraphLifecycleCoordinator::new(std::sync::Arc::new(
-            ExtensionGraphCapabilityLifecycleHost::new(self.registry.clone()),
-        ));
-        match pending
-            .authorization
-            .lifecycle_unit(self.grant_store(), &pending.envelope)?
-        {
-            Some(grants) => {
-                graph
-                    .apply_install_with_grants(&pending.envelope, &units, &grants, || {
-                        now_ms().unwrap_or(apply_time)
-                    })
-                    .await?;
-            }
-            None => {
-                graph
-                    .apply_install(&pending.envelope, &units, || now_ms().unwrap_or(apply_time))
-                    .await?;
-            }
-        }
-        let selections = install_snapshot_selections(
-            &self.snapshot_store(),
-            &lock,
-            &surface_selections,
-            Some(&pending.generations),
-            &installed,
-        )
-        .await?;
-        self.snapshot_store()
-            .put(&lock, now_ms()?, selections)
-            .await?;
-        self.retain_and_remove_graph_operation(
-            &pending_store,
-            &pending,
-            super::PluginRetainedOperationOutcome::Completed,
-        )
-        .await?;
-        let root = self
-            .registry
+        let root = installed_by_id
             .get(&lock.root_package_id)
-            .await?
+            .cloned()
             .ok_or_else(|| {
                 package_manager_error(
                     "use.plugin.package_graph_invalid",
-                    "The published cognitive-package root is missing after graph cutover.",
+                    "The Control-installed cognitive-package root is missing after commit.",
                 )
             })?;
         let installed_packages = lock
@@ -456,9 +375,9 @@ impl CognitivePackageManager {
         Ok(CognitivePackageInstallResult {
             changed: true,
             root,
-            package_lock: lock,
+            package_lock: lock.clone(),
             package_lock_digest: lock_digest,
-            plan: Some(pending.envelope),
+            plan: Some(pending.envelope.clone()),
             installed_packages,
             retained_packages,
         })
@@ -471,13 +390,28 @@ impl CognitivePackageManager {
         BTreeMap<String, InstallDisposition>,
         BTreeMap<String, InstalledExtension>,
     )> {
+        self.install_dispositions_control(lock).await
+    }
+
+    async fn install_dispositions_control(
+        &self,
+        lock: &a3s_use_core::PluginPackageLock,
+    ) -> UseResult<(
+        BTreeMap<String, InstallDisposition>,
+        BTreeMap<String, InstalledExtension>,
+    )> {
+        let control = self.ensure_control().await?;
+        let snapshot = control.current_snapshot().await?;
         let mut dispositions = BTreeMap::new();
         let mut installed = BTreeMap::new();
         for package in &lock.packages {
-            let disposition = match self.registry.get(package.package_id()).await? {
+            let selection = snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.package_selection(package.package_id()));
+            let disposition = match selection {
                 None => InstallDisposition::Add,
-                Some(extension) => {
-                    if !installed_matches_lock(&extension, &package.catalog)? {
+                Some(selection) => {
+                    if &selection.package != package {
                         return Err(package_manager_error(
                             "use.plugin.package_generation_retirement_required",
                             format!(
@@ -486,7 +420,50 @@ impl CognitivePackageManager {
                             ),
                         ));
                     }
-                    let disposition = if extension.receipt.enabled {
+                    let extension = InstalledExtension {
+                        receipt: ExtensionReceipt {
+                            schema_version: EXTENSION_RECEIPT_SCHEMA_VERSION,
+                            installation: self.scope().clone(),
+                            package_id: package.package_id().to_string(),
+                            component_id: format!("use/{}", package.package_id()),
+                            route_alias: None,
+                            version: package.version().to_string(),
+                            package_root: std::path::PathBuf::new(),
+                            manifest_sha256: package
+                                .catalog
+                                .record
+                                .package
+                                .manifest_sha256
+                                .clone()
+                                .unwrap_or_default(),
+                            package_sha256: package.catalog.record.package.sha256.clone(),
+                            trust: ExtensionTrust::RegistryTuf,
+                            registry: None,
+                            verified_catalog: Some(package.catalog.clone()),
+                            planning_bundle: None,
+                            selected_surfaces: selection.selected_surfaces.clone(),
+                            installed_at_unix: 1,
+                            enabled: selection.enabled,
+                            lifecycle_generation: Some(selection.state_generation),
+                        },
+                        manifest: ExtensionManifest {
+                            schema_version: 3,
+                            package_id: package.package_id().to_string(),
+                            version: package.version().to_string(),
+                            route_alias: None,
+                            requires_use: None,
+                            dependencies: Vec::new(),
+                            repository: None,
+                            actions: Vec::new(),
+                            tools: Vec::new(),
+                            mcp_servers: Vec::new(),
+                            okf: Vec::new(),
+                            flows: Vec::new(),
+                            skills: Vec::new(),
+                            ui: Vec::new(),
+                        },
+                    };
+                    let disposition = if selection.enabled {
                         InstallDisposition::Retain
                     } else {
                         InstallDisposition::Add
@@ -505,7 +482,13 @@ impl CognitivePackageManager {
         lock: &a3s_use_core::PluginPackageLock,
         installed: &BTreeMap<String, InstalledExtension>,
     ) -> UseResult<()> {
-        let snapshot = self.registry.snapshot().await?;
+        let control = self.ensure_control().await?;
+        let snapshot = control.current_snapshot().await?.ok_or_else(|| {
+            package_manager_error(
+                "use.plugin.package_graph_reconcile_required",
+                "Control Store has no committed installation snapshot for the retained closure.",
+            )
+        })?;
         for package in &lock.packages {
             let extension = installed.get(package.package_id()).ok_or_else(|| {
                 package_manager_error(
@@ -513,138 +496,29 @@ impl CognitivePackageManager {
                     "A retained dependency is missing from the installed closure.",
                 )
             })?;
-            let published = snapshot.packages.iter().any(|binding| {
-                binding.package_id == extension.receipt.package_id
-                    && binding.enabled
-                    && binding.lifecycle_generation == extension.receipt.lifecycle_generation
-                    && binding.package_sha256 == extension.receipt.package_sha256
-                    && binding.manifest_sha256 == extension.receipt.manifest_sha256
+            let published = snapshot.packages.iter().any(|selection| {
+                selection.package.package_id() == extension.receipt.package_id
+                    && selection.enabled
+                    && Some(selection.state_generation) == extension.receipt.lifecycle_generation
+                    && selection.package.catalog.record.package.sha256
+                        == extension.receipt.package_sha256
+                    && selection
+                        .package
+                        .catalog
+                        .record
+                        .package
+                        .manifest_sha256
+                        .as_deref()
+                        == Some(extension.receipt.manifest_sha256.as_str())
             });
             if !published {
                 return Err(package_manager_error(
                     "use.plugin.package_graph_reconcile_required",
                     format!(
-                        "Retained package '{}' is not part of the published capability generation.",
+                        "Retained package '{}' is not part of the Control installation snapshot.",
                         package.package_id()
                     ),
                 ));
-            }
-        }
-        Ok(())
-    }
-
-    async fn replay_published_install(
-        &self,
-        lock: &a3s_use_core::PluginPackageLock,
-        pending: &PendingPackageGraphOperation,
-        installed: &BTreeMap<String, InstalledExtension>,
-    ) -> UseResult<()> {
-        pending.validate()?;
-        self.authorization.verify_plan(&pending.envelope)?;
-        if pending.envelope.plan.action != PluginOperationAction::Install
-            || pending.envelope.package_lock.as_ref() != Some(lock)
-            || pending.envelope.plan.scope != *self.scope()
-        {
-            return Err(package_manager_error(
-                "use.plugin.package_graph_busy",
-                "A published package graph has unrelated pending install evidence.",
-            ));
-        }
-
-        let mut units = Vec::with_capacity(pending.generations.len());
-        for package in lock.install_order()? {
-            let Some(generation) = pending.generations.get(package.package_id()).copied() else {
-                continue;
-            };
-            let manifest = pending.manifests.get(package.package_id()).ok_or_else(|| {
-                package_manager_error(
-                    "use.plugin.package_graph_invalid",
-                    "A pending published package has no admitted manifest.",
-                )
-            })?;
-            self.lifecycle.validate_manifest(manifest)?;
-            let extension = installed.get(package.package_id()).ok_or_else(|| {
-                package_manager_error(
-                    "use.plugin.package_graph_reconcile_required",
-                    "A pending published package is absent from the installed closure.",
-                )
-            })?;
-            if extension.manifest != *manifest
-                || extension.receipt.lifecycle_generation != Some(generation)
-            {
-                return Err(package_manager_error(
-                    "use.plugin.package_generation_changed",
-                    format!(
-                        "Published package '{}' no longer matches its pending lifecycle generation.",
-                        package.package_id()
-                    ),
-                ));
-            }
-            let state = pending
-                .envelope
-                .plan
-                .packages
-                .iter()
-                .find(|transition| transition.package_id == package.package_id())
-                .and_then(|transition| transition.after.as_ref())
-                .ok_or_else(|| {
-                    package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A pending published package omitted its selected state.",
-                    )
-                })?;
-            let identity = ExtensionLifecycleIdentity::new(
-                package.package_id(),
-                state.release.package_sha256.clone(),
-                state.release.manifest_sha256.clone(),
-                generation,
-            )?;
-            let selected_surfaces = state_surface_refs(state);
-            let intent = PluginLifecycleIntent::from_manifest_selection(
-                PluginLifecycleIntentSpec {
-                    operation_id: pending.envelope.plan.operation_id.clone(),
-                    plan_digest: pending.envelope.plan_digest.clone(),
-                    scope: self.scope().clone(),
-                    package_id: package.package_id().to_string(),
-                    package_digest: identity.package_digest().to_string(),
-                    manifest_digest: identity.manifest_digest().to_string(),
-                    generation,
-                    action: PluginLifecycleAction::Install,
-                    retained_ui_state_surfaces: Vec::new(),
-                },
-                manifest,
-                &selected_surfaces,
-            )?;
-            let package_root = self.registry.lifecycle_package_root(&identity);
-            units.push(PluginPackageLifecycleUnit::new(
-                self.lifecycle
-                    .published_install_coordinator(self.registry.clone(), package_root)?,
-                intent,
-                manifest.clone(),
-            )?);
-        }
-
-        let completed_at_ms = now_ms()?;
-        let graph = PluginPackageGraphLifecycleCoordinator::new(std::sync::Arc::new(
-            ExtensionGraphCapabilityLifecycleHost::new(self.registry.clone()),
-        ));
-        match pending
-            .authorization
-            .lifecycle_unit(self.grant_store(), &pending.envelope)?
-        {
-            Some(grants) => {
-                graph
-                    .apply_install_with_grants(&pending.envelope, &units, &grants, || {
-                        now_ms().unwrap_or(completed_at_ms)
-                    })
-                    .await?;
-            }
-            None => {
-                graph
-                    .apply_install(&pending.envelope, &units, || {
-                        now_ms().unwrap_or(completed_at_ms)
-                    })
-                    .await?;
             }
         }
         Ok(())
@@ -679,41 +553,6 @@ fn validate_prepared_closure(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn validate_replay(
-    pending: &PendingPackageGraphOperation,
-    lock: &a3s_use_core::PluginPackageLock,
-    dispositions: &BTreeMap<String, InstallDisposition>,
-    surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
-    admitted_manifests: &BTreeMap<String, ExtensionManifest>,
-    changed_manifests: &BTreeMap<String, ExtensionManifest>,
-    scope: &PlanScope,
-    authorization: &dyn super::CognitivePackageAuthorizationProvider,
-) -> UseResult<()> {
-    pending.validate()?;
-    let expected_packages = install_plan_packages(lock, dispositions, surface_selections)?;
-    let expected_providers =
-        operation_provider_evidence(&lock.packages, admitted_manifests, authorization)?;
-    let state_revision = package_state_revision(pending.envelope.plan.state.capability_generation)?;
-    let expected_generations = install_generations(lock, dispositions, state_revision)?;
-    if pending.envelope.package_lock.as_ref() != Some(lock)
-        || pending.envelope.plan.action != PluginOperationAction::Install
-        || pending.envelope.plan.package_id != lock.root_package_id
-        || &pending.envelope.plan.scope != scope
-        || pending.envelope.plan.state.state_revision != state_revision
-        || pending.envelope.plan.packages != expected_packages
-        || pending.envelope.plan.providers != expected_providers
-        || pending.generations != expected_generations
-        || pending.manifests != *changed_manifests
-    {
-        return Err(package_manager_error(
-            "use.plugin.package_graph_busy",
-            "The pending cognitive-package install no longer matches the resolved graph.",
-        ));
-    }
-    Ok(())
-}
-
 fn install_surface_selections(
     lock: &a3s_use_core::PluginPackageLock,
     dispositions: &BTreeMap<String, InstallDisposition>,
@@ -732,7 +571,9 @@ fn install_surface_selections(
                             "A retained package is missing its installed surface evidence.",
                         )
                     })?
-                    .selected_surfaces()?,
+                    .receipt
+                    .selected_surfaces
+                    .clone(),
                 Some(InstallDisposition::Add) => {
                     let requested = requested_root_surfaces
                         .filter(|_| package.package_id() == lock.root_package_id)
@@ -761,54 +602,36 @@ fn install_surface_selections(
         .collect()
 }
 
-async fn install_snapshot_selections(
-    store: &super::store::InstallationSnapshotStore,
-    lock: &a3s_use_core::PluginPackageLock,
-    surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
-    changed_generations: Option<&BTreeMap<String, u64>>,
-    installed: &BTreeMap<String, InstalledExtension>,
-) -> UseResult<Vec<InstallationPackageSelection>> {
-    let current = store.current().await?;
-    lock.packages
-        .iter()
-        .map(|package| {
-            let package_id = package.package_id();
-            let selected_surfaces = surface_selections.get(package_id).cloned().ok_or_else(|| {
-                package_manager_error(
-                    "use.plugin.package_graph_invalid",
-                    "A package snapshot cutover omitted its publication surface intent.",
-                )
-            })?;
-            let state_generation = changed_generations
-                .and_then(|generations| generations.get(package_id).copied())
-                .or_else(|| {
-                    current
-                        .as_ref()
-                        .and_then(|snapshot| snapshot.package_selection(package_id))
-                        .filter(|selection| selection.package == *package)
-                        .map(|selection| selection.state_generation)
-                })
-                .or_else(|| {
-                    installed
-                        .get(package_id)
-                        .and_then(|extension| extension.receipt.lifecycle_generation)
-                })
-                .ok_or_else(|| {
-                    package_manager_error(
-                        "use.plugin.package_generation_changed",
-                        format!(
-                            "Package '{package_id}' has no exact state generation for installation snapshot cutover."
-                        ),
-                    )
-                })?;
-            InstallationPackageSelection::new(
-                package.clone(),
-                state_generation,
-                true,
-                selected_surfaces,
-            )
-        })
-        .collect()
+fn installed_extension_from_prepared(
+    installation: &PlanScope,
+    prepared: &PreparedInstallPackage,
+    generation: u64,
+    selected_surfaces: Vec<PluginSurfaceRef>,
+    package_root: std::path::PathBuf,
+    enabled: bool,
+) -> InstalledExtension {
+    InstalledExtension {
+        receipt: ExtensionReceipt {
+            schema_version: EXTENSION_RECEIPT_SCHEMA_VERSION,
+            installation: installation.clone(),
+            package_id: prepared.manifest.package_id.clone(),
+            component_id: format!("use/{}", prepared.manifest.package_id),
+            route_alias: prepared.manifest.route_alias.clone(),
+            version: prepared.manifest.version.clone(),
+            package_root,
+            manifest_sha256: prepared.package.manifest_digest().to_string(),
+            package_sha256: Some(prepared.package.package_digest().to_string()),
+            trust: prepared.package.trust(),
+            registry: prepared.package.registry().cloned(),
+            verified_catalog: prepared.package.verified_catalog().cloned(),
+            planning_bundle: prepared.package.planning_bundle().cloned(),
+            selected_surfaces,
+            installed_at_unix: 1,
+            enabled,
+            lifecycle_generation: Some(generation),
+        },
+        manifest: prepared.manifest.clone(),
+    }
 }
 
 pub(crate) fn verify_expected_lock(actual: &str, expected: Option<&str>) -> UseResult<()> {

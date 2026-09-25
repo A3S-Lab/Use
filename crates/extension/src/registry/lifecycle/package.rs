@@ -262,6 +262,26 @@ impl ExtensionLifecyclePackage {
         &self.manifest
     }
 
+    pub fn source_root(&self) -> &Path {
+        self.source.root()
+    }
+
+    pub const fn trust(&self) -> ExtensionTrust {
+        self.trust
+    }
+
+    pub fn registry(&self) -> Option<&ResolvedRemotePackage> {
+        self.registry.as_ref()
+    }
+
+    pub fn verified_catalog(&self) -> Option<&VerifiedPluginCatalogRecord> {
+        self.verified_catalog.as_ref()
+    }
+
+    pub fn planning_bundle(&self) -> Option<&PluginPlanningBundle> {
+        self.planning_bundle.as_ref()
+    }
+
     pub const fn expanded_bytes(&self) -> u64 {
         self.expanded_bytes
     }

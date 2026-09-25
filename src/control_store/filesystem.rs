@@ -9,7 +9,39 @@ pub(super) const CONTROL_STORE_RESTORE_FILE: &str = ".control-restore.sqlite3";
 const CONTROL_STORE_WAL_FILE: &str = "control.sqlite3-wal";
 const CONTROL_STORE_SHM_FILE: &str = "control.sqlite3-shm";
 const CONTROL_STORE_JOURNAL_FILE: &str = "control.sqlite3-journal";
-const OPERATIONAL_LOCK_FILES: &[&str] = &[".installation-mutation.lock", ".maintenance.lock"];
+const OPERATIONAL_LOCK_FILES: &[&str] = &[
+    ".installation-mutation.lock",
+    ".maintenance.lock",
+    ".package-graph.lock",
+];
+
+/// Top-level entries that may coexist with Control under clean-state-only.
+///
+/// These are registered external owners or excluded operational state from
+/// `docs/control-store-cutover.acl`. They must never select desired package
+/// state. Legacy authority leaves remain rejected by name below.
+const ALLOWED_COHABITING_ROOT_ENTRIES: &[&str] = &[
+    "capability-gateway",
+    "capability-index",
+    "generation-leases",
+    "knowledge",
+    "operations",
+    "plugin-host-manager",
+    "runtime-plans",
+    ".control-installation-restore",
+    ".maintenance.restore.json",
+];
+
+/// Legacy mutable-authority top-level leaves that block Control initialization.
+const REJECTED_LEGACY_ROOT_ENTRIES: &[&str] = &[
+    "bindings",
+    "extension-generations",
+    "extensions",
+    "grants",
+    "installation-snapshot.json",
+    "package-enablement",
+    "registry.json",
+];
 
 pub(super) async fn prepare_initialization(
     state_root: &Path,
@@ -234,10 +266,30 @@ async fn inspect_root(state_root: &Path) -> UseResult<RootInventory> {
             name if OPERATIONAL_LOCK_FILES.contains(&name) => {
                 validate_regular_file(&path).await?;
             }
+            name if ALLOWED_COHABITING_ROOT_ENTRIES.contains(&name) => {
+                // External owners and operational state may already exist from
+                // Registry resolve/download before Control initialize. Directories
+                // stay directories; marker files stay files.
+                let metadata = fs::symlink_metadata(&path).await.map_err(|error| {
+                    io_error("inspect cohabiting Control Store state entry", &path, error)
+                })?;
+                if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) {
+                    return Err(path_error(
+                        "A cohabiting Control Store state entry must not be a link.",
+                    ));
+                }
+            }
+            name if REJECTED_LEGACY_ROOT_ENTRIES.contains(&name) => {
+                return Err(UseError::new(
+                    "use.control_store.legacy_state_unsupported",
+                    "The installation state root contains legacy mutable authority beside Control Store.",
+                )
+                .with_detail("entry", name));
+            }
             _ => {
                 return Err(UseError::new(
                     "use.control_store.legacy_state_unsupported",
-                    "The installation state root contains authority outside the inactive Control Store kernel.",
+                    "The installation state root contains an unsupported entry beside Control Store.",
                 )
                 .with_detail("entry", name));
             }

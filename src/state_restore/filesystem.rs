@@ -129,6 +129,12 @@ fn apply_actions_blocking(
         let target = live_root.join(&action.path);
         match action.action {
             StateRestoreActionKind::Retain => {
+                if action.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH {
+                    // Control export is projected authority evidence, not a live
+                    // filesystem leaf. Live export matching was validated before
+                    // the plan was accepted.
+                    continue;
+                }
                 if optional_evidence(&target)?.as_ref() != action.after.as_ref() {
                     return Err(filesystem_invalid(
                         "A retained live file differs from the reviewed restore evidence.",

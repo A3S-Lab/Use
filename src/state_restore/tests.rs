@@ -8,7 +8,7 @@ mod security;
 #[tokio::test]
 async fn plan_is_path_free_and_classifies_add_replace_remove_and_retain() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let knowledge = paths.state_root().join("knowledge");
     std::fs::create_dir_all(&knowledge).unwrap();
     std::fs::write(knowledge.join("add.bin"), b"candidate add").unwrap();
@@ -37,6 +37,10 @@ async fn plan_is_path_free_and_classifies_add_replace_remove_and_retain() {
             .map(|action| (action.path.as_str(), action.action))
             .collect::<Vec<_>>(),
         vec![
+            (
+                crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH,
+                StateRestoreActionKind::Retain
+            ),
             ("knowledge/add.bin", StateRestoreActionKind::Add),
             ("knowledge/remove.bin", StateRestoreActionKind::Remove),
             ("knowledge/replace.bin", StateRestoreActionKind::Replace),
@@ -52,8 +56,17 @@ async fn plan_is_path_free_and_classifies_add_replace_remove_and_retain() {
     );
     assert_eq!(plan.summary.remove_files, 1);
     assert_eq!(plan.summary.remove_bytes, b"live only".len() as u64);
-    assert_eq!(plan.summary.retain_files, 1);
-    assert_eq!(plan.summary.retain_bytes, b"retained".len() as u64);
+    assert_eq!(plan.summary.retain_files, 2);
+    let export_bytes = backup
+        .entries
+        .iter()
+        .find(|entry| entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH)
+        .map(|entry| entry.length)
+        .unwrap();
+    assert_eq!(
+        plan.summary.retain_bytes,
+        b"retained".len() as u64 + export_bytes
+    );
     assert!(plan
         .actions
         .iter()
@@ -70,7 +83,7 @@ async fn plan_is_path_free_and_classifies_add_replace_remove_and_retain() {
 #[tokio::test]
 async fn unchanged_installation_produces_a_no_change_plan() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let knowledge = paths.state_root().join("knowledge");
     std::fs::create_dir_all(&knowledge).unwrap();
     std::fs::write(knowledge.join("stable.bin"), b"stable").unwrap();
@@ -89,15 +102,19 @@ async fn unchanged_installation_produces_a_no_change_plan() {
     assert_eq!(plan.summary.add_files, 0);
     assert_eq!(plan.summary.replace_files, 0);
     assert_eq!(plan.summary.remove_files, 0);
-    assert_eq!(plan.summary.retain_files, 1);
-    assert_eq!(plan.actions[0].action, StateRestoreActionKind::Retain);
+    assert_eq!(plan.summary.retain_files, 2);
+    assert!(plan.actions.iter().all(|action| {
+        action.action == StateRestoreActionKind::Retain
+            && (action.path == "knowledge/stable.bin"
+                || action.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH)
+    }));
     plan.validate().unwrap();
 }
 
 #[tokio::test]
 async fn apply_creates_exact_rollback_publishes_inventory_and_replays_terminally() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let knowledge = paths.state_root().join("knowledge");
     std::fs::create_dir_all(&knowledge).unwrap();
     std::fs::write(knowledge.join("add.bin"), b"candidate add").unwrap();
@@ -187,7 +204,7 @@ async fn apply_creates_exact_rollback_publishes_inventory_and_replays_terminally
 #[tokio::test]
 async fn global_collection_blocks_restore_state_publication() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let file = paths.state_root().join("knowledge/value.bin");
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, b"candidate").unwrap();
@@ -222,7 +239,7 @@ async fn global_collection_blocks_restore_state_publication() {
 #[tokio::test]
 async fn no_change_apply_does_not_create_a_rollback_or_operation() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     std::fs::create_dir_all(paths.state_root().join("knowledge")).unwrap();
     std::fs::write(paths.state_root().join("knowledge/stable.bin"), b"stable").unwrap();
     let backup_path = temporary.path().join("stable.a3s-use-state-backup");
@@ -254,7 +271,7 @@ async fn no_change_apply_does_not_create_a_rollback_or_operation() {
 #[tokio::test]
 async fn apply_rejects_stale_live_state_before_rollback_or_marker() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let file = paths.state_root().join("knowledge/value.bin");
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, b"candidate").unwrap();
@@ -286,7 +303,7 @@ async fn apply_rejects_stale_live_state_before_rollback_or_marker() {
 #[tokio::test]
 async fn apply_rejects_archive_tampering_and_rollback_inside_owned_state() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let file = paths.state_root().join("knowledge/value.bin");
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, b"candidate").unwrap();
@@ -349,7 +366,7 @@ async fn apply_rejects_archive_tampering_and_rollback_inside_owned_state() {
 #[tokio::test]
 async fn marker_only_handoff_blocks_shared_access_and_reconstructs_the_journal() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let file = paths.state_root().join("knowledge/value.bin");
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, b"candidate").unwrap();
@@ -425,7 +442,7 @@ async fn restore_preserves_reviewed_unix_mode_and_read_only_evidence() {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let file = paths.state_root().join("knowledge/mode.bin");
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, b"candidate").unwrap();
@@ -457,31 +474,31 @@ async fn restore_preserves_reviewed_unix_mode_and_read_only_evidence() {
 }
 
 #[tokio::test]
-async fn planning_rejects_grant_authority_drift() {
+async fn planning_rejects_legacy_grants_beside_control() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
-    let path = paths.state_root().join("grants/user/fixture/grant.json");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, b"retained authority").unwrap();
+    let paths = fixture_paths(temporary.path()).await;
     let backup_path = temporary.path().join("authority.a3s-use-state-backup");
     StateBackupManager::new(paths.clone())
         .backup(&backup_path)
         .await
         .unwrap();
-    std::fs::write(path, b"drifted authority").unwrap();
+
+    let path = paths.state_root().join("grants/user/fixture/grant.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, b"legacy grant authority").unwrap();
 
     let error = StateRestoreManager::new(paths)
         .plan_restore(backup_path)
         .await
         .unwrap_err();
 
-    assert_eq!(error.code, "use.state_restore_authority_mismatch");
+    assert_eq!(error.code, "use.control_store.legacy_state_unsupported");
 }
 
 #[tokio::test]
 async fn planning_rejects_version_os_and_architecture_mismatch() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let backup_path = temporary.path().join("platform.a3s-use-state-backup");
     let manifest = StateBackupManager::new(paths)
         .backup(&backup_path)
@@ -505,7 +522,7 @@ async fn planning_rejects_version_os_and_architecture_mismatch() {
 #[tokio::test]
 async fn planning_rejects_active_restore_links_and_unknown_state() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let backup_path = temporary.path().join("safe.a3s-use-state-backup");
     StateBackupManager::new(paths.clone())
         .backup(&backup_path)
@@ -550,8 +567,8 @@ async fn planning_rejects_active_restore_links_and_unknown_state() {
     assert_eq!(error.code, "use.state_backup_layout_unsupported");
 }
 
-fn fixture_paths(root: &Path) -> ExtensionPaths {
-    crate::test_extension_paths(root)
+async fn fixture_paths(root: &Path) -> ExtensionPaths {
+    crate::test_extension_paths_with_control(root).await
 }
 
 const RESTORE_CHILD_ROOT_ENV: &str = "A3S_USE_TEST_STATE_RESTORE_ROOT";
@@ -569,10 +586,10 @@ async fn every_restore_checkpoint_recovers_after_process_exit() {
         "candidates-staged",
         "status-staged",
         "status-publishing",
-        "action-0-candidate-published",
-        "action-1-target-removed",
+        "action-1-candidate-published",
         "action-2-target-removed",
-        "action-2-candidate-published",
+        "action-3-target-removed",
+        "action-3-candidate-published",
         "status-published",
         "candidate-root-1-removed",
         "status-candidates-removed",
@@ -580,7 +597,7 @@ async fn every_restore_checkpoint_recovers_after_process_exit() {
         "status-completed",
     ] {
         let temporary = tempfile::tempdir().unwrap();
-        let paths = fixture_paths(temporary.path());
+        let paths = fixture_paths(temporary.path()).await;
         let knowledge = paths.state_root().join("knowledge");
         std::fs::create_dir_all(&knowledge).unwrap();
         std::fs::write(knowledge.join("add.bin"), b"candidate add").unwrap();
@@ -697,7 +714,7 @@ async fn state_restore_checkpoint_crash_child() {
     let backup = PathBuf::from(std::env::var_os(RESTORE_CHILD_BACKUP_ENV).unwrap());
     let rollback = PathBuf::from(std::env::var_os(RESTORE_CHILD_ROLLBACK_ENV).unwrap());
     let plan_digest = std::env::var(RESTORE_CHILD_PLAN_DIGEST_ENV).unwrap();
-    StateRestoreManager::new(fixture_paths(&root))
+    StateRestoreManager::new(fixture_paths(&root).await)
         .apply_restore(backup, rollback, &plan_digest)
         .await
         .unwrap();

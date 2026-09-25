@@ -1,5 +1,6 @@
 /target/
 crates/browser-driver/dashboard/.next/
 crates/browser-driver/dashboard/node_modules/
+tests/independent_clients/ts/node_modules/
 *.swp
 .DS_Store

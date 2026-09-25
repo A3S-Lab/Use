@@ -10,8 +10,9 @@ use a3s_use_core::{
 use a3s_use_extension::{ExtensionRegistry, RegistrySourceStore};
 
 use crate::cognitive_package::{
-    verify_expected_lock, CognitivePackageHostManager, CognitiveRegistryAccess,
-    StandaloneCognitivePackageAuthorizationProvider, StandaloneCognitivePackageLifecycleFactory,
+    verify_expected_lock, CognitivePackageHostManager, CognitivePackageManager,
+    CognitiveRegistryAccess, StandaloneCognitivePackageAuthorizationProvider,
+    StandaloneCognitivePackageLifecycleFactory,
 };
 use crate::plugin_manager::PluginManagerService;
 
@@ -247,8 +248,8 @@ async fn install_graph(
 ) -> UseResult<serde_json::Value> {
     require_action(plan, PluginOperationAction::Install)?;
     let lock = root_lock(plan)?;
-    let root = ExtensionRegistry::from_env(installation)?
-        .get(plan.package_id.as_str())
+    let root = CognitivePackageManager::from_env(installation)?
+        .installed_extension(plan.package_id.as_str())
         .await?
         .ok_or_else(|| {
             manager_error("The installed root is missing after Plugin Manager apply.")
@@ -295,8 +296,8 @@ async fn upgrade_graph(
     let prior = plan.plan.prior_package_lock.as_ref().ok_or_else(|| {
         manager_error("The reviewed upgrade plan omitted its prior package lock.")
     })?;
-    let root = ExtensionRegistry::from_env(installation)?
-        .get(plan.package_id.as_str())
+    let root = CognitivePackageManager::from_env(installation)?
+        .installed_extension(plan.package_id.as_str())
         .await?
         .ok_or_else(|| manager_error("The upgraded root is missing after Plugin Manager apply."))?;
     let (added, replaced, removed, retained, legacy_plan) = if result.replayed {

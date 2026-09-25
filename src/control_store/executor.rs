@@ -77,6 +77,11 @@ enum ControlStoreRequest {
         operation_id: String,
         response: oneshot::Sender<UseResult<Option<ControlOperationRecord>>>,
     },
+    EffectsPendingOperation {
+        database_path: PathBuf,
+        installation: InstallationId,
+        response: oneshot::Sender<UseResult<Option<ControlOperationRecord>>>,
+    },
     CurrentGeneration {
         database_path: PathBuf,
         installation: InstallationId,
@@ -294,6 +299,21 @@ impl ControlStoreExecutor {
             database_path,
             installation,
             operation_id,
+            response,
+        })
+        .await?;
+        receive(receiver).await
+    }
+
+    pub(super) async fn effects_pending_operation(
+        &self,
+        database_path: PathBuf,
+        installation: InstallationId,
+    ) -> UseResult<Option<ControlOperationRecord>> {
+        let (response, receiver) = oneshot::channel();
+        self.send(ControlStoreRequest::EffectsPendingOperation {
+            database_path,
+            installation,
             response,
         })
         .await?;
@@ -576,6 +596,16 @@ fn run_worker(mut receiver: mpsc::Receiver<ControlStoreRequest>) {
                     &database_path,
                     &installation,
                     &operation_id,
+                ));
+            }
+            ControlStoreRequest::EffectsPendingOperation {
+                database_path,
+                installation,
+                response,
+            } => {
+                let _ = response.send(aggregate::effects_pending_operation(
+                    &database_path,
+                    &installation,
                 ));
             }
             ControlStoreRequest::CurrentGeneration {

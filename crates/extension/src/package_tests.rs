@@ -432,6 +432,16 @@ async fn mhs_bridge_fixture_is_a_bounded_standard_surface_package() {
     assert_eq!(mcp.file_count(), 1);
     assert!(mcp.expanded_bytes() > 0);
     assert!(mcp.digest().starts_with("sha256:"));
+
+    // Observation Flow must fail closed to a single attempt so an ambiguous
+    // host observation is never silently replayed as a mutation retry.
+    let monitor = fs::read_to_string(root.join("flows/monitor.ts"))
+        .await
+        .unwrap();
+    assert!(
+        monitor.contains("max_attempts: 1"),
+        "MHS monitor Flow must declare a single attempt (no implicit retry)"
+    );
 }
 
 #[tokio::test]

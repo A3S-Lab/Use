@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use a3s_use_core::{UseError, UseResult};
-use a3s_use_extension::ExtensionManifest;
+use a3s_use_extension::{lint_package_directory, ExtensionManifest};
 
 use crate::tools_error;
 
@@ -20,6 +20,29 @@ pub(crate) fn read_manifest(package_directory: &Path) -> UseResult<ExtensionMani
         )
     })?;
     ExtensionManifest::parse_acl(&input)
+}
+
+/// CLI entry: lint one package directory without writing an archive.
+pub(crate) async fn lint_command(options: &crate::Options) -> UseResult<()> {
+    let package_directory = Path::new(&options.require("package-dir")?)
+        .canonicalize()
+        .map_err(|error| {
+            tools_error(
+                "registry_tools.package_read_failed",
+                &format!("Failed to resolve the package directory: {error}"),
+            )
+        })?;
+    let report = lint_package_directory(&package_directory).await?;
+    println!(
+        "{}",
+        serde_json::to_string(&report).map_err(|error| {
+            tools_error(
+                "registry_tools.lint_failed",
+                &format!("Failed to encode the lint report: {error}"),
+            )
+        })?
+    );
+    Ok(())
 }
 
 /// Build the deterministic `package/`-prefixed tar.gz for one package root.

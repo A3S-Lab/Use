@@ -468,16 +468,14 @@ fn opposite_scope(scope: &PluginManagedScope) -> PluginManagedScope {
 async fn assert_six_surface_assets(
     host: &CognitivePackageHostManager,
     scope: &PluginManagedScope,
-    paths: &ExtensionPaths,
+    _paths: &ExtensionPaths,
     version: &str,
 ) {
-    let registry = ExtensionRegistry::new(paths.clone());
-    let lease = registry
-        .acquire_published_alias(ROUTE)
+    let extension = host
+        .installed_cognitive_package(PACKAGE_ID)
         .await
         .unwrap()
-        .expect("the complete package route must be published");
-    let extension = lease.extension();
+        .expect("the complete package must be installed under Control");
     assert_eq!(extension.receipt.package_id, PACKAGE_ID);
     assert_eq!(extension.receipt.version, version);
     assert_eq!(extension.receipt.selected_surfaces, six_surface_refs());

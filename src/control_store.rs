@@ -1,9 +1,14 @@
-//! Inactive A2 Control Store kernel.
+//! A2 Control Store kernel and production lifecycle entry.
 //!
-//! ADR-003 permits this backend to be qualified before the coordinated
-//! authority cutover. Nothing in the production package lifecycle constructs
-//! it yet, so the current JSON stores remain the only authority and no dual
-//! write path exists.
+//! ADR-003 permits the SQLite backend to be qualified before the coordinated
+//! authority cutover. Production package lifecycle code must construct only
+//! [`production::ProductionControlLifecycle`] and must never dual-write legacy
+//! JSON authorities. Production activation is complete for clean-state-only
+//! installs: Control is the sole mutable authority; legacy leaves fail closed
+//! at open. Product `mcp serve gateway --streamable-http` reconciles retained
+//! Gateway sessions and drain+retains on shutdown. Remaining GA work is
+//! Code/managed live Runtime readiness at product entry points, Registry/MHS
+//! external ops (A5/A6), and deleting unused test-only legacy store types.
 
 use std::path::PathBuf;
 
@@ -11,6 +16,7 @@ use a3s_use_core::{InstallationId, UseError, UseResult};
 use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
 
 mod aggregate;
+mod artifact_inspect;
 mod composition;
 mod dispatcher;
 mod effect_owner;
@@ -21,7 +27,17 @@ mod filesystem;
 mod model;
 mod operation_admission;
 mod payload_owner;
+mod production;
 mod schema;
+mod snapshot_read;
+
+pub(crate) use artifact_inspect::{
+    inspect_installation_artifact_references, ControlInstallationArtifactReference,
+};
+pub(crate) use snapshot_read::{
+    export_control_store_under_exclusive, read_current_installation_snapshot,
+    verify_control_store_export_bytes, CONTROL_STORE_EXPORT_BACKUP_PATH,
+};
 
 use executor::ControlStoreExecutor;
 use export::VerifiedControlStoreExport;
@@ -50,9 +66,14 @@ pub(crate) async fn ensure_capability_payload_retention_quiescent(
     effect_owner::ensure_capability_payload_retention_quiescent(state_root).await
 }
 
-#[allow(unused_imports)]
-pub(in crate::control_store) use composition::{
-    ControlEffectCompositionDependencies, ControlStoreRuntimeComposition,
+pub(crate) use payload_owner::backup_admits_control_installation_path;
+pub(crate) use production::{
+    control_database_present, legacy_authority_present, reject_legacy_authority_paths,
+    ControlObservedOperation, ControlObservedOperationPhase, ProductionControlHostDependencies,
+    ProductionControlLifecycle,
+};
+pub use effect_owner::runtime::{
+    ControlRuntimeMcpReadiness, ControlRuntimeServiceReadinessPort,
 };
 
 pub(crate) fn validate_terminal_restore_receipt_blocking(
@@ -155,6 +176,23 @@ impl ControlStore {
         let _maintenance = StateMaintenanceLock::new(&self.state_root)
             .acquire_shared()
             .await?;
+        self.export_under_maintenance(&_maintenance).await
+    }
+
+    /// Export while the caller retains the installation maintenance guard.
+    /// Coordinated backup already holds exclusive; reacquiring would deadlock.
+    async fn export_under_maintenance(
+        &self,
+        maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<Vec<u8>> {
+        if !maintenance.is_shared_for(&self.state_root)
+            && !maintenance.is_exclusive_for(&self.state_root)
+        {
+            return Err(UseError::new(
+                "use.control_store.maintenance_guard_invalid",
+                "The Control export requires a guard for the same installation state root.",
+            ));
+        }
         filesystem::require_initialized(&self.state_root, &self.database_path).await?;
         let physical_database_path =
             filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
@@ -324,6 +362,18 @@ impl ControlStore {
                 self.installation.clone(),
                 operation_id.to_string(),
             )
+            .await
+    }
+
+    async fn effects_pending_operation(&self) -> UseResult<Option<ControlOperationRecord>> {
+        let _maintenance = StateMaintenanceLock::new(&self.state_root)
+            .acquire_shared()
+            .await?;
+        filesystem::require_initialized(&self.state_root, &self.database_path).await?;
+        let database_path =
+            filesystem::physical_database_path(&self.state_root, &self.database_path).await?;
+        self.executor
+            .effects_pending_operation(database_path, self.installation.clone())
             .await
     }
 
@@ -597,6 +647,8 @@ mod payload_restore_coordinator_tests;
 mod payload_runtime_plan_tests;
 #[cfg(test)]
 mod payload_snapshot_session_tests;
+#[cfg(test)]
+mod production_activation_tests;
 #[cfg(test)]
 mod runtime_effect_tests;
 #[cfg(test)]

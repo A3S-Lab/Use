@@ -1,11 +1,11 @@
 use a3s_use_core::{
     PlanActor, PlanAuthority, PlanPackageChangeKind, PlanPackageRole, PlanPolicyDecision,
-    PlannedOperationImpact, PlannedPackageTransition, PlannedStateEvidence, PluginCatalogRecord,
-    PluginGrantConfirmation, PluginOperationAction, PluginOperationConfirmation,
-    PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
-    PluginPackageLock, PluginPackageResolver, PluginWorkspaceGrantSnapshot,
-    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, WorkspaceGrantEvidence,
-    PLUGIN_GRANT_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PlannedOperationImpact, PlannedPackageTransition, PlannedProviderEvidence,
+    PlannedStateEvidence, PluginCatalogRecord, PluginGrantConfirmation, PluginOperationAction,
+    PluginOperationConfirmation, PluginOperationPlanBinding, PluginOperationPlanDraft,
+    PluginOperationPlanEnvelope, PluginPackageLock, PluginPackageResolver,
+    PluginWorkspaceGrantSnapshot, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    WorkspaceGrantEvidence, PLUGIN_GRANT_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
     PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
@@ -35,16 +35,18 @@ pub(in crate::control_store) fn reviewed_grant_operation(
         prior,
         snapshot_override,
         None,
+        None,
     )
 }
 
-pub(super) fn reviewed_grant_operation_for(
+pub(in crate::control_store) fn reviewed_grant_operation_for(
     installation: &InstallationId,
     operation_id: &str,
     action: PluginOperationAction,
     prior: Option<&ControlGeneration>,
     snapshot_override: Option<PluginWorkspaceGrantSnapshot>,
     install_lock: Option<PluginPackageLock>,
+    providers_override: Option<Vec<PlannedProviderEvidence>>,
 ) -> ReviewedControlOperation {
     let expected_generation = prior.map_or(0, |generation| generation.snapshot.generation);
     let expected_capability_generation =
@@ -70,7 +72,7 @@ pub(super) fn reviewed_grant_operation_for(
         }
         PluginOperationAction::Upgrade => {
             let current = current_lock.as_ref().unwrap();
-            let candidate = replacement_package_lock(current);
+            let candidate = install_lock.unwrap_or_else(|| replacement_package_lock(current));
             let before = current.package(&current.root_package_id).unwrap();
             let after = candidate.package(&candidate.root_package_id).unwrap();
             let transition = after
@@ -117,7 +119,7 @@ pub(super) fn reviewed_grant_operation_for(
             (current.clone(), vec![transition])
         }
     };
-    let providers = plan_providers(action, &packages);
+    let providers = providers_override.unwrap_or_else(|| plan_providers(action, &packages));
     let private_service_before = packages.iter().any(|package| {
         package.before.as_ref().is_some_and(|state| {
             state

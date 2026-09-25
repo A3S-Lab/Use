@@ -58,6 +58,10 @@ pub enum ArtifactReferenceSource {
     PendingPackageGraph,
     PluginLifecycleOperation,
     RuntimePlanPayload,
+    /// Committed Control Store generation package selections.
+    ControlCommittedGeneration,
+    /// Nonterminal Control Store operation package locks.
+    ControlNonterminalOperation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

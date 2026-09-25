@@ -21,11 +21,9 @@ const MIN_EFFECT_OBSERVATION_BUDGET_MS: u64 = 1_000;
 
 mod contract;
 
-#[cfg(test)]
-pub(in crate::control_store) use contract::SystemControlEffectClock;
 pub(in crate::control_store) use contract::{
     ControlEffectClock, ControlEffectDispatchRequest, ControlEffectDispatchResult,
-    ControlEffectPorts,
+    ControlEffectPorts, SystemControlEffectClock,
 };
 
 /// Claims, executes, and observes at most one committed outbox effect.
@@ -92,6 +90,41 @@ impl ControlEffectDispatcher {
                 .acquire_shared()
                 .await?,
         );
+        self.dispatch_next_with_shared_fence(request, maintenance)
+            .await
+    }
+
+    /// Dispatch under a caller-held shared maintenance fence.
+    ///
+    /// Production graph apply already holds one shared fence across admit,
+    /// commit, and drain. Re-locking the same `.maintenance.lock` file from a
+    /// second handle deadlocks on Windows; reuse the held fence instead.
+    pub(in crate::control_store) async fn dispatch_next_with_shared_fence(
+        &self,
+        request: ControlEffectDispatchRequest,
+        maintenance: Arc<StateMaintenanceGuard>,
+    ) -> UseResult<ControlEffectDispatchResult> {
+        if !maintenance.is_shared_for(&self.store.state_root) {
+            return Err(dispatch_error(
+                "Control effect dispatch requires the caller's shared maintenance fence for this installation state root.",
+            ));
+        }
+        if request.operation_id.is_empty()
+            || request.worker_id.is_empty()
+            || request.claim_token.is_empty()
+            || request.lease_duration_ms == 0
+            || request.provider_timeout_ms == 0
+            || request.deferred_retry_delay_ms == 0
+            || request.deferred_retry_delay_ms > MAX_EFFECT_DEFERRAL_MS
+            || request
+                .provider_timeout_ms
+                .checked_add(MIN_EFFECT_OBSERVATION_BUDGET_MS)
+                .is_none_or(|bounded| bounded > request.lease_duration_ms)
+        {
+            return Err(dispatch_error(
+                "The dispatch timing policy is invalid or cannot leave the minimum observation budget inside the claim lease.",
+            ));
+        }
         // Once a claim may be committed, caller cancellation must not create
         // a claim/effect/observation gap. The owned coordinator outlives this
         // wait if its JoinHandle is dropped and retains the maintenance fence
@@ -176,7 +209,7 @@ impl ControlEffectDispatcher {
             outcome,
             application,
             failure_evidence_digest,
-            error_code,
+            error_code: error_code.clone(),
             observed_at_ms,
             retry_not_before_ms,
         };
@@ -186,6 +219,7 @@ impl ControlEffectDispatcher {
             sequence: claimed.intent.sequence,
             attempt: claimed.attempt,
             outcome,
+            error_code,
             retry_not_before_ms,
             observation_changed,
         };
@@ -433,6 +467,16 @@ impl ControlEffectRuntime {
         request: ControlEffectDispatchRequest,
     ) -> UseResult<ControlEffectDispatchResult> {
         self.dispatcher.dispatch_next(request).await
+    }
+
+    pub(crate) async fn dispatch_next_with_shared_fence(
+        &self,
+        request: ControlEffectDispatchRequest,
+        maintenance: Arc<StateMaintenanceGuard>,
+    ) -> UseResult<ControlEffectDispatchResult> {
+        self.dispatcher
+            .dispatch_next_with_shared_fence(request, maintenance)
+            .await
     }
 }
 

@@ -90,9 +90,9 @@ fn cutover_manifest_freezes_the_complete_current_state_layout() {
         ],
     );
     assert_eq!(number(&root, "schema_version"), 1.0);
-    assert_eq!(string(&root, "status"), "inventory-frozen");
-    assert_eq!(string(&root, "production_authority"), "legacy-files");
-    assert_eq!(string(&root, "control_store_activation"), "inactive");
+    assert_eq!(string(&root, "status"), "activated");
+    assert_eq!(string(&root, "production_authority"), "control-store");
+    assert_eq!(string(&root, "control_store_activation"), "active");
     assert_eq!(string(&root, "migration_policy"), "clean-state-only");
     assert_eq!(string(&root, "cutover_unit"), "one-installation-aggregate");
     assert!(!boolean(&root, "dual_write_allowed"));

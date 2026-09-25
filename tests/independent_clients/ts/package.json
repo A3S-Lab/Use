@@ -1,0 +1,8 @@
+{
+  "name": "a3s-use-independent-ts-client",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0"
+  }
+}

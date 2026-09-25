@@ -33,6 +33,10 @@ pub struct FlowRuntimeBindingStore {
 
 impl FlowRuntimeBindingStore {
     /// Construct a store over an already installation-scoped state root.
+    ///
+    /// Legacy `bindings/flow` constructor for pre-Control fixtures only.
+    /// Production hosts must use [`Self::for_control_authority`].
+    #[cfg(test)]
     pub fn new(state_root: impl Into<PathBuf>, installation: InstallationId) -> UseResult<Self> {
         installation.validate()?;
         Ok(Self::from_parts(state_root.into(), installation))
@@ -46,11 +50,25 @@ impl FlowRuntimeBindingStore {
         }
     }
 
+    /// Legacy `bindings/flow` root for pre-Control fixtures only.
+    #[cfg(test)]
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
         Self::from_parts(
             paths.installation_state_root(),
             paths.installation().clone(),
         )
+    }
+
+    /// Control-authority binding root. The legacy `bindings/flow` leaf is
+    /// reserved for pre-cutover file-store installs and must stay absent beside
+    /// `control.sqlite3`.
+    pub fn for_control_authority(paths: &ExtensionPaths) -> Self {
+        let state_root = paths.installation_state_root();
+        Self {
+            installation: paths.installation().clone(),
+            root: state_root.join("payloads").join("flow-bindings"),
+            state_root,
+        }
     }
 
     pub fn installation(&self) -> &InstallationId {

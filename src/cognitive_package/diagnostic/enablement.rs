@@ -14,12 +14,10 @@ pub(super) async fn pending_enablement(
     manager: &CognitivePackageManager,
     package_id: &PluginPackageId,
 ) -> UseResult<Option<PendingCognitivePackageEnablement>> {
-    let state = manager
-        .enablement_store()
-        .get_state(manager.scope(), package_id)
-        .await
-        .map_err(|_| diagnostic_state_error())?;
-    Ok(state.and_then(|state| state.active))
+    // Control owns enablement admission and recovery. Never open the legacy
+    // `package-enablement/` leaf beside Control.
+    let _ = (manager, package_id);
+    Ok(None)
 }
 
 pub(super) async fn diagnose_reviewed_enablement_operation(
@@ -68,47 +66,18 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
         PluginOperationDiagnosticPhase::Planned
     };
 
-    let enablement_store = manager.enablement_store();
-    if let Some(completed) = enablement_store
-        .get_operation(manager.scope(), &envelope.plan.operation_id)
-        .await
-        .map_err(|_| diagnostic_state_error())?
-    {
-        completed.validate().map_err(|_| diagnostic_state_error())?;
-        if completed.envelope != *envelope {
-            return Err(diagnostic_state_error());
-        }
-        return Ok(None);
-    }
-    let Some(current) = enablement_store
-        .get_state(manager.scope(), package_id)
-        .await
-        .map_err(|_| diagnostic_state_error())?
-    else {
-        return Ok(None);
-    };
-    current.validate().map_err(|_| diagnostic_state_error())?;
-    if let Some(active) = current.active.clone() {
-        return diagnose_enablement_operation(manager, package_id.as_str(), active)
-            .await
-            .map(Some);
-    }
-    if current.state_generation != request.expected_package_generation
-        || current.enabled == request.enabled
-        || current.artifact.is_none()
-    {
-        return Ok(None);
-    }
-
-    let (extension, _, _) = match manager.required_enablement_extension(package_id).await {
+    // Control owns enablement state. Host-reviewed plans project from Control
+    // package selection + Artifact Store, never `package-enablement/`.
+    let (extension, selection, _) = match manager.required_enablement_extension(package_id).await {
         Ok(installed) => installed,
         Err(error) if error.code == "use.extension.not_installed" => return Ok(None),
         Err(_) => return Err(diagnostic_state_error()),
     };
-    let artifact = current
-        .artifact
-        .as_ref()
-        .ok_or_else(diagnostic_state_error)?;
+    if selection.state_generation != request.expected_package_generation
+        || selection.enabled == request.enabled
+    {
+        return Ok(None);
+    }
     let package_digest = extension
         .receipt
         .package_sha256
@@ -127,18 +96,14 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
     let selected_surfaces = extension
         .selected_surfaces()
         .map_err(|_| diagnostic_state_error())?;
-    let expected_desired = if current.enabled {
+    let expected_desired = if selection.enabled {
         a3s_use_core::PluginDesiredState::Enabled
     } else {
         a3s_use_core::PluginDesiredState::InstalledDisabled
     };
-    if extension.receipt.enabled != current.enabled
-        || artifact.version != extension.receipt.version
-        || artifact.generation != lifecycle_generation
-        || artifact.package_digest != package_digest
-        || artifact.manifest_digest != manifest_digest
-        || result.state.version.as_deref() != Some(artifact.version.as_str())
-        || result.state.package_generation != Some(current.state_generation)
+    if extension.receipt.enabled != selection.enabled
+        || result.state.version.as_deref() != Some(extension.receipt.version.as_str())
+        || result.state.package_generation != Some(selection.state_generation)
         || result.state.package_digest.as_deref() != Some(package_digest.as_str())
         || result.state.manifest_digest.as_deref() != Some(manifest_digest.as_str())
         || result.state.receipt_digest.as_deref() != Some(receipt_digest.as_str())
@@ -196,9 +161,8 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
     .await?;
     let authorization = PackageGraphAuthorization::default();
     let grant = observe_grant(manager, envelope, &authorization, phase).await?;
-    let snapshot = manager
-        .registry
-        .published_snapshot()
+    let (generation, snapshot_digest, pending_cutovers) = manager
+        .control_registry_diagnostic_face()
         .await
         .map_err(|_| diagnostic_state_error())?;
     let cutover_key = enablement_intent_cutover_key(&intent)?;
@@ -206,17 +170,15 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
         envelope,
         phase,
         &cutover_key,
-        &snapshot.pending_cutovers,
-        snapshot.generation,
+        &pending_cutovers,
+        generation,
         &observed,
         &grant,
     )?;
     let registry = PluginRegistryOperationDiagnostic {
-        generation: snapshot.generation,
-        snapshot_digest: snapshot
-            .descriptor_digest()
-            .map_err(|_| diagnostic_state_error())?,
-        pending_cutover_count: bounded_count(snapshot.pending_cutovers.len(), "Registry cutover")?,
+        generation,
+        snapshot_digest,
+        pending_cutover_count: bounded_count(pending_cutovers.len(), "Registry cutover")?,
         operation_cutover,
     };
     let sources = project_installed_source(
@@ -283,9 +245,8 @@ pub(in crate::cognitive_package) async fn diagnose_enablement_operation(
         .validate_against(&active.envelope, active.started_at_ms)
         .map_err(|_| diagnostic_state_error())?;
 
-    let snapshot = manager
-        .registry
-        .published_snapshot()
+    let (generation, snapshot_digest, pending_cutovers) = manager
+        .control_registry_diagnostic_face()
         .await
         .map_err(|_| diagnostic_state_error())?;
     let expected = expected_enablement_lifecycle_units(&active)?;
@@ -303,17 +264,15 @@ pub(in crate::cognitive_package) async fn diagnose_enablement_operation(
         &active.envelope,
         phase,
         &cutover_key,
-        &snapshot.pending_cutovers,
-        snapshot.generation,
+        &pending_cutovers,
+        generation,
         &observed,
         &grant,
     )?;
     let registry = PluginRegistryOperationDiagnostic {
-        generation: snapshot.generation,
-        snapshot_digest: snapshot
-            .descriptor_digest()
-            .map_err(|_| diagnostic_state_error())?,
-        pending_cutover_count: bounded_count(snapshot.pending_cutovers.len(), "Registry cutover")?,
+        generation,
+        snapshot_digest,
+        pending_cutover_count: bounded_count(pending_cutovers.len(), "Registry cutover")?,
         operation_cutover,
     };
 

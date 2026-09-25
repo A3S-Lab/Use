@@ -5,9 +5,9 @@ use a3s_use_core::{
     PlanPackageChangeKind, PluginOperationAction, PluginOperationPlanEnvelope, PluginPackageId,
     PluginPackageLock, UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS,
 };
-use a3s_use_extension::{
-    validate_catalog_manifest_binding, ArtifactStore, ExtensionManifest, ExtensionPaths,
-};
+use a3s_use_extension::{validate_catalog_manifest_binding, ExtensionManifest};
+#[cfg(test)]
+use a3s_use_extension::ArtifactStore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::fs;
@@ -387,6 +387,7 @@ fn manifest_record_digests(
         .collect()
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(in crate::cognitive_package) struct PendingPackageGraphStore {
     artifact_store: ArtifactStore,
@@ -394,16 +395,12 @@ pub(in crate::cognitive_package) struct PendingPackageGraphStore {
     root: PathBuf,
 }
 
+#[cfg(test)]
 impl PendingPackageGraphStore {
-    #[cfg(test)]
     pub fn new(state_root: impl Into<PathBuf>) -> Self {
         let state_root = state_root.into();
         let artifact_store = test_artifact_store(&state_root);
         Self::from_parts(state_root, artifact_store)
-    }
-
-    pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::from_parts(paths.installation_state_root(), paths.artifact_store())
     }
 
     fn from_parts(state_root: PathBuf, artifact_store: ArtifactStore) -> Self {
@@ -414,7 +411,6 @@ impl PendingPackageGraphStore {
         }
     }
 
-    #[cfg(test)]
     pub(super) fn artifact_store(&self) -> &ArtifactStore {
         &self.artifact_store
     }

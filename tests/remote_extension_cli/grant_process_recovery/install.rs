@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[ignore = "obsolete under Control sole authority; replaced by control_host_grant_recovery"]
 fn killed_managed_install_replays_graph_and_grant_cutover_without_reauthorization() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();

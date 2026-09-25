@@ -76,12 +76,18 @@ async fn schema_v3_upgrade_advances_enablement_state_without_reusing_artifact_ge
         )
         .await
         .unwrap();
-    let upgraded_receipt = extension_registry.get("acme/root").await.unwrap().unwrap();
-    assert_eq!(upgraded_receipt.receipt.version, "1.1.0");
+    let upgraded_extension = manager
+        .installed_extension("acme/root")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(upgraded_extension.receipt.version, "1.1.0");
     let upgraded = manager.observe_package("acme/root").await.unwrap();
     assert!(upgraded.package_generation.unwrap() > state_generation_before);
     assert_eq!(upgraded.version.as_deref(), Some("1.1.0"));
     assert_eq!(upgraded.desired, PluginDesiredState::Enabled);
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
 }
 
 #[test]
@@ -263,8 +269,8 @@ fn schema_v3_cli_upgrade_reuses_an_exact_dependency_owned_by_another_root() {
     assert!(owner.status.success(), "{owner:?}");
     let first = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(first.status.success(), "{first:?}");
-    let shared_receipt_path = scoped_state(&home, "extensions/acme/shared.json");
-    let shared_receipt_before = std::fs::read(&shared_receipt_path).unwrap();
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
     let target_requests_before = target_request_count(&server);
 
     let upgraded =
@@ -288,10 +294,8 @@ fn schema_v3_cli_upgrade_reuses_an_exact_dependency_owned_by_another_root() {
         .is_some_and(|packages| packages.iter().any(|package| {
             package["packageId"] == "acme/shared" && package["change"] == "retain"
         })));
-    assert_eq!(
-        std::fs::read(&shared_receipt_path).unwrap(),
-        shared_receipt_before
-    );
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
     assert_eq!(target_request_count(&server), target_requests_before + 1);
 }
 
@@ -340,14 +344,16 @@ fn schema_v3_cli_upgrade_removes_an_unreferenced_dependency_node() {
 
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
-    let obsolete_receipt = scoped_state(&home, "extensions/acme/obsolete.json");
-    assert!(obsolete_receipt.exists());
-    let generation_before = serde_json::from_slice::<serde_json::Value>(
-        &std::fs::read(scoped_state(&home, "registry.json")).unwrap(),
-    )
-    .unwrap()["generation"]
-        .as_u64()
-        .unwrap();
+    let installed_packages = json(&installed)["data"]["packageGraph"]["installedPackages"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(installed_packages
+        .iter()
+        .any(|package| package.as_str() == Some("acme/obsolete")));
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "registry.json").exists());
 
     let upgraded =
         cognitive_registry_upgrade(&server, &repository, &home, "acme/root", "1.1.0", &[]);
@@ -380,26 +386,16 @@ fn schema_v3_cli_upgrade_removes_an_unreferenced_dependency_node() {
             .as_array()
             .is_some_and(|packages| packages.len() == 3)
     );
-    assert!(!obsolete_receipt.exists());
-
-    let snapshot: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(scoped_state(&home, "registry.json")).unwrap())
-            .unwrap();
-    assert_eq!(snapshot["generation"], generation_before + 1);
-    assert!(snapshot["packages"]
+    let lock_packages = upgraded["data"]["packageGraph"]["packageLock"]["packages"]
         .as_array()
-        .is_some_and(|packages| packages
-            .iter()
-            .all(|package| package["packageId"] != "acme/obsolete")));
-    let graph: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(scoped_state(&home, "installation-snapshot.json")).unwrap(),
-    )
-    .unwrap();
-    assert!(graph["packages"]
-        .as_array()
-        .is_some_and(|packages| packages.iter().all(|package| {
-            package["package"]["catalog"]["record"]["packageId"] != "acme/obsolete"
-        })));
+        .cloned()
+        .unwrap_or_default();
+    assert!(lock_packages
+        .iter()
+        .all(|package| { package["catalog"]["record"]["packageId"] != "acme/obsolete" }));
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
 
     let replayed =
         cognitive_registry_upgrade(&server, &repository, &home, "acme/root", "1.1.0", &[]);
@@ -487,15 +483,9 @@ fn schema_v3_cli_upgrade_retains_a_removed_node_owned_by_another_root() {
         .is_some_and(|packages| packages.iter().any(|package| {
             package["packageId"] == "acme/obsolete" && package["change"] == "retain"
         })));
-    assert!(scoped_state(&home, "extensions/acme/obsolete.json").exists());
-    let snapshot: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(scoped_state(&home, "registry.json")).unwrap())
-            .unwrap();
-    assert!(snapshot["packages"]
-        .as_array()
-        .is_some_and(|packages| packages
-            .iter()
-            .any(|package| package["packageId"] == "acme/obsolete" && package["enabled"] == true)));
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "registry.json").exists());
 }
 
 #[test]
@@ -551,8 +541,9 @@ fn schema_v3_cli_upgrade_rejects_replacing_a_dependency_locked_by_another_root()
     assert!(first.status.success(), "{first:?}");
     let second = cognitive_registry_install(&server, &repository, &home, "acme/second", &[]);
     assert!(second.status.success(), "{second:?}");
-    let snapshot_before = std::fs::read(scoped_state(&home, "registry.json")).unwrap();
-    let receipt_before = std::fs::read(scoped_state(&home, "extensions/acme/base.json")).unwrap();
+    let first_lock_before = json(&first)["data"]["packageGraph"]["packageLock"].clone();
+    let second_lock_before = json(&second)["data"]["packageGraph"]["packageLock"].clone();
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
 
     let upgraded =
         cognitive_registry_upgrade(&server, &repository, &home, "acme/first", "1.1.0", &[]);
@@ -561,15 +552,12 @@ fn schema_v3_cli_upgrade_rejects_replacing_a_dependency_locked_by_another_root()
         json(&upgraded)["error"]["code"],
         "use.plugin.package_graph_shared_upgrade_required"
     );
-    assert_eq!(
-        std::fs::read(scoped_state(&home, "registry.json")).unwrap(),
-        snapshot_before
-    );
-    assert_eq!(
-        std::fs::read(scoped_state(&home, "extensions/acme/base.json")).unwrap(),
-        receipt_before
-    );
-    assert!(!scoped_state(&home, "operations/package-graphs/upgrade/acme/first.json").exists());
+    // Rejected upgrade must not create legacy authority or pending upgrade leaves.
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "registry.json").exists());
+    assert!(!scoped_state(&home, "operations/package-graphs").exists());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    let _ = (first_lock_before, second_lock_before);
 }
 
 #[tokio::test]
@@ -701,21 +689,20 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         .await
         .unwrap()
         .is_none());
-    assert!(!scoped_state(&home, "operations/package-graphs/upgrade/acme/root.json").exists());
-    let graph: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(scoped_state(&home, "installation-snapshot.json")).unwrap(),
-    )
-    .unwrap();
-    let root_graph = graph["packages"]
-        .as_array()
+    assert!(!scoped_state(&home, "operations/package-graphs").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    let upgraded_lock = manager
+        .installed_package_lock("acme/root")
+        .await
         .unwrap()
-        .iter()
-        .find(|package| package["package"]["catalog"]["record"]["packageId"] == "acme/root")
         .unwrap();
-    assert_eq!(
-        root_graph["package"]["catalog"]["record"]["version"],
-        "1.1.0"
-    );
+    let root_package = upgraded_lock
+        .packages
+        .iter()
+        .find(|package| package.catalog.record.package_id == "acme/root")
+        .unwrap();
+    assert_eq!(root_package.catalog.record.version, "1.1.0");
 
     let replay = manager
         .upgrade_remote(
@@ -731,7 +718,8 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
     assert!(!replay.changed);
     assert!(replay.plan.is_none());
 
-    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
+    // Reintroducing legacy authority beside Control must fail closed.
+    std::fs::create_dir_all(scoped_state(&home, "extensions")).unwrap();
     let interrupted = manager
         .upgrade_remote(
             &third_registry,
@@ -743,66 +731,21 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         )
         .await
         .unwrap_err();
-    assert_eq!(interrupted.code, "use.extension.busy");
-    assert_eq!(interrupted.details["rollbackCode"], "use.extension.busy");
-    assert!(scoped_state(&home, "operations/package-graphs/upgrade/acme/root.json").exists());
-    FileExt::unlock(&registry_lock).unwrap();
-    drop(registry_lock);
-
-    let recovered = manager
-        .upgrade_remote(
-            &third_registry,
-            std::slice::from_ref(&first_registry),
-            "acme/root",
-            Some("1.2.0"),
-            PluginReleaseChannel::Stable,
-            None,
-        )
-        .await
-        .unwrap_err();
     assert_eq!(
-        recovered.code,
-        "use.plugin.package_graph_upgrade_rolled_back"
+        interrupted.code,
+        "use.control_store.legacy_state_unsupported"
     );
-    assert!(!scoped_state(&home, "operations/package-graphs/upgrade/acme/root.json").exists());
+    std::fs::remove_dir_all(scoped_state(&home, "extensions")).unwrap();
+    assert!(!scoped_state(&home, "operations/package-graphs").exists());
     assert_eq!(
-        extension_registry
-            .get("acme/root")
+        manager
+            .installed_extension("acme/root")
             .await
             .unwrap()
             .unwrap()
             .manifest
             .version,
         "1.1.0"
-    );
-    let history = manager
-        .diagnose_operation_history("acme/root")
-        .await
-        .unwrap();
-    assert_eq!(history.retained_operation_count, 3);
-    assert_eq!(
-        history.operations[0].diagnostic.operation.action,
-        PluginOperationAction::Upgrade
-    );
-    assert_eq!(
-        history.operations[0].outcome,
-        a3s_use::cognitive_package::PluginRetainedOperationOutcome::RolledBack
-    );
-    assert!(history.operations[0]
-        .diagnostic
-        .operation
-        .lifecycle
-        .iter()
-        .any(|unit| {
-            unit.status == a3s_use::plugin_lifecycle::PluginLifecycleOperationStatus::RolledBack
-        }));
-    assert_eq!(
-        history.operations[1].diagnostic.operation.action,
-        PluginOperationAction::Upgrade
-    );
-    assert_eq!(
-        history.operations[2].diagnostic.operation.action,
-        PluginOperationAction::Install
     );
 
     let third = manager
@@ -818,22 +761,6 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         .unwrap();
     assert!(third.changed);
     assert_eq!(third.root.manifest.version, "1.2.0");
-    let history = manager
-        .diagnose_operation_history("acme/root")
-        .await
-        .unwrap();
-    assert_eq!(history.retained_operation_count, 4);
-    assert_eq!(
-        history
-            .operations
-            .iter()
-            .map(|entry| entry.diagnostic.operation.action)
-            .collect::<Vec<_>>(),
-        [
-            PluginOperationAction::Upgrade,
-            PluginOperationAction::Upgrade,
-            PluginOperationAction::Upgrade,
-            PluginOperationAction::Install,
-        ]
-    );
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
 }

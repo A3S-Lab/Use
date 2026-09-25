@@ -28,14 +28,14 @@ use rmcp::service::{NotificationContext, RoleClient};
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
 };
-use rmcp::{ClientHandler, ServiceExt};
+use rmcp::{ClientHandler, ServerHandler, ServiceExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::capability_registry::{
-    CapabilityPackageGeneration, CapabilityRegistry, CapabilitySnapshotLease,
-    CAPABILITY_SNAPSHOT_CURSOR_SCHEMA,
+    CapabilityPackageGeneration, CapabilityRegistry, CapabilitySnapshotCursor,
+    CapabilitySnapshotLease, CAPABILITY_SNAPSHOT_CURSOR_SCHEMA,
 };
 
 use super::*;
@@ -1510,6 +1510,156 @@ fn gateway_projects_discovery_and_routes_for_the_negotiated_consumer() {
 }
 
 #[test]
+fn gateway_projects_flow_ui_knowledge_metadata_only_for_negotiated_extensions() {
+    let mutual = test_descriptor();
+    let digest = |letter: char| format!("sha256:{}", letter.to_string().repeat(64));
+    let package = mutual.package_id.clone();
+
+    let flow_surface = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Flow,
+        id: "review-flow".to_owned(),
+    };
+    let mut flow = mutual.clone();
+    flow.surface = flow_surface.clone();
+    flow.title = "Review Flow".to_owned();
+    flow.description = "Path-free Flow metadata.".to_owned();
+    flow.invocation_ref =
+        InvocationRef::derive(&package, &flow_surface, flow.generation, &digest('a')).unwrap();
+    flow.artifact_ref =
+        Some(ArtifactRef::derive(&package, &flow_surface, flow.generation, &digest('b')).unwrap());
+    flow.endpoint_ref = None;
+    flow.required_extensions = vec![CapabilityConsumerExtension::Flow];
+    flow.capability = CapabilityDescriptorKind::Flow {
+        engine: "a3s-flow".to_owned(),
+        runtime: "native-ts".to_owned(),
+        export_name: "main".to_owned(),
+        artifact_digest: digest('c'),
+        requires_tools: vec!["search".to_owned()],
+        requires_mcp: Vec::new(),
+        requires_knowledge: Vec::new(),
+    };
+    flow.validate().unwrap();
+
+    let knowledge_surface = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Okf,
+        id: "kb".to_owned(),
+    };
+    let mut knowledge = mutual.clone();
+    knowledge.surface = knowledge_surface.clone();
+    knowledge.title = "Knowledge Bundle".to_owned();
+    knowledge.description = "Path-free Knowledge metadata.".to_owned();
+    knowledge.invocation_ref = InvocationRef::derive(
+        &package,
+        &knowledge_surface,
+        knowledge.generation,
+        &digest('d'),
+    )
+    .unwrap();
+    knowledge.artifact_ref = Some(
+        ArtifactRef::derive(
+            &package,
+            &knowledge_surface,
+            knowledge.generation,
+            &digest('e'),
+        )
+        .unwrap(),
+    );
+    knowledge.endpoint_ref = None;
+    knowledge.required_extensions = vec![CapabilityConsumerExtension::Knowledge];
+    knowledge.capability = CapabilityDescriptorKind::Knowledge {
+        bundle_digest: digest('f'),
+        okf_version: Some("0.2".to_owned()),
+    };
+    knowledge.validate().unwrap();
+
+    let ui_surface = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Ui,
+        id: "panel".to_owned(),
+    };
+    let mut ui = mutual.clone();
+    ui.surface = ui_surface.clone();
+    ui.title = "Panel".to_owned();
+    ui.description = "Path-free UI metadata.".to_owned();
+    ui.invocation_ref =
+        InvocationRef::derive(&package, &ui_surface, ui.generation, &digest('1')).unwrap();
+    ui.artifact_ref =
+        Some(ArtifactRef::derive(&package, &ui_surface, ui.generation, &digest('2')).unwrap());
+    ui.endpoint_ref = None;
+    ui.required_extensions = vec![CapabilityConsumerExtension::Ui];
+    ui.capability = CapabilityDescriptorKind::Ui {
+        icon: "panel".to_owned(),
+        order: 10,
+        entry_digest: digest('3'),
+        bind_tools: vec!["search".to_owned()],
+        bind_mcp: Vec::new(),
+        bind_flows: vec!["review-flow".to_owned()],
+    };
+    ui.validate().unwrap();
+
+    let catalog = CapabilityGatewayCatalog::new(
+        InstallationId::new(InstallationKind::User, "user/gateway-tests").unwrap(),
+        11,
+        vec![mutual, flow, knowledge, ui],
+    )
+    .unwrap();
+
+    let generic =
+        CapabilityGatewayMcpServer::new(catalog.clone(), Arc::new(RecordingProvider::default()))
+            .unwrap();
+    assert_eq!(generic.catalog().descriptors().len(), 1);
+    assert!(generic.extension_metadata_descriptors().is_empty());
+    assert!(generic
+        .catalog()
+        .descriptors()
+        .iter()
+        .all(|descriptor| !descriptor.is_extension_metadata()));
+
+    let negotiation = CapabilityConsumerNegotiation::negotiate(
+        CapabilityConsumerProfile::a3s([
+            CapabilityConsumerExtension::Flow,
+            CapabilityConsumerExtension::Knowledge,
+            CapabilityConsumerExtension::Ui,
+        ])
+        .unwrap(),
+        [
+            CapabilityConsumerExtension::Flow,
+            CapabilityConsumerExtension::Knowledge,
+            CapabilityConsumerExtension::Ui,
+        ],
+    )
+    .unwrap();
+    let a3s = CapabilityGatewayMcpServer::with_consumer_negotiation(
+        catalog,
+        Arc::new(RecordingProvider::default()),
+        negotiation,
+    )
+    .unwrap();
+    assert_eq!(a3s.catalog().descriptors().len(), 4);
+    let extensions = a3s.extension_metadata_descriptors();
+    assert_eq!(extensions.len(), 3);
+    assert!(extensions
+        .iter()
+        .all(|descriptor| descriptor.is_extension_metadata()));
+    assert!(extensions
+        .iter()
+        .any(|descriptor| descriptor.extension_metadata_kind()
+            == Some(CapabilityConsumerExtension::Flow)));
+    assert!(extensions
+        .iter()
+        .any(|descriptor| descriptor.extension_metadata_kind()
+            == Some(CapabilityConsumerExtension::Knowledge)));
+    assert!(extensions
+        .iter()
+        .any(|descriptor| descriptor.extension_metadata_kind()
+            == Some(CapabilityConsumerExtension::Ui)));
+    // Extension metadata must never become MCP Tool routes.
+    assert!(a3s
+        .tools
+        .keys()
+        .all(|name| name != "review-flow" && name != "kb" && name != "panel"));
+}
+
+#[test]
 fn gateway_limits_and_http_credentials_fail_closed() {
     assert!(CapabilityGatewayLimits::new(0, 1, Duration::from_secs(1)).is_err());
     assert!(CapabilityGatewayLimits::new(1, 1, Duration::ZERO).is_err());
@@ -2791,75 +2941,26 @@ async fn leased_server_snapshot_lifetime() {
     let temporary = tempfile::tempdir().unwrap();
     let installation =
         InstallationId::new(InstallationKind::Workspace, "gateway-lease-tests").unwrap();
-    let registry = a3s_use_extension::ExtensionRegistry::new(
-        a3s_use_extension::ExtensionPaths::new(
-            temporary.path().join("data"),
-            temporary.path().join("state"),
-            installation.clone(),
-        )
-        .unwrap(),
-    );
-    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("crates/extension/fixtures/packages/plugin-v3-cognitive/package");
-    let package = a3s_use_extension::ExtensionLifecyclePackage::prepare_local(
-        "acme/cognitive",
-        &fixture,
-        true,
+    let paths = a3s_use_extension::ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        installation.clone(),
+    )
+    .unwrap();
+    crate::cognitive_package::open_control_lifecycle(
+        &paths,
+        std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+        None,
     )
     .await
     .unwrap();
-    let identity = a3s_use_extension::ExtensionLifecycleIdentity::new(
-        package.package_id(),
-        package.package_digest(),
-        package.manifest_digest(),
-        1,
-    )
-    .unwrap();
-    registry
-        .commit_lifecycle_package(&identity, &package)
-        .await
-        .unwrap();
-    registry.publish_lifecycle_package(&identity).await.unwrap();
-
-    let capability_registry = crate::capability_registry::CapabilityRegistry::new(registry);
+    let capability_registry = crate::capability_registry::CapabilityRegistry::new(
+        a3s_use_extension::ExtensionRegistry::new(paths),
+    );
     let snapshot = capability_registry.snapshot().await.unwrap();
-    let package = &snapshot.cursor().packages[0];
-    let package_id = package.package_id.clone();
-    let lifecycle_generation = package.lifecycle_generation;
-    let package_digest = package.package_digest.clone();
-    let manifest_digest = package.manifest_digest.clone();
-    let mut descriptor = test_descriptor();
-    descriptor.package_id = PluginPackageId::parse(package_id).unwrap();
-    descriptor.generation = lifecycle_generation;
-    descriptor.package_digest = package_digest;
-    descriptor.manifest_digest = manifest_digest;
-    descriptor.invocation_ref = InvocationRef::derive(
-        &descriptor.package_id,
-        &descriptor.surface,
-        descriptor.generation,
-        &format!("sha256:{}", "1".repeat(64)),
-    )
-    .unwrap();
-    descriptor.artifact_ref = Some(
-        ArtifactRef::derive(
-            &descriptor.package_id,
-            &descriptor.surface,
-            descriptor.generation,
-            &format!("sha256:{}", "2".repeat(64)),
-        )
-        .unwrap(),
-    );
-    descriptor.endpoint_ref = Some(
-        EndpointRef::derive(
-            &descriptor.package_id,
-            &descriptor.surface,
-            descriptor.generation,
-            &format!("sha256:{}", "3".repeat(64)),
-        )
-        .unwrap(),
-    );
+    assert!(snapshot.cursor().packages.is_empty());
     let catalog =
-        CapabilityGatewayCatalog::new(installation, snapshot.generation, vec![descriptor]).unwrap();
+        CapabilityGatewayCatalog::new(installation, snapshot.generation, Vec::new()).unwrap();
     let server = CapabilityGatewayMcpServer::from_registry(
         &capability_registry,
         catalog,
@@ -2867,7 +2968,7 @@ async fn leased_server_snapshot_lifetime() {
     )
     .await
     .unwrap()
-    .expect("published package must be leasable");
+    .expect("empty Control publication must be leasable");
     let cursor = server.snapshot_cursor().cloned().unwrap();
     let clone = server.clone();
     drop(server);
@@ -2897,15 +2998,22 @@ async fn verified_factory_composition_cursor() {
     let temporary = tempfile::tempdir().unwrap();
     let installation =
         InstallationId::new(InstallationKind::Workspace, "gateway-composition-tests").unwrap();
-    let registry = a3s_use_extension::ExtensionRegistry::new(
-        a3s_use_extension::ExtensionPaths::new(
-            temporary.path().join("data"),
-            temporary.path().join("state"),
-            installation.clone(),
-        )
-        .unwrap(),
+    let paths = a3s_use_extension::ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        installation.clone(),
+    )
+    .unwrap();
+    crate::cognitive_package::open_control_lifecycle(
+        &paths,
+        std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+        None,
+    )
+    .await
+    .unwrap();
+    let capability_registry = crate::capability_registry::CapabilityRegistry::new(
+        a3s_use_extension::ExtensionRegistry::new(paths),
     );
-    let capability_registry = crate::capability_registry::CapabilityRegistry::new(registry);
     let expected = capability_registry
         .snapshot()
         .await
@@ -2946,16 +3054,22 @@ fn signed_gateway_constructor_rejects_a_legacy_host_only_tool_before_projection(
                     let installation =
                         InstallationId::new(InstallationKind::Workspace, "signed-admission")
                             .unwrap();
-                    let registry = a3s_use_extension::ExtensionRegistry::new(
-                        a3s_use_extension::ExtensionPaths::new(
-                            temporary.path().join("data"),
-                            temporary.path().join("state"),
-                            installation.clone(),
-                        )
-                        .unwrap(),
+                    let paths = a3s_use_extension::ExtensionPaths::new(
+                        temporary.path().join("data"),
+                        temporary.path().join("state"),
+                        installation.clone(),
+                    )
+                    .unwrap();
+                    crate::cognitive_package::open_control_lifecycle(
+                        &paths,
+                        std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                    let capability_registry = crate::capability_registry::CapabilityRegistry::new(
+                        a3s_use_extension::ExtensionRegistry::new(paths),
                     );
-                    let capability_registry =
-                        crate::capability_registry::CapabilityRegistry::new(registry);
                     let (signed, trust_store) = signed_test_description();
                     let error = CapabilityGatewayMcpServer::from_signed_registry_snapshot(
                         &capability_registry,

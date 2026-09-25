@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use a3s_use_core::UseResult;
 use a3s_use_extension::ExtensionPaths;
@@ -35,11 +35,14 @@ pub(super) fn create_backup(
     paths: &ExtensionPaths,
     destination: &Path,
     authority: StateBackupAuthority,
+    injected: Vec<(StateBackupEntry, PathBuf)>,
 ) -> UseResult<StateBackupManifest> {
     reject_existing_destination(destination)?;
     let parent = destination.parent().unwrap_or_else(|| Path::new("."));
     let _directory_lock = super::retention::BackupDirectoryLock::acquire(parent)?;
-    let scanned = scan_with_paths(paths)?;
+    let mut scanned = scan_with_paths(paths)?;
+    scanned.extend(injected);
+    scanned.sort_by(|left, right| left.0.cmp_key().cmp(&right.0.cmp_key()));
     let entries = scanned
         .iter()
         .map(|(entry, _)| entry.clone())
@@ -102,7 +105,14 @@ pub(super) fn create_backup(
         ))
     })?;
 
-    let after = scan(paths)?;
+    let mut after = scan(paths)?;
+    let injected_entries = scanned
+        .iter()
+        .filter(|(entry, _)| entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH)
+        .map(|(entry, _)| entry.clone())
+        .collect::<Vec<_>>();
+    after.extend(injected_entries);
+    after.sort_by(|left, right| left.cmp_key().cmp(&right.cmp_key()));
     if after != manifest.entries {
         return Err(super::state_backup_nonterminal(
             "Use-owned state changed between the initial and final backup inventories.",
@@ -207,6 +217,8 @@ pub(super) fn verify_backup(path: &Path) -> UseResult<StateBackupManifest> {
                 ));
             }
             Some(Vec::with_capacity(entry.length as usize))
+        } else if entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH {
+            Some(Vec::with_capacity(entry.length as usize))
         } else {
             None
         };
@@ -227,7 +239,19 @@ pub(super) fn verify_backup(path: &Path) -> UseResult<StateBackupManifest> {
             ));
         }
         if let Some(bytes) = payload_bytes {
-            capability_payload::validate_bytes(&entry.path, &bytes, &manifest.installation)?;
+            if entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH {
+                let export_digest = crate::control_store::verify_control_store_export_bytes(
+                    &bytes,
+                    &manifest.installation,
+                )?;
+                if export_digest != entry.sha256 {
+                    return Err(state_backup_invalid(
+                        "The Control Store export digest disagrees with its backup entry.",
+                    ));
+                }
+            } else {
+                capability_payload::validate_bytes(&entry.path, &bytes, &manifest.installation)?;
+            }
         }
     }
     let mut trailing = [0u8; 1];
@@ -515,7 +539,8 @@ pub(super) fn validate_manifest(manifest: &StateBackupManifest) -> UseResult<()>
     let mut portable_paths = BTreeSet::new();
     for entry in &manifest.entries {
         validate_archived_path(entry.root, &entry.path)?;
-        if !valid_digest(&entry.sha256) || expected_family(entry.root, &entry.path)? != entry.family
+        if !valid_digest(&entry.sha256)
+            || expected_family(entry.root, &entry.path, false)? != entry.family
         {
             return Err(state_backup_invalid(
                 "The state backup manifest contains an invalid entry.",
@@ -596,6 +621,8 @@ fn copy_verified_file(
             ));
         }
         Some(Vec::with_capacity(entry.length as usize))
+    } else if entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH {
+        Some(Vec::with_capacity(entry.length as usize))
     } else {
         None
     };
@@ -639,7 +666,17 @@ fn copy_verified_file(
         ));
     }
     if let Some(bytes) = payload_bytes {
-        capability_payload::validate_bytes(&entry.path, &bytes, installation)?;
+        if entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH {
+            let digest =
+                crate::control_store::verify_control_store_export_bytes(&bytes, installation)?;
+            if digest != entry.sha256 {
+                return Err(state_backup_invalid(
+                    "The Control Store export digest disagrees with its backup entry.",
+                ));
+            }
+        } else {
+            capability_payload::validate_bytes(&entry.path, &bytes, installation)?;
+        }
     }
     Ok(())
 }

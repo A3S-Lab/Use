@@ -15,7 +15,7 @@ struct RequiredRestoreFixture {
 }
 
 async fn required_restore_fixture(root: &Path) -> RequiredRestoreFixture {
-    let paths = fixture_paths(root);
+    let paths = fixture_paths(root).await;
     let file = paths.state_root().join("knowledge/value.bin");
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, b"candidate").unwrap();
@@ -352,7 +352,7 @@ fn completed_operation(plan: StateRestorePlan, started_at_ms: u64) -> StateResto
 #[tokio::test]
 async fn restore_preserves_windows_read_only_evidence() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let file = paths.state_root().join("knowledge/read-only.bin");
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, b"candidate").unwrap();
