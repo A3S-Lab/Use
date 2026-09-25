@@ -206,3 +206,41 @@ async fn bounded_executor_keeps_concurrent_async_callers_progressing() {
     .await
     .unwrap();
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn bounded_executor_keeps_current_thread_runtime_responsive_during_store_work() {
+    let temporary = tempfile::tempdir().unwrap();
+    let store = Arc::new(
+        ControlStore::new(
+            temporary.path().join("state"),
+            installation(InstallationKind::Workspace),
+        )
+        .unwrap(),
+    );
+    store.initialize().await.unwrap();
+    let export = store.export().await.unwrap();
+
+    let (progress_tx, progress_rx) = tokio::sync::oneshot::channel();
+    let store_worker = {
+        let store = store.clone();
+        tokio::spawn(async move {
+            // Keep the dedicated Control Store worker busy while the
+            // current_thread runtime must still schedule independent work.
+            for _ in 0..8 {
+                store.verify_export(export.clone()).await.unwrap();
+            }
+        })
+    };
+    let progress = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        let _ = progress_tx.send(());
+    });
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        progress_rx.await.unwrap();
+        progress.await.unwrap();
+        store_worker.await.unwrap();
+    })
+    .await
+    .expect("Control Store SQLite work must not starve a current_thread Tokio runtime");
+}

@@ -361,6 +361,18 @@ fn grant_store_contract_is_send_and_sync() {
     assert_send_sync::<WorkspaceGrantRevocation>();
 }
 
+#[tokio::test]
+async fn grant_store_fails_closed_beside_control_database() {
+    let temporary = TempDir::new().unwrap();
+    fs::write(temporary.path().join("control.sqlite3"), []).unwrap();
+    let store = WorkspaceGrantStore::new(temporary.path());
+    let ceiling = permission_ceiling();
+    let receipt = receipt(1, grant(&ceiling, 1_000, Some(3_000)));
+    let error = store.put(&receipt, &ceiling, 1_500).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.grant_store.control_authority_required");
+    assert!(!temporary.path().join("grants").exists());
+}
+
 fn permission_ceiling() -> PluginPermissionCeiling {
     PluginPermissionCeiling::from_json(include_bytes!(
         "../../core/fixtures/plugins/permission-ceiling-v1.json"

@@ -339,11 +339,9 @@ async fn extension_lifecycle_diagnostic(
     installation: InstallationId,
     package_id: &str,
 ) -> UseResult<serde_json::Value> {
-    let paths = a3s_use_extension::ExtensionPaths::from_env(installation.clone())?;
+    // Control owns lifecycle checkpoints. Never open `operations/plugins`.
     let diagnostic =
-        crate::plugin_lifecycle::PluginLifecycleJournalStore::from_extension_paths(&paths)
-            .diagnose(&installation, package_id)
-            .await?;
+        crate::plugin_lifecycle::PluginLifecycleDiagnostic::empty(&installation, package_id)?;
     serde_json::to_value(diagnostic).map_err(|error| {
         UseError::new(
             "use.plugin.lifecycle_diagnostic_invalid",

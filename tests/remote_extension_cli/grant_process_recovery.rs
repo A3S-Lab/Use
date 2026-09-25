@@ -33,6 +33,8 @@ const PAYLOAD_FILES: usize = 8;
 const POLICY_DIGEST: &str =
     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
+#[path = "grant_process_recovery/control_host_grant_recovery.rs"]
+mod control_host_grant_recovery;
 #[path = "grant_process_recovery/host_disable.rs"]
 mod host_disable;
 #[path = "grant_process_recovery/host_enable.rs"]

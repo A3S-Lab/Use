@@ -16,11 +16,14 @@ use crate::digest::package_fingerprint;
 use crate::package::{lock_is_contended, read_manifest, sha256, validate_surface_files};
 use crate::registry::validate_catalog_manifest_binding;
 use crate::surface_files::{
-    inspect_skill_surface_file, inspect_ui_surface_files, load_okf_bundle_files,
-    read_flow_surface_file, read_mcp_surface_file, read_tool_surface_file,
-    PluginSurfaceFileEvidence,
+    inspect_mcp_surface_files, inspect_skill_surface_file, inspect_tool_surface_files,
+    inspect_ui_surface_files, load_okf_bundle_files, read_flow_surface_file, read_mcp_surface_file,
+    read_tool_surface_file, PluginSurfaceFileEvidence,
 };
-use crate::{ExtensionManifest, PluginFlowSurface, PluginMcpSurface, ToolSurface};
+use crate::{
+    ExtensionManifest, PluginFlowSurface, PluginMcpLaunch, PluginMcpSurface, ToolSurface,
+    ToolTaskSource, ToolWorkload,
+};
 
 const READ_LOCK_WAIT: Duration = Duration::from_secs(2);
 const READ_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(25);
@@ -215,6 +218,63 @@ impl VerifiedArtifactPackage {
 
     pub fn manifest(&self) -> &ExtensionManifest {
         &self.manifest
+    }
+
+    /// Inspect one package-local native Tool Task while the verified package
+    /// lease remains held.
+    ///
+    /// Native executable Tasks have no Runtime release descriptor. Callers
+    /// receive only the reviewed manifest shape and file evidence; the package
+    /// root never crosses this boundary.
+    pub async fn inspect_native_tool_surface(
+        &self,
+        surface_id: &str,
+    ) -> UseResult<(ToolSurface, PluginSurfaceFileEvidence)> {
+        let surface = self
+            .manifest
+            .tools
+            .iter()
+            .find(|surface| surface.id == surface_id)
+            .ok_or_else(surface_missing)?;
+        match &surface.workload {
+            ToolWorkload::Task(task)
+                if matches!(&task.source, ToolTaskSource::Executable { .. }) => {}
+            ToolWorkload::Task(_) | ToolWorkload::Service(_) => {
+                return Err(artifact_store_error(
+                    "use.artifact_store.runtime_surface_invalid",
+                    "A release-backed Tool surface cannot use the native launcher inspect path.",
+                ));
+            }
+        }
+        let evidence = inspect_tool_surface_files(surface, &self.root).await?;
+        self.verify_unchanged().await?;
+        Ok((surface.clone(), evidence))
+    }
+
+    /// Inspect one package-local stdio MCP launcher while the verified package
+    /// lease remains held.
+    ///
+    /// Streamable HTTP MCP Services are rejected; they require the Runtime
+    /// release-backed read path instead.
+    pub async fn inspect_native_mcp_surface(
+        &self,
+        surface_id: &str,
+    ) -> UseResult<(PluginMcpSurface, PluginSurfaceFileEvidence)> {
+        let surface = self
+            .manifest
+            .mcp_servers
+            .iter()
+            .find(|surface| surface.id == surface_id)
+            .ok_or_else(surface_missing)?;
+        if !matches!(&surface.launch, PluginMcpLaunch::Stdio { .. }) {
+            return Err(artifact_store_error(
+                "use.artifact_store.runtime_surface_invalid",
+                "A Streamable HTTP MCP surface cannot use the native launcher inspect path.",
+            ));
+        }
+        let evidence = inspect_mcp_surface_files(surface, &self.root).await?;
+        self.verify_unchanged().await?;
+        Ok((surface.clone(), evidence))
     }
 
     /// Inspect one exact immutable Skill contribution while the verified

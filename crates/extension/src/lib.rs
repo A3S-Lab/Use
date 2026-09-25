@@ -77,6 +77,7 @@ pub use capability_description_verifier::{
     CAPABILITY_DESCRIPTION_TRUST_KEY_SCHEMA_V1, CAPABILITY_DESCRIPTION_TRUST_STORE_SCHEMA_V1,
 };
 pub use digest::{package_fingerprint, PackageFingerprint};
+pub use package::{lint_package_directory, PackageLintReport};
 pub use paths::{ExtensionPaths, UsePaths};
 pub use plugin_manifest::{
     PluginFlowEngine, PluginFlowRuntime, PluginFlowSurface, PluginMcpLaunch, PluginMcpSurface,
@@ -104,14 +105,17 @@ pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
 };
 pub use remote::{
-    download_locked_cached_remote_packages, download_locked_remote_packages,
-    download_selected_locked_cached_remote_packages, download_selected_locked_remote_packages,
-    fetch_cached_cognitive_package_media, fetch_cognitive_package_media, inspect_bootstrap_root,
+    description_trust_store_custom, download_locked_cached_remote_packages,
+    download_locked_remote_packages, download_selected_locked_cached_remote_packages,
+    download_selected_locked_remote_packages, fetch_cached_cognitive_package_media,
+    fetch_cognitive_package_media, inspect_bootstrap_root,
     inspect_cached_cognitive_package_presentation, inspect_cached_plugin,
     inspect_cognitive_package_presentation, inspect_remote_plugin, inspect_verified_target_cache,
-    list_remote_packages, plugin_catalog_host_input_schema, plugin_catalog_inspection_input_schema,
-    plugin_catalog_search_input_schema, prepare_cached_remote_package, prepare_remote_package,
-    prune_verified_target_cache, refresh_remote_registry, resolve_cached_remote_package_lock,
+    list_remote_packages, load_cached_capability_description_trust_store,
+    load_capability_description_trust_store, plugin_catalog_host_input_schema,
+    plugin_catalog_inspection_input_schema, plugin_catalog_search_input_schema,
+    prepare_cached_remote_package, prepare_remote_package, prune_verified_target_cache,
+    refresh_remote_registry, resolve_cached_remote_package_lock,
     resolve_cached_remote_package_lock_with_observer, resolve_remote_package_lock,
     resolve_remote_package_lock_with_observer, search_cached_plugins, search_remote_plugins,
     CognitivePackageFormFactor, CognitivePackageMediaKind, CognitivePackagePresentationIndexV1,
@@ -120,15 +124,16 @@ pub use remote::{
     PinnedBootstrapRoot, PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection,
     PluginCatalogPage, PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource,
     PreparedRemotePackage, RegistryNetworkPolicy, ResolvedRemotePackage, TrustedRegistry,
-    VerifiedCognitivePackageMedia, VerifiedCognitivePackagePresentation, VerifiedRegistryCatalog,
-    VerifiedRegistryMetadata, VerifiedTargetCachePolicy, VerifiedTargetCachePruneResult,
-    VerifiedTargetCacheUsage, VerifiedTargetObservation, VerifiedTargetObservationStatus,
-    COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA, COGNITIVE_PACKAGE_PRESENTATION_SCHEMA,
-    DEFAULT_VERIFIED_TARGET_CACHE_MAX_BYTES, DEFAULT_VERIFIED_TARGET_CACHE_MAX_ENTRIES,
-    DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES, MAX_BOOTSTRAP_ROOT_BYTES,
-    MAX_COGNITIVE_PACKAGE_MEDIA_BYTES, MAX_COGNITIVE_PACKAGE_PRESENTATION_MEDIA,
-    MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
-    VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
+    VerifiedCapabilityDescriptionTrustStore, VerifiedCognitivePackageMedia,
+    VerifiedCognitivePackagePresentation, VerifiedRegistryCatalog, VerifiedRegistryMetadata,
+    VerifiedTargetCachePolicy, VerifiedTargetCachePruneResult, VerifiedTargetCacheUsage,
+    VerifiedTargetObservation, VerifiedTargetObservationStatus,
+    CAPABILITY_DESCRIPTION_TRUST_STORE_TARGET, COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA,
+    COGNITIVE_PACKAGE_PRESENTATION_SCHEMA, DEFAULT_VERIFIED_TARGET_CACHE_MAX_BYTES,
+    DEFAULT_VERIFIED_TARGET_CACHE_MAX_ENTRIES, DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES,
+    MAX_BOOTSTRAP_ROOT_BYTES, MAX_COGNITIVE_PACKAGE_MEDIA_BYTES,
+    MAX_COGNITIVE_PACKAGE_PRESENTATION_MEDIA, MAX_PLUGIN_CATALOG_PAGE_BYTES,
+    MAX_PLUGIN_CATALOG_PAGE_SIZE, VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
 };
 pub use state_maintenance::{
     StateMaintenanceGuard, StateMaintenanceLock, ACTIVE_STATE_RESTORE_MARKER,
@@ -140,6 +145,7 @@ pub use surface_files::{
 };
 pub use tuf_authoring::{
     canonical_json, ed25519_key_id, ed25519_key_value, hex_lower, sha256_hex, sign_tuf_document,
+    sign_tuf_document_with_keys,
 };
 pub use workspace_grant::{
     StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantRevocation, WorkspaceGrantStore,

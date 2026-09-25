@@ -1,10 +1,14 @@
+use std::collections::HashMap;
 use std::fs::{File as StdFile, OpenOptions as StdOpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use a3s_use_core::{UseError, UseResult};
 use fs2::FileExt;
 use tokio::fs;
+use tokio::time::sleep;
 
 pub const ACTIVE_STATE_RESTORE_MARKER: &str = ".maintenance.restore.json";
 
@@ -27,6 +31,10 @@ enum LockBehavior {
 /// advance together. A restore takes the exclusive guard before validating
 /// authority and keeps it through publication, so it cannot observe or create
 /// a split across Registry, Grant, lifecycle, binding, and database evidence.
+///
+/// Nested shared acquires in the same process reuse one OS lock. Opening a
+/// second shared handle on `.maintenance.lock` deadlocks on Windows when the
+/// first shared fence is still held (Control drain under CPM install).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateMaintenanceLock {
     state_root: PathBuf,
@@ -34,9 +42,21 @@ pub struct StateMaintenanceLock {
 
 #[derive(Debug)]
 pub struct StateMaintenanceGuard {
-    _file: StdFile,
+    file: Option<StdFile>,
     state_root: PathBuf,
     mode: MaintenanceMode,
+}
+
+struct SharedHold {
+    /// OS lock handle; released when the last nested shared guard drops.
+    #[allow(dead_code)]
+    file: StdFile,
+    depth: usize,
+}
+
+fn shared_holds() -> &'static Mutex<HashMap<PathBuf, SharedHold>> {
+    static HOLDS: OnceLock<Mutex<HashMap<PathBuf, SharedHold>>> = OnceLock::new();
+    HOLDS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 impl StateMaintenanceGuard {
@@ -54,6 +74,24 @@ impl StateMaintenanceGuard {
     /// for the exact configured state root.
     pub fn is_exclusive_for(&self, state_root: &Path) -> bool {
         matches!(self.mode, MaintenanceMode::Exclusive) && self.state_root == state_root
+    }
+}
+
+impl Drop for StateMaintenanceGuard {
+    fn drop(&mut self) {
+        if matches!(self.mode, MaintenanceMode::Shared) {
+            let Ok(mut holds) = shared_holds().lock() else {
+                return;
+            };
+            if let Some(hold) = holds.get_mut(&self.state_root) {
+                hold.depth = hold.depth.saturating_sub(1);
+                if hold.depth == 0 {
+                    holds.remove(&self.state_root);
+                }
+            }
+            // Nested guards never own the OS handle; the map entry does.
+            self.file.take();
+        }
     }
 }
 
@@ -93,6 +131,35 @@ impl StateMaintenanceLock {
             .await
             .map_err(|error| maintenance_io("create state root", &self.state_root, error))?;
         require_owned_directory(&self.state_root).await?;
+
+        if matches!(mode, MaintenanceMode::Shared) {
+            if let Some(guard) = self.try_nested_shared()? {
+                reject_active_restore(&self.state_root).await?;
+                return Ok(Some(guard));
+            }
+        } else {
+            // Wait until this process releases every nested shared hold for the
+            // root. Exclusive still serializes against other processes via flock.
+            loop {
+                let depth = {
+                    let holds = shared_holds()
+                        .lock()
+                        .map_err(|_| maintenance_lock_poisoned())?;
+                    holds
+                        .get(&self.state_root)
+                        .map(|hold| hold.depth)
+                        .unwrap_or(0)
+                };
+                if depth == 0 {
+                    break;
+                }
+                if matches!(behavior, LockBehavior::Try) {
+                    return Ok(None);
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        }
+
         let lock_path = self.state_root.join(".maintenance.lock");
         match fs::symlink_metadata(&lock_path).await {
             Ok(metadata)
@@ -161,13 +228,55 @@ impl StateMaintenanceLock {
         }
         if matches!(mode, MaintenanceMode::Shared) {
             reject_active_restore(&self.state_root).await?;
+            let mut holds = shared_holds()
+                .lock()
+                .map_err(|_| maintenance_lock_poisoned())?;
+            // Another task may have published a hold between the nested check
+            // and this flock; prefer the existing hold and drop the new handle.
+            if let Some(hold) = holds.get_mut(&self.state_root) {
+                hold.depth = hold.depth.saturating_add(1);
+                drop(file);
+                return Ok(Some(StateMaintenanceGuard {
+                    file: None,
+                    state_root: self.state_root.clone(),
+                    mode,
+                }));
+            }
+            holds.insert(self.state_root.clone(), SharedHold { file, depth: 1 });
+            return Ok(Some(StateMaintenanceGuard {
+                file: None,
+                state_root: self.state_root.clone(),
+                mode,
+            }));
         }
         Ok(Some(StateMaintenanceGuard {
-            _file: file,
+            file: Some(file),
             state_root: self.state_root.clone(),
             mode,
         }))
     }
+
+    fn try_nested_shared(&self) -> UseResult<Option<StateMaintenanceGuard>> {
+        let mut holds = shared_holds()
+            .lock()
+            .map_err(|_| maintenance_lock_poisoned())?;
+        let Some(hold) = holds.get_mut(&self.state_root) else {
+            return Ok(None);
+        };
+        hold.depth = hold.depth.saturating_add(1);
+        Ok(Some(StateMaintenanceGuard {
+            file: None,
+            state_root: self.state_root.clone(),
+            mode: MaintenanceMode::Shared,
+        }))
+    }
+}
+
+fn maintenance_lock_poisoned() -> UseError {
+    UseError::new(
+        "use.state.maintenance_lock_failed",
+        "The in-process shared maintenance hold map is poisoned.",
+    )
 }
 
 fn lock_is_contended(error: &io::Error) -> bool {
@@ -240,6 +349,31 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[tokio::test]
+    async fn nested_shared_maintenance_reuses_one_os_lock() {
+        let temporary = tempfile::tempdir().unwrap();
+        let lock = StateMaintenanceLock::new(temporary.path());
+        let outer = lock.acquire_shared().await.unwrap();
+        let inner = lock.acquire_shared().await.unwrap();
+        assert!(outer.is_shared_for(temporary.path()));
+        assert!(inner.is_shared_for(temporary.path()));
+        drop(inner);
+        assert!(outer.is_shared_for(temporary.path()));
+        let exclusive_lock = lock.clone();
+        let mut exclusive =
+            tokio::spawn(async move { exclusive_lock.acquire_exclusive().await.unwrap() });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut exclusive)
+                .await
+                .is_err()
+        );
+        drop(outer);
+        tokio::time::timeout(Duration::from_secs(1), exclusive)
+            .await
+            .unwrap()
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn exclusive_maintenance_waits_for_shared_and_blocks_new_shared_guards() {

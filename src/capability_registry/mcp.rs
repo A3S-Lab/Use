@@ -44,7 +44,7 @@ impl McpEvidence {
 /// reinspection. Streamable HTTP launchers require one exact healthy Runtime
 /// binding for the selected lifecycle generation; the projection retains only
 /// its opaque Gateway endpoint reference and non-secret readiness evidence.
-pub(super) async fn mcp_evidence_from_store(
+pub(crate) async fn mcp_evidence_from_store(
     extension: &InstalledExtension,
     store: &RuntimeBindingStore,
     scope: &PlanScope,

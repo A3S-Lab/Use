@@ -26,7 +26,7 @@ impl RuntimeTaskEvidence {
     }
 }
 
-pub(super) async fn runtime_task_evidence_from_store(
+pub(crate) async fn runtime_task_evidence_from_store(
     extension: &InstalledExtension,
     store: &RuntimeBindingStore,
     scope: &PlanScope,

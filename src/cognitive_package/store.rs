@@ -17,17 +17,19 @@ use tokio::io::AsyncWriteExt;
 
 use super::package_manager_error;
 
+#[cfg(test)]
 mod installation;
 mod inventory;
 mod pending;
 
+#[cfg(test)]
 pub(crate) use installation::InstallationSnapshotStore;
 pub(crate) use inventory::{
     inspect_pending_artifact_references_locked, PendingPackageGraphArtifactReferences,
 };
-pub(super) use pending::{
-    PackageGraphOperationPhase, PendingPackageGraphOperation, PendingPackageGraphStore,
-};
+pub(super) use pending::{PackageGraphOperationPhase, PendingPackageGraphOperation};
+#[cfg(test)]
+pub(super) use pending::PendingPackageGraphStore;
 
 const MAX_GRAPH_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 #[cfg(test)]

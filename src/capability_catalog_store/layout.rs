@@ -3,11 +3,12 @@ use std::path::Path;
 use a3s_use_core::{metadata_is_link_or_reparse_point, UseResult};
 use tokio::fs;
 
+use super::mutation::{validate_directory, validate_regular_file};
 use super::{
-    catalog_conflict, path_error, path_invalid, store_invalid, validate_directory,
-    validate_regular_file, CATALOG_LOCK, CATALOG_RETENTION_JOURNAL, CATALOG_STAGING,
-    MAX_CAPABILITY_GATEWAY_CATALOG_BYTES, MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS,
-    MAX_DIRECTORY_ENTRIES, MAX_RETENTION_JOURNAL_BYTES, MAX_STAGING_BYTES,
+    catalog_conflict, path_error, path_invalid, store_invalid, CATALOG_LOCK,
+    CATALOG_RETENTION_JOURNAL, CATALOG_STAGING, MAX_CAPABILITY_GATEWAY_CATALOG_BYTES,
+    MAX_CAPABILITY_GATEWAY_CATALOG_RECORDS, MAX_DIRECTORY_ENTRIES, MAX_RETENTION_JOURNAL_BYTES,
+    MAX_STAGING_BYTES,
 };
 
 /// Validate the store's top-level namespace before interpreting any payload.

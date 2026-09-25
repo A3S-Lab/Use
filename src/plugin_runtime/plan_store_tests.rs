@@ -6,6 +6,40 @@ use tokio::task::JoinSet;
 use super::test_support::*;
 use super::*;
 
+#[test]
+fn managed_publications_without_control_readiness_fail_closed() {
+    let descriptor = service_descriptor();
+    let plan = plan_tool_service_release(
+        context(PluginSurfaceKind::Tool, "index"),
+        &service_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let provider = evidence(&plan, &capabilities(&plan));
+    let key = RuntimeSurfacePlanKey::new(
+        plan.context().package_id(),
+        plan.context().package_digest(),
+        plan.context().scope().clone(),
+        plan.surface(),
+        plan.context().generation(),
+        Some(plan.context().grant_digest().to_owned()),
+        provider.semantics_profile_digest.clone(),
+        provider.provider_id.clone(),
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    )
+    .unwrap();
+    let publication = RuntimeSurfacePlanPublication::new(key, plan).unwrap();
+    let error =
+        crate::cognitive_package::require_control_runtime_readiness_for_publications(
+            None,
+            &[publication],
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "use.control_store.runtime_readiness_required");
+}
+
 #[tokio::test]
 async fn plan_store_round_trips_after_reopen_and_exposes_only_key_inventory() {
     let descriptor = service_descriptor();

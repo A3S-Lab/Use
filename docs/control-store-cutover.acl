@@ -1,8 +1,8 @@
 control_store_cutover {
   schema_version           = 1
-  status                   = "inventory-frozen"
-  production_authority     = "legacy-files"
-  control_store_activation = "inactive"
+  status                   = "activated"
+  production_authority     = "control-store"
+  control_store_activation = "active"
   migration_policy         = "clean-state-only"
   cutover_unit             = "one-installation-aggregate"
   dual_write_allowed       = false
@@ -288,17 +288,19 @@ control_store_cutover {
 
   consumer "package-lifecycle-orchestrator" {
     implementation = [
+      "src/cognitive_package/control_authority.rs",
       "src/cognitive_package/enablement.rs",
       "src/cognitive_package/install.rs",
       "src/cognitive_package/mod.rs",
       "src/cognitive_package/uninstall.rs",
       "src/cognitive_package/upgrade.rs",
-      "src/control_store/dispatcher.rs",
-      "src/control_store/dispatcher/contract.rs",
+        "src/control_store/dispatcher/mod.rs",
+        "src/control_store/dispatcher/contract.rs",
       "src/control_store/effect_port.rs",
+      "src/control_store/production.rs",
       "src/plugin_lifecycle/coordinator.rs",
     ]
-    required_change = "Replace file-store mutation and recovery with typed Control Store commands and outbox dispatch."
+    required_change = "Replace file-store mutation and recovery with typed Control Store commands and outbox dispatch. Install, uninstall, upgrade, and enablement now commit through ProductionControlLifecycle on Control authority."
     cutover          = "same-commit"
     legacy_fallback  = false
   }
@@ -309,8 +311,9 @@ control_store_cutover {
       "src/capability_registry/lease.rs",
       "src/okf_knowledge/lease.rs",
       "src/plugin_runtime/task_dispatch.rs",
+      "src/control_store/snapshot_read.rs",
     ]
-    required_change = "Read one immutable capability generation materialized from the committed Control Store generation."
+    required_change = "Read one immutable capability generation materialized from the committed Control Store generation. stable_extensions branches on control.sqlite3, rejects legacy registry receipts beside Control, reads installation selections via read_current_installation_snapshot, and projects packages through ExtensionRegistry::load_control_package_selection from the Artifact Store."
     cutover          = "same-commit"
     legacy_fallback  = false
   }
@@ -320,8 +323,9 @@ control_store_cutover {
       "src/artifact_reachability/installation.rs",
       "src/artifact_reachability/installation/lifecycle.rs",
       "src/artifact_reachability/installation/receipts.rs",
+      "src/control_store/artifact_inspect.rs",
     ]
-    required_change = "Read committed and nonterminal artifact references from Control Store read models plus registered payload owners."
+    required_change = "Read committed and nonterminal artifact references from Control Store read models plus registered payload owners. Control installations scan control.sqlite3 via inspect_installation_artifact_references; legacy snapshot/receipt/package-graph paths are skipped and dual authority is rejected."
     cutover          = "same-commit"
     legacy_fallback  = false
   }
@@ -346,7 +350,7 @@ control_store_cutover {
       "src/state_backup/capability_payload.rs",
       "src/state_backup/inventory.rs",
     ]
-    required_change = "Replace the manual mutable-state allowlist with a Control Store snapshot and registered external-owner snapshots."
+    required_change = "Replace the manual mutable-state allowlist with a Control Store snapshot and registered external-owner snapshots. Inventory excludes live control.sqlite3 and WAL sidecars, rejects legacy authority beside Control, and injects verified control-store-export.json as PackageGraph evidence under the exclusive maintenance fence."
     cutover          = "same-commit"
     legacy_fallback  = false
   }

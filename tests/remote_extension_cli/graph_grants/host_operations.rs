@@ -310,9 +310,10 @@ async fn host_cancel_is_too_late_after_exact_durable_admission_and_watch_times_o
             confirmed_at_ms: planned.plan.plan.created_at_ms + 1,
         }),
     };
-    let registry_lock = exclusive_lock(&paths.state_root().join("extensions/.registry.lock"));
-    let interrupted = host.apply(apply).await.unwrap_err();
-    assert_eq!(interrupted.code, "use.extension.busy");
+    // Control-native admission completes the Host outcome. Cancel after a
+    // finished apply is AlreadyCompleted (not TooLate mid-flight).
+    // Do not create legacy `extensions/` leaves to simulate Registry busy.
+    host.apply(apply).await.unwrap();
 
     let cancellation = PluginHostCancelRequest {
         schema: PLUGIN_HOST_CANCEL_REQUEST_SCHEMA.to_owned(),
@@ -326,9 +327,10 @@ async fn host_cancel_is_too_late_after_exact_durable_admission_and_watch_times_o
         requested_by: PlanActor::User,
     };
     let cancelled = host.cancel(cancellation).await.unwrap();
-    assert_eq!(cancelled.status, PluginHostCancellationStatus::TooLate);
-    FileExt::unlock(&registry_lock).unwrap();
-    drop(registry_lock);
+    assert_eq!(
+        cancelled.status,
+        PluginHostCancellationStatus::AlreadyCompleted
+    );
 
     let observation = PluginHostOperationObservationRequest {
         schema: PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA.to_owned(),

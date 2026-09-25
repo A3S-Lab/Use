@@ -47,13 +47,17 @@ pub(crate) async fn assemble_command(options: &crate::Options) -> UseResult<()> 
         .optional("metadata-expires")
         .unwrap_or_else(|| default_expiry(30));
 
-    let outcome = assemble_registry(
+    let outcome = assemble_registry_with_description_trust(
         &KeySet::load(Path::new(&keys_dir))?,
         Path::new(&admissions_path),
         &out_root,
         metadata_version,
         &root_expires,
         &metadata_expires,
+        options
+            .optional("description-trust-store")
+            .as_deref()
+            .map(Path::new),
     )
     .await?;
     println!(
@@ -108,14 +112,16 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
-/// Sign and write the complete tree for the admitted package set.
-pub(crate) async fn assemble_registry(
+/// Sign and write the complete tree, optionally binding the description trust
+/// store as a fixed signed TUF target.
+pub(crate) async fn assemble_registry_with_description_trust(
     keys: &KeySet,
     admissions_path: &Path,
     out_root: &Path,
     metadata_version: u64,
     root_expires: &str,
     metadata_expires: &str,
+    description_trust_store: Option<&Path>,
 ) -> UseResult<AssembleOutcome> {
     let admissions = load_admissions(admissions_path)?;
     let mut assembled = Vec::new();
@@ -125,8 +131,21 @@ pub(crate) async fn assemble_registry(
 
     let mut tuf_keys = Map::new();
     let mut roles = Map::new();
-    for key in [&keys.root, &keys.targets, &keys.snapshot, &keys.timestamp] {
+    for key in keys
+        .roots
+        .iter()
+        .chain([&keys.targets, &keys.snapshot, &keys.timestamp])
+    {
         tuf_keys.insert(key.key_id.clone(), role_key_value(key));
+    }
+    roles.insert(
+        "root".to_owned(),
+        json!({
+            "keyids": keys.roots.iter().map(|key| key.key_id.clone()).collect::<Vec<_>>(),
+            "threshold": keys.root_policy.threshold,
+        }),
+    );
+    for key in [&keys.targets, &keys.snapshot, &keys.timestamp] {
         roles.insert(
             key.role.to_string(),
             json!({"keyids": [key.key_id.clone()], "threshold": 1}),
@@ -141,8 +160,12 @@ pub(crate) async fn assemble_registry(
         "keys": Value::Object(tuf_keys),
         "roles": Value::Object(roles),
     });
-    let root =
-        a3s_use_extension::sign_tuf_document(&keys.root.pair, &keys.root.key_id, root_signed);
+    let root_signers: Vec<_> = keys
+        .roots
+        .iter()
+        .map(|key| (&key.pair, key.key_id.as_str()))
+        .collect();
+    let root = a3s_use_extension::sign_tuf_document_with_keys(root_signers, root_signed);
     let root_sha256 = a3s_use_extension::sha256_hex(&root);
 
     let mut targets_map = Map::new();
@@ -180,6 +203,38 @@ pub(crate) async fn assemble_registry(
             target_writes.push((planning.target_name.clone(), planning.bytes.clone()));
             target_names.push(planning.target_name.clone());
         }
+    }
+    if let Some(path) = description_trust_store {
+        let bytes = std::fs::read(path).map_err(|error| {
+            tools_error(
+                "registry_tools.assemble_failed",
+                &format!(
+                    "Failed to read description trust store '{}': {error}",
+                    path.display()
+                ),
+            )
+        })?;
+        a3s_use_extension::CapabilityDescriptionTrustStore::from_json(&bytes).map_err(|error| {
+            tools_error(
+                "registry_tools.assemble_failed",
+                &format!(
+                    "The description trust store at '{}' is invalid: {}",
+                    path.display(),
+                    error.message
+                ),
+            )
+        })?;
+        let target_name = a3s_use_extension::CAPABILITY_DESCRIPTION_TRUST_STORE_TARGET.to_owned();
+        targets_map.insert(
+            target_name.clone(),
+            json!({
+                "length": bytes.len(),
+                "hashes": {"sha256": a3s_use_extension::sha256_hex(&bytes)},
+                "custom": a3s_use_extension::description_trust_store_custom(),
+            }),
+        );
+        target_writes.push((target_name.clone(), bytes));
+        target_names.push(target_name);
     }
     let targets_signed = json!({
         "_type": "targets",
@@ -230,6 +285,29 @@ pub(crate) async fn assemble_registry(
         timestamp_signed,
     );
 
+    write_tree(
+        out_root,
+        &root,
+        &targets,
+        &snapshot,
+        &timestamp,
+        &target_writes,
+    )?;
+    Ok(AssembleOutcome {
+        root_sha256,
+        metadata_version,
+        target_names,
+    })
+}
+
+fn write_tree(
+    out_root: &Path,
+    root: &[u8],
+    targets: &[u8],
+    snapshot: &[u8],
+    timestamp: &[u8],
+    target_writes: &[(String, Vec<u8>)],
+) -> UseResult<()> {
     let metadata_directory = out_root.join("metadata");
     let targets_directory = out_root.join("targets");
     // The published tree is fully derived from the admissions: every
@@ -257,12 +335,12 @@ pub(crate) async fn assemble_registry(
             ),
         )
     })?;
-    write_bytes(&metadata_directory.join("root.json"), &root)?;
-    write_bytes(&metadata_directory.join("timestamp.json"), &timestamp)?;
-    write_bytes(&metadata_directory.join("snapshot.json"), &snapshot)?;
-    write_bytes(&metadata_directory.join("targets.json"), &targets)?;
+    write_bytes(&metadata_directory.join("root.json"), root)?;
+    write_bytes(&metadata_directory.join("timestamp.json"), timestamp)?;
+    write_bytes(&metadata_directory.join("snapshot.json"), snapshot)?;
+    write_bytes(&metadata_directory.join("targets.json"), targets)?;
     for (target_name, bytes) in target_writes {
-        let path = targets_directory.join(&target_name);
+        let path = targets_directory.join(target_name);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
                 tools_error(
@@ -271,13 +349,9 @@ pub(crate) async fn assemble_registry(
                 )
             })?;
         }
-        write_bytes(&path, &bytes)?;
+        write_bytes(&path, bytes)?;
     }
-    Ok(AssembleOutcome {
-        root_sha256,
-        metadata_version,
-        target_names,
-    })
+    Ok(())
 }
 
 fn write_bytes(path: &Path, bytes: &[u8]) -> UseResult<()> {

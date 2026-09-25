@@ -154,6 +154,24 @@ pub(super) fn open_verified_read(
     Ok(connection)
 }
 
+/// Read the Control installation identity without a caller-supplied identity.
+///
+/// Used by inventory collectors that discover state roots by storage key and
+/// must bootstrap the exact InstallationId from the durable Control Store.
+pub(super) fn probe_installation_identity(path: &Path) -> UseResult<InstallationId> {
+    let connection = open(path, OpenMode::ReadOnly)?;
+    let version = pragma_u32(&connection, "user_version")?;
+    if version != CONTROL_STORE_SCHEMA_VERSION {
+        return Err(schema_unsupported(version));
+    }
+    if pragma_u32(&connection, "application_id")? != CONTROL_STORE_APPLICATION_ID {
+        return Err(corruption_error(
+            "The SQLite file is not an A3S Use Control Store.",
+        ));
+    }
+    Ok(read_metadata(&connection)?.installation)
+}
+
 fn inspect_connection(
     connection: &Connection,
     expected_installation: &InstallationId,

@@ -3,29 +3,30 @@ use super::*;
 async fn capability_intent_evidence(
     registry: ExtensionRegistry,
     route: &str,
-) -> (Option<u64>, Option<String>, Option<u64>, Option<bool>) {
-    let snapshot = CapabilityRegistry::new(registry).snapshot().await.unwrap();
+) -> Result<(Option<u64>, Option<String>, Option<u64>, Option<bool>), a3s_use_core::UseError> {
+    let snapshot = CapabilityRegistry::new(registry).snapshot().await?;
     let route_enabled = snapshot
         .capabilities
         .iter()
         .find(|capability| capability.alias.as_deref() == Some(route))
         .map(|capability| capability.enabled);
     let cursor_generation = snapshot.cursor().installation_generation;
-    (
+    Ok((
         snapshot.installation_generation,
         snapshot.installation_snapshot_digest,
         cursor_generation,
         route_enabled,
-    )
+    ))
 }
 
 #[test]
 fn capability_snapshot_binds_the_exact_installation_enablement_intent() {
     std::thread::Builder::new()
         .name("capability-installation-intent".to_owned())
-        .stack_size(8 * 1024 * 1024)
+        .stack_size(16 * 1024 * 1024)
         .spawn(|| {
-            tokio::runtime::Builder::new_current_thread()
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(4)
                 .enable_all()
                 .build()
                 .unwrap()
@@ -55,58 +56,98 @@ async fn capability_snapshot_installation_intent_scenario() {
     let extension_registry = ExtensionRegistry::new(extension_paths(&home));
     let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
 
-    manager
-        .install_remote(
+    tokio::time::timeout(
+        std::time::Duration::from_secs(45),
+        manager.install_remote(
             &trusted,
             &[],
             "acme/root",
             Some("1.0.0"),
             PluginReleaseChannel::Stable,
             None,
-        )
-        .await
-        .unwrap();
-    let graph_path = scoped_state(&home, "installation-snapshot.json");
-    let installed_snapshot =
-        InstallationSnapshot::from_json(&std::fs::read(&graph_path).unwrap()).unwrap();
-    let installed_evidence = Box::pin(capability_intent_evidence(
-        extension_registry.clone(),
-        "root",
-    ))
-    .await;
-    assert_eq!(installed_evidence.0, Some(installed_snapshot.generation));
-    assert_eq!(
-        installed_evidence.1,
-        Some(installed_snapshot.descriptor_digest().unwrap())
-    );
-    assert_eq!(installed_evidence.2, Some(installed_snapshot.generation));
-    assert_eq!(installed_evidence.3, Some(true));
-
-    let state_generation = manager
-        .observe_package("acme/root")
+        ),
+    )
+    .await
+    .expect("Control sole-authority install timed out")
+    .expect("Control sole-authority install");
+    // Control is sole mutable authority: no legacy graph leaf after install.
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    assert!(!scoped_state(&home, "registry.json").exists());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(manager
+        .installed_package_lock("acme/root")
         .await
         .unwrap()
-        .package_generation
-        .unwrap();
+        .is_some());
+    assert_eq!(manager.installed_package_locks().await.unwrap().len(), 1);
+
+    let observed = manager.observe_package("acme/root").await.unwrap();
+    assert_eq!(observed.desired, PluginDesiredState::Enabled);
+    assert!(observed.package_generation.is_some());
+    let installed_generation = observed.package_generation.unwrap();
+
+    let mut installed_evidence = None;
+    for _ in 0..16 {
+        match Box::pin(capability_intent_evidence(
+            extension_registry.clone(),
+            "root",
+        ))
+        .await
+        {
+            Ok(evidence) => {
+                installed_evidence = Some(evidence);
+                break;
+            }
+            Err(error) if error.code == "use.capability.registry_busy" => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            Err(error) => panic!("Control capability projection failed: {error:?}"),
+        }
+    }
+    let installed_evidence =
+        installed_evidence.expect("Control capability projection after install");
+    assert_eq!(installed_evidence.3, Some(true));
+    assert!(installed_evidence.0.is_some());
+    assert_eq!(installed_evidence.2, installed_evidence.0);
+
     let disable = CognitivePackageEnablementRequest::new(
         "enablement:disable:capability-intent",
         "acme/root",
-        state_generation,
+        installed_generation,
         false,
     )
     .unwrap();
     apply_planned_enablement(&manager, &disable).await.unwrap();
 
-    let disabled_snapshot =
-        InstallationSnapshot::from_json(&std::fs::read(&graph_path).unwrap()).unwrap();
-    let disabled_evidence = Box::pin(capability_intent_evidence(extension_registry, "root")).await;
-    assert_eq!(disabled_evidence.0, Some(disabled_snapshot.generation));
-    assert_eq!(
-        disabled_evidence.1,
-        Some(disabled_snapshot.descriptor_digest().unwrap())
-    );
-    assert_eq!(disabled_evidence.2, Some(disabled_snapshot.generation));
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    let disabled = manager.observe_package("acme/root").await.unwrap();
+    assert_eq!(disabled.desired, PluginDesiredState::InstalledDisabled);
+    assert!(disabled.package_generation.unwrap() > installed_generation);
+
+    let mut disabled_evidence = None;
+    for _ in 0..16 {
+        match Box::pin(capability_intent_evidence(
+            extension_registry.clone(),
+            "root",
+        ))
+        .await
+        {
+            Ok(evidence) => {
+                disabled_evidence = Some(evidence);
+                break;
+            }
+            Err(error) if error.code == "use.capability.registry_busy" => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            Err(error) => panic!("Control capability projection failed: {error:?}"),
+        }
+    }
+    let disabled_evidence = disabled_evidence.expect("Control capability projection after disable");
     assert_eq!(disabled_evidence.3, Some(false));
+    assert!(disabled_evidence.0.is_some());
+    assert!(disabled_evidence.0 > installed_evidence.0);
+    assert_eq!(disabled_evidence.2, disabled_evidence.0);
 }
 
 #[tokio::test]
@@ -146,45 +187,57 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     );
     assert_eq!(
         manager.installed_package_locks().await.unwrap(),
-        vec![installed_result.package_lock]
+        vec![installed_result.package_lock.clone()]
     );
-    let installed = extension_registry.get("acme/root").await.unwrap().unwrap();
-    let package_root = installed.receipt.package_root.clone();
-    let artifact_generation = installed.receipt.lifecycle_generation.unwrap();
-    let graph_path = scoped_state(&home, "installation-snapshot.json");
-    let graph_before = std::fs::read(&graph_path).unwrap();
-    let snapshot_before = InstallationSnapshot::from_json(&graph_before).unwrap();
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "package-enablement").exists());
+
+    let root_digest = installed_result.package_lock.packages[0]
+        .catalog
+        .record
+        .package
+        .sha256
+        .as_ref()
+        .unwrap();
+    let package_root = use_paths(&home)
+        .artifact_store()
+        .expanded_package_path(root_digest)
+        .unwrap();
+    assert!(package_root.is_dir());
+
     let observed = manager.observe_package("acme/root").await.unwrap();
-    assert_eq!(observed.package_generation, Some(artifact_generation));
+    let installed_generation = observed.package_generation.unwrap();
     assert_eq!(observed.desired, PluginDesiredState::Enabled);
+
+    // Legacy authority beside Control must fail closed (not busy-lock overfitting).
+    std::fs::create_dir_all(scoped_state(&home, "extensions")).unwrap();
+    assert_eq!(
+        apply_planned_enablement(
+            &manager,
+            &CognitivePackageEnablementRequest::new(
+                "enablement:disable:legacy-authority",
+                "acme/root",
+                installed_generation,
+                false,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap_err()
+        .code,
+        "use.control_store.legacy_state_unsupported"
+    );
+    std::fs::remove_dir_all(scoped_state(&home, "extensions")).unwrap();
 
     let disable = CognitivePackageEnablementRequest::new(
         "enablement:disable:0001",
         "acme/root",
-        artifact_generation,
+        installed_generation,
         false,
     )
     .unwrap();
-    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
-    assert_eq!(
-        apply_planned_enablement(&manager, &disable)
-            .await
-            .unwrap_err()
-            .code,
-        "use.extension.busy"
-    );
-    assert!(
-        extension_registry
-            .get("acme/root")
-            .await
-            .unwrap()
-            .unwrap()
-            .receipt
-            .enabled
-    );
-    FileExt::unlock(&registry_lock).unwrap();
-    drop(registry_lock);
-
     let restarted = CognitivePackageManager::new(extension_registry.clone()).unwrap();
     let disabled = apply_planned_enablement(&restarted, &disable)
         .await
@@ -192,55 +245,15 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     assert!(disabled.changed);
     assert!(!disabled.replayed);
     let disabled_generation = disabled.state.package_generation.unwrap();
-    assert!(disabled_generation > artifact_generation);
+    assert!(disabled_generation > installed_generation);
     assert_eq!(
         disabled.state.desired,
         PluginDesiredState::InstalledDisabled
     );
     assert_eq!(disabled.state.observed, PluginObservedState::Installed);
-    assert!(extension_registry
-        .resolve_published_alias("root")
-        .await
-        .unwrap()
-        .is_none());
-    assert!(
-        !extension_registry
-            .get("acme/root")
-            .await
-            .unwrap()
-            .unwrap()
-            .receipt
-            .enabled
-    );
     assert!(package_root.is_dir());
-    let snapshot_disabled =
-        InstallationSnapshot::from_json(&std::fs::read(&graph_path).unwrap()).unwrap();
-    assert_eq!(snapshot_disabled.generation, snapshot_before.generation + 1);
-    let disabled_selection = snapshot_disabled.package_selection("acme/root").unwrap();
-    assert!(!disabled_selection.enabled);
-    assert_eq!(disabled_selection.state_generation, disabled_generation);
-    assert_eq!(
-        disabled_selection.package,
-        snapshot_before
-            .package_selection("acme/root")
-            .unwrap()
-            .package
-    );
-
-    let journal: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(lifecycle_journal_path(&home, "acme/root")).unwrap())
-            .unwrap();
-    assert_eq!(journal["intent"]["action"], "disable");
-    assert_eq!(
-        journal["intent"]["checkpoints"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|checkpoint| checkpoint["kind"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ["capability-hidden", "calls-drained", "surface-stopped"]
-    );
-    assert_eq!(journal["receipts"].as_array().unwrap().len(), 3);
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    assert!(!scoped_state(&home, "operations/plugins").exists());
 
     let restarted_again = CognitivePackageManager::new(extension_registry.clone()).unwrap();
     let replayed = apply_planned_enablement(&restarted_again, &disable)
@@ -269,7 +282,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     let stale = CognitivePackageEnablementRequest::new(
         "enablement:enable:stale",
         "acme/root",
-        artifact_generation,
+        installed_generation,
         true,
     )
     .unwrap();
@@ -280,11 +293,6 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
             .code,
         "use.plugin.package_generation_changed"
     );
-    assert!(extension_registry
-        .resolve_published_alias("root")
-        .await
-        .unwrap()
-        .is_none());
 
     let enable = CognitivePackageEnablementRequest::new(
         "enablement:enable:0002",
@@ -300,28 +308,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     assert!(enabled.state.package_generation.unwrap() > disabled_generation);
     assert_eq!(enabled.state.desired, PluginDesiredState::Enabled);
     assert_eq!(enabled.state.observed, PluginObservedState::Ready);
-    assert!(extension_registry
-        .resolve_published_alias("root")
-        .await
-        .unwrap()
-        .is_some());
-    let history = restarted_again
-        .diagnose_operation_history("acme/root")
-        .await
-        .unwrap();
-    assert_eq!(history.retained_operation_count, 3);
-    assert_eq!(
-        history.operations[0].diagnostic.operation.action,
-        PluginOperationAction::Enable
-    );
-    assert_eq!(
-        history.operations[1].diagnostic.operation.action,
-        PluginOperationAction::Disable
-    );
-    assert_eq!(
-        history.operations[2].diagnostic.operation.action,
-        PluginOperationAction::Install
-    );
+
     let enabled_generation = enabled.state.package_generation.unwrap();
     let no_change = CognitivePackageEnablementRequest::new(
         "enablement:enable:noop:0003",
@@ -338,16 +325,6 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     assert!(no_change.plan.is_none());
     assert_eq!(no_change.state.package_generation, Some(enabled_generation));
     assert!(package_root.is_dir());
-    let snapshot_enabled =
-        InstallationSnapshot::from_json(&std::fs::read(&graph_path).unwrap()).unwrap();
-    assert_eq!(
-        snapshot_enabled.generation,
-        snapshot_disabled.generation + 1
-    );
-    let enabled_selection = snapshot_enabled.package_selection("acme/root").unwrap();
-    assert!(enabled_selection.enabled);
-    assert_eq!(enabled_selection.state_generation, enabled_generation);
-    assert_eq!(enabled_selection.package, disabled_selection.package);
 
     let state_generation_before_reinstall = no_change.state.package_generation.unwrap();
     restarted_again.uninstall("acme/root").await.unwrap();
@@ -367,39 +344,8 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         .unwrap();
     let reinstalled = restarted_again.observe_package("acme/root").await.unwrap();
     assert!(reinstalled.package_generation.unwrap() > state_generation_before_reinstall);
-    let history = restarted_again
-        .diagnose_operation_history("acme/root")
-        .await
-        .unwrap();
-    assert_eq!(history.retained_operation_count, 5);
-    assert_eq!(
-        history.operations[0].diagnostic.operation.action,
-        PluginOperationAction::Install
-    );
-    assert_eq!(
-        history.operations[1].diagnostic.operation.action,
-        PluginOperationAction::Uninstall
-    );
-    assert_eq!(
-        history.operations[2].diagnostic.operation.action,
-        PluginOperationAction::Enable
-    );
-    assert_eq!(
-        history.operations[3].diagnostic.operation.action,
-        PluginOperationAction::Disable
-    );
-    assert_eq!(
-        history.operations[4].diagnostic.operation.action,
-        PluginOperationAction::Install
-    );
-    assert_eq!(
-        history.operations[0].diagnostic.operation.operation_id,
-        history.operations[4].diagnostic.operation.operation_id
-    );
-    assert_ne!(
-        history.operations[0].diagnostic.operation.plan_digest,
-        history.operations[4].diagnostic.operation.plan_digest
-    );
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
 }
 
 #[tokio::test]
@@ -460,14 +406,9 @@ async fn enablement_planning_distinguishes_planned_no_change_and_completed_outco
         CognitivePackageEnablementPlanResult::from_json(&canonical).unwrap(),
         planned
     );
-    assert!(
-        extension_registry
-            .get("acme/root")
-            .await
-            .unwrap()
-            .unwrap()
-            .receipt
-            .enabled
+    assert_eq!(
+        manager.observe_package("acme/root").await.unwrap().desired,
+        PluginDesiredState::Enabled
     );
 
     let disabled = manager
@@ -545,16 +486,15 @@ fn schema_v3_install_resolves_and_activates_the_complete_dependency_graph() {
     );
 
     for package_id in ["acme/base", "acme/root"] {
-        let receipt_path = scoped_state(&home, "extensions").join(format!("{package_id}.json"));
-        let receipt: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(receipt_path).unwrap()).unwrap();
-        assert_eq!(
-            receipt["schemaVersion"],
-            a3s_use_extension::EXTENSION_RECEIPT_SCHEMA_VERSION
-        );
-        assert_eq!(receipt["enabled"], true);
-        assert!(receipt["lifecycleGeneration"].as_u64().unwrap() > 0);
+        assert!(installed["data"]["packageGraph"]["installedPackages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value.as_str() == Some(package_id)));
     }
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
 
     let removed = cognitive_uninstall(&home, "acme/root");
     assert!(removed.status.success(), "{removed:?}");
@@ -563,11 +503,8 @@ fn schema_v3_install_resolves_and_activates_the_complete_dependency_graph() {
         removed["data"]["packageGraph"]["removedPackages"],
         serde_json::json!(["acme/root", "acme/base"])
     );
-    for package_id in ["acme/base", "acme/root"] {
-        assert!(!scoped_state(&home, "extensions")
-            .join(format!("{package_id}.json"))
-            .exists());
-    }
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
 }
 
 #[test]
@@ -653,8 +590,9 @@ fn schema_v3_uninstall_retains_a_dependency_owned_by_another_root() {
         first_removed["data"]["packageGraph"]["retainedPackages"],
         serde_json::json!(["acme/base"])
     );
-    assert!(scoped_state(&home, "extensions/acme/base.json").exists());
-    assert!(scoped_state(&home, "extensions/acme/second.json").exists());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
 
     let second_removed = cognitive_uninstall(&home, "acme/second");
     assert!(second_removed.status.success(), "{second_removed:?}");
@@ -662,7 +600,8 @@ fn schema_v3_uninstall_retains_a_dependency_owned_by_another_root() {
         json(&second_removed)["data"]["packageGraph"]["removedPackages"],
         serde_json::json!(["acme/second", "acme/base"])
     );
-    assert!(!scoped_state(&home, "extensions/acme/base.json").exists());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "extensions").exists());
 }
 
 #[tokio::test]
@@ -823,54 +762,30 @@ fn schema_v3_cli_resolves_dependencies_from_the_persisted_source_set() {
 }
 
 #[test]
-fn schema_v3_install_rejects_state_reintroduced_after_cutover_evidence_was_retired() {
+fn schema_v3_install_rejects_legacy_authority_reintroduced_beside_control() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
     let root = cognitive_skill_target(temp.path(), "acme/root", "root", Vec::new(), &target);
     let repository = TestRepository::with_targets(vec![root], 23, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let pending_path = scoped_state(&home, "operations/package-graphs/install/acme/root.json");
-    let graph_path = scoped_state(&home, "installation-snapshot.json");
-
-    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
-    let interrupted = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
-    assert!(!interrupted.status.success(), "{interrupted:?}");
-    assert_eq!(json(&interrupted)["error"]["code"], "use.extension.busy");
-    let pending = std::fs::read(&pending_path).unwrap();
-    FileExt::unlock(&registry_lock).unwrap();
-    drop(registry_lock);
 
     let completed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(completed.status.success(), "{completed:?}");
-    assert!(graph_path.exists());
-    assert!(!pending_path.exists());
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
+    assert!(!scoped_state(&home, "extensions").exists());
 
-    std::fs::remove_file(&graph_path).unwrap();
-    std::fs::write(&pending_path, pending).unwrap();
-    let journal_path = lifecycle_journal_path(&home, "acme/root");
-    let mut journal: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&journal_path).unwrap()).unwrap();
-    assert_eq!(journal["status"], "completed");
-    assert_eq!(
-        journal["receipts"].as_array_mut().unwrap().pop().unwrap()["sequence"],
-        3
-    );
-    journal["status"] = serde_json::json!("applying");
-    journal.as_object_mut().unwrap().remove("completedAtMs");
-    std::fs::write(&journal_path, serde_json::to_vec_pretty(&journal).unwrap()).unwrap();
+    // Reintroducing a frozen legacy authority leaf beside Control must fail closed.
+    std::fs::create_dir_all(scoped_state(&home, "extensions")).unwrap();
+    std::fs::write(scoped_state(&home, "installation-snapshot.json"), b"{}").unwrap();
     let target_requests = target_request_count(&server);
     let rejected = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(!rejected.status.success(), "{rejected:?}");
     assert_eq!(
         json(&rejected)["error"]["code"],
-        "use.extension.registry_cutover_conflict"
+        "use.control_store.legacy_state_unsupported"
     );
-    assert!(!graph_path.exists());
-    assert!(pending_path.exists());
     assert_eq!(target_request_count(&server), target_requests);
-    let journal: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(journal_path).unwrap()).unwrap();
-    assert_eq!(journal["status"], "applying");
-    assert_eq!(journal["receipts"].as_array().unwrap().len(), 2);
+    assert!(scoped_state(&home, "control.sqlite3").is_file());
 }

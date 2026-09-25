@@ -1,20 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
-use a3s_use_core::{
-    PlanPackageChangeKind, PlanScope, PluginOperationAction, PluginPackageLock, UseResult,
-};
-use a3s_use_extension::{ExtensionLifecycleIdentity, ExtensionManifest, InstalledExtension};
+use a3s_use_core::{PluginOperationAction, PluginPackageLock, UseResult};
 
-use crate::plugin_lifecycle::{
-    ExtensionGraphCapabilityLifecycleHost, PluginLifecycleAction, PluginLifecycleIntent,
-    PluginLifecycleIntentSpec, PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
-};
-
-use super::plan::{now_ms, package_state_revision, state_surface_refs, uninstall_operation};
-use super::store::{PackageGraphOperationPhase, PendingPackageGraphOperation};
+use super::plan::{now_ms, package_state_revision, uninstall_operation};
+use super::store::PendingPackageGraphOperation;
 use super::{
-    installed_matches_lock, package_manager_error, CognitivePackageManager,
-    CognitivePackageUninstallResult, UninstallDisposition,
+    package_manager_error, CognitivePackageManager, CognitivePackageUninstallResult,
+    UninstallDisposition,
 };
 
 impl CognitivePackageManager {
@@ -22,44 +15,12 @@ impl CognitivePackageManager {
         &self,
         root_package_id: &str,
     ) -> UseResult<Option<PluginPackageLock>> {
-        let graph = self.snapshot_store().get(root_package_id).await?;
-        let pending = self
-            .pending_store()
-            .get(PluginOperationAction::Uninstall, root_package_id)
-            .await?;
-        match (graph, pending) {
-            (Some(graph), Some(pending)) => {
-                validate_pending_lock(&pending, &graph, self.scope())?;
-                Ok(Some(graph))
-            }
-            (Some(graph), None) => Ok(Some(graph)),
-            (None, Some(pending)) => {
-                pending.validate()?;
-                let lock = pending.envelope.package_lock.ok_or_else(|| {
-                    package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A pending cognitive-package uninstall omitted its exact dependency lock.",
-                    )
-                })?;
-                if lock.root_package_id != root_package_id {
-                    return Err(package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A pending cognitive-package uninstall does not own its root package path.",
-                    ));
-                }
-                Ok(Some(lock))
-            }
-            (None, None) => Ok(None),
-        }
+        self.installed_package_lock(root_package_id).await
     }
 
     pub async fn owns_installed_root(&self, root_package_id: &str) -> UseResult<bool> {
-        if self.snapshot_store().get(root_package_id).await?.is_some() {
-            return Ok(true);
-        }
         Ok(self
-            .pending_store()
-            .get(PluginOperationAction::Uninstall, root_package_id)
+            .installed_package_lock(root_package_id)
             .await?
             .is_some())
     }
@@ -71,248 +32,118 @@ impl CognitivePackageManager {
         &self,
         root_package_id: &str,
     ) -> UseResult<CognitivePackageUninstallResult> {
-        let _maintenance = self.maintenance_lock().acquire_shared().await?;
+        let maintenance = Arc::new(self.maintenance_lock().acquire_shared().await?);
         let _mutation = self.installation_mutation_lock().acquire().await?;
         self.require_graph_mutation_domain(PluginOperationAction::Uninstall, root_package_id)
             .await?;
-        let snapshot_store = self.snapshot_store();
-        let pending_store = self.pending_store();
-        let existing_pending = pending_store
-            .get(PluginOperationAction::Uninstall, root_package_id)
-            .await?;
-        let graph = snapshot_store.get(root_package_id).await?;
-        let (lock, lock_digest) = match (&graph, &existing_pending) {
-            (Some(graph), Some(pending)) => {
-                validate_pending_lock(pending, graph, self.scope())?;
-                (graph.clone(), graph.descriptor_digest()?)
-            }
-            (Some(graph), None) => (graph.clone(), graph.descriptor_digest()?),
-            (None, Some(pending)) => {
-                pending.validate()?;
-                let lock = pending.envelope.package_lock.clone().ok_or_else(|| {
-                    package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A pending cognitive-package uninstall omitted its exact dependency lock.",
-                    )
-                })?;
-                if lock.root_package_id != root_package_id {
-                    return Err(package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A pending cognitive-package uninstall does not own its root package path.",
-                    ));
-                }
-                let lock_digest = lock.descriptor_digest()?;
-                (lock, lock_digest)
-            }
-            (None, None) => {
-                return Err(package_manager_error(
+        self.uninstall_through_control(root_package_id, maintenance)
+            .await
+    }
+
+    async fn uninstall_through_control(
+        &self,
+        root_package_id: &str,
+        maintenance: Arc<a3s_use_extension::StateMaintenanceGuard>,
+    ) -> UseResult<CognitivePackageUninstallResult> {
+        let lock = self
+            .installed_package_lock(root_package_id)
+            .await?
+            .ok_or_else(|| {
+                package_manager_error(
                     "use.plugin.package_graph_missing",
                     format!(
-                        "Cognitive package '{}' has no installed dependency-lock ownership record.",
-                        root_package_id
+                        "Cognitive package '{root_package_id}' has no Control installation ownership record."
                     ),
-                ))
-            }
-        };
-
-        let mut installed = self.installed_lock_nodes(&lock).await?;
-        let pending = if let Some(pending) = existing_pending {
-            validate_pending_lock(&pending, &lock, self.scope())?;
-            if pending.phase() == PackageGraphOperationPhase::Planned {
-                require_fresh_installed_closure(&lock, &installed)?;
-                let live_dispositions = self
-                    .uninstall_dispositions(&lock, &snapshot_store.list().await?)
-                    .await?;
-                if pending_dispositions(&pending)? != live_dispositions {
-                    return Err(package_manager_error(
-                        "use.plugin.package_generation_changed",
-                        "The requested root set or dependency ownership changed before uninstall admission.",
-                    ));
-                }
-            }
-            pending
-        } else {
-            let exact = require_fresh_installed_closure(&lock, &installed)?;
-            let dispositions = self
-                .uninstall_dispositions(&lock, &snapshot_store.list().await?)
-                .await?;
-            let root = exact.get(root_package_id).ok_or_else(|| {
-                package_manager_error(
-                    "use.plugin.package_graph_invalid",
-                    "The uninstall root disappeared from its exact installed closure.",
                 )
             })?;
-            let mut generations = BTreeMap::new();
-            let mut manifests = BTreeMap::new();
-            for (package_id, disposition) in &dispositions {
-                if *disposition != UninstallDisposition::Remove {
-                    continue;
-                }
-                let extension = exact.get(package_id).ok_or_else(|| {
-                    package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A removed package is absent from the installed closure.",
-                    )
-                })?;
-                generations.insert(
-                    package_id.clone(),
-                    extension.receipt.lifecycle_generation.ok_or_else(|| {
-                        package_manager_error(
-                            "use.plugin.package_generation_changed",
-                            "A lifecycle-managed package omitted its exact generation.",
-                        )
-                    })?,
-                );
-                manifests.insert(package_id.clone(), extension.manifest.clone());
-            }
-            for manifest in manifests.values() {
-                self.lifecycle.validate_manifest_for_retirement(manifest)?;
-            }
-            let surface_selections = exact
-                .iter()
-                .map(|(package_id, extension)| {
-                    Ok((package_id.clone(), extension.selected_surfaces()?))
-                })
-                .collect::<UseResult<BTreeMap<_, _>>>()?;
-            let snapshot = self.registry.snapshot().await?;
-            let grant_snapshot = self
-                .grant_store()
-                .snapshot_scope(
-                    &self.scope().id,
-                    package_state_revision(snapshot.generation)?,
-                )
-                .await?;
-            let generated = uninstall_operation(
-                &lock,
-                &dispositions,
-                &surface_selections,
-                generations,
-                root.receipt.descriptor_digest()?,
-                snapshot.generation,
-                self.scope(),
-                now_ms()?,
-                &grant_snapshot,
-                self.authorization.as_ref(),
-            )?;
-            let planned_at_ms = generated.envelope.plan.created_at_ms;
-            let pending = PendingPackageGraphOperation::planned(
-                generated.envelope,
-                planned_at_ms,
-                generated.generations,
-                manifests,
-            )?;
-            pending_store.put(&pending).await?;
-            pending
-        };
-        let pending = self
-            .admit_planned_graph_operation(&pending_store, pending)
+        let lock_digest = lock.descriptor_digest()?;
+        let control = self.ensure_control().await?;
+        let snapshot = control.current_snapshot().await?.ok_or_else(|| {
+            package_manager_error(
+                "use.plugin.package_graph_missing",
+                "Control Store has no committed installation snapshot for uninstall.",
+            )
+        })?;
+        let installed_locks = self.installed_package_locks().await?;
+        let dispositions = self
+            .uninstall_dispositions_control(&lock, &installed_locks)
             .await?;
-        self.authorization.verify_plan(&pending.envelope)?;
-        for manifest in pending.manifests.values() {
-            self.lifecycle.validate_manifest_for_retirement(manifest)?;
-        }
-        let dispositions = pending_dispositions(&pending)?;
-        let apply_time = now_ms()?;
-
-        let mut units = Vec::with_capacity(pending.generations.len());
-        for package in lock.removal_order()? {
-            if dispositions.get(package.package_id()) != Some(&UninstallDisposition::Remove) {
+        let artifact_store = self.registry.paths().artifact_store();
+        let mut generations = BTreeMap::new();
+        let mut manifests = BTreeMap::new();
+        let mut surface_selections = BTreeMap::new();
+        for (package_id, disposition) in &dispositions {
+            let selection = snapshot.package_selection(package_id).ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "An uninstall package is absent from the Control snapshot.",
+                )
+            })?;
+            surface_selections.insert(package_id.clone(), selection.selected_surfaces.clone());
+            if *disposition != UninstallDisposition::Remove {
                 continue;
             }
-            let manifest = pending.manifests.get(package.package_id()).ok_or_else(|| {
-                package_manager_error(
-                    "use.plugin.package_graph_invalid",
-                    "A removed package has no pending admitted manifest.",
-                )
-            })?;
-            let generation = *pending
-                .generations
-                .get(package.package_id())
-                .ok_or_else(|| {
-                    package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A removed package has no pending lifecycle generation.",
-                    )
-                })?;
-            let state = pending
-                .envelope
-                .plan
-                .packages
-                .iter()
-                .find(|transition| transition.package_id == package.package_id())
-                .and_then(|transition| transition.before.as_ref())
-                .ok_or_else(|| {
-                    package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A removed package omitted its selected prior state.",
-                    )
-                })?;
-            let identity = ExtensionLifecycleIdentity::new(
-                package.package_id(),
-                state.release.package_sha256.clone(),
-                state.release.manifest_sha256.clone(),
-                generation,
-            )?;
-            let package_root = self.registry.lifecycle_package_root(&identity);
-            let selected_surfaces = state_surface_refs(state);
-            let intent = PluginLifecycleIntent::from_manifest_selection(
-                PluginLifecycleIntentSpec {
-                    operation_id: pending.envelope.plan.operation_id.clone(),
-                    plan_digest: pending.envelope.plan_digest.clone(),
-                    scope: self.scope().clone(),
-                    package_id: package.package_id().to_string(),
-                    package_digest: identity.package_digest().to_string(),
-                    manifest_digest: identity.manifest_digest().to_string(),
-                    generation,
-                    action: PluginLifecycleAction::Uninstall,
-                    retained_ui_state_surfaces: Vec::new(),
-                },
-                manifest,
-                &selected_surfaces,
-            )?;
-            // A process can die after the Registry atomically hides and retains
-            // this exact generation but before the package lifecycle journal
-            // records its hide receipt. Do not use that later receipt as proof
-            // that the earlier cutover happened. The graph capability host
-            // below replays the exact lock, lifecycle identities, and
-            // idempotency key; its durable cutover request digest fails closed
-            // when the selected/retained state disappeared for another reason.
-            if let Some(extension) = installed.remove(package.package_id()).flatten() {
-                validate_installed_unit(&extension, manifest, &identity)?;
-            }
-            units.push(PluginPackageLifecycleUnit::new(
-                self.lifecycle
-                    .uninstall_coordinator(self.registry.clone(), package_root)?,
-                intent,
-                manifest.clone(),
-            )?);
+            generations.insert(package_id.clone(), selection.state_generation);
+            let verified = artifact_store
+                .acquire_verified_package(&selection.package.catalog)
+                .await?;
+            manifests.insert(package_id.clone(), verified.manifest().clone());
         }
-
-        let coordinator = PluginPackageGraphLifecycleCoordinator::new(std::sync::Arc::new(
-            ExtensionGraphCapabilityLifecycleHost::new(self.registry.clone()),
-        ));
-        match pending
-            .authorization
-            .lifecycle_unit(self.grant_store(), &pending.envelope)?
-        {
-            Some(grants) => {
-                coordinator
-                    .apply_uninstall_with_grants(&pending.envelope, &units, &grants, || {
-                        now_ms().unwrap_or(apply_time)
-                    })
-                    .await?;
-            }
-            None => {
-                coordinator
-                    .apply_uninstall(&pending.envelope, &units, || now_ms().unwrap_or(apply_time))
-                    .await?;
-            }
+        for manifest in manifests.values() {
+            self.lifecycle.validate_manifest_for_retirement(manifest)?;
         }
-        snapshot_store.remove(root_package_id, &lock_digest).await?;
-        self.retain_and_remove_graph_operation(
-            &pending_store,
+        let root_selection = snapshot.package_selection(root_package_id).ok_or_else(|| {
+            package_manager_error(
+                "use.plugin.package_graph_invalid",
+                "The uninstall root disappeared from the Control snapshot.",
+            )
+        })?;
+        let root_receipt_digest = {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(b"a3s.use.control.uninstall-root.v1\0");
+            hasher.update(root_package_id.as_bytes());
+            hasher.update(b"\0");
+            hasher.update(root_selection.state_generation.to_le_bytes());
+            format!("sha256:{:x}", hasher.finalize())
+        };
+        let capability_generation = snapshot.generation;
+        let grant_snapshot = self
+            .planned_grant_snapshot(package_state_revision(capability_generation)?)
+            .await?;
+        let generated = uninstall_operation(
+            &lock,
+            &dispositions,
+            &surface_selections,
+            generations,
+            root_receipt_digest,
+            capability_generation,
+            self.scope(),
+            now_ms()?,
+            &grant_snapshot,
+            self.authorization.as_ref(),
+        )?;
+        let planned_at_ms = generated.envelope.plan.created_at_ms;
+        let pending = PendingPackageGraphOperation::planned(
+            generated.envelope,
+            planned_at_ms,
+            generated.generations,
+            manifests,
+        )?;
+        let pending = self
+            .admit_planned_graph_operation_in_memory(pending)
+            .await?;
+        self.authorization.verify_plan(&pending.envelope)?;
+        let publications = self.lifecycle.runtime_plan_publications()?;
+        super::control_authority::require_control_runtime_readiness_for_publications(
+            self.lifecycle.control_runtime_readiness().as_ref(),
+            &publications,
+        )?;
+        let _snapshot = super::control_authority::apply_pending_through_control(
+            control,
             &pending,
-            super::PluginRetainedOperationOutcome::Completed,
+            &publications,
+            maintenance,
         )
         .await?;
         let removed_packages = lock
@@ -342,32 +173,9 @@ impl CognitivePackageManager {
         })
     }
 
-    async fn installed_lock_nodes(
+    async fn uninstall_dispositions_control(
         &self,
-        lock: &a3s_use_core::PluginPackageLock,
-    ) -> UseResult<BTreeMap<String, Option<InstalledExtension>>> {
-        let mut installed = BTreeMap::new();
-        for package in &lock.packages {
-            let extension = self.registry.get(package.package_id()).await?;
-            if let Some(extension) = &extension {
-                if !installed_matches_lock(extension, &package.catalog)? {
-                    return Err(package_manager_error(
-                        "use.plugin.package_graph_reconcile_required",
-                        format!(
-                            "Installed dependency '{}' no longer matches the exact lock.",
-                            package.package_id()
-                        ),
-                    ));
-                }
-            }
-            installed.insert(package.package_id().to_string(), extension);
-        }
-        Ok(installed)
-    }
-
-    async fn uninstall_dispositions(
-        &self,
-        lock: &a3s_use_core::PluginPackageLock,
+        lock: &PluginPackageLock,
         installed_locks: &[PluginPackageLock],
     ) -> UseResult<BTreeMap<String, UninstallDisposition>> {
         let closure = lock
@@ -386,16 +194,6 @@ impl CognitivePackageManager {
             })
             .filter(|package_id| closure.contains(package_id))
             .collect::<BTreeSet<_>>();
-        for extension in self.registry.list().await? {
-            if closure.contains(&extension.receipt.package_id) {
-                continue;
-            }
-            for dependency in &extension.manifest.dependencies {
-                if closure.contains(&dependency.package_id) {
-                    retained.insert(dependency.package_id.clone());
-                }
-            }
-        }
         loop {
             let before = retained.len();
             for package_id in retained.clone() {
@@ -434,106 +232,4 @@ impl CognitivePackageManager {
             })
             .collect())
     }
-}
-
-fn require_fresh_installed_closure(
-    lock: &a3s_use_core::PluginPackageLock,
-    installed: &BTreeMap<String, Option<InstalledExtension>>,
-) -> UseResult<BTreeMap<String, InstalledExtension>> {
-    let mut exact = BTreeMap::new();
-    for package in &lock.packages {
-        let extension = installed
-            .get(package.package_id())
-            .and_then(Option::as_ref)
-            .ok_or_else(|| {
-                package_manager_error(
-                    "use.plugin.package_graph_reconcile_required",
-                    format!(
-                        "Installed dependency '{}' is missing from root '{}'.",
-                        package.package_id(),
-                        lock.root_package_id
-                    ),
-                )
-            })?;
-        if !extension.receipt.enabled {
-            return Err(package_manager_error(
-                "use.plugin.package_graph_reconcile_required",
-                format!(
-                    "Installed dependency '{}' is not in the published capability generation.",
-                    package.package_id()
-                ),
-            ));
-        }
-        exact.insert(package.package_id().to_string(), extension.clone());
-    }
-    Ok(exact)
-}
-
-fn pending_dispositions(
-    pending: &PendingPackageGraphOperation,
-) -> UseResult<BTreeMap<String, UninstallDisposition>> {
-    pending.validate()?;
-    pending
-        .envelope
-        .plan
-        .packages
-        .iter()
-        .map(|package| {
-            let disposition = match package.change {
-                PlanPackageChangeKind::Remove => UninstallDisposition::Remove,
-                PlanPackageChangeKind::Retain => UninstallDisposition::Retain,
-                _ => {
-                    return Err(package_manager_error(
-                        "use.plugin.package_graph_invalid",
-                        "A pending uninstall contains an unsupported package transition.",
-                    ))
-                }
-            };
-            Ok((package.package_id.clone(), disposition))
-        })
-        .collect()
-}
-
-fn validate_pending_lock(
-    pending: &PendingPackageGraphOperation,
-    lock: &a3s_use_core::PluginPackageLock,
-    scope: &PlanScope,
-) -> UseResult<()> {
-    pending.validate()?;
-    if pending.envelope.plan.action != PluginOperationAction::Uninstall
-        || pending.envelope.package_lock.as_ref() != Some(lock)
-        || &pending.envelope.plan.scope != scope
-    {
-        return Err(package_manager_error(
-            "use.plugin.package_graph_busy",
-            "The pending cognitive-package uninstall no longer matches the installed graph.",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_installed_unit(
-    extension: &InstalledExtension,
-    manifest: &ExtensionManifest,
-    identity: &ExtensionLifecycleIdentity,
-) -> UseResult<()> {
-    if extension.manifest != *manifest
-        || extension.receipt.lifecycle_generation != Some(identity.generation())
-        || extension.receipt.package_sha256.as_deref()
-            != identity.package_digest().strip_prefix("sha256:")
-        || extension.receipt.manifest_sha256
-            != identity
-                .manifest_digest()
-                .strip_prefix("sha256:")
-                .unwrap_or_default()
-    {
-        return Err(package_manager_error(
-            "use.plugin.package_generation_changed",
-            format!(
-                "Package '{}' changed generation before uninstall apply.",
-                extension.receipt.package_id
-            ),
-        ));
-    }
-    Ok(())
 }

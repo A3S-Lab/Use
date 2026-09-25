@@ -32,6 +32,42 @@ pub(super) fn prepare_application(
     }
 }
 
+/// Applied evidence for package-local native Tool/MCP launchers.
+///
+/// These surfaces never produce a Runtime binding receipt. Preparation binds
+/// only the Artifact file digest under the committed native-launcher provider.
+pub(super) fn native_prepare_application(
+    request: &ControlRuntimeEffectRequest,
+    file_digest: &str,
+) -> ControlEffectPortOutcome<ControlRuntimeApplication> {
+    let digest = match native_receipt_digest(request, file_digest) {
+        Ok(digest) => digest,
+        Err(error) => return unknown(request, "native-prepare", error),
+    };
+    match ControlRuntimeApplication::new(
+        request,
+        digest,
+        Some(super::super::super::model::ControlRuntimeBindingObservation::Task),
+    ) {
+        Ok(application) => ControlEffectPortOutcome::applied(application),
+        Err(error) => unknown(request, "native-prepare", error),
+    }
+}
+
+fn native_receipt_digest(
+    request: &ControlRuntimeEffectRequest,
+    file_digest: &str,
+) -> UseResult<String> {
+    let mut hasher = Sha256::new();
+    hasher.update(RUNTIME_RECEIPT_DOMAIN);
+    hash_field(&mut hasher, "native-launcher");
+    hash_field(&mut hasher, &request.surface.identity.idempotency_key);
+    hash_field(&mut hasher, &request.provider_id);
+    hash_field(&mut hasher, &request.selection_digest);
+    hash_field(&mut hasher, file_digest);
+    Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
 pub(super) fn checkpoint_application(
     request: &ControlRuntimeEffectRequest,
     state: &str,

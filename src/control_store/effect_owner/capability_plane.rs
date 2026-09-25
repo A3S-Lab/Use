@@ -23,6 +23,8 @@ use crate::plugin_lifecycle::PluginLifecycleAction;
 
 mod descriptor;
 mod descriptor_snapshot;
+#[cfg(feature = "mcp")]
+mod endpoint_router;
 mod index;
 #[cfg(feature = "mcp")]
 mod invocation;
@@ -63,10 +65,17 @@ pub(in crate::control_store) use descriptor_snapshot::{
     CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_RETENTION_RESULT_SCHEMA,
     MAX_CONTROL_CAPABILITY_DESCRIPTOR_SNAPSHOT_BYTES,
 };
+#[cfg(feature = "mcp")]
+pub(in crate::control_store) use endpoint_router::{
+    ControlGatewayEndpointRouteTable, LiveControlCapabilityGatewayEndpointRouter,
+    RecordingControlRuntimeServiceReadiness,
+};
 use index::ControlCapabilityIndexStore;
 #[cfg(feature = "mcp")]
 pub(in crate::control_store) use invocation::{
-    ControlCapabilityGatewayInvocationFactory, ControlCapabilityGatewayInvocationResolver,
+    ControlCapabilityGatewayEndpointRouter, ControlCapabilityGatewayInvocationFactory,
+    ControlCapabilityGatewayInvocationResolver, FailClosedCapabilityGatewayEndpointRouter,
+    ProductionControlInvocationFactory,
 };
 use lease::{ControlGenerationFileLease, ControlGenerationLeaseStore};
 use model::ControlCapabilityIndexDocument;

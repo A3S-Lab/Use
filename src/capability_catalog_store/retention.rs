@@ -424,7 +424,7 @@ impl CapabilityGatewayCatalogStore {
                 ));
             }
             let parent = target.parent().ok_or_else(path_invalid)?;
-            if let Err(error) = super::sync_directory(parent).await {
+            if let Err(error) = super::mutation::sync_directory(parent).await {
                 let mut removed = journal.removed_entries();
                 removed.push(entry.clone());
                 return Err(retention_outcome_unknown(

@@ -1,6 +1,6 @@
 # Control Store Coordinated Cutover
 
-- Status: inventory frozen; implementation and production activation pending
+- Status: activated; production authority is Control Store (clean-state-only)
 - Machine-checked inventory: [`control-store-cutover.acl`](control-store-cutover.acl)
 - Transaction decision: [ADR-003](adr-003-control-store-transaction-boundary.md)
 - Roadmap: [A2](../ROADMAP.md#a2---consolidate-mutable-authority-in-a-control-store)
@@ -34,7 +34,7 @@ leaf into exactly one of four ownership classes:
 
 The ACL file is the single inventory source. Its unit test verifies the schema,
 the exact current state-layout leaf set, disjoint ownership, referenced source
-files, inactive status, clean-state-only preview policy, and the prohibitions
+files, activated Control production authority, clean-state-only preview policy, and the prohibitions
 on dual writes and fallback reads. This document explains the policy and does
 not duplicate the file-by-file matrix.
 
@@ -373,18 +373,23 @@ work is routing the live lifecycle through this seam and composing the resolver
 with the production dispatcher. The entry point remains private and inactive
 until the complete lifecycle cutover and legacy-authority deletion gates pass.
 
-Production activation is blocked until all gates below are true:
+Production activation of Control as sole mutable authority is complete for the
+clean-state-only cutover (`control_store_activation = "active"`). Remaining
+enterprise GA gates below still require evidence:
 
 | Gate | Required evidence |
 | --- | --- |
 | Aggregate completeness | Online commit and offline export verification derive the same graph, Grants, bindings, capability, and effects without caller-selected fields. |
-| Single authority | Static inventory and integration tests find no production reader, writer, fallback, or repair path for a legacy authority. |
+| Single authority | Static inventory and integration tests find no production reader, writer, fallback, or repair path for a legacy authority. Legacy selection fails closed; lifecycle writers route through Control only. Progress: legacy file-store constructors for Knowledge/Runtime/Flow bindings, lifecycle journal, Knowledge recovery Grants, `InstallationSnapshotStore`, and `PendingPackageGraphStore` are `#[cfg(test)]` only; production API exposes `for_control_authority`. |
 | External ownership | Every retained payload family is registered, bounded, digest-bound, and unable to select desired state. |
 | Atomic visibility | Every observable combination corresponds to one committed Control generation plus explicit external-effect observations. |
 | Recovery | Restart reuses exact operation and effect identities without network access, reauthorization, or generation inflation where replay should be local. |
 | Backup and restore | Store-owned snapshot/export and registered owner snapshots round-trip offline; the legacy inventory now validates immutable Capability Gateway catalog/snapshot payloads as `CapabilityPayloads`, while WAL, SHM, locks, leases, staging, and active journals are excluded. Production owner-native clean-target activation and retention remain gates. |
 | Portability | Linux, macOS, and Windows process-exit matrices pass from product entry points. |
 
-Freezing this inventory is a prerequisite, not completion of an A2 roadmap
-item. The checked-in kernel remains private and inactive until the coordinated
-cutover and legacy deletion gates pass.
+Freezing this inventory was a prerequisite for A2 activation. Production
+authority is now Control Store (`production_authority = "control-store"`,
+`control_store_activation = "active"`). Legacy mutable leaves fail closed at
+installation open; wipe and reinstall under clean-state-only. Remaining GA
+work is the failure matrix, A3/Registry/ops gates, and deleting unused legacy
+store types that no longer sit on the production write path.

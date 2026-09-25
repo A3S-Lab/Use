@@ -64,6 +64,35 @@ fn manager_mcp_entrypoint_requires_an_explicit_scope_and_rejects_cli_json() {
     .unwrap();
 }
 
+#[cfg(all(feature = "extensions", feature = "mcp"))]
+#[test]
+fn gateway_mcp_entrypoint_accepts_registry_name_for_signed_trust() {
+    validate_gateway_mcp_args(&[
+        "serve".to_owned(),
+        "gateway".to_owned(),
+        "--scope-kind".to_owned(),
+        "user".to_owned(),
+        "--scope-id".to_owned(),
+        "user/current".to_owned(),
+        "--registry-name".to_owned(),
+        "official".to_owned(),
+    ])
+    .unwrap();
+
+    let missing_value = validate_gateway_mcp_args(&[
+        "serve".to_owned(),
+        "gateway".to_owned(),
+        "--scope-kind".to_owned(),
+        "user".to_owned(),
+        "--scope-id".to_owned(),
+        "user/current".to_owned(),
+        "--registry-name".to_owned(),
+    ])
+    .unwrap_err();
+    assert_eq!(missing_value.code, "use.cli.invalid_usage");
+    assert!(missing_value.message.contains("--registry-name"));
+}
+
 #[tokio::test]
 async fn capabilities_include_only_the_builtin_domains() {
     let output = run(vec![

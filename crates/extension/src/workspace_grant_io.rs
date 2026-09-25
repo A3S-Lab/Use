@@ -13,6 +13,8 @@ use super::state_maintenance::{StateMaintenanceGuard, StateMaintenanceLock};
 use super::workspace_grant::{record_error, store_error, StoredWorkspaceGrant};
 
 const MAX_WORKSPACE_GRANT_RECORD_BYTES: u64 = 1024 * 1024;
+/// Must stay aligned with a3s-use Control Store database file name.
+const CONTROL_STORE_DATABASE_FILE: &str = "control.sqlite3";
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
@@ -28,6 +30,7 @@ impl Drop for WorkspaceGrantLock {
 }
 
 pub(super) async fn acquire_lock(state_root: &Path, root: &Path) -> UseResult<WorkspaceGrantLock> {
+    reject_file_grants_beside_control(state_root)?;
     let maintenance = StateMaintenanceLock::new(state_root)
         .acquire_shared()
         .await?;
@@ -312,6 +315,19 @@ pub(super) fn unique_suffix() -> String {
         .map_or(0, |duration| duration.as_nanos());
     let sequence = TEMPORARY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     format!("{}-{timestamp}-{sequence}", std::process::id())
+}
+
+/// File-store Grants must not open beside Control Store (creates `grants/` and
+/// fail-closes Control open via `reject_legacy_authority_paths`).
+fn reject_file_grants_beside_control(state_root: &Path) -> UseResult<()> {
+    let control = state_root.join(CONTROL_STORE_DATABASE_FILE);
+    if control.is_file() {
+        return Err(store_error(
+            "use.plugin.grant_store.control_authority_required",
+            "File-store Grants cannot open beside Control Store; use Control-owned Grant APIs.",
+        ));
+    }
+    Ok(())
 }
 
 fn invalid_path() -> a3s_use_core::UseError {

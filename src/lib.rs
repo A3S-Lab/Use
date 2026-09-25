@@ -16,6 +16,21 @@ pub(crate) fn test_extension_paths(root: &std::path::Path) -> a3s_use_extension:
     .expect("the fixed test installation paths must be valid")
 }
 
+#[cfg(all(test, feature = "extensions"))]
+pub(crate) async fn test_extension_paths_with_control(
+    root: &std::path::Path,
+) -> a3s_use_extension::ExtensionPaths {
+    let paths = test_extension_paths(root);
+    crate::cognitive_package::open_control_lifecycle(
+        &paths,
+        std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+        None,
+    )
+    .await
+    .expect("test Control Store must initialize on a clean fixture root");
+    paths
+}
+
 #[cfg(feature = "extensions")]
 pub mod artifact_reachability;
 #[cfg(feature = "browser")]
@@ -33,7 +48,7 @@ pub mod cognitive_package;
 mod component_route;
 #[cfg(feature = "extensions")]
 #[cfg_attr(not(test), allow(dead_code))]
-mod control_store;
+pub(crate) mod control_store;
 mod extension_cli;
 mod first_use;
 #[cfg(feature = "extensions")]

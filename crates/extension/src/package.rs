@@ -5,10 +5,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{UseError, UseResult};
 use fs2::FileExt;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use super::digest::PackageFingerprint;
 use super::registry::{ExtensionReceipt, MAX_EXTENSION_RECEIPT_BYTES};
 use super::state_maintenance::{StateMaintenanceGuard, StateMaintenanceLock};
 use super::{ArtifactReferenceAdmission, ArtifactStore, ExtensionManifest, ExtensionPaths};
@@ -107,6 +109,42 @@ pub(crate) async fn validate_surface_files(
     super::surface_files::validate_named_surface_files(manifest, &canonical_root, package_root)
         .await?;
     Ok(())
+}
+
+/// Author-facing lint over one package directory.
+///
+/// Parses the ACL manifest, requires README plus every declared surface file,
+/// and returns the same expanded-content fingerprint Registry assembly uses.
+/// This is the `a3s-use`-versioned package-authoring check; Registry tools only
+/// wrap it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageLintReport {
+    pub package_id: String,
+    pub version: String,
+    pub schema_version: u32,
+    pub manifest_sha256: String,
+    pub fingerprint: PackageFingerprint,
+    pub surface_kinds: Vec<String>,
+}
+
+/// Lint one cognitive-package directory for Registry admission readiness.
+pub async fn lint_package_directory(package_root: &Path) -> UseResult<PackageLintReport> {
+    let (manifest, manifest_bytes) = read_manifest(package_root).await?;
+    validate_surface_files(&manifest, package_root).await?;
+    let fingerprint = super::package_fingerprint(package_root).await?;
+    Ok(PackageLintReport {
+        package_id: manifest.package_id.clone(),
+        version: manifest.version.clone(),
+        schema_version: manifest.schema_version,
+        manifest_sha256: format!("sha256:{}", sha256(&manifest_bytes)),
+        fingerprint,
+        surface_kinds: manifest
+            .surface_kinds()
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    })
 }
 
 pub(super) async fn validate_text_asset(

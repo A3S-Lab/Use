@@ -33,6 +33,7 @@ async fn reviewed_grants_are_derived_across_both_scope_lifecycles() {
                 prior.as_ref(),
                 None,
                 None,
+                None,
             );
             store.register_operation(reviewed.clone()).await.unwrap();
             let transition = prior.as_ref().map_or_else(
@@ -98,6 +99,7 @@ fn installing_another_root_retains_unrelated_active_grants_exactly() {
         Some(&first_generation),
         None,
         Some(permissioned_package_lock_named("acme/analytics", '8')),
+        None,
     );
     let second_projection = second
         .project_generation(

@@ -12,7 +12,9 @@ mod store;
 pub use adapter::{
     OkfKnowledgeAdapter, OkfKnowledgeClient, OkfKnowledgeStageRequest, OkfKnowledgeStageSpec,
 };
-pub use lease::{OkfKnowledgeLease, OkfKnowledgeLeaseProvider};
+pub use lease::{
+    acquire_control_knowledge_generation_leases, OkfKnowledgeLease, OkfKnowledgeLeaseProvider,
+};
 pub use model::{OkfKnowledgeBinding, OKF_KNOWLEDGE_BINDING_SCHEMA};
 pub use query::{
     OkfKnowledgeCitation, OkfKnowledgeSearchHit, OkfKnowledgeSearchRequest,

@@ -15,10 +15,11 @@ use serde_json::Value;
 
 use super::{
     CapabilityGatewayExternalLease, CapabilityGatewayInvocationFailure,
-    CapabilityGatewayInvocationProvider, CapabilityGatewayRequestContext, CapabilitySnapshotCursor,
-    CapabilitySnapshotLease,
+    CapabilityGatewayInvocationProvider, CapabilityGatewayRequestContext,
 };
-use crate::capability_registry::CapabilityRegistry;
+use crate::capability_registry::{
+    CapabilityRegistry, CapabilitySnapshotCursor, CapabilitySnapshotLease,
+};
 
 /// A private, generation-fenced invocation handle.
 ///
@@ -140,7 +141,7 @@ impl CapabilityGatewayInvocationLease {
 
     /// Return the exact snapshot cursor held by this invocation, when the
     /// host supplied the standard Use lease in [`Self::with_snapshot_lease`].
-    pub fn snapshot_cursor(&self) -> Option<&super::CapabilitySnapshotCursor> {
+    pub fn snapshot_cursor(&self) -> Option<&CapabilitySnapshotCursor> {
         self.snapshot_lease
             .as_deref()
             .map(CapabilitySnapshotLease::cursor)

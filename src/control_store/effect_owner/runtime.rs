@@ -27,8 +27,8 @@ mod evidence;
 mod validation;
 
 use evidence::{
-    authority_error, before_effect_failure, checkpoint_application, prepare_application, rejected,
-    runtime_error, runtime_request_id, service_endpoint, unknown,
+    authority_error, before_effect_failure, checkpoint_application, native_prepare_application,
+    prepare_application, rejected, runtime_error, runtime_request_id, service_endpoint, unknown,
 };
 use validation::{
     validate_mcp_payload, validate_plan_identity, validate_receipt, validate_tool_payload,
@@ -40,14 +40,16 @@ const RUNTIME_AUTHORITY_ERROR: &str = "use.control_store.runtime_authority_inval
 const RUNTIME_OWNER_ERROR: &str = "use.control_store.runtime_owner_failed";
 const RUNTIME_PLAN_ERROR: &str = "use.control_store.runtime_plan_invalid";
 const RUNTIME_PENDING_ERROR: &str = "use.control_store.runtime_pending_recovery";
+/// Built-in package-local Tool/MCP launcher; not a release-backed Runtime provider.
+const NATIVE_RUNTIME_PROVIDER_ID: &str = "a3s-use-native-launcher";
 
 /// Readiness result returned by the typed Gateway adapter for a Streamable
 /// HTTP MCP service. The endpoint is opaque and the initialize evidence is
 /// retained only in the Runtime service receipt.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::control_store) struct ControlRuntimeMcpReadiness {
-    pub(in crate::control_store) endpoint: RuntimeEndpointRef,
-    pub(in crate::control_store) initialize: RuntimeMcpInitializeEvidence,
+pub struct ControlRuntimeMcpReadiness {
+    pub endpoint: RuntimeEndpointRef,
+    pub initialize: RuntimeMcpInitializeEvidence,
 }
 
 /// Narrow Gateway boundary used by the inactive Control Runtime owner.
@@ -57,11 +59,16 @@ pub(in crate::control_store) struct ControlRuntimeMcpReadiness {
 /// surface, reviewed Runtime plan, and provider observation. A production
 /// host can adapt its Gateway client to this trait during the coordinated
 /// Control cutover.
+/// Host-owned Runtime Service readiness boundary for production Control.
+///
+/// Embedding hosts (A3S Code, managed Gateway) implement this trait and inject
+/// it through
+/// [`crate::cognitive_package::ManagedCognitivePackageLifecycleFactory::with_control_runtime_readiness`].
+/// Without an injection, Control mints opaque `gateway:` endpoint identities
+/// that cannot route live traffic.
 #[allow(clippy::too_many_arguments)]
 #[async_trait]
-pub(in crate::control_store) trait ControlRuntimeServiceReadinessPort:
-    Send + Sync
-{
+pub trait ControlRuntimeServiceReadinessPort: Send + Sync {
     async fn bind_tool_service(
         &self,
         surface: &ToolSurface,
@@ -166,6 +173,9 @@ impl ControlRuntimeEffectPort {
         &self,
         request: &ControlRuntimeEffectRequest,
     ) -> ControlEffectPortOutcome<ControlRuntimeApplication> {
+        if request.provider_id == NATIVE_RUNTIME_PROVIDER_ID {
+            return self.apply_native(request).await;
+        }
         let selected = match self.validate_request(request).await {
             Ok(selected) => selected,
             Err(error) if error.code == "use.plugin.runtime.plan_source_unavailable" => {
@@ -181,6 +191,146 @@ impl ControlRuntimeEffectPort {
             ControlSurfaceEffectAction::Stop => self.stop(request, selected).await,
             ControlSurfaceEffectAction::Remove => self.remove(request, selected).await,
         }
+    }
+
+    /// Package-local native Tool Tasks and stdio MCP launchers are owned by
+    /// Artifact inspect evidence under the built-in native launcher provider.
+    /// They never resolve a Runtime surface plan or call Gateway readiness.
+    async fn apply_native(
+        &self,
+        request: &ControlRuntimeEffectRequest,
+    ) -> ControlEffectPortOutcome<ControlRuntimeApplication> {
+        if let Err(error) = self.validate_native_request(request) {
+            return rejected(request, error.code);
+        }
+        match request.surface.action {
+            ControlSurfaceEffectAction::Prepare => self.prepare_native(request).await,
+            ControlSurfaceEffectAction::Stop => {
+                checkpoint_application(request, "native-stopped", None)
+            }
+            ControlSurfaceEffectAction::Remove => {
+                checkpoint_application(request, "native-removed", None)
+            }
+        }
+    }
+
+    fn validate_native_request(&self, request: &ControlRuntimeEffectRequest) -> UseResult<()> {
+        let kind = request.surface.surface.kind;
+        if !matches!(kind, PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp) {
+            return Err(runtime_error(
+                RUNTIME_AUTHORITY_ERROR,
+                "Native launcher effects can target only Tool or MCP surfaces.",
+            ));
+        }
+        if request.surface.authority != request.authority.package {
+            return Err(runtime_error(
+                RUNTIME_AUTHORITY_ERROR,
+                "The Runtime request carries inconsistent committed package authority.",
+            ));
+        }
+        self.bindings
+            .installation()
+            .ensure_same(&request.surface.identity.installation)
+            .map_err(|error| {
+                runtime_error(
+                    RUNTIME_AUTHORITY_ERROR,
+                    format!("Native launcher installation mismatch: {error}"),
+                )
+            })?;
+        request
+            .surface
+            .validate_for_owner(
+                kind,
+                ControlEffectOwner::RuntimeProvider {
+                    provider_id: request.provider_id.clone(),
+                    selection_digest: request.selection_digest.clone(),
+                },
+            )
+            .map_err(|error| {
+                runtime_error(
+                    RUNTIME_AUTHORITY_ERROR,
+                    format!("Native launcher owner validation failed: {}", error.message),
+                )
+            })?;
+        request
+            .authority
+            .provider_selection
+            .validate()
+            .map_err(|error| {
+                runtime_error(
+                    RUNTIME_AUTHORITY_ERROR,
+                    format!(
+                        "Native launcher provider selection invalid: {}",
+                        error.message
+                    ),
+                )
+            })?;
+        let committed = &request.authority.provider_selection;
+        if committed.evidence.provider_id != NATIVE_RUNTIME_PROVIDER_ID {
+            return Err(runtime_error(
+                RUNTIME_AUTHORITY_ERROR,
+                format!(
+                    "Native launcher provider_id mismatch: committed={}",
+                    committed.evidence.provider_id
+                ),
+            ));
+        }
+        if committed.evidence.provider_id != request.provider_id
+            || committed.selection_digest != request.selection_digest
+            || committed.qualified_surface().package_id != request.surface.package_id
+            || committed.qualified_surface().surface != request.surface.surface
+        {
+            return Err(runtime_error(
+                RUNTIME_AUTHORITY_ERROR,
+                "Native launcher committed provider selection does not match the effect request.",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn prepare_native(
+        &self,
+        request: &ControlRuntimeEffectRequest,
+    ) -> ControlEffectPortOutcome<ControlRuntimeApplication> {
+        let package = match self
+            .artifact_store
+            .acquire_verified_package(&request.authority.package.package.package.catalog)
+            .await
+        {
+            Ok(package) => package,
+            Err(error) => return before_effect_failure(request, "artifact-read", error),
+        };
+        let file_digest = match request.surface.surface.kind {
+            PluginSurfaceKind::Tool => {
+                match package
+                    .inspect_native_tool_surface(&request.surface.surface.id)
+                    .await
+                {
+                    Ok((_surface, evidence)) => evidence.digest().to_string(),
+                    Err(error) => {
+                        return before_effect_failure(request, "native-tool-inspect", error)
+                    }
+                }
+            }
+            PluginSurfaceKind::Mcp => {
+                match package
+                    .inspect_native_mcp_surface(&request.surface.surface.id)
+                    .await
+                {
+                    Ok((_surface, evidence)) => evidence.digest().to_string(),
+                    Err(error) => {
+                        return before_effect_failure(request, "native-mcp-inspect", error)
+                    }
+                }
+            }
+            PluginSurfaceKind::Flow
+            | PluginSurfaceKind::Okf
+            | PluginSurfaceKind::Skill
+            | PluginSurfaceKind::Ui => {
+                return rejected(request, RUNTIME_AUTHORITY_ERROR);
+            }
+        };
+        native_prepare_application(request, &file_digest)
     }
 
     async fn validate_request(

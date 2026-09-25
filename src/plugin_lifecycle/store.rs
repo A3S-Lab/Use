@@ -64,12 +64,27 @@ impl PluginLifecycleJournalStore {
         }
     }
 
+    /// Legacy `operations/plugins` journal root for pre-Control fixtures only.
+    #[cfg(test)]
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
         Self::from_parts(
             paths.installation_state_root(),
             paths.installation().clone(),
             paths.artifact_store(),
         )
+    }
+
+    /// Control-authority journal root. The legacy `operations/plugins` leaf is
+    /// reserved for pre-cutover installs and must stay absent beside
+    /// `control.sqlite3`.
+    pub fn for_control_authority(paths: &ExtensionPaths) -> Self {
+        let state_root = paths.installation_state_root();
+        Self {
+            installation: paths.installation().clone(),
+            artifact_store: paths.artifact_store(),
+            root: state_root.join("payloads").join("lifecycle-journal"),
+            state_root,
+        }
     }
 
     pub fn installation(&self) -> &InstallationId {

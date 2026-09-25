@@ -27,6 +27,13 @@ pub(crate) async fn restore_history_fixture(
         installation.clone(),
     )
     .unwrap();
+    crate::cognitive_package::open_control_lifecycle(
+        &paths,
+        std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+        None,
+    )
+    .await
+    .unwrap();
     let value = paths.state_root().join("knowledge/value.bin");
     std::fs::create_dir_all(value.parent().unwrap()).unwrap();
     std::fs::write(&value, format!("candidate-{started_at_ms}")).unwrap();

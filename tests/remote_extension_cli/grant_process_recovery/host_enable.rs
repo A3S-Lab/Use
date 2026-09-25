@@ -4,6 +4,7 @@ use super::*;
 use a3s_use_core::{PluginDesiredState, PluginHostManager, PluginOperationAction};
 
 #[test]
+#[ignore = "obsolete under Control sole authority; replaced by control_host_grant_recovery"]
 fn killed_host_protocol_enable_apply_replays_publication_and_grant_cutover() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();

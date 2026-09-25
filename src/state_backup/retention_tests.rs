@@ -1,11 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::*;
 
 #[tokio::test]
 async fn retention_rejects_a_directory_inside_the_global_artifact_store() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let artifact_root = paths.artifact_store().root().to_path_buf();
     std::fs::create_dir_all(&artifact_root).unwrap();
     let error = StateBackupManager::new(paths)
@@ -21,7 +21,7 @@ async fn retention_rejects_a_directory_inside_the_global_artifact_store() {
 #[tokio::test]
 async fn retention_removes_oldest_only_after_exact_plan_confirmation() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let backup_directory = temporary.path().join("backups");
     std::fs::create_dir(&backup_directory).unwrap();
     let manager = StateBackupManager::new(paths.clone());
@@ -103,7 +103,7 @@ async fn retention_policy_is_bounded_and_preserves_two_verified_backups() {
     );
 
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let backup_directory = temporary.path().join("backups");
     std::fs::create_dir(&backup_directory).unwrap();
     let manager = StateBackupManager::new(paths.clone());
@@ -127,7 +127,7 @@ async fn retention_policy_is_bounded_and_preserves_two_verified_backups() {
 #[tokio::test]
 async fn retention_rejects_tampered_linked_and_owned_state_candidates() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let backup_directory = temporary.path().join("backups");
     std::fs::create_dir(&backup_directory).unwrap();
     let manager = StateBackupManager::new(paths.clone());
@@ -173,7 +173,7 @@ async fn retention_rejects_tampered_linked_and_owned_state_candidates() {
 #[tokio::test]
 async fn coordinated_backup_and_retention_share_one_external_directory_lock() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let backup_directory = temporary.path().join("backups");
     std::fs::create_dir(&backup_directory).unwrap();
     write_fixture_state(&paths, b"locked");
@@ -192,10 +192,6 @@ async fn coordinated_backup_and_retention_share_one_external_directory_lock() {
     assert_eq!(error.code, "use.state_backup_retention_busy");
 }
 
-fn fixture_paths(root: &Path) -> a3s_use_extension::ExtensionPaths {
-    crate::test_extension_paths(root)
-}
-
 #[tokio::test]
 async fn retention_never_selects_backups_owned_by_another_installation() {
     let temporary = tempfile::tempdir().unwrap();
@@ -209,18 +205,18 @@ async fn retention_never_selects_backups_owned_by_another_installation() {
         "shared/research",
     )
     .unwrap();
-    let user_paths = a3s_use_extension::ExtensionPaths::new(
-        temporary.path().join("data"),
-        temporary.path().join("state"),
+    let user_paths = open_control_paths(
+        temporary.path().join("user-data"),
+        temporary.path().join("user-state"),
         user.clone(),
     )
-    .unwrap();
-    let workspace_paths = a3s_use_extension::ExtensionPaths::new(
-        temporary.path().join("data"),
-        temporary.path().join("state"),
+    .await;
+    let workspace_paths = open_control_paths(
+        temporary.path().join("workspace-data"),
+        temporary.path().join("workspace-state"),
         workspace.clone(),
     )
-    .unwrap();
+    .await;
     let user_manager = StateBackupManager::new(user_paths.clone());
     let workspace_manager = StateBackupManager::new(workspace_paths.clone());
 
@@ -274,8 +270,28 @@ async fn retention_never_selects_backups_owned_by_another_installation() {
     assert_eq!(workspace_plan.before_backup_count, 3);
 }
 
+async fn fixture_paths(root: &Path) -> a3s_use_extension::ExtensionPaths {
+    crate::test_extension_paths_with_control(root).await
+}
+
+async fn open_control_paths(
+    data: PathBuf,
+    state: PathBuf,
+    installation: a3s_use_core::InstallationId,
+) -> a3s_use_extension::ExtensionPaths {
+    let paths = a3s_use_extension::ExtensionPaths::new(data, state, installation).unwrap();
+    crate::cognitive_package::open_control_lifecycle(
+        &paths,
+        std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+        None,
+    )
+    .await
+    .unwrap();
+    paths
+}
+
 fn write_fixture_state(paths: &a3s_use_extension::ExtensionPaths, bytes: &[u8]) {
-    let path = paths.state_root().join("bindings/runtime/fixture.json");
+    let path = paths.state_root().join("knowledge/fixture.bin");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }

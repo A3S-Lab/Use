@@ -7,8 +7,10 @@ use a3s_use_core::{
 };
 use a3s_use_extension::{
     ExtensionGenerationLease, ExtensionLifecycleIdentity, ExtensionPaths, ExtensionRegistry,
-    InstalledExtension, StoredWorkspaceGrant, WorkspaceGrantStore,
+    InstalledExtension, StateMaintenanceGuard, StateMaintenanceLock, StoredWorkspaceGrant,
 };
+#[cfg(test)]
+use a3s_use_extension::WorkspaceGrantStore;
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -17,10 +19,12 @@ use super::{
     OkfKnowledgeBackupManifest, OkfKnowledgeBinding, OkfKnowledgeBindingStore,
     SqliteOkfKnowledgeAdapter,
 };
+use crate::control_store::{
+    control_database_present, ProductionControlHostDependencies, ProductionControlLifecycle,
+};
 use crate::plugin_lifecycle::{
     PluginLifecycleJournalStore, PluginLifecycleOperationRecord, PluginLifecycleOperationStatus,
 };
-use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
 
 mod diagnostic;
 mod filesystem;
@@ -156,26 +160,85 @@ impl OkfKnowledgeRestorePlan {
 }
 
 #[derive(Debug, Clone)]
+enum KnowledgeGrantAuthority {
+    /// Pre-cutover file-store Grants under `grants/` (test fixtures only).
+    #[cfg(test)]
+    File(WorkspaceGrantStore),
+    /// Control-committed Grants (legacy `grants/` must stay absent).
+    Control(ExtensionPaths),
+}
+
+#[derive(Debug, Clone)]
 pub struct OkfKnowledgeRecoveryManager {
     adapter: SqliteOkfKnowledgeAdapter,
     registry: ExtensionRegistry,
     bindings: OkfKnowledgeBindingStore,
     lifecycle: PluginLifecycleJournalStore,
-    grants: WorkspaceGrantStore,
+    grants: KnowledgeGrantAuthority,
     maintenance: StateMaintenanceLock,
     operations: RestoreOperationStore,
 }
 
 impl OkfKnowledgeRecoveryManager {
+    /// Legacy file-store restore path for pre-Control fixtures. Production CLI
+    /// and hosts must use [`Self::for_control_authority`].
+    #[cfg(test)]
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
         Self {
             adapter: SqliteOkfKnowledgeAdapter::from_extension_paths(paths),
             registry: ExtensionRegistry::new(paths.clone()),
             bindings: OkfKnowledgeBindingStore::from_extension_paths(paths),
             lifecycle: PluginLifecycleJournalStore::from_extension_paths(paths),
-            grants: WorkspaceGrantStore::from_extension_paths(paths),
+            grants: KnowledgeGrantAuthority::File(WorkspaceGrantStore::from_extension_paths(paths)),
             maintenance: StateMaintenanceLock::new(paths.state_root()),
             operations: RestoreOperationStore::new(paths.installation_state_root()),
+        }
+    }
+
+    /// Control-authority restore path. Binding and lifecycle roots use
+    /// `payloads/*`; Grants are observed from the committed Control generation.
+    pub fn for_control_authority(paths: &ExtensionPaths) -> Self {
+        Self {
+            adapter: SqliteOkfKnowledgeAdapter::from_extension_paths(paths),
+            registry: ExtensionRegistry::new(paths.clone()),
+            bindings: OkfKnowledgeBindingStore::for_control_authority(paths),
+            lifecycle: PluginLifecycleJournalStore::for_control_authority(paths),
+            grants: KnowledgeGrantAuthority::Control(paths.clone()),
+            maintenance: StateMaintenanceLock::new(paths.state_root()),
+            operations: RestoreOperationStore::new(paths.installation_state_root()),
+        }
+    }
+
+    async fn observe_grant(
+        &self,
+        scope_id: &str,
+        package_id: &str,
+        package_digest: &str,
+    ) -> UseResult<Option<StoredWorkspaceGrant>> {
+        match &self.grants {
+            #[cfg(test)]
+            KnowledgeGrantAuthority::File(store) => {
+                store.observe(scope_id, package_id, package_digest).await
+            }
+            KnowledgeGrantAuthority::Control(paths) => {
+                if !control_database_present(&paths.installation_state_root()) {
+                    return Err(restore_error(
+                        "use.okf.knowledge_restore_authority_missing",
+                        "Control-authority Knowledge restore requires a Control Store database.",
+                    ));
+                }
+                let lifecycle = ProductionControlLifecycle::from_extension_paths(
+                    paths,
+                    ProductionControlHostDependencies::standalone(
+                        paths,
+                        std::sync::Arc::new(a3s_runtime::RuntimeClientRegistry::new()),
+                        None,
+                    )?,
+                )?;
+                lifecycle
+                    .observe_stored_workspace_grant(scope_id, package_id, package_digest)
+                    .await
+            }
         }
     }
 
@@ -607,6 +670,43 @@ impl OkfKnowledgeRecoveryManager {
         }
         validate_inventory_selections(bindings, selected_inventory)?;
 
+        match &self.grants {
+            #[cfg(test)]
+            KnowledgeGrantAuthority::File(_) => {
+                self.validate_authority_inventory_published(
+                    scope,
+                    bindings,
+                    selected_inventory,
+                    binding_state_digest,
+                    missing_bindings,
+                    selected,
+                )
+                .await
+            }
+            KnowledgeGrantAuthority::Control(_) => {
+                self.validate_authority_inventory_control(
+                    scope,
+                    bindings,
+                    selected_inventory,
+                    binding_state_digest,
+                    missing_bindings,
+                    selected,
+                )
+                .await
+            }
+        }
+    }
+
+    #[cfg(test)]
+    async fn validate_authority_inventory_published(
+        &self,
+        scope: &PlanScope,
+        bindings: &[OkfKnowledgeBinding],
+        selected_inventory: &[(PlanQualifiedSurfaceRef, u64)],
+        binding_state_digest: String,
+        missing_bindings: usize,
+        selected: BTreeSet<(PlanQualifiedSurfaceRef, u64)>,
+    ) -> UseResult<AuthorityResult> {
         let snapshot_before = self.registry.snapshot().await?;
         if !snapshot_before.pending_cutovers.is_empty() {
             return Err(restore_error(
@@ -672,6 +772,170 @@ impl OkfKnowledgeRecoveryManager {
             entry.selected |= selected_projection;
         }
 
+        self.finish_authority_inventory(
+            scope,
+            bindings,
+            selected_inventory,
+            binding_state_digest,
+            missing_bindings,
+            selected.len(),
+            packages,
+            generation_leases,
+            snapshot_before.generation,
+            || async {
+                let snapshot_after = self.registry.snapshot().await?;
+                if snapshot_after != snapshot_before {
+                    return Err(restore_error(
+                        "use.okf.knowledge_restore_authority_changed",
+                        "Registry authority changed while the Knowledge restore plan was being validated.",
+                    ));
+                }
+                Ok(())
+            },
+        )
+        .await
+    }
+
+    async fn validate_authority_inventory_control(
+        &self,
+        scope: &PlanScope,
+        bindings: &[OkfKnowledgeBinding],
+        selected_inventory: &[(PlanQualifiedSurfaceRef, u64)],
+        binding_state_digest: String,
+        missing_bindings: usize,
+        selected: BTreeSet<(PlanQualifiedSurfaceRef, u64)>,
+    ) -> UseResult<AuthorityResult> {
+        let paths = self.registry.paths();
+        let installation_before = crate::control_store::read_current_installation_snapshot(
+            &paths.installation_state_root(),
+            paths.installation(),
+        )
+        .await?
+        .ok_or_else(|| {
+            restore_error(
+                "use.okf.knowledge_restore_authority_missing",
+                "Control-authority Knowledge restore requires a Control installation snapshot.",
+            )
+        })?;
+
+        let mut packages = BTreeMap::<String, PackageAuthority>::new();
+        let mut generation_leases = Vec::new();
+        for binding in bindings {
+            if binding.observation.state == OkfKnowledgeObservedState::Removed {
+                continue;
+            }
+            let receipt = &binding.receipt;
+            let identity = ExtensionLifecycleIdentity::new(
+                &receipt.surface.package_id,
+                &receipt.package_digest,
+                &receipt.manifest_digest,
+                receipt.generation,
+            )?;
+            let selected_projection =
+                selected.contains(&(receipt.surface.clone(), receipt.generation));
+            let selection =
+                super::lease::selection_for_identity(&installation_before, &identity).ok_or_else(
+                    || {
+                        restore_error(
+                            "use.okf.knowledge_restore_registry_mismatch",
+                            "A Knowledge projection is not backed by its exact Control-selected package generation.",
+                        )
+                    },
+                )?;
+            let installed = if selected_projection {
+                if !selection.enabled {
+                    return Err(restore_error(
+                        "use.okf.knowledge_restore_registry_mismatch",
+                        "A selected Knowledge projection is disabled in the Control installation snapshot.",
+                    ));
+                }
+                let lease = self
+                    .registry
+                    .acquire_control_lifecycle_generation(selection, &identity)
+                    .await?
+                    .ok_or_else(|| {
+                        restore_error(
+                            "use.okf.knowledge_restore_registry_mismatch",
+                            "A selected Knowledge projection could not be leased from Control.",
+                        )
+                    })?;
+                validate_installed_binding(lease.extension(), binding)?;
+                let installed = lease.extension().clone();
+                generation_leases.push(lease);
+                installed
+            } else {
+                let installed = self
+                    .registry
+                    .load_control_package_selection(selection)
+                    .await
+                    .map_err(|_| {
+                        restore_error(
+                            "use.okf.knowledge_restore_registry_mismatch",
+                            "A retained Knowledge projection has no exact Control package generation.",
+                        )
+                    })?;
+                validate_installed_binding(&installed, binding)?;
+                installed
+            };
+            let key = format!(
+                "{}\n{}\n{}",
+                receipt.surface.package_id, receipt.generation, receipt.package_digest
+            );
+            let entry = packages.entry(key).or_insert_with(|| PackageAuthority {
+                package_id: receipt.surface.package_id.clone(),
+                package_digest: receipt.package_digest.clone(),
+                installed,
+                selected: false,
+            });
+            entry.selected |= selected_projection;
+        }
+
+        let installation_generation = installation_before.generation;
+        self.finish_authority_inventory(
+            scope,
+            bindings,
+            selected_inventory,
+            binding_state_digest,
+            missing_bindings,
+            selected.len(),
+            packages,
+            generation_leases,
+            installation_generation,
+            || async {
+                let installation_after = crate::control_store::read_current_installation_snapshot(
+                    &paths.installation_state_root(),
+                    paths.installation(),
+                )
+                .await?;
+                if installation_after.as_ref() != Some(&installation_before) {
+                    return Err(restore_error(
+                        "use.okf.knowledge_restore_authority_changed",
+                        "Control installation authority changed while the Knowledge restore plan was being validated.",
+                    ));
+                }
+                Ok(())
+            },
+        )
+        .await
+    }
+
+    async fn finish_authority_inventory<F, Fut>(
+        &self,
+        scope: &PlanScope,
+        bindings: &[OkfKnowledgeBinding],
+        selected_inventory: &[(PlanQualifiedSurfaceRef, u64)],
+        binding_state_digest: String,
+        missing_bindings: usize,
+        selected_projections: usize,
+        packages: BTreeMap<String, PackageAuthority>,
+        generation_leases: Vec<ExtensionGenerationLease>,
+        registry_generation: u64,
+        confirm_stable: F,
+    ) -> UseResult<AuthorityResult>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = UseResult<()>>,
+    {
         let mut lifecycle_records = Vec::new();
         for package_id in bindings
             .iter()
@@ -714,8 +978,7 @@ impl OkfKnowledgeRecoveryManager {
                 continue;
             }
             let grant = self
-                .grants
-                .observe(scope.id.as_str(), &package.package_id, &package.package_digest)
+                .observe_grant(scope.id.as_str(), &package.package_id, &package.package_digest)
                 .await?
                 .ok_or_else(|| {
                     restore_error(
@@ -739,13 +1002,7 @@ impl OkfKnowledgeRecoveryManager {
         }
         package_receipt_digests.sort();
 
-        let snapshot_after = self.registry.snapshot().await?;
-        if snapshot_after != snapshot_before {
-            return Err(restore_error(
-                "use.okf.knowledge_restore_authority_changed",
-                "Registry authority changed while the Knowledge restore plan was being validated.",
-            ));
-        }
+        confirm_stable().await?;
 
         let evidence = AuthorityEvidence {
             scope,
@@ -754,7 +1011,7 @@ impl OkfKnowledgeRecoveryManager {
             lifecycle_records: &lifecycle_records,
             grants: &grant_records,
             package_receipt_digests: &package_receipt_digests,
-            registry_generation: snapshot_before.generation,
+            registry_generation,
         };
         let digest = format!(
             "sha256:{:x}",
@@ -766,13 +1023,13 @@ impl OkfKnowledgeRecoveryManager {
         Ok(AuthorityResult {
             digest,
             binding_state_digest,
-            registry_generation: snapshot_before.generation,
+            registry_generation,
             retained_projections: bindings.len(),
             removed_tombstones: bindings
                 .iter()
                 .filter(|binding| binding.observation.state == OkfKnowledgeObservedState::Removed)
                 .count(),
-            selected_projections: selected.len(),
+            selected_projections,
             missing_bindings,
             _generation_leases: generation_leases,
         })
@@ -810,275 +1067,7 @@ struct AuthorityResult {
     _generation_leases: Vec<ExtensionGenerationLease>,
 }
 
-fn selected_from_inventory(
-    bindings: &[OkfKnowledgeBinding],
-) -> UseResult<Vec<(PlanQualifiedSurfaceRef, u64)>> {
-    let mut selected = Vec::new();
-    for surface in bindings
-        .iter()
-        .map(|binding| binding.receipt.surface.clone())
-        .collect::<BTreeSet<_>>()
-    {
-        let records = bindings
-            .iter()
-            .filter(|binding| binding.receipt.surface == surface)
-            .cloned()
-            .collect::<Vec<_>>();
-        let snapshot = super::store::snapshot_from_records(&records)?;
-        match (snapshot.selected, snapshot.projection) {
-            (Some(binding), Some(_)) => {
-                selected.push((surface, binding.receipt.generation));
-            }
-            (None, None) => {}
-            _ => return Err(selection_mismatch()),
-        }
-    }
-    Ok(selected)
-}
-
-fn validate_authority_for_plan(
-    authority: &AuthorityResult,
-    plan: &OkfKnowledgeRestorePlan,
-) -> UseResult<()> {
-    if authority.digest != plan.authority_digest
-        || authority.registry_generation != plan.registry_generation
-        || authority.retained_projections != plan.retained_projections
-        || authority.removed_tombstones != plan.removed_tombstones
-        || authority.selected_projections != plan.selected_projections
-        || authority.missing_bindings > plan.missing_bindings
-        || authority.missing_bindings == plan.missing_bindings
-            && authority.binding_state_digest != plan.binding_state_digest
-    {
-        return Err(restore_error(
-            "use.okf.knowledge_restore_authority_changed",
-            "Knowledge package, binding, lifecycle, Registry, or Grant authority changed after restore review.",
-        ));
-    }
-    Ok(())
-}
-
-fn restore_in_progress(marker: Option<&journal::ActiveRestoreMarker>) -> UseError {
-    let mut error = restore_error(
-        "use.okf.knowledge_restore_in_progress",
-        "Another durable Knowledge restore must reach its exact terminal result before planning or applying a different restore.",
-    )
-    .with_suggestion(
-        "Resume the active restore with its reviewed plan digest; do not remove its maintenance marker or retained files.",
-    );
-    if let Some(marker) = marker {
-        error = error.with_detail("activePlanDigest", serde_json::json!(marker.plan_digest));
-    }
-    error
-}
-
-fn restore_in_progress_operation(operation: Option<&RestoreOperation>) -> UseError {
-    let mut error = restore_error(
-        "use.okf.knowledge_restore_in_progress",
-        "A nonterminal Knowledge restore must be resumed before another restore can start.",
-    )
-    .with_suggestion("Resume the existing restore with its exact reviewed plan digest.");
-    if let Some(operation) = operation {
-        error = error.with_detail("activePlanDigest", serde_json::json!(operation.plan_digest));
-    }
-    error
-}
-
-#[cfg(test)]
-const RESTORE_CRASH_CHECKPOINT_ENV: &str = "A3S_USE_TEST_OKF_RESTORE_CHECKPOINT";
-
-#[cfg(test)]
-fn maybe_test_crash(status: RestoreOperationStatus) {
-    let checkpoint = match status {
-        RestoreOperationStatus::Planned => "planned",
-        RestoreOperationStatus::Staged => "staged",
-        RestoreOperationStatus::BindingsRestored => "bindings-restored",
-        RestoreOperationStatus::PriorMoved => "prior-moved",
-        RestoreOperationStatus::Published => "published",
-        RestoreOperationStatus::Completed => "completed",
-    };
-    if std::env::var(RESTORE_CRASH_CHECKPOINT_ENV).as_deref() == Ok(checkpoint) {
-        std::process::exit(86);
-    }
-}
-
-#[cfg(test)]
-fn maybe_test_crash_binding_restore() {
-    if std::env::var(RESTORE_CRASH_CHECKPOINT_ENV).as_deref() == Ok("binding-file-restored") {
-        std::process::exit(86);
-    }
-}
-
-#[cfg(test)]
-fn maybe_test_crash_marker() {
-    if std::env::var(RESTORE_CRASH_CHECKPOINT_ENV).as_deref() == Ok("marker-active") {
-        std::process::exit(86);
-    }
-}
-
-#[cfg(not(test))]
-fn maybe_test_crash(_status: RestoreOperationStatus) {}
-
-#[cfg(not(test))]
-fn maybe_test_crash_marker() {}
-
-#[cfg(not(test))]
-fn maybe_test_crash_binding_restore() {}
-
-fn validate_inventory_selections(
-    bindings: &[OkfKnowledgeBinding],
-    selected: &[(PlanQualifiedSurfaceRef, u64)],
-) -> UseResult<()> {
-    if selected_from_inventory(bindings)? != selected {
-        return Err(selection_mismatch());
-    }
-    Ok(())
-}
-
-fn validate_current_binding_subset(
-    current: &[OkfKnowledgeBinding],
-    expected: &[OkfKnowledgeBinding],
-) -> UseResult<usize> {
-    let expected_by_key = expected
-        .iter()
-        .map(|binding| {
-            (
-                (binding.receipt.surface.clone(), binding.receipt.generation),
-                binding,
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    if expected_by_key.len() != expected.len() {
-        return Err(restore_error(
-            "use.okf.knowledge_restore_backup_invalid",
-            "The Knowledge backup contains duplicate binding identities.",
-        ));
-    }
-    let mut retained = BTreeSet::new();
-    for binding in current {
-        let key = (binding.receipt.surface.clone(), binding.receipt.generation);
-        if expected_by_key.get(&key).copied() != Some(binding) || !retained.insert(key) {
-            return Err(restore_error(
-                "use.okf.knowledge_restore_binding_conflict",
-                "The current Knowledge binding inventory contains changed or newer evidence outside the reviewed backup.",
-            )
-            .with_suggestion(
-                "Preserve the current state and restore from a coordinated backup that contains this exact binding inventory.",
-            ));
-        }
-    }
-    Ok(expected.len().saturating_sub(current.len()))
-}
-
-fn binding_state_digest(bindings: &[OkfKnowledgeBinding]) -> UseResult<String> {
-    Ok(format!(
-        "sha256:{:x}",
-        Sha256::digest(canonical_json(
-            bindings,
-            "encode the current Knowledge binding inventory"
-        )?)
-    ))
-}
-
-fn validate_installed_binding(
-    installed: &InstalledExtension,
-    binding: &OkfKnowledgeBinding,
-) -> UseResult<()> {
-    let receipt = &binding.receipt;
-    if installed.receipt.package_id != receipt.surface.package_id
-        || installed.receipt.lifecycle_generation != Some(receipt.generation)
-        || installed.receipt.package_sha256.as_deref()
-            != receipt.package_digest.strip_prefix("sha256:")
-        || installed.receipt.manifest_sha256
-            != receipt
-                .manifest_digest
-                .strip_prefix("sha256:")
-                .unwrap_or_default()
-        || installed
-            .manifest
-            .okf
-            .iter()
-            .find(|surface| surface.id == receipt.surface.surface.id)
-            .is_none_or(|surface| surface.bundle != receipt.bundle)
-    {
-        return Err(restore_error(
-            "use.okf.knowledge_restore_registry_mismatch",
-            "A Knowledge restore binding does not match its exact immutable package and OKF surface.",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_backup_policy(
-    manifest: &OkfKnowledgeBackupManifest,
-    policy: &super::OkfKnowledgeStoragePolicy,
-) -> UseResult<()> {
-    let storage = &manifest.storage;
-    if storage.max_scope_expanded_bytes != policy.max_scope_expanded_bytes()
-        || storage.max_scope_projections != policy.max_scope_projections()
-        || storage.max_surface_generations != policy.max_surface_generations()
-        || storage.max_scope_tombstones != policy.max_scope_tombstones()
-    {
-        return Err(restore_error(
-            "use.okf.knowledge_restore_policy_mismatch",
-            "The Knowledge backup storage policy differs from the current host policy.",
-        ));
-    }
-    Ok(())
-}
-
-fn selection_mismatch() -> UseError {
-    restore_error(
-        "use.okf.knowledge_restore_selection_mismatch",
-        "The backup selection differs from the exact durable Knowledge binding projection.",
-    )
-}
-
-fn canonical_json(value: &(impl Serialize + ?Sized), action: &str) -> UseResult<Vec<u8>> {
-    let mut bytes = Vec::new();
-    let mut serializer =
-        serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
-    value.serialize(&mut serializer).map_err(|error| {
-        restore_error(
-            "use.okf.knowledge_restore_plan_invalid",
-            format!("Failed to {action}: {error}"),
-        )
-    })?;
-    Ok(bytes)
-}
-
-fn now_ms() -> UseResult<u64> {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| {
-            restore_error(
-                "use.okf.knowledge_restore_clock_invalid",
-                format!("The system clock is before the Unix epoch: {error}"),
-            )
-        })?
-        .as_millis();
-    u64::try_from(millis)
-        .ok()
-        .filter(|value| *value > 0)
-        .ok_or_else(|| {
-            restore_error(
-                "use.okf.knowledge_restore_clock_invalid",
-                "The system clock exceeds the Knowledge restore timestamp range.",
-            )
-        })
-}
-
-fn valid_sha256(value: &str) -> bool {
-    value.strip_prefix("sha256:").is_some_and(|digest| {
-        digest.len() == 64
-            && digest
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-    })
-}
-
-fn restore_error(code: &'static str, message: impl Into<String>) -> UseError {
-    UseError::new(code, message)
-}
+include!("recovery_validate.rs");
 
 #[cfg(test)]
 mod tests;

@@ -1,14 +1,14 @@
 //! Coordinated, path-free inventory backups for all A3S Use-owned state.
 //!
-//! A state backup is integrity evidence for one quiescent Use installation. It
-//! is deliberately not a restore authority: clean-machine recovery still
-//! requires an independently reviewed restore plan and retained trust/Grant
-//! authority.
+//! A state backup is integrity evidence for one quiescent Use installation
+//! under Control Store authority. It is deliberately not a restore authority:
+//! clean-machine recovery still requires an independently reviewed restore plan
+//! and a live Control Store whose export matches the backup.
 
 use std::path::{Component, Path, PathBuf};
 
 use a3s_use_core::{UseError, UseResult};
-use a3s_use_extension::{ExtensionPaths, ExtensionRegistry, StateMaintenanceLock};
+use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -138,7 +138,7 @@ pub(crate) fn validate_state_backup_entry_path(
     path: &str,
 ) -> UseResult<StateBackupFamily> {
     inventory::validate_archived_path(root, path)?;
-    inventory::expected_family(root, path)
+    inventory::expected_family(root, path, false)
 }
 
 pub(crate) async fn stage_state_restore_entries(
@@ -201,10 +201,10 @@ impl StateBackupManager {
     /// Create one deterministic backup without overwriting an existing path.
     pub async fn backup(&self, destination: impl AsRef<Path>) -> UseResult<StateBackupManifest> {
         validate_owned_roots(&self.paths)?;
-        let _maintenance = StateMaintenanceLock::new(self.paths.state_root())
+        let maintenance = StateMaintenanceLock::new(self.paths.state_root())
             .acquire_exclusive()
             .await?;
-        self.backup_under_exclusive(destination).await
+        self.backup_under_exclusive(destination, &maintenance).await
     }
 
     /// Create a coordinated backup while the caller retains the exclusive
@@ -213,19 +213,36 @@ impl StateBackupManager {
     pub(crate) async fn backup_under_exclusive(
         &self,
         destination: impl AsRef<Path>,
+        maintenance: &StateMaintenanceGuard,
     ) -> UseResult<StateBackupManifest> {
         validate_owned_roots(&self.paths)?;
+        if !maintenance.is_exclusive_for(self.paths.state_root()) {
+            return Err(state_backup_invalid(
+                "Coordinated backup requires the exclusive maintenance fence for the installation state root.",
+            ));
+        }
         let destination = resolve_destination(destination.as_ref(), &self.paths)?;
         inventory::reject_active_restore(self.paths.state_root())?;
-        let authority = read_authority(&self.paths).await?;
+        let (authority, injected) =
+            prepare_backup_authority_and_injection(&self.paths, maintenance).await?;
+        let cleanup_paths = injected
+            .iter()
+            .map(|(_, path)| path.clone())
+            .collect::<Vec<_>>();
         let paths = self.paths.clone();
-        tokio::task::spawn_blocking(move || archive::create_backup(&paths, &destination, authority))
-            .await
-            .map_err(|error| {
-                state_backup_io(format!(
-                    "The coordinated backup worker did not complete: {error}"
-                ))
-            })?
+        let result = tokio::task::spawn_blocking(move || {
+            archive::create_backup(&paths, &destination, authority, injected)
+        })
+        .await
+        .map_err(|error| {
+            state_backup_io(format!(
+                "The coordinated backup worker did not complete: {error}"
+            ))
+        })?;
+        for path in cleanup_paths {
+            let _ = std::fs::remove_file(path);
+        }
+        result
     }
 
     /// Verify the manifest, complete archive length, and every payload digest
@@ -298,61 +315,69 @@ pub(crate) fn validate_owned_roots(paths: &ExtensionPaths) -> UseResult<()> {
     Ok(())
 }
 
-async fn read_authority(paths: &ExtensionPaths) -> UseResult<StateBackupAuthority> {
-    let registry = ExtensionRegistry::new(paths.clone());
-    let snapshot = registry.published_snapshot().await?;
-    if !snapshot.pending_cutovers.is_empty() {
-        return Err(state_backup_nonterminal(
-            "The Registry contains an unacknowledged capability cutover.",
+async fn prepare_backup_authority_and_injection(
+    paths: &ExtensionPaths,
+    maintenance: &StateMaintenanceGuard,
+) -> UseResult<(StateBackupAuthority, Vec<(StateBackupEntry, PathBuf)>)> {
+    let state_root = paths.installation_state_root();
+    if !crate::control_store::control_database_present(&state_root) {
+        return Err(UseError::new(
+            "use.state_backup_control_required",
+            "Coordinated state backup requires an initialized Control Store.",
+        )
+        .with_suggestion(
+            "Initialize Control Store for this installation state root before creating a backup.",
         ));
     }
-    for binding in &snapshot.packages {
-        if registry.get_snapshot_binding(binding).await?.is_none() {
-            return Err(state_backup_invalid(
-                "The published Registry projection is missing its exact retained package receipt.",
-            ));
-        }
+    let (bytes, generation, digest) = crate::control_store::export_control_store_under_exclusive(
+        &state_root,
+        paths.installation(),
+        maintenance,
+    )
+    .await?;
+    let mut temporary = tempfile::Builder::new()
+        .prefix(".a3s-use-control-export-")
+        .suffix(".json")
+        .tempfile()
+        .map_err(|error| {
+            state_backup_io(format!(
+                "The Control Store export staging file cannot be created: {error}"
+            ))
+        })?;
+    {
+        use std::io::Write;
+        temporary
+            .as_file_mut()
+            .write_all(&bytes)
+            .and_then(|_| temporary.as_file_mut().sync_all())
+            .map_err(|error| {
+                state_backup_io(format!(
+                    "The Control Store export staging file cannot be written: {error}"
+                ))
+            })?;
     }
-    let installed = registry.list().await?;
-    let expected_packages = installed
-        .iter()
-        .map(|extension| a3s_use_extension::ExtensionPackageBinding {
-            package_id: extension.receipt.package_id.clone(),
-            component_id: extension.receipt.component_id.clone(),
-            route_alias: extension.receipt.route_alias.clone(),
-            version: extension.receipt.version.clone(),
-            package_root: extension.receipt.package_root.clone(),
-            manifest_sha256: extension.receipt.manifest_sha256.clone(),
-            package_sha256: extension.receipt.package_sha256.clone(),
-            lifecycle_generation: extension.receipt.lifecycle_generation,
-            enabled: extension.receipt.enabled,
-            surfaces: extension
-                .surfaces()
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-        })
-        .collect::<Vec<_>>();
-    if snapshot.packages != expected_packages {
-        return Err(state_backup_nonterminal(
-            "The installed receipts and published Registry projection have not converged.",
-        ));
-    }
-    let mut packages = installed
-        .into_iter()
-        .map(|installed| {
-            Ok(StateBackupPackageAuthority {
-                package_id: installed.receipt.package_id.clone(),
-                receipt_digest: installed.receipt.descriptor_digest()?,
-            })
-        })
-        .collect::<UseResult<Vec<_>>>()?;
-    packages.sort_by(|left, right| left.package_id.cmp(&right.package_id));
-    Ok(StateBackupAuthority {
-        registry_generation: snapshot.generation,
-        registry_digest: snapshot.descriptor_digest()?,
-        packages,
-    })
+    let entry = StateBackupEntry {
+        root: StateBackupRoot::State,
+        path: crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH.to_owned(),
+        family: StateBackupFamily::PackageGraph,
+        length: bytes.len() as u64,
+        sha256: digest.clone(),
+        read_only: true,
+        unix_mode: None,
+    };
+    let absolute = temporary.into_temp_path().keep().map_err(|error| {
+        state_backup_io(format!(
+            "The Control Store export staging file cannot be retained: {error}"
+        ))
+    })?;
+    Ok((
+        StateBackupAuthority {
+            registry_generation: generation,
+            registry_digest: digest,
+            packages: Vec::new(),
+        },
+        vec![(entry, absolute)],
+    ))
 }
 
 fn resolve_destination(destination: &Path, paths: &ExtensionPaths) -> UseResult<PathBuf> {

@@ -10,11 +10,14 @@ use a3s_use_core::{
     PLUGIN_GRANT_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
     PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA, PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA,
 };
-use a3s_use_extension::{WorkspaceGrantCandidateCeiling, WorkspaceGrantStore};
+use a3s_use_extension::WorkspaceGrantCandidateCeiling;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+#[cfg(test)]
+use a3s_use_extension::WorkspaceGrantStore;
+#[cfg(test)]
 use crate::plugin_lifecycle::PluginGrantLifecycleUnit;
 
 use super::package_manager_error;
@@ -332,6 +335,10 @@ impl PackageGraphAuthorization {
         }
     }
 
+    /// File-store Grant saga unit — test-only dual path. Production commits
+    /// Grants through Control (`PlannedWorkspaceGrantOperation`); never open
+    /// `WorkspaceGrantStore` beside Control.
+    #[cfg(test)]
     pub fn lifecycle_unit(
         &self,
         store: WorkspaceGrantStore,

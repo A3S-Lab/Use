@@ -1,18 +1,22 @@
-use a3s_use_core::{OkfCapabilityProjection, PlanScope, UseError, UseResult};
-use a3s_use_extension::{ExtensionGenerationLease, ExtensionLifecycleIdentity, ExtensionRegistry};
+use a3s_use_core::{
+    InstallationPackageSelection, InstallationSnapshot, OkfCapabilityProjection, PlanScope,
+    UseError, UseResult,
+};
+use a3s_use_extension::{
+    ExtensionGenerationLease, ExtensionLifecycleIdentity, ExtensionRegistry,
+};
 
 use super::{
     OkfKnowledgeCitation, OkfKnowledgeClient, OkfKnowledgeReadResponse, OkfKnowledgeSearchRequest,
     OkfKnowledgeSearchResponse,
 };
 
-/// Host-side acquisition service for one exact published OKF generation.
+/// Host-side acquisition service for one exact Control-selected OKF generation.
 ///
-/// The underlying Registry generation lease participates in lifecycle drain. A
-/// newer cutover may be published while an existing lease is in use, but
-/// receipt-owned retirement cannot remove that generation until the lease is
-/// dropped. New acquisitions for hidden, revoked, or stale generations fail
-/// closed.
+/// The underlying generation lease participates in lifecycle drain. A newer
+/// cutover may advance while an existing lease is in use, but receipt-owned
+/// retirement cannot remove that generation until the lease is dropped. New
+/// acquisitions for disabled, revoked, or stale Control selections fail closed.
 #[derive(Clone)]
 pub struct OkfKnowledgeLeaseProvider {
     registry: ExtensionRegistry,
@@ -36,6 +40,10 @@ impl OkfKnowledgeLeaseProvider {
     /// and the installed package evidence matches it. `None` means the
     /// generation is not currently callable (not installed, hidden, revoked,
     /// incompatible, or already draining).
+    ///
+    /// Test-only dual path. Production hosts must use [`Self::acquire_control`]
+    /// or [`acquire_control_knowledge_generation_leases`].
+    #[cfg(test)]
     pub async fn acquire(
         &self,
         projection: &OkfCapabilityProjection,
@@ -62,6 +70,129 @@ impl OkfKnowledgeLeaseProvider {
             generation_lease,
         }))
     }
+
+    /// Acquire a lease from one Control-selected package generation without
+    /// reading `registry.json` publication state.
+    pub async fn acquire_control(
+        &self,
+        selection: &InstallationPackageSelection,
+        projection: &OkfCapabilityProjection,
+    ) -> UseResult<Option<OkfKnowledgeLease>> {
+        projection.validate()?;
+        let identity = ExtensionLifecycleIdentity::new(
+            &projection.surface.package_id,
+            &projection.package_digest,
+            &projection.manifest_digest,
+            projection.generation,
+        )?;
+        let Some(generation_lease) = self
+            .registry
+            .acquire_control_lifecycle_generation(selection, &identity)
+            .await?
+        else {
+            return Ok(None);
+        };
+        validate_generation_binding(&generation_lease, projection)?;
+        generation_lease.verify_integrity().await?;
+        Ok(Some(OkfKnowledgeLease {
+            projection: projection.clone(),
+            client: self.client.clone(),
+            generation_lease,
+        }))
+    }
+}
+
+/// Pin Control-selected package generations for one set of Knowledge projections.
+///
+/// Product hosts (CLI managed Knowledge search) use this instead of legacy
+/// `registry.json` / `extensions/` publication leases.
+pub async fn acquire_control_knowledge_generation_leases(
+    registry: &ExtensionRegistry,
+    projections: &[OkfCapabilityProjection],
+) -> UseResult<Vec<ExtensionGenerationLease>> {
+    if projections.is_empty() {
+        return Err(UseError::new(
+            "use.okf.knowledge_lease_empty",
+            "Control-authority Knowledge lease acquisition requires at least one projection.",
+        ));
+    }
+    let paths = registry.paths();
+    let snapshot = crate::control_store::read_current_installation_snapshot(
+        &paths.installation_state_root(),
+        paths.installation(),
+    )
+    .await?
+    .ok_or_else(|| {
+        UseError::new(
+            "use.okf.knowledge_control_authority_missing",
+            "Control-authority Knowledge lease requires a Control installation snapshot.",
+        )
+    })?;
+    let mut leases = Vec::with_capacity(projections.len());
+    for projection in projections {
+        projection.validate()?;
+        let identity = ExtensionLifecycleIdentity::new(
+            &projection.surface.package_id,
+            &projection.package_digest,
+            &projection.manifest_digest,
+            projection.generation,
+        )?;
+        let selection = selection_for_identity(&snapshot, &identity).ok_or_else(|| {
+            UseError::new(
+                "use.okf.knowledge_generation_unavailable",
+                format!(
+                    "Managed OKF Knowledge package '{}#{}' is not the exact Control-selected generation.",
+                    identity.package_id(),
+                    identity.generation()
+                ),
+            )
+        })?;
+        if !selection.enabled {
+            return Err(UseError::new(
+                "use.okf.knowledge_generation_unavailable",
+                format!(
+                    "Managed OKF Knowledge package '{}#{}' is disabled in the Control installation snapshot.",
+                    identity.package_id(),
+                    identity.generation()
+                ),
+            ));
+        }
+        let lease = registry
+            .acquire_control_lifecycle_generation(selection, &identity)
+            .await?
+            .ok_or_else(|| {
+                UseError::new(
+                    "use.okf.knowledge_generation_unavailable",
+                    format!(
+                        "Managed OKF Knowledge package '{}#{}' could not be leased from Control.",
+                        identity.package_id(),
+                        identity.generation()
+                    ),
+                )
+            })?;
+        leases.push(lease);
+    }
+    Ok(leases)
+}
+
+pub(crate) fn selection_for_identity<'a>(
+    snapshot: &'a InstallationSnapshot,
+    identity: &ExtensionLifecycleIdentity,
+) -> Option<&'a InstallationPackageSelection> {
+    snapshot.packages.iter().find(|selection| {
+        selection.package_id() == identity.package_id()
+            && selection.state_generation == identity.generation()
+            && selection.package.catalog.record.package.sha256.as_deref()
+                == Some(identity.package_digest())
+            && selection
+                .package
+                .catalog
+                .record
+                .package
+                .manifest_sha256
+                .as_deref()
+                == Some(identity.manifest_digest())
+    })
 }
 
 /// A single exact-generation Knowledge session. Search and subsequent read
@@ -259,6 +390,26 @@ mod tests {
 
         let error = lease.search("runtime execution", 5).await.unwrap_err();
         assert_eq!(error.code, "use.extension.package_digest_mismatch");
+    }
+
+    #[tokio::test]
+    async fn control_knowledge_leases_fail_closed_without_control_snapshot() {
+        let fixture = lease_fixture(31).await;
+        let error = match acquire_control_knowledge_generation_leases(
+            &fixture.registry,
+            std::slice::from_ref(&fixture.projection),
+        )
+        .await
+        {
+            Ok(_) => panic!("Control-absent Knowledge leases must fail closed"),
+            Err(error) => error,
+        };
+        assert!(
+            error.code == "use.okf.knowledge_control_authority_missing"
+                || error.code == "use.control_store.legacy_state_unsupported",
+            "unexpected fail-closed code {}",
+            error.code
+        );
     }
 
     async fn lease_fixture(generation: u64) -> LeaseFixture {

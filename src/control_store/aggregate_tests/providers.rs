@@ -22,6 +22,7 @@ async fn caller_cannot_choose_provider_or_capability_projection() {
             None,
             None,
             None,
+            None,
         );
         store.register_operation(reviewed.clone()).await.unwrap();
         let candidate = transition(installation, &reviewed);
@@ -141,6 +142,7 @@ fn installing_another_root_retains_unrelated_provider_selections_exactly() {
         None,
         None,
         Some(permissioned_package_lock_named("acme/root-a", 'a')),
+        None,
     );
     let first_projection = first
         .project_generation(
@@ -157,6 +159,7 @@ fn installing_another_root_retains_unrelated_provider_selections_exactly() {
         Some(&first_generation),
         None,
         Some(permissioned_package_lock_named("acme/root-b", 'b')),
+        None,
     );
     let second_projection = second
         .project_generation(

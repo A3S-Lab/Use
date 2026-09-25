@@ -15,12 +15,8 @@ use std::sync::{
 use std::time::Duration;
 
 use a3s_use_core::{CapabilityGatewayCatalog, InstallationId, UseError, UseResult};
-use rmcp::model::{
-    CallToolRequestParam, GetPromptRequestParam, GetPromptResult, ListPromptsResult,
-    ListResourcesResult, ListToolsResult, PaginatedRequestParam, ReadResourceRequestParam,
-    ReadResourceResult, ServerInfo,
-};
-use rmcp::{ServerHandler, ServiceExt};
+
+use rmcp::ServiceExt;
 
 use super::{
     CapabilityGatewayCatalogPublication, CapabilityGatewayCatalogStore, CapabilityGatewayMcpServer,
@@ -545,10 +541,7 @@ impl CapabilityGatewaySessionFactory {
     /// beginning of every MCP operation.  Existing operations retain the
     /// server snapshot they already acquired, so replacement is drain-safe.
     pub fn live_server(&self) -> CapabilityGatewayLiveMcpServer {
-        CapabilityGatewayLiveMcpServer {
-            factory: self.clone(),
-            transport: CapabilityGatewayTransport::Stdio,
-        }
+        CapabilityGatewayLiveMcpServer::new(self.clone(), CapabilityGatewayTransport::Stdio)
     }
 
     fn enter_operation(&self) -> UseResult<SessionOperationGuard> {
@@ -556,203 +549,12 @@ impl CapabilityGatewaySessionFactory {
     }
 }
 
-/// A standard MCP handler that delegates each operation to the factory's
-/// current immutable server.
-///
-/// The type is public so hosts that own their own transport can use the same
-/// cutover semantics as [`CapabilityGatewaySessionFactory::serve_streamable_http`].
-#[derive(Clone)]
-pub struct CapabilityGatewayLiveMcpServer {
-    factory: CapabilityGatewaySessionFactory,
-    transport: CapabilityGatewayTransport,
-}
+mod helpers;
+use helpers::*;
 
-impl std::fmt::Debug for CapabilityGatewayLiveMcpServer {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("CapabilityGatewayLiveMcpServer")
-            .field("catalog", &self.factory.current().catalog())
-            .field("transport", &self.transport)
-            .finish()
-    }
-}
+mod live;
 
-impl CapabilityGatewayLiveMcpServer {
-    pub fn factory(&self) -> CapabilityGatewaySessionFactory {
-        self.factory.clone()
-    }
-
-    pub(crate) fn with_transport(mut self, transport: CapabilityGatewayTransport) -> Self {
-        self.transport = transport;
-        self
-    }
-
-    fn snapshot(&self) -> UseResult<(CapabilityGatewayMcpServer, SessionOperationGuard)> {
-        let operation = self.factory.enter_operation()?;
-        Ok((
-            self.factory.current().with_transport(self.transport),
-            operation,
-        ))
-    }
-}
-
-impl ServerHandler for CapabilityGatewayLiveMcpServer {
-    fn get_info(&self) -> ServerInfo {
-        // `get_info` is a local protocol description and has no provider or
-        // payload side effect.  Keep it available while draining so clients
-        // can observe the endpoint's final server metadata.
-        self.factory
-            .current()
-            .with_transport(self.transport)
-            .get_info()
-    }
-
-    async fn call_tool(
-        &self,
-        request: CallToolRequestParam,
-        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
-        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
-        ServerHandler::call_tool(&server, request, request_context).await
-    }
-
-    async fn list_tools(
-        &self,
-        request: Option<PaginatedRequestParam>,
-        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<ListToolsResult, rmcp::ErrorData> {
-        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
-        ServerHandler::list_tools(&server, request, request_context).await
-    }
-
-    async fn list_resources(
-        &self,
-        request: Option<PaginatedRequestParam>,
-        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<ListResourcesResult, rmcp::ErrorData> {
-        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
-        ServerHandler::list_resources(&server, request, request_context).await
-    }
-
-    async fn list_prompts(
-        &self,
-        request: Option<PaginatedRequestParam>,
-        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<ListPromptsResult, rmcp::ErrorData> {
-        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
-        ServerHandler::list_prompts(&server, request, request_context).await
-    }
-
-    async fn read_resource(
-        &self,
-        request: ReadResourceRequestParam,
-        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<ReadResourceResult, rmcp::ErrorData> {
-        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
-        ServerHandler::read_resource(&server, request, request_context).await
-    }
-
-    async fn get_prompt(
-        &self,
-        request: GetPromptRequestParam,
-        request_context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<GetPromptResult, rmcp::ErrorData> {
-        let (server, _operation) = self.snapshot().map_err(session_state_error_data)?;
-        ServerHandler::get_prompt(&server, request, request_context).await
-    }
-
-    async fn on_initialized(&self, context: rmcp::service::NotificationContext<rmcp::RoleServer>) {
-        let Ok((server, _operation)) = self.snapshot() else {
-            return;
-        };
-        ServerHandler::on_initialized(&server, context).await;
-    }
-}
-
-fn session_state_error_data(_error: UseError) -> rmcp::ErrorData {
-    rmcp::ErrorData::invalid_request(
-        "The Capability Gateway session is draining or already drained.",
-        Some(serde_json::json!({ "code": SESSION_STATE_ERROR })),
-    )
-}
-
-fn session_key(catalog: &CapabilityGatewayCatalog) -> UseResult<CapabilityGatewaySessionKey> {
-    catalog.validate()?;
-    Ok(CapabilityGatewaySessionKey {
-        installation: catalog.installation().clone(),
-        generation: catalog.generation(),
-        revision: catalog.revision().to_owned(),
-        digest: catalog.descriptor_digest()?,
-    })
-}
-
-fn server_session_key(
-    server: &CapabilityGatewayMcpServer,
-) -> UseResult<CapabilityGatewaySessionKey> {
-    session_key(server.source_catalog())
-}
-
-async fn verify_published_server(
-    store: &CapabilityGatewayCatalogStore,
-    publication: &CapabilityGatewayCatalogPublication,
-    server: &CapabilityGatewayMcpServer,
-) -> UseResult<()> {
-    publication.validate().map_err(|_| {
-        UseError::new(
-            SESSION_PUBLICATION_ERROR,
-            "The catalog publication identity is invalid.",
-        )
-    })?;
-    if store.installation() != &publication.installation {
-        return Err(UseError::new(
-            SESSION_PUBLICATION_ERROR,
-            "The catalog publication belongs to another installation store.",
-        ));
-    }
-    let Some(published) = store
-        .get_exact(
-            &publication.digest,
-            publication.generation,
-            &publication.revision,
-        )
-        .await
-        .map_err(|_| {
-            UseError::new(
-                SESSION_PUBLICATION_ERROR,
-                "The durable catalog publication could not be verified.",
-            )
-        })?
-    else {
-        return Err(UseError::new(
-            SESSION_PUBLICATION_ERROR,
-            "The durable catalog publication is missing.",
-        ));
-    };
-    let projected = published
-        .for_consumer(server.consumer_negotiation())
-        .map_err(|_| {
-            UseError::new(
-                SESSION_PUBLICATION_ERROR,
-                "The durable catalog cannot be projected for this consumer.",
-            )
-        })?;
-    // Verify both layers: the visible catalog must be the exact negotiated
-    // projection, and the retained source must be the complete durable
-    // publication. Checking only the visible subset would allow an optional
-    // descriptor to be smuggled into the source and then influence lifecycle
-    // identity after negotiation filters it from discovery.
-    if *server.source_catalog() != published
-        || projected != *server.catalog()
-        || server.catalog().installation() != &publication.installation
-        || server.catalog().generation() != publication.generation
-    {
-        return Err(UseError::new(
-            SESSION_PUBLICATION_ERROR,
-            "The live Gateway source or negotiated catalog does not match the durable publication.",
-        ));
-    }
-    Ok(())
-}
+pub use live::CapabilityGatewayLiveMcpServer;
 
 const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
@@ -760,7 +562,6 @@ const _: fn() = || {
     assert_send_sync::<CapabilityGatewayLiveMcpServer>();
 };
 
-#[cfg(test)]
 mod tests {
     use std::sync::{
         atomic::{AtomicBool, Ordering},

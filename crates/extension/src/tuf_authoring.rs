@@ -4,8 +4,8 @@
 //! client in [`crate::remote`] verifies with `tough`. Test support and the
 //! registry tooling share this module so a signed document can only be
 //! produced one canonical way: canonical JSON (olpc-cjson) over the signed
-//! role object, one Ed25519 signature, hex-encoded, wrapped in the standard
-//! `{"signatures": [...], "signed": ...}` envelope.
+//! role object, one or more Ed25519 signatures, hex-encoded, wrapped in the
+//! standard `{"signatures": [...], "signed": ...}` envelope.
 
 use olpc_cjson::CanonicalFormatter;
 use ring::signature::Ed25519KeyPair;
@@ -59,9 +59,35 @@ pub fn ed25519_key_id(public: &[u8]) -> String {
 /// envelope itself is serialized compactly, matching the layout the client
 /// and the frozen registry fixtures expect.
 pub fn sign_tuf_document(key: &Ed25519KeyPair, key_id: &str, signed: Value) -> Vec<u8> {
-    let signature = key.sign(&canonical_json(&signed));
+    sign_tuf_document_with_keys([(key, key_id)], signed)
+}
+
+/// Sign one TUF role document with every provided key.
+///
+/// Callers that publish a role with `threshold > 1` must supply at least that
+/// many distinct signatures. Signature order follows the iterator order so
+/// offline ceremonies stay deterministic for identical share sets.
+pub fn sign_tuf_document_with_keys<'a, I>(keys: I, signed: Value) -> Vec<u8>
+where
+    I: IntoIterator<Item = (&'a Ed25519KeyPair, &'a str)>,
+{
+    let canonical = canonical_json(&signed);
+    let signatures: Vec<Value> = keys
+        .into_iter()
+        .map(|(key, key_id)| {
+            let signature = key.sign(&canonical);
+            json!({
+                "keyid": key_id,
+                "sig": hex_lower(signature.as_ref()),
+            })
+        })
+        .collect();
+    assert!(
+        !signatures.is_empty(),
+        "TUF documents require at least one signature"
+    );
     serde_json::to_vec(&json!({
-        "signatures": [{"keyid": key_id, "sig": hex_lower(signature.as_ref())}],
+        "signatures": signatures,
         "signed": signed
     }))
     .expect("serializing a TUF signature envelope cannot fail")
@@ -103,5 +129,23 @@ mod tests {
             signature,
             &hex_lower(key.sign(&canonical_json(&signed)).as_ref())
         );
+    }
+
+    #[test]
+    fn multi_key_envelopes_carry_one_signature_per_share() {
+        let first = Ed25519KeyPair::from_seed_unchecked(&[7_u8; 32]).unwrap();
+        let second = Ed25519KeyPair::from_seed_unchecked(&[9_u8; 32]).unwrap();
+        let first_id = ed25519_key_id(first.public_key().as_ref());
+        let second_id = ed25519_key_id(second.public_key().as_ref());
+        let signed = json!({"_type": "root", "version": 1});
+        let document = sign_tuf_document_with_keys(
+            [(&first, first_id.as_str()), (&second, second_id.as_str())],
+            signed.clone(),
+        );
+        let parsed: Value = serde_json::from_slice(&document).unwrap();
+        assert_eq!(parsed["signed"], signed);
+        assert_eq!(parsed["signatures"].as_array().unwrap().len(), 2);
+        assert_eq!(parsed["signatures"][0]["keyid"], first_id);
+        assert_eq!(parsed["signatures"][1]["keyid"], second_id);
     }
 }

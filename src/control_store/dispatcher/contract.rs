@@ -10,9 +10,7 @@ use super::super::effect_port::{
 };
 use super::super::model::ControlEffectOutcome;
 
-pub(in crate::control_store) trait ControlEffectClock:
-    Send + Sync
-{
+pub(crate) trait ControlEffectClock: Send + Sync {
     fn now_ms(&self) -> UseResult<u64>;
 }
 
@@ -89,6 +87,7 @@ pub(in crate::control_store) enum ControlEffectDispatchResult {
         sequence: u32,
         attempt: u32,
         outcome: ControlEffectOutcome,
+        error_code: Option<String>,
         retry_not_before_ms: Option<u64>,
         observation_changed: bool,
     },

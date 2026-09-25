@@ -1,15 +1,27 @@
 use std::path::Path;
 
 use crate::capability_catalog_store::CapabilityGatewayCatalogStore;
-use crate::core::CapabilityGatewayCatalog;
+use a3s_use_core::CapabilityGatewayCatalog;
 use sha2::{Digest, Sha256};
 
 use super::*;
 
 #[tokio::test]
+async fn coordinated_backup_requires_control_store() {
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = crate::test_extension_paths(temporary.path());
+    std::fs::create_dir_all(paths.state_root()).unwrap();
+    let error = StateBackupManager::new(paths)
+        .backup(temporary.path().join("missing-control.a3s-use-state-backup"))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_control_required");
+}
+
+#[tokio::test]
 async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let global_artifact = paths
         .artifact_store()
         .expanded_package_path(&format!("sha256:{}", "a".repeat(64)))
@@ -20,15 +32,10 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
         b"global immutable artifact bytes",
     )
     .unwrap();
-    std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
+    std::fs::create_dir_all(paths.state_root().join("knowledge")).unwrap();
     std::fs::write(
-        paths.state_root().join("bindings/runtime/fixture.json"),
-        b"provider binding bytes",
-    )
-    .unwrap();
-    std::fs::write(
-        paths.state_root().join("installation-snapshot.json"),
-        b"installation snapshot bytes",
+        paths.state_root().join("knowledge/fixture.bin"),
+        b"knowledge payload bytes",
     )
     .unwrap();
     std::fs::write(paths.state_root().join(".installation-mutation.lock"), b"").unwrap();
@@ -47,17 +54,20 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
     assert_eq!(manifest.schema, A3S_USE_STATE_BACKUP_SCHEMA);
     assert_eq!(manifest.file_count, 2);
     assert_eq!(manifest.entries.len(), 2);
-    assert_eq!(manifest.families.len(), 2);
     assert!(manifest.inventory_digest.starts_with("sha256:"));
-    assert_eq!(manifest.authority.registry_generation, 0);
     assert!(manifest.authority.packages.is_empty());
+    assert!(manifest.authority.registry_digest.starts_with("sha256:"));
     assert!(manifest
         .entries
         .iter()
         .all(|entry| !entry.path.starts_with('/') && !entry.path.contains("..")));
     assert!(manifest.entries.iter().any(|entry| {
-        entry.path == "installation-snapshot.json"
+        entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH
             && entry.family == StateBackupFamily::PackageGraph
+            && entry.sha256 == manifest.authority.registry_digest
+    }));
+    assert!(manifest.entries.iter().any(|entry| {
+        entry.path == "knowledge/fixture.bin" && entry.family == StateBackupFamily::Knowledge
     }));
     let encoded = serde_json::to_string(&manifest).unwrap();
     assert!(!encoded.contains(temporary.path().to_str().unwrap()));
@@ -66,6 +76,7 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
     assert!(!encoded.contains("capability-index"));
     assert!(!encoded.contains("derived capability index bytes"));
     assert!(!encoded.contains("global immutable artifact bytes"));
+    assert!(!encoded.contains("control.sqlite3"));
 
     let verified = StateBackupManager::verify_backup(&first).await.unwrap();
     assert_eq!(verified, manifest);
@@ -84,10 +95,10 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
 #[tokio::test]
 async fn coordinated_backup_accepts_only_terminal_durable_operation_records() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let lifecycle = paths
         .state_root()
-        .join("operations/plugins/user/scope/acme/tool/active.json");
+        .join("operations/state-restores/sha256_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/operation.json");
     std::fs::create_dir_all(lifecycle.parent().unwrap()).unwrap();
     std::fs::write(&lifecycle, br#"{"status":"completed"}"#).unwrap();
     let completed = temporary.path().join("completed.a3s-use-state-backup");
@@ -98,7 +109,7 @@ async fn coordinated_backup_accepts_only_terminal_durable_operation_records() {
     assert!(manifest
         .entries
         .iter()
-        .any(|entry| entry.family == StateBackupFamily::LifecycleOperations));
+        .any(|entry| entry.family == StateBackupFamily::PackageOperations));
 
     std::fs::write(&lifecycle, br#"{"status":"applying"}"#).unwrap();
     let error = StateBackupManager::new(paths)
@@ -111,7 +122,7 @@ async fn coordinated_backup_accepts_only_terminal_durable_operation_records() {
 #[tokio::test]
 async fn coordinated_backup_registers_and_verifies_capability_gateway_catalogs() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let catalog =
         CapabilityGatewayCatalog::new(paths.installation().clone(), 0, Vec::new()).unwrap();
     let store = CapabilityGatewayCatalogStore::from_extension_paths(&paths);
@@ -135,7 +146,9 @@ async fn coordinated_backup_registers_and_verifies_capability_gateway_catalogs()
         .find(|entry| entry.path == expected_path)
         .unwrap();
     assert_eq!(entry.family, StateBackupFamily::CapabilityPayloads);
-    assert_eq!(manifest.families.len(), 1);
+    assert!(manifest.entries.iter().any(|entry| {
+        entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH
+    }));
     assert_eq!(
         StateBackupManager::verify_backup(&destination)
             .await
@@ -198,7 +211,7 @@ async fn coordinated_backup_registers_and_verifies_capability_gateway_catalogs()
 #[tokio::test]
 async fn coordinated_backup_rejects_capability_payload_layout_or_content_drift() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let root = paths.state_root().join("capability-gateway");
     std::fs::create_dir_all(root.join("catalogs/unknown")).unwrap();
     std::fs::write(root.join("catalogs/unknown/record.json"), b"{}").unwrap();
@@ -237,7 +250,7 @@ async fn coordinated_backup_rejects_capability_payload_layout_or_content_drift()
 #[tokio::test]
 async fn coordinated_backup_rejects_nonterminal_and_unknown_state() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     std::fs::create_dir_all(paths.state_root().join("remote-registries/fixture/cache")).unwrap();
     std::fs::write(
         paths
@@ -268,7 +281,7 @@ async fn coordinated_backup_rejects_nonterminal_and_unknown_state() {
     std::fs::remove_dir_all(paths.data_root()).unwrap();
     let artifact_staging = paths
         .state_root()
-        .join("bindings/runtime/.artifact-staging-incomplete");
+        .join("knowledge/.artifact-staging-incomplete");
     std::fs::create_dir_all(&artifact_staging).unwrap();
     let error = StateBackupManager::new(paths.clone())
         .backup(temporary.path().join("staging.a3s-use-state-backup"))
@@ -277,9 +290,9 @@ async fn coordinated_backup_rejects_nonterminal_and_unknown_state() {
     assert_eq!(error.code, "use.state_backup_nonterminal");
 
     std::fs::remove_dir_all(&artifact_staging).unwrap();
-    std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
+    std::fs::create_dir_all(paths.state_root().join("knowledge")).unwrap();
     std::fs::write(
-        paths.state_root().join("bindings/runtime/.binding.tmp"),
+        paths.state_root().join("knowledge/.binding.tmp"),
         b"partial",
     )
     .unwrap();
@@ -289,7 +302,7 @@ async fn coordinated_backup_rejects_nonterminal_and_unknown_state() {
         .unwrap_err();
     assert_eq!(error.code, "use.state_backup_nonterminal");
 
-    std::fs::remove_dir_all(paths.state_root().join("bindings")).unwrap();
+    std::fs::remove_dir_all(paths.state_root().join("knowledge")).unwrap();
     std::fs::create_dir_all(paths.state_root().join("unknown-family")).unwrap();
     std::fs::write(
         paths.state_root().join("unknown-family/evidence.json"),
@@ -306,7 +319,7 @@ async fn coordinated_backup_rejects_nonterminal_and_unknown_state() {
 #[tokio::test]
 async fn coordinated_backup_rejects_an_active_restore_and_links() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     std::fs::create_dir_all(paths.state_root()).unwrap();
     std::fs::write(
         paths
@@ -332,10 +345,10 @@ async fn coordinated_backup_rejects_an_active_restore_and_links() {
         let outside = temporary.path().join("outside");
         std::fs::create_dir(&outside).unwrap();
         std::fs::write(outside.join("secret.json"), b"secret").unwrap();
-        std::fs::create_dir_all(paths.state_root().join("grants")).unwrap();
+        std::fs::create_dir_all(paths.state_root().join("knowledge")).unwrap();
         crate::test_filesystem::create_directory_link(
             &outside,
-            &paths.state_root().join("grants/linked"),
+            &paths.state_root().join("knowledge/linked"),
         );
         let error = StateBackupManager::new(paths)
             .backup(temporary.path().join("linked.a3s-use-state-backup"))
@@ -352,10 +365,10 @@ async fn coordinated_backup_rejects_an_active_restore_and_links() {
 #[tokio::test]
 async fn backup_verification_rejects_tampering_and_creation_never_overwrites() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
-    std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
+    let paths = fixture_paths(temporary.path()).await;
+    std::fs::create_dir_all(paths.state_root().join("knowledge")).unwrap();
     std::fs::write(
-        paths.state_root().join("bindings/runtime/tool.json"),
+        paths.state_root().join("knowledge/tool.bin"),
         b"binding",
     )
     .unwrap();
@@ -380,7 +393,7 @@ async fn backup_verification_rejects_tampering_and_creation_never_overwrites() {
 #[tokio::test]
 async fn coordinated_backup_rejects_a_destination_inside_owned_state() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     std::fs::create_dir_all(paths.state_root()).unwrap();
     let error = StateBackupManager::new(paths.clone())
         .backup(paths.state_root().join("recursive.a3s-use-state-backup"))
@@ -402,10 +415,10 @@ async fn backup_verification_rejects_noncanonical_manifest_encoding() {
     const MAGIC: &[u8] = b"A3S-USE-STATE-BACKUP-V1\n";
 
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
-    std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
+    let paths = fixture_paths(temporary.path()).await;
+    std::fs::create_dir_all(paths.state_root().join("knowledge")).unwrap();
     std::fs::write(
-        paths.state_root().join("bindings/runtime/tool.json"),
+        paths.state_root().join("knowledge/tool.bin"),
         b"binding",
     )
     .unwrap();
@@ -439,7 +452,7 @@ async fn backup_verification_rejects_noncanonical_manifest_encoding() {
 #[tokio::test]
 async fn coordinated_backup_waits_for_shared_state_users() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = fixture_paths(temporary.path());
+    let paths = fixture_paths(temporary.path()).await;
     let shared = StateMaintenanceLock::new(paths.state_root())
         .acquire_shared()
         .await
@@ -458,9 +471,13 @@ async fn coordinated_backup_waits_for_shared_state_users() {
         .unwrap()
         .unwrap()
         .unwrap();
-    assert_eq!(manifest.file_count, 0);
+    assert_eq!(manifest.file_count, 1);
+    assert_eq!(
+        manifest.entries[0].path,
+        crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH
+    );
 }
 
-fn fixture_paths(root: &Path) -> a3s_use_extension::ExtensionPaths {
-    crate::test_extension_paths(root)
+async fn fixture_paths(root: &Path) -> a3s_use_extension::ExtensionPaths {
+    crate::test_extension_paths_with_control(root).await
 }

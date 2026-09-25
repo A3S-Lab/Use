@@ -46,7 +46,15 @@ impl PluginMcpServiceReadiness {
     }
 }
 
-/// Typed Gateway/readiness boundary used only for persistent Runtime Services.
+/// Typed Gateway/readiness boundary used only for persistent Runtime Services
+/// inside **Plugin lifecycle sagas** (intent-bearing install/enable checkpoints).
+///
+/// Control Store effects must not treat this trait as their production bind
+/// face. Managed hosts inject [`crate::control_store::ControlRuntimeServiceReadinessPort`]
+/// for Control-admitted Tool/MCP publications. Keeping both traits is a cutover
+/// seam: Plugin readiness owns package-generation sagas; Control readiness owns
+/// sole-authority effect binding. Do not wire only Plugin readiness and expect
+/// Control to route live traffic.
 ///
 /// Stdio MCP never crosses this port: it remains a per-connection executable
 /// launcher and is not modeled as a Runtime Service.

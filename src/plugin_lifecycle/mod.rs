@@ -7,6 +7,7 @@
 
 mod coordinator;
 mod diagnostic;
+#[cfg(test)]
 mod enablement;
 mod grant;
 mod graph;
@@ -20,18 +21,20 @@ mod static_surfaces;
 mod store;
 
 pub use coordinator::{
-    PluginCapabilityLifecycleHost, PluginCapabilityPublication, PluginFlowLifecycleHost,
-    PluginLifecycleCoordinator, PluginLifecycleEvidence, PluginLifecycleHosts,
-    PluginMcpLifecycleHost, PluginOkfLifecycleHost, PluginPackageLifecycleHost,
-    PluginSkillLifecycleHost, PluginToolLifecycleHost, PluginUiLifecycleHost,
-    PluginUiLifecycleHostFactory,
+    LifecycleProviderSet, PluginCapabilityLifecycleHost, PluginCapabilityPublication,
+    PluginFlowLifecycleHost, PluginLifecycleCoordinator, PluginLifecycleEvidence,
+    PluginLifecycleHosts, PluginMcpLifecycleHost, PluginOkfLifecycleHost,
+    PluginPackageLifecycleHost, PluginSkillLifecycleHost, PluginToolLifecycleHost,
+    PluginUiLifecycleHost, PluginUiLifecycleHostFactory,
 };
 pub use diagnostic::{
     PluginLifecycleCheckpointDiagnostic, PluginLifecycleCheckpointDiagnosticStatus,
     PluginLifecycleDiagnostic, PluginLifecycleOperationDiagnostic,
     PLUGIN_LIFECYCLE_DIAGNOSTIC_SCHEMA,
 };
-pub use grant::{PluginCapabilityCutoverEvidence, PluginGrantLifecycleUnit};
+pub use grant::PluginCapabilityCutoverEvidence;
+#[cfg(test)]
+pub use grant::PluginGrantLifecycleUnit;
 pub(crate) use graph::operation_cutover_key;
 pub use graph::{
     PluginGraphCapabilityCutoverActivation, PluginGraphCapabilityLifecycleHost,

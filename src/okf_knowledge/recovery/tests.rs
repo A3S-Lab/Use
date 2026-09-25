@@ -46,6 +46,27 @@ async fn restore_plan_binds_backup_live_database_and_complete_authority() {
 }
 
 #[tokio::test]
+async fn control_restore_fails_closed_without_control_installation_snapshot() {
+    let fixture = RestoreFixture::complete().await;
+    let backup = fixture.root.join("control-authority.a3s-okf-backup");
+    fixture
+        .adapter
+        .backup(&fixture.scope, &backup)
+        .await
+        .unwrap();
+    let error = OkfKnowledgeRecoveryManager::for_control_authority(&fixture.paths)
+        .plan_restore(&fixture.scope, &backup)
+        .await
+        .unwrap_err();
+    assert!(
+        error.code == "use.okf.knowledge_restore_authority_missing"
+            || error.code == "use.control_store.legacy_state_unsupported",
+        "unexpected fail-closed code {}",
+        error.code
+    );
+}
+
+#[tokio::test]
 async fn restore_plan_recovers_missing_binding_from_independent_authority() {
     let missing_binding = RestoreFixture::without_binding().await;
     let backup = missing_binding.root.join("missing-binding.a3s-okf-backup");

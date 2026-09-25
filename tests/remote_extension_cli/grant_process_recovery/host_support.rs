@@ -20,7 +20,7 @@ use a3s_use_extension::{
 const HOST_CHILD_HOME_ENV: &str = "A3S_USE_TEST_HOST_GRANT_PROCESS_HOME";
 const HOST_CHILD_APPLY_REQUEST_ENV: &str = "A3S_USE_TEST_HOST_GRANT_PROCESS_APPLY_REQUEST";
 const HOST_CHILD_AUTHORIZATION_MARKER_ENV: &str = "A3S_USE_TEST_HOST_GRANT_PROCESS_AUTH_MARKER";
-const HOST_BUILD_ID: &str = "use:grant-process-host";
+pub(super) const HOST_BUILD_ID: &str = "use:grant-process-host";
 const HOST_ASSIGNMENT_GENERATION: u64 = 19;
 
 pub(super) async fn configure_host_registry(

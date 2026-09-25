@@ -278,13 +278,18 @@ Grant, policy, and generation-fenced provider. A generic MCP consumer receives
 only descriptors with an empty requirement set; an A3S consumer receives those
 plus descriptors whose complete requirement set it negotiated.
 
-The current contract does not fabricate Flow, Knowledge, or UI metadata from a
-label. Producers must first publish a schema-validated descriptor and mark any
-non-universal interpretation with its required extension. Projecting the
-actual Flow/Knowledge/UI payloads, composing the policy with production
-receipt/Runtime/Grant authorization, CLI wiring, and the independent
-Rust/TypeScript/Python recovery matrix remain A3 follow-up work. A live host
-can use
+Path-free Flow, Knowledge, and UI metadata is projected as
+`CapabilityDescriptorKind::{Flow,Knowledge,Ui}` payloads. Each kind must
+declare its matching extension, appears in
+`CapabilityGatewayMcpServer::extension_metadata_descriptors()` only after
+negotiation accepts that extension, and is never compiled into MCP
+Tool/Resource/Prompt routes. Labels alone do not fabricate metadata: producers
+must publish a schema-validated descriptor with digests and surface bindings.
+Product Control open now loads the Registry/TUF description trust store through
+`ensure_control_for_registry` / `mcp serve gateway --registry-name` when a
+TrustedRegistry is configured. Remaining A3 follow-up is broader CLI/service
+authorization and ops gates beyond the Gateway HTTP safeguards already shipped.
+A live host can use
 `CapabilityGatewayMcpServer::from_verified_registry_snapshot_with_factory_and_options`
 to bind verified descriptions, one snapshot cursor, a resolver factory, the
 exact lease, consumer projection, and endpoint policy in one fail-closed

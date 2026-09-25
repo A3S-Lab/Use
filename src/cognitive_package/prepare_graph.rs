@@ -393,35 +393,15 @@ impl CognitivePackageManager {
         )
     }
 
+    /// Control is sole authority for reviewed graph plans. Legacy
+    /// `operations/package-graphs` is never consulted or created.
     async fn existing_exact_graph_plan(
         &self,
-        action: PluginOperationAction,
-        package_id: &str,
-        expected_package_lock_digest: &str,
+        _action: PluginOperationAction,
+        _package_id: &str,
+        _expected_package_lock_digest: &str,
     ) -> UseResult<Option<PluginOperationPlanEnvelope>> {
-        let Some(pending) = self.pending_store().get(action, package_id).await? else {
-            return Ok(None);
-        };
-        if pending.phase() == super::store::PackageGraphOperationPhase::Cancelled {
-            return Err(package_manager_error(
-                "use.plugin.package_graph_cancelled",
-                "The exact cognitive-package operation was cancelled before admission.",
-            ));
-        }
-        let lock_digest = pending
-            .envelope
-            .package_lock
-            .as_ref()
-            .map(a3s_use_core::PluginPackageLock::descriptor_digest)
-            .transpose()?
-            .ok_or_else(|| plan_error("The stored package graph plan omitted its exact lock."))?;
-        if lock_digest != expected_package_lock_digest {
-            return Err(plan_error(
-                "A different package graph plan is already pending for this package.",
-            ));
-        }
-        self.authorization.verify_plan(&pending.envelope)?;
-        Ok(Some(pending.envelope))
+        Ok(None)
     }
 }
 

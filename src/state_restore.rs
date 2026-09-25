@@ -291,7 +291,7 @@ impl StateRestoreManager {
     }
 
     /// Build a path-free, immutable review. This changes no live state and
-    /// requires independently retained live Registry and Grant authority.
+    /// requires an initialized Control Store whose export matches the backup.
     pub async fn plan_restore(&self, backup_path: impl AsRef<Path>) -> UseResult<StateRestorePlan> {
         validate_owned_roots(&self.paths)?;
         let backup_path = resolve_external_path(backup_path.as_ref(), &self.paths)?;
@@ -300,7 +300,9 @@ impl StateRestoreManager {
         require_backup_installation(&self.paths, &backup)?;
         let _maintenance = self.maintenance.acquire_exclusive().await?;
         let live = scan_state_for_restore(&self.paths, None)?;
-        let authority_digest = validate_live_authority(&self.paths, &backup, &live).await?;
+        let authority_digest =
+            validate_live_authority(&self.paths, &backup, &live, &_maintenance).await?;
+        let live = project_live_with_control_export(&backup, live)?;
         build_plan(backup, live, authority_digest)
     }
 
@@ -395,7 +397,9 @@ impl StateRestoreManager {
                 )
             })?;
             let live = scan_state_for_restore(&self.paths, Some(reviewed_plan_digest))?;
-            let authority_digest = validate_live_authority(&self.paths, backup, &live).await?;
+            let authority_digest =
+                validate_live_authority(&self.paths, backup, &live, &maintenance).await?;
+            let live = project_live_with_control_export(backup, live)?;
             let plan = build_plan(backup.clone(), live, authority_digest)?;
             if plan.descriptor_digest()? != reviewed_plan_digest {
                 return Err(restore_error(
@@ -424,7 +428,9 @@ impl StateRestoreManager {
 
         let backup = inspected?;
         let live = scan_state_for_restore(&self.paths, None)?;
-        let authority_digest = validate_live_authority(&self.paths, &backup, &live).await?;
+        let authority_digest =
+            validate_live_authority(&self.paths, &backup, &live, &maintenance).await?;
+        let live = project_live_with_control_export(&backup, live)?;
         let plan = build_plan(backup, live, authority_digest)?;
         let actual_plan_digest = plan.descriptor_digest()?;
         if actual_plan_digest != reviewed_plan_digest {
@@ -438,7 +444,8 @@ impl StateRestoreManager {
             return StateRestoreResult::no_change(&plan, reviewed_plan_digest.to_owned());
         }
 
-        let rollback = ensure_rollback_backup(&self.paths, &rollback_backup_path, &plan).await?;
+        let rollback =
+            ensure_rollback_backup(&self.paths, &rollback_backup_path, &plan, &maintenance).await?;
         maybe_test_crash("rollback-captured");
         let operation = StateRestoreOperation::new(
             plan,
@@ -458,10 +465,10 @@ impl StateRestoreManager {
         &self,
         mut operation: StateRestoreOperation,
         backup_path: &Path,
-        _maintenance: &a3s_use_extension::StateMaintenanceGuard,
+        maintenance: &a3s_use_extension::StateMaintenanceGuard,
     ) -> UseResult<StateRestoreResult> {
         if operation.status == StateRestoreOperationStatus::Completed {
-            self.validate_terminal(&operation).await?;
+            self.validate_terminal(&operation, maintenance).await?;
             self.operations.clear_active(&operation).await?;
             return operation.result();
         }
@@ -473,17 +480,23 @@ impl StateRestoreManager {
         }
         if operation.status == StateRestoreOperationStatus::Staged {
             let live = scan_state_for_restore(&self.paths, Some(&operation.plan_digest))?;
+            let authority = validate_live_authority(
+                &self.paths,
+                &operation.plan.backup,
+                &live,
+                maintenance,
+            )
+            .await?;
+            let live = project_live_with_control_export(&operation.plan.backup, live)?;
             if digest_entries(&live)? != operation.plan.before_inventory_digest {
                 return Err(restore_error(
                     "use.state_restore_state_mismatch",
                     "Live state changed after review and before restore publication.",
                 ));
             }
-            let authority =
-                validate_live_authority(&self.paths, &operation.plan.backup, &live).await?;
             if authority != operation.plan.authority_digest {
                 return Err(authority_mismatch(
-                    "Live Registry or Grant authority changed before restore publication.",
+                    "Live Control Store authority changed before restore publication.",
                 ));
             }
             self.advance(
@@ -508,7 +521,7 @@ impl StateRestoreManager {
             .await?;
         }
         if operation.status == StateRestoreOperationStatus::CandidatesRemoved {
-            self.validate_terminal(&operation).await?;
+            self.validate_terminal(&operation, maintenance).await?;
             self.advance(&mut operation, StateRestoreOperationStatus::Verified, None)
                 .await?;
         }
@@ -526,7 +539,7 @@ impl StateRestoreManager {
                 "The whole-installation restore did not reach a terminal state.",
             ));
         }
-        self.validate_terminal(&operation).await?;
+        self.validate_terminal(&operation, maintenance).await?;
         self.operations.clear_active(&operation).await?;
         operation.result()
     }
@@ -543,19 +556,30 @@ impl StateRestoreManager {
         Ok(())
     }
 
-    async fn validate_terminal(&self, operation: &StateRestoreOperation) -> UseResult<()> {
+    async fn validate_terminal(
+        &self,
+        operation: &StateRestoreOperation,
+        maintenance: &a3s_use_extension::StateMaintenanceGuard,
+    ) -> UseResult<()> {
         filesystem::validate_candidates_absent(&self.paths, operation)?;
         let live = scan_state_for_restore(&self.paths, Some(&operation.plan_digest))?;
+        let authority = validate_live_authority(
+            &self.paths,
+            &operation.plan.backup,
+            &live,
+            maintenance,
+        )
+        .await?;
+        let live = project_live_with_control_export(&operation.plan.backup, live)?;
         if live != operation.plan.backup.entries {
             return Err(restore_error(
                 "use.state_restore_terminal_mismatch",
                 "Published Use state does not exactly match the reviewed backup inventory.",
             ));
         }
-        let authority = validate_live_authority(&self.paths, &operation.plan.backup, &live).await?;
         if authority != operation.plan.authority_digest {
             return Err(authority_mismatch(
-                "Published Registry or Grant authority differs from the reviewed restore.",
+                "Published Control Store authority differs from the reviewed restore.",
             ));
         }
         Ok(())
@@ -631,6 +655,34 @@ fn build_actions(
             }
         })
         .collect()
+}
+
+/// Project the live Control export as inventory evidence after authority has
+/// already been validated against the backup. The export is archive-injected
+/// (not a live filesystem leaf); restore planning still needs it as Retain
+/// evidence so action inventory matches `backup.entries`.
+fn project_live_with_control_export(
+    backup: &StateBackupManifest,
+    mut live: Vec<StateBackupEntry>,
+) -> UseResult<Vec<StateBackupEntry>> {
+    let Some(export) = backup.entries.iter().find(|entry| {
+        entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH
+    }) else {
+        return Ok(live);
+    };
+    if live
+        .iter()
+        .any(|entry| entry.path == crate::control_store::CONTROL_STORE_EXPORT_BACKUP_PATH)
+    {
+        return Err(plan_invalid(
+            "Live inventory must not contain a Control Store export filesystem leaf.",
+        ));
+    }
+    live.push(export.clone());
+    live.sort_by(|left, right| {
+        (left.root, left.path.as_str()).cmp(&(right.root, right.path.as_str()))
+    });
+    Ok(live)
 }
 
 fn summarize_actions(actions: &[StateRestoreAction]) -> UseResult<StateRestoreActionSummary> {
@@ -780,12 +832,13 @@ async fn ensure_rollback_backup(
     paths: &ExtensionPaths,
     rollback_path: &Path,
     plan: &StateRestorePlan,
+    maintenance: &a3s_use_extension::StateMaintenanceGuard,
 ) -> UseResult<StateBackupManifest> {
     let manifest = match inspect_optional_backup(rollback_path).await? {
         Some(manifest) => manifest,
         None => {
             StateBackupManager::new(paths.clone())
-                .backup_under_exclusive(rollback_path)
+                .backup_under_exclusive(rollback_path, maintenance)
                 .await?
         }
     };
@@ -930,7 +983,7 @@ fn plan_invalid(message: impl Into<String>) -> UseError {
 
 fn authority_mismatch(message: impl Into<String>) -> UseError {
     restore_error("use.state_restore_authority_mismatch", message).with_suggestion(
-        "Recover the exact Registry and Grant authority independently before reviewing this backup again.",
+        "Recover the exact Control Store export authority independently before reviewing this backup again.",
     )
 }
 

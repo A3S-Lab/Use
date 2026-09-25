@@ -138,7 +138,6 @@ impl ControlInvocationDrainRequest {
             None => !grant_required,
             Some(selection) => {
                 grant_required
-                    && self.identity.installation.kind == InstallationKind::Workspace
                     && selection.grant.scope_id == self.identity.installation.id
                     && selection.receipt_revision > 0
                     && selection.receipt_revision
@@ -266,7 +265,6 @@ impl ControlSurfaceEffectRequest {
             None => !grant_required,
             Some(selection) => {
                 grant_required
-                    && self.identity.installation.kind == InstallationKind::Workspace
                     && selection.grant.scope_id == self.identity.installation.id
                     && selection.receipt_revision > 0
                     && selection.receipt_revision
@@ -518,9 +516,7 @@ pub(in crate::control_store) trait ControlCapabilityIndexEffectPort:
 /// occurred. The concrete Capability Plane owns durable publication after
 /// this port returns.
 #[async_trait]
-pub(in crate::control_store) trait ControlCapabilityCatalogProjectionPort:
-    Send + Sync
-{
+pub(crate) trait ControlCapabilityCatalogProjectionPort: Send + Sync {
     async fn project(
         &self,
         authority: &ControlCapabilityEffectAuthority,
@@ -548,9 +544,7 @@ pub(in crate::control_store) trait ControlRuntimeEffectPort:
 }
 
 #[async_trait]
-pub(in crate::control_store) trait ControlFlowEffectPort:
-    Send + Sync
-{
+pub(crate) trait ControlFlowEffectPort: Send + Sync {
     async fn apply_surface(
         &self,
         request: &ControlSurfaceEffectRequest,

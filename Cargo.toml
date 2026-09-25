@@ -95,6 +95,7 @@ mcp = [
     "dep:getrandom",
     "dep:jsonschema",
     "dep:libc",
+    "dep:reqwest",
     "dep:rmcp",
     "dep:schemars",
     "dep:tokio-util",
@@ -126,6 +127,7 @@ tempfile = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["signal"] }
 url.workspace = true
 rmcp = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true, features = ["json"] }
 schemars = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 
@@ -137,7 +139,6 @@ windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_
 
 [dev-dependencies]
 a3s-acl = "=0.2.2"
-reqwest.workspace = true
 flate2.workspace = true
 olpc-cjson.workspace = true
 ring.workspace = true

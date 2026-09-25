@@ -60,6 +60,7 @@ impl InstallationSnapshotStore {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn from_extension_paths(paths: &ExtensionPaths) -> Self {
         Self::from_parts(
             paths.installation_state_root(),

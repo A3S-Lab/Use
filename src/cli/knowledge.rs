@@ -227,7 +227,7 @@ async fn plan_restore(args: &[String]) -> UseResult<CommandOutput> {
     let backup_path = value_argument(args, 1, "knowledge plan-restore requires a backup path")?;
     let scope = scope(args)?;
     let paths = a3s_use_extension::ExtensionPaths::from_env(scope.clone())?;
-    let plan = crate::okf_knowledge::OkfKnowledgeRecoveryManager::from_extension_paths(&paths)
+    let plan = crate::okf_knowledge::OkfKnowledgeRecoveryManager::for_control_authority(&paths)
         .plan_restore(&scope, backup_path)
         .await?;
     let plan_digest = plan.descriptor_digest()?;
@@ -264,7 +264,7 @@ async fn restore(args: &[String]) -> UseResult<CommandOutput> {
     })?;
     let scope = scope(args)?;
     let paths = a3s_use_extension::ExtensionPaths::from_env(scope.clone())?;
-    let result = crate::okf_knowledge::OkfKnowledgeRecoveryManager::from_extension_paths(&paths)
+    let result = crate::okf_knowledge::OkfKnowledgeRecoveryManager::for_control_authority(&paths)
         .apply_restore(&scope, backup_path, plan_digest)
         .await?;
     let human = if result.changed {
@@ -302,7 +302,7 @@ async fn restore_status(args: &[String]) -> UseResult<CommandOutput> {
     let scope = scope(args)?;
     let paths = a3s_use_extension::ExtensionPaths::from_env(scope.clone())?;
     let diagnostic =
-        crate::okf_knowledge::OkfKnowledgeRecoveryManager::from_extension_paths(&paths)
+        crate::okf_knowledge::OkfKnowledgeRecoveryManager::for_control_authority(&paths)
             .diagnose_restores(&scope)
             .await?;
     let human = match &diagnostic.active {
