@@ -98,3 +98,9 @@ pub use a3s_use_ocr as ocr;
 
 #[cfg(feature = "extensions")]
 pub use a3s_use_extension as extension;
+
+#[cfg(feature = "reconcile")]
+pub use a3s_use_reconcile as reconcile;
+
+#[cfg(feature = "tool-acquire")]
+pub use a3s_use_tool_acquire as tool_acquire;

@@ -54,6 +54,8 @@ dependencies = [
  "a3s-use-core",
  "a3s-use-extension",
  "a3s-use-ocr",
+ "a3s-use-reconcile",
+ "a3s-use-tool-acquire",
  "async-trait",
  "axum",
  "base64",
@@ -192,6 +194,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "a3s-use-reconcile"
+version = "0.2.10"
+dependencies = [
+ "a3s-use-core",
+ "fs2",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "zip",
+]
+
+[[package]]
 name = "a3s-use-registry-tools"
 version = "0.2.10"
 dependencies = [
@@ -209,6 +226,25 @@ dependencies = [
  "tokio",
  "tough",
  "url",
+]
+
+[[package]]
+name = "a3s-use-tool-acquire"
+version = "0.2.10"
+dependencies = [
+ "a3s-use-core",
+ "base64",
+ "flate2",
+ "fs2",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "zip",
 ]
 
 [[package]]
@@ -2950,6 +2986,7 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64",
  "bytes",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "http",

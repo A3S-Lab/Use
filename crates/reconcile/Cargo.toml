@@ -1,0 +1,22 @@
+[package]
+name = "a3s-use-reconcile"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "One-generation reconcile for skill, OKF, UI, MCP, and in-package Tool"
+
+[dependencies]
+a3s-use-core = { version = "0.2.4", path = "../core" }
+fs2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
